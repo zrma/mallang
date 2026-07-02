@@ -44,7 +44,7 @@
 - [x] Support initless `for ; condition; post` checking.
 - [x] Support conditionless `for` loops and empty-condition clause loops.
 - [x] Reject `break` and `continue` outside loops.
-- [ ] Type-check fixed-size array literals.
+- [x] Type-check fixed-size array literals.
 - [ ] Type-check array-only `range` loops with immutable `int` index and copy
   element bindings.
 
@@ -53,7 +53,7 @@
 - [x] Treat `int` and `bool` as `Copy`.
 - [x] Treat `string` and structs as move-only by default.
 - [x] Decide fixed-size array ownership and defer slices.
-- [ ] Treat fixed-size arrays as move-only values.
+- [x] Treat fixed-size arrays as move-only values.
 - [x] Support explicit read borrow calls with `in expr`.
 - [x] Support explicit mutable borrow calls with `mut expr`.
 - [x] Reject use-after-move.

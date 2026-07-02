@@ -1,0 +1,7 @@
+func consume(values [3]int) {
+}
+
+func main() {
+    values := [3]int{1, 2, 3}
+    consume(values)
+}

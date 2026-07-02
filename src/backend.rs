@@ -527,6 +527,9 @@ impl<'a> CGenerator<'a> {
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),
+            Type::Array { .. } => Err(CompileError::new(
+                "fixed-size arrays are not supported by the C backend yet",
+            )),
             Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
                 self.emit_print_composite(arg, prelude, code)
             }
@@ -624,6 +627,9 @@ impl<'a> CGenerator<'a> {
             }
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
+            )),
+            Type::Array { .. } => Err(CompileError::new(
+                "fixed-size arrays are not supported by the C backend yet",
             )),
         }
     }
@@ -1008,6 +1014,11 @@ impl<'a> CGenerator<'a> {
                 output.push_str(&self.typedef_for_struct(struct_def));
                 output.push('\n');
             }
+            Type::Array { .. } => {
+                return Err(CompileError::new(
+                    "fixed-size arrays are not supported by the C backend yet",
+                ));
+            }
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
         visiting.pop();
@@ -1188,6 +1199,7 @@ impl Type {
             Self::String => "const char *".to_string(),
             Self::Unit => "void".to_string(),
             Self::Option(_) | Self::Result(_, _) => format!("mlg_{}", mangle_type(self)),
+            Self::Array { .. } => format!("mlg_{}", mangle_type(self)),
             Self::Struct(name) => format!("mlg_struct_{}", c_type_ident(name)),
         }
     }
@@ -1236,6 +1248,12 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
             }
         }
         Type::Struct(_) => {
+            if !types.contains(ty) {
+                types.push(ty.clone());
+            }
+        }
+        Type::Array { element, .. } => {
+            collect_type(element, types);
             if !types.contains(ty) {
                 types.push(ty.clone());
             }
@@ -1395,6 +1413,7 @@ fn mangle_type(ty: &Type) -> String {
         Type::Unit => "unit".to_string(),
         Type::Option(inner) => format!("Option_{}", mangle_type(inner)),
         Type::Result(ok, err) => format!("Result_{}_{}", mangle_type(ok), mangle_type(err)),
+        Type::Array { len, element } => format!("Array_{}_{}", len, mangle_type(element)),
         Type::Struct(name) => format!("Struct_{}", c_type_ident(name)),
     }
 }

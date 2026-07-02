@@ -64,6 +64,7 @@ pub enum Type {
     Unit,
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
+    Array { len: usize, element: Box<Type> },
     Struct(String),
 }
 
@@ -76,6 +77,7 @@ impl Type {
             Self::Unit => "unit".to_string(),
             Self::Option(inner) => format!("Option[{}]", inner.source_name()),
             Self::Result(ok, err) => format!("Result[{}, {}]", ok.source_name(), err.source_name()),
+            Self::Array { len, element } => format!("[{}]{}", len, element.source_name()),
             Self::Struct(name) => name.clone(),
         }
     }
@@ -86,6 +88,7 @@ impl Type {
             Self::String => false,
             Self::Option(inner) => inner.is_copy(),
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
+            Self::Array { .. } => false,
             Self::Struct(_) => false,
         }
     }
@@ -656,10 +659,9 @@ impl<'a> Checker<'a> {
             ExprKind::StructLiteral { type_name, fields } => {
                 self.check_struct_literal(type_name, fields, locals, expected, expr.span)
             }
-            ExprKind::ArrayLiteral { .. } => Err(SemanticError::new(
-                "fixed-size array literals are parsed but not type-checked yet",
-                expr.span,
-            )),
+            ExprKind::ArrayLiteral { ty, elements } => {
+                self.check_array_literal(ty, elements, locals, expected, expr.span)
+            }
             ExprKind::FieldAccess { base, field } => {
                 self.check_field_access(base, field, locals, value_use, expr.span)
             }
@@ -875,6 +877,67 @@ impl<'a> Checker<'a> {
         }
 
         Ok(Type::Struct(type_name.to_string()))
+    }
+
+    fn check_array_literal(
+        &self,
+        ty_ref: &TypeRef,
+        elements: &[Expr],
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let array_ty = self.type_from_ref(ty_ref)?;
+        if let Some(expected) = expected {
+            if expected != &array_ty {
+                return Err(SemanticError::new(
+                    format!(
+                        "array literal type mismatch: expected `{}`, got `{}`",
+                        expected.source_name(),
+                        array_ty.source_name()
+                    ),
+                    span,
+                ));
+            }
+        }
+
+        let Type::Array { len, element } = &array_ty else {
+            return Err(SemanticError::new(
+                "array literal requires a fixed-size array type",
+                ty_ref.span,
+            ));
+        };
+
+        if elements.len() != *len {
+            return Err(SemanticError::new(
+                format!(
+                    "array literal length mismatch: expected {len} elements, got {}",
+                    elements.len()
+                ),
+                span,
+            ));
+        }
+
+        for (index, element_expr) in elements.iter().enumerate() {
+            let value_ty = self.check_expr_with_expected(
+                element_expr,
+                locals,
+                ValueUse::Owned,
+                Some(element),
+            )?;
+            if value_ty != **element {
+                return Err(SemanticError::new(
+                    format!(
+                        "array literal element {index} type mismatch: expected `{}`, got `{}`",
+                        element.source_name(),
+                        value_ty.source_name()
+                    ),
+                    element_expr.span,
+                ));
+            }
+        }
+
+        Ok(array_ty)
     }
 
     fn check_field_access(
@@ -1964,11 +2027,17 @@ impl<'a> Checker<'a> {
     }
 
     fn type_from_ref(&self, ty: &TypeRef) -> Result<Type, SemanticError> {
-        if ty.array_len.is_some() {
-            return Err(SemanticError::new(
-                "fixed-size array types are parsed but not type-checked yet",
-                ty.span,
-            ));
+        if let Some(len) = ty.array_len {
+            if ty.name != "Array" || ty.args.len() != 1 {
+                return Err(SemanticError::new(
+                    "malformed fixed-size array type reference",
+                    ty.span,
+                ));
+            }
+            return Ok(Type::Array {
+                len,
+                element: Box::new(self.type_from_ref(&ty.args[0])?),
+            });
         }
 
         match ty.name.as_str() {
@@ -3283,32 +3352,80 @@ func main() {}
     }
 
     #[test]
-    fn rejects_fixed_size_array_types_until_type_checking_slice() {
-        let error = check_error(
+    fn allows_fixed_size_array_types_and_literals() {
+        check_ok(
             r#"
-func bad(values [3]int) {
+func consume(values [3]int) {
 }
 
-func main() {}
+func main() {
+    values := [3]int{1, 2, 3}
+    consume(values)
+}
 "#,
         );
-        assert!(error
-            .message
-            .contains("fixed-size array types are parsed but not type-checked yet"));
     }
 
     #[test]
-    fn rejects_fixed_size_array_literals_until_type_checking_slice() {
+    fn rejects_fixed_size_array_literal_length_mismatch() {
         let error = check_error(
             r#"
 func main() {
-    values := [3]int{1, 2, 3}
+    values := [3]int{1, 2}
 }
 "#,
         );
         assert!(error
             .message
-            .contains("fixed-size array literals are parsed but not type-checked yet"));
+            .contains("array literal length mismatch: expected 3 elements, got 2"));
+    }
+
+    #[test]
+    fn rejects_fixed_size_array_literal_element_type_mismatch() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [2]int{1, "bad"}
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array literal element 1 type mismatch: expected `int`, got `string`"));
+    }
+
+    #[test]
+    fn rejects_fixed_size_array_literal_expected_type_mismatch() {
+        let error = check_error(
+            r#"
+func consume(values [3]int) {
+}
+
+func main() {
+    consume([2]int{1, 2})
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array literal type mismatch: expected `[3]int`, got `[2]int`"));
+    }
+
+    #[test]
+    fn treats_fixed_size_arrays_as_move_only_values() {
+        let error = check_error(
+            r#"
+func consume(values [2]int) {
+}
+
+func main() {
+    values := [2]int{1, 2}
+    consume(values)
+    consume(values)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `values`"));
     }
 
     #[test]

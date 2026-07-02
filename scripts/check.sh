@@ -99,6 +99,7 @@ if [[ "$for_empty_condition_output" != $'8\n5\nonce' ]]; then
   echo "for empty condition native build smoke failed: expected 8, 5, once got '$for_empty_condition_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/arrays.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"

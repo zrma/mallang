@@ -1951,4 +1951,21 @@ func main() {
         assert_eq!(field, "age");
         assert_eq!(expr.ty, Type::Int);
     }
+
+    #[test]
+    fn ir_rejects_fixed_size_array_literals_until_lowering_slice() {
+        let program = parse(
+            r#"
+func main() {
+    values := [2]int{1, 2}
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let error = lower(&checked).unwrap_err();
+        assert!(error
+            .message
+            .contains("semantic analysis accepted fixed-size array literal before array lowering"));
+    }
 }
