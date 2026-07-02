@@ -25,7 +25,7 @@
 - [x] Parse conditionless `for` loops and empty-condition clause loops.
 - [x] Parse fixed-size array type references.
 - [x] Parse fixed-size array literals.
-- [ ] Parse array-only `range` loops.
+- [x] Parse array-only `range` loops.
 
 ## Milestone 2: Static Semantics
 
@@ -45,7 +45,7 @@
 - [x] Support conditionless `for` loops and empty-condition clause loops.
 - [x] Reject `break` and `continue` outside loops.
 - [x] Type-check fixed-size array literals.
-- [ ] Type-check array-only `range` loops with immutable `int` index and copy
+- [x] Type-check array-only `range` loops with immutable `int` index and copy
   element bindings.
 
 ## Milestone 3: Ownership and Borrowing
@@ -81,7 +81,7 @@
 - [x] Generate native C `for` loops for initless clause loops.
 - [x] Generate native C loops for conditionless `for` forms.
 - [x] Generate native C layout for fixed-size arrays.
-- [ ] Generate native C loops for array-only `range`.
+- [x] Generate native C loops for array-only `range`.
 
 ## Later
 

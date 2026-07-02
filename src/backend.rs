@@ -189,6 +189,13 @@ impl<'a> CGenerator<'a> {
                 body,
                 env,
             ),
+            IrStmtKind::RangeFor {
+                index_name,
+                value_name,
+                source,
+                element_ty,
+                body,
+            } => self.emit_range_for_stmt(index_name, value_name, source, element_ty, body, env),
             IrStmtKind::Break => Ok("break;".to_string()),
             IrStmtKind::Continue => Ok("continue;".to_string()),
             IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
@@ -276,6 +283,63 @@ impl<'a> CGenerator<'a> {
         push_indented_lines(&mut output, "}", 1);
         for stmt in body {
             let code = self.emit_stmt_with_env(stmt, env)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
+        output.push('}');
+        Ok(output)
+    }
+
+    fn emit_range_for_stmt(
+        &self,
+        index_name: &str,
+        value_name: &str,
+        source: &IrExpr,
+        element_ty: &Type,
+        body: &[IrStmt],
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let Type::Array { len, .. } = &source.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: range source must be an array",
+            ));
+        };
+
+        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(source, env)?;
+        let source_temp = range_source_temp_name(source);
+        let index_ident = c_ident(index_name);
+        let value_ident = c_ident(value_name);
+        let mut output = String::new();
+        for line in prelude {
+            output.push_str(&line);
+            output.push('\n');
+        }
+        output.push_str(&format!("{} {source_temp} = {code};\n", source.ty.c_name()));
+        output.push_str(&format!(
+            "for (int64_t {index_ident} = 0; {index_ident} < {len}; {index_ident} = ({index_ident} + 1)) {{\n"
+        ));
+        if *len != 0 {
+            push_indented_lines(
+                &mut output,
+                &format!(
+                    "{} {value_ident} = ({source_temp}).{}[{index_ident}];",
+                    element_ty.c_name(),
+                    c_field("data")
+                ),
+                1,
+            );
+        } else {
+            push_indented_lines(
+                &mut output,
+                &format!("{} {value_ident};", element_ty.c_name()),
+                1,
+            );
+        }
+
+        let mut body_env = env.clone();
+        body_env.insert(index_name.to_string(), index_ident);
+        body_env.insert(value_name.to_string(), value_ident);
+        for stmt in body {
+            let code = self.emit_stmt_with_env(stmt, &body_env)?;
             push_indented_lines(&mut output, &code, 1);
         }
         output.push('}');
@@ -1123,6 +1187,18 @@ impl<'a> CGenerator<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
+            IrStmtKind::RangeFor {
+                source,
+                element_ty,
+                body,
+                ..
+            } => {
+                self.collect_expr_types(source, types);
+                collect_type(element_ty, types);
+                for stmt in body {
+                    self.collect_stmt_types(stmt, types);
+                }
+            }
             IrStmtKind::Match { scrutinee, arms } => {
                 self.collect_expr_types(scrutinee, types);
                 for arm in arms {
@@ -1475,6 +1551,10 @@ fn push_indented_lines(output: &mut String, code: &str, level: usize) {
 
 fn match_scrutinee_temp_name(expr: &IrExpr) -> String {
     format!("mallang_match_tmp_{}", expr.span.start)
+}
+
+fn range_source_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_range_src_{}", expr.span.start)
 }
 
 fn mangle_type(ty: &Type) -> String {
@@ -2054,6 +2134,32 @@ func main() {
         assert!(c.contains("mlg_Array_3_int"));
         assert!(c.contains("(mlg_Array_3_int){ .mlg_data = { 1, 2, 3 } }"));
         assert!(c.contains("mlg_consume(mlg_values);"));
+    }
+
+    #[test]
+    fn generates_c_for_array_range_loops() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Array_3_int mallang_range_src_"));
+        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
+        assert!(c.contains(".mlg_data[mlg_i];"));
+        assert!(c.contains("mlg_total = ((mlg_total + mlg_i) + mlg_value);"));
     }
 
     #[test]

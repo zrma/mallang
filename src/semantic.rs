@@ -467,6 +467,26 @@ impl<'a> Checker<'a> {
                 merge_loop_body_moves(locals, &post_locals);
                 Ok(false)
             }
+            StmtKind::RangeFor {
+                index_name,
+                value_name,
+                source,
+                body,
+            } => {
+                self.check_range_for(
+                    RangeForParts {
+                        index_name,
+                        value_name,
+                        source,
+                        body,
+                        span: stmt.span,
+                    },
+                    locals,
+                    return_type,
+                    loop_depth,
+                )?;
+                Ok(false)
+            }
             StmtKind::Break => {
                 if loop_depth == 0 {
                     return Err(SemanticError::new(
@@ -938,6 +958,65 @@ impl<'a> Checker<'a> {
         }
 
         Ok(array_ty)
+    }
+
+    fn check_range_for(
+        &self,
+        parts: RangeForParts<'_>,
+        locals: &mut HashMap<String, Local>,
+        return_type: &Type,
+        loop_depth: usize,
+    ) -> Result<(), SemanticError> {
+        if parts.index_name == parts.value_name {
+            return Err(SemanticError::new(
+                "range index and value bindings must use different names",
+                parts.span,
+            ));
+        }
+
+        let source_ty = self.check_expr(parts.source, locals, ValueUse::Borrow)?;
+        let Type::Array { element, .. } = source_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "range source must be a fixed-size array, got `{}`",
+                    source_ty.source_name()
+                ),
+                parts.source.span,
+            ));
+        };
+        if !element.is_copy() {
+            return Err(SemanticError::new(
+                format!(
+                    "range value binding requires a Copy element type in v0, got `{}`",
+                    element.source_name()
+                ),
+                parts.source.span,
+            ));
+        }
+
+        let mut body_locals = locals.clone();
+        body_locals.insert(
+            parts.index_name.to_string(),
+            Local {
+                ty: Type::Int,
+                mutable: false,
+                borrowed: false,
+                moved: false,
+            },
+        );
+        body_locals.insert(
+            parts.value_name.to_string(),
+            Local {
+                ty: element.as_ref().clone(),
+                mutable: false,
+                borrowed: false,
+                moved: false,
+            },
+        );
+
+        self.check_block_statements(parts.body, &mut body_locals, return_type, loop_depth + 1)?;
+        merge_loop_body_moves(locals, &body_locals);
+        Ok(())
     }
 
     fn check_field_access(
@@ -2097,6 +2176,14 @@ struct IfExprParts<'a> {
     condition: &'a Expr,
     then_branch: &'a Expr,
     else_branch: &'a Expr,
+    span: Span,
+}
+
+struct RangeForParts<'a> {
+    index_name: &'a str,
+    value_name: &'a str,
+    source: &'a Expr,
+    body: &'a Block,
     span: Span,
 }
 
@@ -3426,6 +3513,62 @@ func main() {
 "#,
         );
         assert!(error.message.contains("use of moved value `values`"));
+    }
+
+    #[test]
+    fn allows_array_range_loop_and_source_reuse() {
+        check_ok(
+            r#"
+func consume(values [3]int) {
+}
+
+func main() {
+    values := [3]int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    consume(values)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_range_over_non_array_source() {
+        let error = check_error(
+            r#"
+func main() {
+    for i, value := range 1 {
+        print(i)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("range source must be a fixed-size array, got `int`"));
+    }
+
+    #[test]
+    fn rejects_range_value_binding_for_non_copy_elements() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := [1]User{User{age: 1}}
+    for i, user := range users {
+        print(i)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("range value binding requires a Copy element type in v0, got `User`"));
     }
 
     #[test]

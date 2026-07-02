@@ -411,6 +411,27 @@ impl Parser {
             });
         }
 
+        if self.starts_range_header() {
+            let (index_name, _) = self.expect_ident("expected range index binding name")?;
+            self.expect(TokenTag::Comma, "expected `,` after range index binding")?;
+            let (value_name, _) = self.expect_ident("expected range value binding name")?;
+            self.expect(TokenTag::ColonEqual, "expected `:=` in range loop")?;
+            self.expect_keyword(Keyword::Range, "expected `range` in range loop")?;
+            let source = self.parse_expression_without_struct_literals()?;
+            let body = self.parse_block()?;
+            let span = start.join(body.span);
+
+            return Ok(Stmt {
+                kind: StmtKind::RangeFor {
+                    index_name,
+                    value_name,
+                    source,
+                    body,
+                },
+                span,
+            });
+        }
+
         if self.at(TokenTag::Semicolon) || self.starts_for_clause_header() {
             let init = if self.eat(TokenTag::Semicolon).is_some() {
                 None
@@ -457,6 +478,10 @@ impl Parser {
             },
             span,
         })
+    }
+
+    fn starts_range_header(&self) -> bool {
+        self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::Comma)
     }
 
     fn starts_for_clause_header(&self) -> bool {
@@ -1705,6 +1730,36 @@ func main() {
         assert_eq!(ty.array_len, Some(0));
         assert_eq!(ty.args[0].name, "string");
         assert!(elements.is_empty());
+    }
+
+    #[test]
+    fn parses_array_range_loop() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    for i, value := range values {
+        print(i)
+        print(value)
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            body,
+        } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "value");
+        assert!(matches!(source.kind, ExprKind::Var(_)));
+        assert_eq!(body.statements.len(), 2);
     }
 
     #[test]

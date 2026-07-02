@@ -83,6 +83,13 @@ pub enum IrStmtKind {
         post: Option<Box<IrForPost>>,
         body: Vec<IrStmt>,
     },
+    RangeFor {
+        index_name: String,
+        value_name: String,
+        source: IrExpr,
+        element_ty: Type,
+        body: Vec<IrStmt>,
+    },
     Break,
     Continue,
     Match {
@@ -423,6 +430,22 @@ impl<'a> Lowerer<'a> {
                     body,
                 }
             }
+            StmtKind::RangeFor {
+                index_name,
+                value_name,
+                source,
+                body,
+            } => self.lower_range_for(
+                IrRangeForParts {
+                    index_name,
+                    value_name,
+                    source,
+                    body,
+                    span: stmt.span,
+                },
+                locals,
+                return_type,
+            )?,
             StmtKind::Break => IrStmtKind::Break,
             StmtKind::Continue => IrStmtKind::Continue,
             StmtKind::Match { scrutinee, arms } => {
@@ -440,6 +463,41 @@ impl<'a> Lowerer<'a> {
         Ok(IrStmt {
             kind,
             span: stmt.span,
+        })
+    }
+
+    fn lower_range_for(
+        &self,
+        parts: IrRangeForParts<'_>,
+        locals: &HashMap<String, Type>,
+        return_type: &Type,
+    ) -> Result<IrStmtKind, IrError> {
+        let source = self.lower_expr(parts.source, locals)?;
+        let Type::Array { element, .. } = &source.ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted range over non-array source",
+                parts.span,
+            ));
+        };
+        if !element.is_copy() {
+            return Err(IrError::new(
+                "semantic analysis accepted range over non-Copy element type",
+                parts.span,
+            ));
+        }
+
+        let element_ty = element.as_ref().clone();
+        let mut body_locals = locals.clone();
+        body_locals.insert(parts.index_name.to_string(), Type::Int);
+        body_locals.insert(parts.value_name.to_string(), element_ty.clone());
+        let body = self.lower_block_statements(parts.body, &mut body_locals, return_type)?;
+
+        Ok(IrStmtKind::RangeFor {
+            index_name: parts.index_name.to_string(),
+            value_name: parts.value_name.to_string(),
+            source,
+            element_ty,
+            body,
         })
     }
 
@@ -1516,6 +1574,14 @@ struct PreparedMatchBlockArm<'a> {
     binding: Option<(String, Type)>,
 }
 
+struct IrRangeForParts<'a> {
+    index_name: &'a str,
+    value_name: &'a str,
+    source: &'a Expr,
+    body: &'a Block,
+    span: Span,
+}
+
 fn expect_constructor_arg<'a>(
     constructor: &str,
     args: &'a [Arg],
@@ -2032,5 +2098,39 @@ func main() {
         };
         assert_eq!(elements.len(), 2);
         assert_eq!(expr.ty, ty.clone());
+    }
+
+    #[test]
+    fn ir_lowers_array_range_loops() {
+        let program = parse(
+            r#"
+func main() {
+    values := [2]int{1, 2}
+    for i, value := range values {
+        print(i)
+        print(value)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            element_ty,
+            body,
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "value");
+        assert!(matches!(source.ty, Type::Array { .. }));
+        assert_eq!(*element_ty, Type::Int);
+        assert_eq!(body.len(), 2);
     }
 }

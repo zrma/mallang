@@ -96,6 +96,12 @@ pub enum StmtKind {
         post: Option<ForPost>,
         body: Block,
     },
+    RangeFor {
+        index_name: String,
+        value_name: String,
+        source: Expr,
+        body: Block,
+    },
     Break,
     Continue,
     Match {

@@ -3,5 +3,10 @@ func consume(values [3]int) {
 
 func main() {
     values := [3]int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    print(total)
     consume(values)
 }
