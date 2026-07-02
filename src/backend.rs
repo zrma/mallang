@@ -1,11 +1,19 @@
-use std::{collections::HashMap, fmt};
+use std::fmt;
 
-use crate::ast::{Arg, BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
-use crate::semantic::{check, CheckedProgram, FunctionSig, Type};
+use crate::{
+    ast::Program,
+    ir::{lower, IrArg, IrExpr, IrExprKind, IrFunction, IrProgram, IrStmt, IrStmtKind},
+    semantic::{check, Type},
+};
 
 pub fn generate_c(program: &Program) -> Result<String, CompileError> {
     let checked = check(program).map_err(|error| CompileError::new(error.to_string()))?;
-    CGenerator::new(&checked).generate()
+    let ir = lower(&checked).map_err(|error| CompileError::new(error.to_string()))?;
+    generate_c_from_ir(&ir)
+}
+
+pub fn generate_c_from_ir(program: &IrProgram) -> Result<String, CompileError> {
+    CGenerator::new(program).generate()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,13 +37,13 @@ impl fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
-struct CGenerator<'program, 'checked> {
-    checked: &'checked CheckedProgram<'program>,
+struct CGenerator<'a> {
+    program: &'a IrProgram,
 }
 
-impl<'program, 'checked> CGenerator<'program, 'checked> {
-    fn new(checked: &'checked CheckedProgram<'program>) -> Self {
-        Self { checked }
+impl<'a> CGenerator<'a> {
+    fn new(program: &'a IrProgram) -> Self {
+        Self { program }
     }
 
     fn generate(self) -> Result<String, CompileError> {
@@ -44,13 +52,13 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
         output.push_str("#include <stdint.h>\n");
         output.push_str("#include <stdio.h>\n\n");
 
-        for function in &self.checked.program.functions {
-            output.push_str(&self.prototype(function)?);
+        for function in &self.program.functions {
+            output.push_str(&self.prototype(function));
             output.push_str(";\n");
         }
         output.push('\n');
 
-        for function in &self.checked.program.functions {
+        for function in &self.program.functions {
             output.push_str(&self.emit_function(function)?);
             output.push('\n');
         }
@@ -58,17 +66,12 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
         Ok(output)
     }
 
-    fn prototype(&self, function: &Function) -> Result<String, CompileError> {
-        let sig = self.function_sig(&function.name)?;
-        let params = if function.name == "main" {
-            if !sig.params.is_empty() {
-                return Err(CompileError::new("`main` must not take parameters"));
-            }
-            "void".to_string()
-        } else if sig.params.is_empty() {
+    fn prototype(&self, function: &IrFunction) -> String {
+        let params = if function.name == "main" || function.params.is_empty() {
             "void".to_string()
         } else {
-            sig.params
+            function
+                .params
                 .iter()
                 .map(|param| format!("{} {}", param.ty.c_name(), c_ident(&param.name)))
                 .collect::<Vec<_>>()
@@ -78,34 +81,19 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
         let return_type = if function.name == "main" {
             "int"
         } else {
-            sig.return_type.c_name()
+            function.return_type.c_name()
         };
 
-        Ok(format!(
-            "{} {}({})",
-            return_type,
-            c_ident(&function.name),
-            params
-        ))
+        format!("{} {}({})", return_type, c_ident(&function.name), params)
     }
 
-    fn emit_function(&self, function: &Function) -> Result<String, CompileError> {
-        let mut locals = HashMap::new();
-        let sig = self.function_sig(&function.name)?;
-        for param in &sig.params {
-            locals.insert(param.name.clone(), param.ty);
-        }
-
+    fn emit_function(&self, function: &IrFunction) -> Result<String, CompileError> {
         let mut output = String::new();
-        output.push_str(&self.prototype(function)?);
+        output.push_str(&self.prototype(function));
         output.push_str(" {\n");
 
-        let mut returned = false;
-        for stmt in &function.body.statements {
-            if matches!(stmt.kind, StmtKind::Return { .. }) {
-                returned = true;
-            }
-            let line = self.emit_stmt(stmt, &mut locals, sig.return_type)?;
+        for stmt in &function.body {
+            let line = self.emit_stmt(stmt)?;
             output.push_str("    ");
             output.push_str(&line);
             output.push('\n');
@@ -113,238 +101,83 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
 
         if function.name == "main" {
             output.push_str("    return 0;\n");
-        } else if !returned && !matches!(sig.return_type, Type::Unit) {
-            return Err(CompileError::new(format!(
-                "function `{}` must return `{}`",
-                function.name,
-                sig.return_type.source_name()
-            )));
         }
 
         output.push_str("}\n");
         Ok(output)
     }
 
-    fn emit_stmt(
-        &self,
-        stmt: &Stmt,
-        locals: &mut HashMap<String, Type>,
-        return_type: Type,
-    ) -> Result<String, CompileError> {
+    fn emit_stmt(&self, stmt: &IrStmt) -> Result<String, CompileError> {
         match &stmt.kind {
-            StmtKind::Let { name, expr, .. } => {
-                let typed = self.emit_expr(expr, locals)?;
-                locals.insert(name.clone(), typed.ty);
-                Ok(format!(
-                    "{} {} = {};",
-                    typed.ty.c_name(),
-                    c_ident(name),
-                    typed.code
-                ))
+            IrStmtKind::Let { name, ty, expr, .. } => Ok(format!(
+                "{} {} = {};",
+                ty.c_name(),
+                c_ident(name),
+                self.emit_expr(expr)?
+            )),
+            IrStmtKind::Assign { name, expr } => {
+                Ok(format!("{} = {};", c_ident(name), self.emit_expr(expr)?))
             }
-            StmtKind::Assign { name, expr } => {
-                let typed = self.emit_expr(expr, locals)?;
-                Ok(format!("{} = {};", c_ident(name), typed.code))
-            }
-            StmtKind::Return { expr } => {
-                let typed = self.emit_expr(expr, locals)?;
-                if typed.ty != return_type {
-                    return Err(CompileError::new(format!(
-                        "return type mismatch: expected `{}`, got `{}`",
-                        return_type.source_name(),
-                        typed.ty.source_name()
-                    )));
+            IrStmtKind::Return { expr } => Ok(format!("return {};", self.emit_expr(expr)?)),
+            IrStmtKind::Expr { expr } => {
+                if let IrExprKind::Call { callee, args } = &expr.kind {
+                    if callee == "print" {
+                        return self.emit_print(args);
+                    }
                 }
-                Ok(format!("return {};", typed.code))
+
+                Ok(format!("{};", self.emit_expr(expr)?))
             }
-            StmtKind::Expr { expr } => self.emit_expr_stmt(expr, locals),
         }
     }
 
-    fn emit_expr_stmt(
-        &self,
-        expr: &Expr,
-        locals: &HashMap<String, Type>,
-    ) -> Result<String, CompileError> {
-        if let ExprKind::Call { callee, args } = &expr.kind {
-            if let ExprKind::Var(name) = &callee.kind {
-                if name == "print" {
-                    return self.emit_print(args, locals);
-                }
-            }
-        }
-
-        let typed = self.emit_expr(expr, locals)?;
-        Ok(format!("{};", typed.code))
-    }
-
-    fn emit_print(
-        &self,
-        args: &[Arg],
-        locals: &HashMap<String, Type>,
-    ) -> Result<String, CompileError> {
+    fn emit_print(&self, args: &[IrArg]) -> Result<String, CompileError> {
         if args.len() != 1 {
-            return Err(CompileError::new("`print` expects exactly one argument"));
+            return Err(CompileError::new("IR invariant violation: print arity"));
         }
-        let typed = self.emit_expr(&args[0].expr, locals)?;
-        match typed.ty {
-            Type::Int => Ok(format!("printf(\"%lld\\n\", (long long)({}));", typed.code)),
+
+        let arg = &args[0].expr;
+        let code = self.emit_expr(arg)?;
+        match arg.ty {
+            Type::Int => Ok(format!("printf(\"%lld\\n\", (long long)({code}));")),
             Type::Bool => Ok(format!(
-                "printf(\"%s\\n\", ({}) ? \"true\" : \"false\");",
-                typed.code
+                "printf(\"%s\\n\", ({code}) ? \"true\" : \"false\");"
             )),
-            Type::String => Ok(format!("printf(\"%s\\n\", {});", typed.code)),
-            Type::Unit => Err(CompileError::new("cannot print unit value")),
+            Type::String => Ok(format!("printf(\"%s\\n\", {code});")),
+            Type::Unit => Err(CompileError::new(
+                "IR invariant violation: cannot print unit",
+            )),
         }
     }
 
-    fn emit_expr(
-        &self,
-        expr: &Expr,
-        locals: &HashMap<String, Type>,
-    ) -> Result<TypedCode, CompileError> {
+    fn emit_expr(&self, expr: &IrExpr) -> Result<String, CompileError> {
         match &expr.kind {
-            ExprKind::Int(value) => Ok(TypedCode {
-                ty: Type::Int,
-                code: value.to_string(),
-            }),
-            ExprKind::String(value) => Ok(TypedCode {
-                ty: Type::String,
-                code: c_string(value),
-            }),
-            ExprKind::Bool(value) => Ok(TypedCode {
-                ty: Type::Bool,
-                code: if *value { "true" } else { "false" }.to_string(),
-            }),
-            ExprKind::Nil => Err(CompileError::new(
-                "`nil` should have been rejected by semantic analysis",
+            IrExprKind::Int(value) => Ok(value.to_string()),
+            IrExprKind::String(value) => Ok(c_string(value)),
+            IrExprKind::Bool(value) => Ok(if *value { "true" } else { "false" }.to_string()),
+            IrExprKind::Var(name) => Ok(c_ident(name)),
+            IrExprKind::Call { callee, args } => {
+                if callee == "print" {
+                    return Err(CompileError::new(
+                        "`print` is only supported as a statement",
+                    ));
+                }
+                let args = args
+                    .iter()
+                    .map(|arg| self.emit_expr(&arg.expr))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(format!("{}({})", c_ident(callee), args.join(", ")))
+            }
+            IrExprKind::Unary { op, expr } => {
+                Ok(format!("({}{})", op.c_operator(), self.emit_expr(expr)?))
+            }
+            IrExprKind::Binary { op, left, right } => Ok(format!(
+                "({} {} {})",
+                self.emit_expr(left)?,
+                op.c_operator(),
+                self.emit_expr(right)?
             )),
-            ExprKind::Var(name) => {
-                let Some(ty) = locals.get(name).copied() else {
-                    return Err(CompileError::new(format!("unknown variable `{name}`")));
-                };
-                Ok(TypedCode {
-                    ty,
-                    code: c_ident(name),
-                })
-            }
-            ExprKind::Call { callee, args } => self.emit_call(callee, args, locals),
-            ExprKind::Unary { op, expr } => {
-                let typed = self.emit_expr(expr, locals)?;
-                match (op, typed.ty) {
-                    (UnaryOp::Negate, Type::Int) => Ok(TypedCode {
-                        ty: Type::Int,
-                        code: format!("(-{})", typed.code),
-                    }),
-                    (UnaryOp::Not, Type::Bool) => Ok(TypedCode {
-                        ty: Type::Bool,
-                        code: format!("(!{})", typed.code),
-                    }),
-                    _ => Err(CompileError::new("unsupported unary operand type")),
-                }
-            }
-            ExprKind::Binary { op, left, right } => self.emit_binary(*op, left, right, locals),
         }
-    }
-
-    fn emit_call(
-        &self,
-        callee: &Expr,
-        args: &[Arg],
-        locals: &HashMap<String, Type>,
-    ) -> Result<TypedCode, CompileError> {
-        let ExprKind::Var(name) = &callee.kind else {
-            return Err(CompileError::new(
-                "C backend only supports direct function calls",
-            ));
-        };
-        if name == "print" {
-            return Err(CompileError::new(
-                "`print` is only supported as a statement",
-            ));
-        }
-
-        let sig = self.function_sig(name)?;
-        if args.len() != sig.params.len() {
-            return Err(CompileError::new(format!(
-                "function `{name}` expects {} arguments, got {}",
-                sig.params.len(),
-                args.len()
-            )));
-        }
-
-        let mut emitted_args = Vec::new();
-        for (arg, param) in args.iter().zip(sig.params.iter()) {
-            let typed = self.emit_expr(&arg.expr, locals)?;
-            if typed.ty != param.ty {
-                return Err(CompileError::new(format!(
-                    "argument type mismatch for `{name}`: expected `{}`, got `{}`",
-                    param.ty.source_name(),
-                    typed.ty.source_name()
-                )));
-            }
-            emitted_args.push(typed.code);
-        }
-
-        Ok(TypedCode {
-            ty: sig.return_type,
-            code: format!("{}({})", c_ident(name), emitted_args.join(", ")),
-        })
-    }
-
-    fn emit_binary(
-        &self,
-        op: BinaryOp,
-        left: &Expr,
-        right: &Expr,
-        locals: &HashMap<String, Type>,
-    ) -> Result<TypedCode, CompileError> {
-        let left = self.emit_expr(left, locals)?;
-        let right = self.emit_expr(right, locals)?;
-        if left.ty != right.ty {
-            return Err(CompileError::new("binary operands must have the same type"));
-        }
-
-        match op {
-            BinaryOp::Add
-            | BinaryOp::Subtract
-            | BinaryOp::Multiply
-            | BinaryOp::Divide
-            | BinaryOp::Remainder => {
-                if left.ty != Type::Int {
-                    return Err(CompileError::new(
-                        "arithmetic operators currently require `int` operands",
-                    ));
-                }
-                Ok(TypedCode {
-                    ty: Type::Int,
-                    code: format!("({} {} {})", left.code, op.c_operator(), right.code),
-                })
-            }
-            BinaryOp::Equal
-            | BinaryOp::NotEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => {
-                if left.ty != Type::Int && left.ty != Type::Bool {
-                    return Err(CompileError::new(
-                        "comparison operators currently support `int` and `bool` operands",
-                    ));
-                }
-                Ok(TypedCode {
-                    ty: Type::Bool,
-                    code: format!("({} {} {})", left.code, op.c_operator(), right.code),
-                })
-            }
-        }
-    }
-
-    fn function_sig(&self, name: &str) -> Result<&FunctionSig, CompileError> {
-        self.checked
-            .signatures
-            .get(name)
-            .ok_or_else(|| CompileError::new(format!("unknown function `{name}`")))
     }
 }
 
@@ -359,13 +192,20 @@ impl Type {
     }
 }
 
-#[derive(Debug, Clone)]
-struct TypedCode {
-    ty: Type,
-    code: String,
+trait COperator {
+    fn c_operator(self) -> &'static str;
 }
 
-impl BinaryOp {
+impl COperator for crate::ast::UnaryOp {
+    fn c_operator(self) -> &'static str {
+        match self {
+            Self::Negate => "-",
+            Self::Not => "!",
+        }
+    }
+}
+
+impl COperator for crate::ast::BinaryOp {
     fn c_operator(self) -> &'static str {
         match self {
             Self::Add => "+",
@@ -408,10 +248,10 @@ fn c_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse;
+    use crate::{check, ir::lower, parse};
 
     #[test]
-    fn generates_c_for_first_target_program() {
+    fn generates_c_for_first_target_program_from_ir() {
         let program = parse(
             r#"
 func main() {
@@ -426,7 +266,9 @@ func add(a int, b int) int {
 "#,
         )
         .unwrap();
-        let c = generate_c(&program).unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("int main(void)"));
         assert!(c.contains("int64_t mlg_add(int64_t mlg_a, int64_t mlg_b);"));

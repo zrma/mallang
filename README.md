@@ -50,7 +50,8 @@ scripts/check.sh
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
-- `src/backend.rs`: C backend for the first native subset.
+- `src/ir.rs`: typed IR lowering after semantic analysis.
+- `src/backend.rs`: C backend for typed IR in the first native subset.
 - `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone

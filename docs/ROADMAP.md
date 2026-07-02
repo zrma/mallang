@@ -35,7 +35,7 @@
 
 ## P4: Native Backend
 
-- [ ] typed IR 추가
+- [x] typed IR 추가
 - [x] first native subset용 C codegen 추가
 - [x] `mlg build` subcommand 추가
 - [x] `clang` 기반 native binary smoke 추가

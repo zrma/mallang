@@ -38,7 +38,7 @@
 
 ## Milestone 4: Native Backend
 
-- [ ] Lower typed AST to a small typed IR.
+- [x] Lower typed AST to a small typed IR.
 - [x] Generate C source for the first `int` subset.
 - [x] Use `clang` as the first native backend.
 - [x] Produce a native executable for the first target program.
