@@ -172,9 +172,11 @@ Array rules:
   local-rooted borrow surface as fixed-size arrays. Direct mutable slice element
   assignment is supported for `Copy` and non-copy element types. Same-field
   append reassignment is supported for owned slice field paths, including stable
-  indexed field paths. Read-only indexed expressions can inspect non-copy slice
-  elements without moving them. Mutable range values, general partial field
-  moves, and non-copy element extraction remain reserved for later slices.
+  indexed field paths. Append can also take an owned slice field source by
+  leaving the source field as an empty slice. Read-only indexed expressions can
+  inspect non-copy slice elements without moving them. Mutable range values,
+  general partial field moves beyond slice field take-append, and non-copy
+  element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -255,8 +257,12 @@ Indexing and length rules:
 - Direct owned slice field paths can use same-field append reassignment, such
   as `bag.values = append(bag.values, item)` or
   `shelf.bag.values = append(shelf.bag.values, item)`, when the root binding is
-  mutable. General partial moves out of fields, such as
-  `grown := append(bag.values, item)`, remain unsupported in v0.
+  mutable.
+- Owned slice field paths can also be used as append sources without same-field
+  reassignment, such as `grown := append(bag.values, item)`. This is a
+  compiler-owned take: the append result owns the consumed buffer, and the
+  source field is reset to an empty slice before the owning struct is later
+  dropped.
 - Indexed owned slice field paths can also use same-field append reassignment,
   such as `store.bags[i].values = append(store.bags[i].values, item)`, when the
   target and source paths match structurally and every index expression in the

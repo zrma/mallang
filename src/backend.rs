@@ -49,6 +49,12 @@ struct CExpr {
     code: String,
 }
 
+struct AppendSourceExpr {
+    prelude: Vec<String>,
+    code: String,
+    clear_source: Option<String>,
+}
+
 impl CExpr {
     fn simple(code: String) -> Self {
         Self {
@@ -1173,7 +1179,7 @@ impl<'a> CGenerator<'a> {
             ));
         }
 
-        let slice = self.emit_stmt_expr_with_env(slice, env)?;
+        let slice = self.emit_slice_append_source_stmt_expr(slice, env)?;
         let item = self.emit_stmt_expr_with_env(item, env)?;
         let temp = slice_append_temp_name(expr);
         let new_len = format!("{temp}_new_len");
@@ -1186,6 +1192,9 @@ impl<'a> CGenerator<'a> {
         let mut prelude = slice.prelude;
         prelude.push(format!("{} {temp} = {};", expr.ty.c_name(), slice.code));
         prelude.extend(item.prelude);
+        if let Some(clear_source) = slice.clear_source {
+            prelude.push(clear_source);
+        }
         prelude.push(format!(
             "if ({temp}.{len_field} == INT64_MAX) {{\n    fprintf(stderr, \"mallang runtime error: slice length overflow\\n\");\n    exit(1);\n}}"
         ));
@@ -1203,6 +1212,34 @@ impl<'a> CGenerator<'a> {
         Ok(CExpr {
             prelude,
             code: temp,
+        })
+    }
+
+    fn emit_slice_append_source_stmt_expr(
+        &self,
+        slice: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<AppendSourceExpr, CompileError> {
+        if matches!(slice.kind, IrExprKind::FieldAccess { .. }) {
+            let CExpr { prelude, code } = self.emit_borrow_lvalue_expr(slice, env)?;
+            let clear_source = format!(
+                "{code} = {};",
+                empty_slice_value_code(&slice.ty).ok_or_else(|| {
+                    CompileError::new("IR invariant violation: append field source must be a slice")
+                })?
+            );
+            return Ok(AppendSourceExpr {
+                prelude,
+                code,
+                clear_source: Some(clear_source),
+            });
+        }
+
+        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(slice, env)?;
+        Ok(AppendSourceExpr {
+            prelude,
+            code,
+            clear_source: None,
         })
     }
 
@@ -2454,6 +2491,19 @@ fn c_ident(name: &str) -> String {
 
 fn c_field(name: &str) -> String {
     format!("mlg_{name}")
+}
+
+fn empty_slice_value_code(ty: &Type) -> Option<String> {
+    if !matches!(ty, Type::Slice(_)) {
+        return None;
+    }
+    Some(format!(
+        "({}){{ .{} = NULL, .{} = 0, .{} = 0 }}",
+        ty.c_name(),
+        c_field("data"),
+        c_field("len"),
+        c_field("cap")
+    ))
 }
 
 fn c_type_ident(name: &str) -> String {
@@ -3719,6 +3769,38 @@ func main() {
         assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
         assert!(c.contains("(mlg_bag).mlg_values = mallang_slice_append_tmp_"));
         assert!(!c.contains("mlg_drop_Slice_int(&((mlg_bag).mlg_values));"));
+        assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_field_append_take_source() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1}}
+    grown := append(bag.values, 2)
+    print(len(grown))
+    print(len(bag.values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
+        assert!(c.contains("mallang_slice_append_tmp_"));
+        assert!(c.contains(" = (mlg_bag).mlg_values;"));
+        assert!(c.contains(
+            "(mlg_bag).mlg_values = (mlg_Slice_int){ .mlg_data = NULL, .mlg_len = 0, .mlg_cap = 0 };"
+        ));
+        assert!(c.contains("mlg_Slice_int mlg_grown = mallang_slice_append_tmp_"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_grown));"));
         assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
     }
 

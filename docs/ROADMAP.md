@@ -489,8 +489,8 @@
       없는 direct field path 허용
 - [x] 같은 field append에서는 cleanup overwrite drop을 생략해 realloc된 source를
       double-drop하지 않도록 함
-- [x] `grown := append(bag.values, item)` 같은 general partial field move는
-      계속 reject
+- [x] `grown := append(bag.values, item)` 같은 field source append는 P59에서
+      source field take로 제한해 완료
 - [x] `examples/slice-field-append.mlg` native smoke 추가
 
 ## P58: Indexed Slice Field Append Reassignment
@@ -500,5 +500,14 @@
 - [x] local-rooted slice indexed field assignment source 제약을 direct local slice에서
       local-rooted slice place로 완화
 - [x] 같은 indexed field append에서는 cleanup overwrite drop을 생략
-- [x] mismatched source index와 call index는 general partial move 경로로 계속 reject
+- [x] mismatched source index와 call index는 P59에서 field take source로 허용
 - [x] `examples/indexed-slice-field-append.mlg` native smoke 추가
+
+## P59: Slice Field Take Append Source
+
+- [x] `grown := append(bag.values, item)` 허용
+- [x] `append(store.bags[i].values, item)`처럼 local-rooted indexed field source 허용
+- [x] append result가 consumed buffer를 소유하고 source field는 empty slice로 reset
+- [x] direct local `values` append move semantics는 유지
+- [x] native backend에서 field source lvalue를 copy한 뒤 empty slice header를 write
+- [x] `examples/slice-field-take-append.mlg` native smoke 추가

@@ -13,6 +13,7 @@
   - `shelf.bag.values = append(shelf.bag.values, item)`처럼 indexed segment가
     없는 direct field path 허용.
   - Indexed field append reassignment는 P58에서 완료됐다.
+  - Same-field reassignment 없는 slice field take-append는 P59에서 완료됐다.
   - root binding은 기존 field assignment 규칙대로 `mut`이어야 한다.
   - `grown := append(bag.values, item)` 같은 field partial move는 계속 reject.
 - IR cleanup:

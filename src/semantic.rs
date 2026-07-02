@@ -2308,7 +2308,11 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let slice_ty = self.check_expr(&args[0].expr, locals, ValueUse::Owned)?;
+        let slice_ty = if is_field_place_expr(&args[0].expr) {
+            self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?
+        } else {
+            self.check_expr(&args[0].expr, locals, ValueUse::Owned)?
+        };
         let Type::Slice(element_ty) = &slice_ty else {
             return Err(SemanticError::new(
                 format!(
@@ -3097,6 +3101,10 @@ fn is_direct_borrow_expr(expr: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+fn is_field_place_expr(expr: &Expr) -> bool {
+    matches!(expr.kind, ExprKind::FieldAccess { .. }) && is_direct_borrow_expr(expr)
 }
 
 fn is_same_field_target_expr(base: &Expr, field: &str, expr: &Expr) -> bool {
@@ -5468,8 +5476,8 @@ func main() {
     }
 
     #[test]
-    fn rejects_append_from_slice_field_without_same_field_reassignment() {
-        let error = check_error(
+    fn allows_append_from_slice_field_by_taking_source_field() {
+        check_ok(
             r#"
 type Bag struct {
     values []int
@@ -5479,15 +5487,15 @@ func main() {
     mut bag := Bag{values: []int{1}}
     grown := append(bag.values, 2)
     print(len(grown))
+    print(len(bag.values))
 }
 "#,
         );
-        assert!(error.message.contains("moving non-copy field out of `bag`"));
     }
 
     #[test]
-    fn rejects_indexed_slice_field_append_with_different_source_index() {
-        let error = check_error(
+    fn allows_indexed_slice_field_append_take_with_different_target_index() {
+        check_ok(
             r#"
 type Bag struct {
     values []int
@@ -5501,17 +5509,16 @@ func main() {
     mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2}}}}
     i := 0
     store.bags[i].values = append(store.bags[i + 1].values, 3)
+    print(len(store.bags[i].values))
+    print(len(store.bags[i + 1].values))
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("moving non-copy field out of indexed element"));
     }
 
     #[test]
-    fn rejects_indexed_slice_field_append_with_call_index() {
-        let error = check_error(
+    fn allows_indexed_slice_field_append_take_with_call_index() {
+        check_ok(
             r#"
 type Bag struct {
     values []int
@@ -5528,12 +5535,10 @@ func pick() int {
 func main() {
     mut store := Store{bags: []Bag{Bag{values: []int{1}}}}
     store.bags[pick()].values = append(store.bags[pick()].values, 2)
+    print(len(store.bags[0].values))
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("moving non-copy field out of indexed element"));
     }
 
     #[test]

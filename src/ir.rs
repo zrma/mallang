@@ -5174,6 +5174,39 @@ func main() {
     }
 
     #[test]
+    fn ir_lowers_slice_field_append_take_source() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1}}
+    grown := append(bag.values, 2)
+    print(len(grown))
+    print(len(bag.values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { name, expr, .. } = &ir.functions[0].body[1].kind else {
+            panic!("expected grown let");
+        };
+        assert_eq!(name, "grown");
+        let IrExprKind::SliceAppend { slice, item } = &expr.kind else {
+            panic!("expected slice append expression");
+        };
+        assert!(matches!(slice.kind, IrExprKind::FieldAccess { .. }));
+        assert_eq!(item.ty, Type::Int);
+        assert_drop_of(&ir.functions[0].body[4], "grown");
+        assert_drop_of(&ir.functions[0].body[5], "bag");
+    }
+
+    #[test]
     fn ir_lowers_indexed_slice_field_append_without_overwrite_drop() {
         let program = parse(
             r#"
