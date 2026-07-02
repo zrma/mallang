@@ -91,7 +91,7 @@ pub enum StmtKind {
     },
     For {
         init: Option<ForInit>,
-        condition: Expr,
+        condition: Option<Expr>,
         post: Option<ForPost>,
         body: Block,
     },

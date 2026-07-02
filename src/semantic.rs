@@ -441,12 +441,15 @@ impl<'a> Checker<'a> {
                     self.check_for_init(init, &mut loop_locals, stmt.span)?;
                 }
 
-                let condition_ty = self.check_expr(condition, &mut loop_locals, ValueUse::Owned)?;
-                if condition_ty != Type::Bool {
-                    return Err(SemanticError::new(
-                        "for condition must have type `bool`",
-                        condition.span,
-                    ));
+                if let Some(condition) = condition {
+                    let condition_ty =
+                        self.check_expr(condition, &mut loop_locals, ValueUse::Owned)?;
+                    if condition_ty != Type::Bool {
+                        return Err(SemanticError::new(
+                            "for condition must have type `bool`",
+                            condition.span,
+                        ));
+                    }
                 }
 
                 let mut body_locals = loop_locals.clone();
@@ -2689,6 +2692,35 @@ func main() {
     mut i := 0
     for ; i < 3; i = i + 1 {
         print(i)
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_for_statement_without_condition() {
+        check_ok(
+            r#"
+func main() {
+    for {
+        break
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_for_clause_without_condition() {
+        check_ok(
+            r#"
+func main() {
+    mut i := 0
+    for ; ; i = i + 1 {
+        if i == 3 {
+            break
+        }
     }
 }
 "#,

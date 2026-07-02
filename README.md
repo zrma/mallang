@@ -24,9 +24,9 @@ This repository is the Mallang language PoC workspace.
   assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
-  condition-only and `for init; condition; post` loops with `break` /
-  `continue`, `else if` sugar, `bool` logical operators, `|>` pipeline call
-  sugar, `Option`, `Result`, and expression/statement `match`.
+  condition-only, conditionless, and `for init; condition; post` loops with
+  `break` / `continue`, `else if` sugar, `bool` logical operators, `|>`
+  pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
@@ -59,6 +59,8 @@ cargo run --bin mlg -- build examples/for-clause.mlg -o target/mallang/for-claus
 target/mallang/for-clause
 cargo run --bin mlg -- build examples/for-clause-initless.mlg -o target/mallang/for-clause-initless
 target/mallang/for-clause-initless
+cargo run --bin mlg -- build examples/for-empty-condition.mlg -o target/mallang/for-empty-condition
+target/mallang/for-empty-condition
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
@@ -116,6 +118,7 @@ scripts/check.sh
 - `examples/loop-control.mlg`: native smoke for `break` and `continue`.
 - `examples/for-clause.mlg`: native smoke for `for init; condition; post`.
 - `examples/for-clause-initless.mlg`: native smoke for initless `for ; condition; post`.
+- `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
@@ -160,8 +163,8 @@ func add(a int, b int) int {
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
 `bool` logical operators, `|>` pipeline call sugar, statement/expression `if`,
-condition-only and `for init; condition; post` loops with `break` / `continue`,
-`else if` sugar, branch-aware returns, struct/method/nested-field, struct print
-output, and built-in ADT
+condition-only, conditionless, and `for init; condition; post` loops with
+`break` / `continue`, `else if` sugar, branch-aware returns,
+struct/method/nested-field, struct print output, and built-in ADT
 expression/statement `match` plus ADT print output via C source generation and
 `clang`.

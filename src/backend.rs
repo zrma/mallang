@@ -182,7 +182,13 @@ impl<'a> CGenerator<'a> {
                 condition,
                 post,
                 body,
-            } => self.emit_for_stmt(init.as_deref(), condition, post.as_deref(), body, env),
+            } => self.emit_for_stmt(
+                init.as_deref(),
+                condition.as_deref(),
+                post.as_deref(),
+                body,
+                env,
+            ),
             IrStmtKind::Break => Ok("break;".to_string()),
             IrStmtKind::Continue => Ok("continue;".to_string()),
             IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
@@ -234,7 +240,7 @@ impl<'a> CGenerator<'a> {
     fn emit_for_stmt(
         &self,
         init: Option<&IrForInit>,
-        condition: &IrExpr,
+        condition: Option<&IrExpr>,
         post: Option<&IrForPost>,
         body: &[IrStmt],
         env: &HashMap<String, String>,
@@ -243,11 +249,16 @@ impl<'a> CGenerator<'a> {
             return self.emit_for_clause_stmt(init, condition, post, body, env);
         }
 
-        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+        let (prelude, code) = if let Some(condition) = condition {
+            let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+            (prelude, c_condition(&code))
+        } else {
+            (Vec::new(), "true".to_string())
+        };
         let mut output = String::new();
 
         if prelude.is_empty() {
-            output.push_str(&format!("while ({}) {{\n", c_condition(&code)));
+            output.push_str(&format!("while ({code}) {{\n"));
             for stmt in body {
                 let code = self.emit_stmt_with_env(stmt, env)?;
                 push_indented_lines(&mut output, &code, 1);
@@ -260,11 +271,7 @@ impl<'a> CGenerator<'a> {
         for line in prelude {
             push_indented_lines(&mut output, &line, 1);
         }
-        push_indented_lines(
-            &mut output,
-            &format!("if (!({})) {{", c_condition(&code)),
-            1,
-        );
+        push_indented_lines(&mut output, &format!("if (!({code})) {{"), 1);
         push_indented_lines(&mut output, "break;", 2);
         push_indented_lines(&mut output, "}", 1);
         for stmt in body {
@@ -278,7 +285,7 @@ impl<'a> CGenerator<'a> {
     fn emit_for_clause_stmt(
         &self,
         init: Option<&IrForInit>,
-        condition: &IrExpr,
+        condition: Option<&IrExpr>,
         post: Option<&IrForPost>,
         body: &[IrStmt],
         env: &HashMap<String, String>,
@@ -295,13 +302,17 @@ impl<'a> CGenerator<'a> {
             String::new()
         };
 
-        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
-        if !prelude.is_empty() {
-            return Err(CompileError::new(
-                "for-clause conditions with temporary preludes are not supported in the native backend yet",
-            ));
-        }
-        let condition_code = c_condition(&code);
+        let condition_code = if let Some(condition) = condition {
+            let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+            if !prelude.is_empty() {
+                return Err(CompileError::new(
+                    "for-clause conditions with temporary preludes are not supported in the native backend yet",
+                ));
+            }
+            c_condition(&code)
+        } else {
+            String::new()
+        };
 
         let post_code = post
             .map(|post| self.emit_for_post(post, env))
@@ -1050,7 +1061,9 @@ impl<'a> CGenerator<'a> {
                 if let Some(init) = init.as_deref() {
                     self.collect_for_init_types(init, types);
                 }
-                self.collect_expr_types(condition, types);
+                if let Some(condition) = condition.as_deref() {
+                    self.collect_expr_types(condition, types);
+                }
                 if let Some(post) = post.as_deref() {
                     self.collect_for_post_types(post, types);
                 }
@@ -1550,6 +1563,26 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_for_statement_without_condition() {
+        let program = parse(
+            r#"
+func main() {
+    for {
+        break
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("break;"));
+    }
+
+    #[test]
     fn generates_c_for_for_clause_statement() {
         let program = parse(
             r#"
@@ -1586,6 +1619,28 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("for (; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
+    }
+
+    #[test]
+    fn generates_c_for_for_clause_without_condition() {
+        let program = parse(
+            r#"
+func main() {
+    mut i := 0
+    for ; ; i = i + 1 {
+        if i == 3 {
+            break
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("for (; ; mlg_i = (mlg_i + 1)) {"));
     }
 
     #[test]

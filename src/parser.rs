@@ -362,6 +362,21 @@ impl Parser {
     fn parse_for_statement(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_keyword(Keyword::For, "expected `for`")?;
 
+        if self.at(TokenTag::LeftBrace) {
+            let body = self.parse_block()?;
+            let span = start.join(body.span);
+
+            return Ok(Stmt {
+                kind: StmtKind::For {
+                    init: None,
+                    condition: None,
+                    post: None,
+                    body,
+                },
+                span,
+            });
+        }
+
         if self.at(TokenTag::Semicolon) || self.starts_for_clause_header() {
             let init = if self.eat(TokenTag::Semicolon).is_some() {
                 None
@@ -370,9 +385,17 @@ impl Parser {
                 self.expect(TokenTag::Semicolon, "expected `;` after for init")?;
                 Some(init)
             };
-            let condition = self.parse_expression_without_struct_literals()?;
+            let condition = if self.at(TokenTag::Semicolon) {
+                None
+            } else {
+                Some(self.parse_expression_without_struct_literals()?)
+            };
             self.expect(TokenTag::Semicolon, "expected `;` after for condition")?;
-            let post = self.parse_for_post()?;
+            let post = if self.at(TokenTag::LeftBrace) {
+                None
+            } else {
+                Some(self.parse_for_post()?)
+            };
             let body = self.parse_block()?;
             let span = start.join(body.span);
 
@@ -380,14 +403,14 @@ impl Parser {
                 kind: StmtKind::For {
                     init,
                     condition,
-                    post: Some(post),
+                    post,
                     body,
                 },
                 span,
             });
         }
 
-        let condition = self.parse_expression_without_struct_literals()?;
+        let condition = Some(self.parse_expression_without_struct_literals()?);
         let body = self.parse_block()?;
         let span = start.join(body.span);
 
@@ -1137,9 +1160,28 @@ func add(a int, b int) int {
         };
         assert!(init.is_none());
         assert!(post.is_none());
+        let condition = condition.as_ref().expect("expected for condition");
         assert!(matches!(&condition.kind, ExprKind::Var(name) if name == "keepGoing"));
         assert_eq!(body.statements.len(), 1);
         assert!(matches!(body.statements[0].kind, StmtKind::Expr { .. }));
+    }
+
+    #[test]
+    fn parses_infinite_for_statement() {
+        let program = parse("func main() { for { tick() } }").unwrap();
+        let StmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &program.functions[0].body.statements[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert!(condition.is_none());
+        assert!(post.is_none());
+        assert_eq!(body.statements.len(), 1);
     }
 
     #[test]
@@ -1163,6 +1205,7 @@ func add(a int, b int) int {
                 ..
             }) if name == "i"
         ));
+        let condition = condition.as_ref().expect("expected for condition");
         assert!(matches!(
             condition.kind,
             ExprKind::Binary {
@@ -1194,6 +1237,7 @@ func add(a int, b int) int {
             panic!("expected for statement");
         };
         assert!(init.is_none());
+        let condition = condition.as_ref().expect("expected for condition");
         assert!(matches!(
             condition.kind,
             ExprKind::Binary {
@@ -1201,6 +1245,23 @@ func add(a int, b int) int {
                 ..
             }
         ));
+        assert!(matches!(post, Some(ForPost::Assign { .. })));
+    }
+
+    #[test]
+    fn parses_for_clause_with_empty_condition() {
+        let program = parse("func main() { mut i := 0 for ; ; i = i + 1 { print(i) } }").unwrap();
+        let StmtKind::For {
+            init,
+            condition,
+            post,
+            ..
+        } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert!(condition.is_none());
         assert!(matches!(post, Some(ForPost::Assign { .. })));
     }
 

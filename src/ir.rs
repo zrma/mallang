@@ -79,7 +79,7 @@ pub enum IrStmtKind {
     },
     For {
         init: Option<Box<IrForInit>>,
-        condition: IrExpr,
+        condition: Option<Box<IrExpr>>,
         post: Option<Box<IrForPost>>,
         body: Vec<IrStmt>,
     },
@@ -391,12 +391,18 @@ impl<'a> Lowerer<'a> {
                     .map(|init| self.lower_for_init(init, &mut loop_locals))
                     .map(|result| result.map(Box::new))
                     .transpose()?;
-                let condition = self.lower_expr(condition, &loop_locals)?;
-                if condition.ty != Type::Bool {
-                    return Err(IrError::new(
-                        "semantic analysis accepted a non-bool for condition",
-                        condition.span,
-                    ));
+                let condition = condition
+                    .as_ref()
+                    .map(|condition| self.lower_expr(condition, &loop_locals))
+                    .map(|result| result.map(Box::new))
+                    .transpose()?;
+                if let Some(condition) = condition.as_ref() {
+                    if condition.ty != Type::Bool {
+                        return Err(IrError::new(
+                            "semantic analysis accepted a non-bool for condition",
+                            condition.span,
+                        ));
+                    }
                 }
 
                 let mut body_locals = loop_locals.clone();
@@ -1578,7 +1584,38 @@ func main() {
         };
         assert!(init.is_none());
         assert!(post.is_none());
+        let condition = condition.as_deref().expect("expected for condition");
         assert_eq!(condition.ty, Type::Bool);
+        assert_eq!(body.len(), 1);
+    }
+
+    #[test]
+    fn ir_lowers_for_statement_without_condition() {
+        let program = parse(
+            r#"
+func main() {
+    for {
+        break
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &ir.functions[0].body[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert!(condition.is_none());
+        assert!(post.is_none());
         assert_eq!(body.len(), 1);
     }
 
@@ -1615,6 +1652,7 @@ func main() {
                 ..
             }) if name == "i"
         ));
+        let condition = condition.as_deref().expect("expected for condition");
         assert_eq!(condition.ty, Type::Bool);
         assert!(matches!(post.as_deref(), Some(IrForPost::Assign { .. })));
         assert_eq!(body.len(), 1);
@@ -1646,7 +1684,41 @@ func main() {
             panic!("expected for statement");
         };
         assert!(init.is_none());
+        let condition = condition.as_deref().expect("expected for condition");
         assert_eq!(condition.ty, Type::Bool);
+        assert!(matches!(post.as_deref(), Some(IrForPost::Assign { .. })));
+        assert_eq!(body.len(), 1);
+    }
+
+    #[test]
+    fn ir_lowers_for_clause_without_condition() {
+        let program = parse(
+            r#"
+func main() {
+    mut i := 0
+    for ; ; i = i + 1 {
+        if i == 3 {
+            break
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert!(condition.is_none());
         assert!(matches!(post.as_deref(), Some(IrForPost::Assign { .. })));
         assert_eq!(body.len(), 1);
     }

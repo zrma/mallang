@@ -275,6 +275,10 @@ for enabled {
     tick()
 }
 
+for {
+    tick()
+}
+
 for mut i := 0; i < 3; i = i + 1 {
     print(i)
 }
@@ -282,11 +286,17 @@ for mut i := 0; i < 3; i = i + 1 {
 for ; i < 3; i = i + 1 {
     print(i)
 }
+
+for ; ; i = i + 1 {
+    if i == 3 {
+        break
+    }
+}
 ```
 
 Rules:
 
-- The condition must have type `bool`.
+- When present, the condition must have type `bool`.
 - In the three-clause form, init is optional. When present, it is `name := expr`
   or `mut name := expr`.
 - In the three-clause form, post is a single variable or field assignment.
@@ -299,7 +309,7 @@ Rules:
 - `break` and `continue` are only valid inside loops.
 - A `for` statement is not considered return-complete in v0, even when its
   condition is statically `true`.
-- v0 does not yet include `range`, empty conditions, or post declarations.
+- v0 does not yet include `range` or post declarations.
 
 Expression form:
 
