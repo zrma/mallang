@@ -1063,24 +1063,29 @@ impl<'a> Lowerer<'a> {
             }
         }
 
-        let Type::Array { len, element } = &ty else {
-            return Err(IrError::new(
-                "semantic analysis accepted array literal without array type",
-                ty_ref.span,
-            ));
+        let element = match &ty {
+            Type::Array { len, element } => {
+                if elements.len() != *len {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array literal length mismatch",
+                        span,
+                    ));
+                }
+                element.as_ref()
+            }
+            Type::Slice(element) => element.as_ref(),
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted array literal without array or slice type",
+                    ty_ref.span,
+                ));
+            }
         };
-
-        if elements.len() != *len {
-            return Err(IrError::new(
-                "semantic analysis accepted array literal length mismatch",
-                span,
-            ));
-        }
 
         let mut lowered = Vec::new();
         for element_expr in elements {
             let expr = self.lower_expr_with_expected(element_expr, locals, Some(element))?;
-            if expr.ty != **element {
+            if expr.ty != *element {
                 return Err(IrError::new(
                     "semantic analysis accepted array literal element type mismatch",
                     element_expr.span,
@@ -1139,16 +1144,18 @@ impl<'a> Lowerer<'a> {
                 index.span,
             ));
         }
-        let Type::Array { element, .. } = &base.ty else {
-            return Err(IrError::new(
-                "semantic analysis accepted indexing on non-array value",
-                span,
-            ));
+        let ty = match &base.ty {
+            Type::Array { element, .. } | Type::Slice(element) => (**element).clone(),
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted indexing on non-array non-slice value",
+                    span,
+                ));
+            }
         };
-        let ty = (**element).clone();
         if !ty.is_copy() {
             return Err(IrError::new(
-                "semantic analysis accepted indexing a non-copy array element",
+                "semantic analysis accepted indexing a non-copy array or slice element",
                 span,
             ));
         }
@@ -1698,9 +1705,9 @@ impl<'a> Lowerer<'a> {
             ));
         }
         let array = self.lower_expr(&args[0].expr, locals)?;
-        if !matches!(array.ty, Type::Array { .. }) {
+        if !matches!(array.ty, Type::Array { .. } | Type::Slice(_)) {
             return Err(IrError::new(
-                "semantic analysis accepted `len` on non-array value",
+                "semantic analysis accepted `len` on non-array non-slice value",
                 span,
             ));
         }
@@ -1831,10 +1838,13 @@ impl<'a> Lowerer<'a> {
 
     fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
         if ty.slice {
-            return Err(IrError::new(
-                "semantic analysis accepted reserved slice type reference",
-                ty.span,
-            ));
+            if ty.name != "Slice" || ty.args.len() != 1 || ty.array_len.is_some() {
+                return Err(IrError::new(
+                    "semantic analysis accepted malformed slice type reference",
+                    ty.span,
+                ));
+            }
+            return Ok(Type::Slice(Box::new(self.type_from_ref(&ty.args[0])?)));
         }
 
         if let Some(len) = ty.array_len {
@@ -4720,6 +4730,52 @@ func main() {
             panic!("expected array len expression");
         };
         assert!(matches!(array.ty, Type::Array { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_slice_literal_indexing_and_len() {
+        let program = parse(
+            r#"
+func main() {
+    values := []int{1, 2, 3}
+    first := values[1]
+    count := len(values)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { expr, ty, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected slice let statement");
+        };
+        assert_eq!(*ty, Type::Slice(Box::new(Type::Int)));
+        let IrExprKind::ArrayLiteral { elements } = &expr.kind else {
+            panic!("expected slice literal expression");
+        };
+        assert_eq!(elements.len(), 3);
+
+        let IrStmtKind::Let { expr, ty, .. } = &ir.functions[0].body[1].kind else {
+            panic!("expected index let statement");
+        };
+        assert_eq!(*ty, Type::Int);
+        let IrExprKind::Index { base, index } = &expr.kind else {
+            panic!("expected index expression");
+        };
+        assert!(matches!(base.ty, Type::Slice(_)));
+        assert_eq!(index.ty, Type::Int);
+
+        let IrStmtKind::Let { expr, ty, .. } = &ir.functions[0].body[2].kind else {
+            panic!("expected len let statement");
+        };
+        assert_eq!(*ty, Type::Int);
+        let IrExprKind::ArrayLen { array } = &expr.kind else {
+            panic!("expected slice len expression");
+        };
+        assert!(matches!(array.ty, Type::Slice(_)));
+
+        assert_drop_of(&ir.functions[0].body[3], "values");
     }
 
     #[test]

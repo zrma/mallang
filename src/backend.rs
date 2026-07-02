@@ -901,7 +901,7 @@ impl<'a> CGenerator<'a> {
                 self.emit_struct_literal_stmt_expr(type_name, fields, env)
             }
             IrExprKind::ArrayLiteral { elements } => {
-                self.emit_array_literal_stmt_expr(&expr.ty, elements, env)
+                self.emit_array_literal_stmt_expr(expr, elements, env)
             }
             IrExprKind::FieldAccess { base, field } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(base, env)?;
@@ -1041,30 +1041,52 @@ impl<'a> CGenerator<'a> {
         index: &IrExpr,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let Type::Array { len, .. } = &base.ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: index base must be an array",
-            ));
-        };
-        let source_ty = base.ty.c_name();
+        match &base.ty {
+            Type::Array { len, .. } => {
+                let source_ty = base.ty.c_name();
+                let base = self.emit_stmt_expr_with_env(base, env)?;
+                let index = self.emit_stmt_expr_with_env(index, env)?;
+                let source_temp = index_source_temp_name(expr);
+                let index_temp = index_value_temp_name(expr);
 
-        let base = self.emit_stmt_expr_with_env(base, env)?;
-        let index = self.emit_stmt_expr_with_env(index, env)?;
-        let source_temp = index_source_temp_name(expr);
-        let index_temp = index_value_temp_name(expr);
+                let mut prelude = base.prelude;
+                prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
+                prelude.extend(index.prelude);
+                prelude.push(format!("int64_t {index_temp} = {};", index.code));
+                prelude.push(format!(
+                    "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+                ));
 
-        let mut prelude = base.prelude;
-        prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
-        prelude.extend(index.prelude);
-        prelude.push(format!("int64_t {index_temp} = {};", index.code));
-        prelude.push(format!(
-            "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
-        ));
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({source_temp}).mlg_data[{index_temp}]"),
+                })
+            }
+            Type::Slice(_) => {
+                let source_ty = base.ty.c_name();
+                let base = self.emit_stmt_expr_with_env(base, env)?;
+                let index = self.emit_stmt_expr_with_env(index, env)?;
+                let source_temp = index_source_temp_name(expr);
+                let index_temp = index_value_temp_name(expr);
 
-        Ok(CExpr {
-            prelude,
-            code: format!("({source_temp}).mlg_data[{index_temp}]"),
-        })
+                let mut prelude = base.prelude;
+                prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
+                prelude.extend(index.prelude);
+                prelude.push(format!("int64_t {index_temp} = {};", index.code));
+                prelude.push(format!(
+                    "if ({index_temp} < 0 || {index_temp} >= ({source_temp}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    c_field("len")
+                ));
+
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({source_temp}).{}[{index_temp}]", c_field("data")),
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: index base must be an array or slice",
+            )),
+        }
     }
 
     fn emit_array_len_stmt_expr(
@@ -1072,18 +1094,27 @@ impl<'a> CGenerator<'a> {
         array: &IrExpr,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let Type::Array { len, .. } = &array.ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: len source must be an array",
-            ));
-        };
-        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
-        prelude.push(format!("(void)({code});"));
+        match &array.ty {
+            Type::Array { len, .. } => {
+                let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
+                prelude.push(format!("(void)({code});"));
 
-        Ok(CExpr {
-            prelude,
-            code: len.to_string(),
-        })
+                Ok(CExpr {
+                    prelude,
+                    code: len.to_string(),
+                })
+            }
+            Type::Slice(_) => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({code}).{}", c_field("len")),
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: len source must be an array or slice",
+            )),
+        }
     }
 
     fn emit_call_arg_stmt_expr(
@@ -1234,41 +1265,85 @@ impl<'a> CGenerator<'a> {
 
     fn emit_array_literal_stmt_expr(
         &self,
-        ty: &Type,
+        expr: &IrExpr,
         elements: &[IrExpr],
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let Type::Array { len, .. } = ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: array literal without array type",
-            ));
-        };
-        if elements.len() != *len {
-            return Err(CompileError::new(
-                "IR invariant violation: array literal length mismatch",
-            ));
+        let ty = &expr.ty;
+        match ty {
+            Type::Array { len, .. } => {
+                if elements.len() != *len {
+                    return Err(CompileError::new(
+                        "IR invariant violation: array literal length mismatch",
+                    ));
+                }
+
+                let mut prelude = Vec::new();
+                let mut element_codes = Vec::new();
+                for element in elements {
+                    let emitted = self.emit_stmt_expr_with_env(element, env)?;
+                    prelude.extend(emitted.prelude);
+                    element_codes.push(emitted.code);
+                }
+
+                let code = if *len == 0 {
+                    format!("({}){{ .{} = 0 }}", ty.c_name(), c_field("empty"))
+                } else {
+                    format!(
+                        "({}){{ .{} = {{ {} }} }}",
+                        ty.c_name(),
+                        c_field("data"),
+                        element_codes.join(", ")
+                    )
+                };
+
+                Ok(CExpr { prelude, code })
+            }
+            Type::Slice(element) => {
+                let temp = slice_literal_temp_name(expr);
+                let mut prelude = vec![format!("{} {temp};", ty.c_name())];
+                if elements.is_empty() {
+                    prelude.push(format!("{temp}.{} = NULL;", c_field("data")));
+                    prelude.push(format!("{temp}.{} = 0;", c_field("len")));
+                    prelude.push(format!("{temp}.{} = 0;", c_field("cap")));
+                    return Ok(CExpr {
+                        prelude,
+                        code: temp,
+                    });
+                }
+
+                prelude.push(format!(
+                    "{temp}.{} = malloc(sizeof({}) * {});",
+                    c_field("data"),
+                    element.c_name(),
+                    elements.len()
+                ));
+                prelude.push(format!(
+                    "if ({temp}.{} == NULL) {{\n    fprintf(stderr, \"mallang runtime error: slice allocation failed\\n\");\n    exit(1);\n}}",
+                    c_field("data")
+                ));
+                prelude.push(format!("{temp}.{} = {};", c_field("len"), elements.len()));
+                prelude.push(format!("{temp}.{} = {};", c_field("cap"), elements.len()));
+
+                for (index, element) in elements.iter().enumerate() {
+                    let emitted = self.emit_stmt_expr_with_env(element, env)?;
+                    prelude.extend(emitted.prelude);
+                    prelude.push(format!(
+                        "{temp}.{}[{index}] = {};",
+                        c_field("data"),
+                        emitted.code
+                    ));
+                }
+
+                Ok(CExpr {
+                    prelude,
+                    code: temp,
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: array literal without array or slice type",
+            )),
         }
-
-        let mut prelude = Vec::new();
-        let mut element_codes = Vec::new();
-        for element in elements {
-            let emitted = self.emit_stmt_expr_with_env(element, env)?;
-            prelude.extend(emitted.prelude);
-            element_codes.push(emitted.code);
-        }
-
-        let code = if *len == 0 {
-            format!("({}){{ .{} = 0 }}", ty.c_name(), c_field("empty"))
-        } else {
-            format!(
-                "({}){{ .{} = {{ {} }} }}",
-                ty.c_name(),
-                c_field("data"),
-                element_codes.join(", ")
-            )
-        };
-
-        Ok(CExpr { prelude, code })
     }
 
     fn emit_match_stmt_expr(
@@ -2005,6 +2080,10 @@ fn match_expr_temp_name(expr: &IrExpr) -> String {
 
 fn print_temp_name(expr: &IrExpr) -> String {
     format!("mallang_print_tmp_{}", expr.span.start)
+}
+
+fn slice_literal_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_slice_tmp_{}", expr.span.start)
 }
 
 fn index_source_temp_name(expr: &IrExpr) -> String {
@@ -3332,6 +3411,34 @@ func main() {
         assert!(c.contains("(void)(mlg_values);"));
         assert!(c.contains("__builtin_add_overflow"));
         assert!(c.contains("int64_t mlg_total = mallang_checked_result_"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_literal_indexing_len_and_cleanup() {
+        let program = parse(
+            r#"
+func main() {
+    values := []int{1, 2, 3}
+    total := values[1] + len(values)
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("typedef struct {\n    int64_t *mlg_data;\n    int64_t mlg_len;\n    int64_t mlg_cap;\n} mlg_Slice_int;"));
+        assert!(c.contains("mlg_Slice_int mallang_slice_tmp_"));
+        assert!(c.contains(".mlg_data = malloc(sizeof(int64_t) * 3);"));
+        assert!(c.contains(".mlg_len = 3;"));
+        assert!(c.contains(".mlg_cap = 3;"));
+        assert!(c.contains(".mlg_data[0] = 1;"));
+        assert!(c.contains("mallang runtime error: slice index out of bounds"));
+        assert!(c.contains(".mlg_data[mallang_index_value_"));
+        assert!(c.contains(".mlg_len"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
     }
 
     #[test]

@@ -1897,6 +1897,7 @@ func take(values []string) []int {
 func main() {
     values := [3]int{1, 2, 3}
     empty := [0]string{}
+    slice := []int{1, 2}
 }
 "#,
         )
@@ -1923,6 +1924,18 @@ func main() {
         assert_eq!(ty.array_len, Some(0));
         assert_eq!(ty.args[0].name, "string");
         assert!(elements.is_empty());
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[2].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::ArrayLiteral { ty, elements } = &expr.kind else {
+            panic!("expected slice literal");
+        };
+        assert_eq!(ty.name, "Slice");
+        assert!(ty.slice);
+        assert_eq!(ty.array_len, None);
+        assert_eq!(ty.args[0].name, "int");
+        assert_eq!(elements.len(), 2);
     }
 
     #[test]

@@ -1,0 +1,5 @@
+func main() {
+    values := []int{4, 5, 6}
+    total := values[1] + len(values)
+    print(total)
+}

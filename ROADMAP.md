@@ -123,6 +123,8 @@
 - [x] Generate native C for fixed-size array element assignment.
 - [x] Generate native C for fixed-size array element assignment in `for` clause
   post targets.
+- [x] Generate native C for owned slice literals, `len(slice)`, and Copy-only
+  `slice[i]` value access.
 
 ## Later
 
@@ -150,9 +152,11 @@
 - [x] Fixed-size array non-copy element assignment.
 - [x] Fixed-size array element method receivers.
 - [x] Parse slice type syntax `[]T` and reserve it at semantic checking.
+- [x] Open source-level owned slice literals, `len(slice)`, and Copy-only
+  `slice[i]` value access.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Slice values, append/growth, and mutable range values.
+- Slice append/growth, slice range, and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

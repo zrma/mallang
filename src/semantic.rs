@@ -200,7 +200,16 @@ impl<'a> Checker<'a> {
                 }
                 fields.push(FieldSig {
                     name: field.name.clone(),
-                    ty: self.type_from_ref(&field.ty)?,
+                    ty: {
+                        let ty = self.type_from_ref(&field.ty)?;
+                        if type_contains_slice(&ty) {
+                            return Err(SemanticError::new(
+                                "slice fields require struct cleanup support in v0",
+                                field.ty.span,
+                            ));
+                        }
+                        ty
+                    },
                     ty_span: field.ty.span,
                 });
             }
@@ -1090,22 +1099,27 @@ impl<'a> Checker<'a> {
             }
         }
 
-        let Type::Array { len, element } = &array_ty else {
-            return Err(SemanticError::new(
-                "array literal requires a fixed-size array type",
-                ty_ref.span,
-            ));
+        let element = match &array_ty {
+            Type::Array { len, element } => {
+                if elements.len() != *len {
+                    return Err(SemanticError::new(
+                        format!(
+                            "array literal length mismatch: expected {len} elements, got {}",
+                            elements.len()
+                        ),
+                        span,
+                    ));
+                }
+                element.as_ref()
+            }
+            Type::Slice(element) => element.as_ref(),
+            _ => {
+                return Err(SemanticError::new(
+                    "array literal requires a fixed-size array or slice type",
+                    ty_ref.span,
+                ));
+            }
         };
-
-        if elements.len() != *len {
-            return Err(SemanticError::new(
-                format!(
-                    "array literal length mismatch: expected {len} elements, got {}",
-                    elements.len()
-                ),
-                span,
-            ));
-        }
 
         for (index, element_expr) in elements.iter().enumerate() {
             let value_ty = self.check_expr_with_expected(
@@ -1114,7 +1128,7 @@ impl<'a> Checker<'a> {
                 ValueUse::Owned,
                 Some(element),
             )?;
-            if value_ty != **element {
+            if value_ty != *element {
                 return Err(SemanticError::new(
                     format!(
                         "array literal element {index} type mismatch: expected `{}`, got `{}`",
@@ -1257,29 +1271,51 @@ impl<'a> Checker<'a> {
     ) -> Result<Type, SemanticError> {
         let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
         let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
-        let Type::Array { len, element } = base_ty else {
-            return Err(SemanticError::new(
+        match base_ty {
+            Type::Array { len, element } => {
+                self.validate_index_type_and_bounds(index, &index_ty, len)?;
+
+                if !element.is_copy() {
+                    return Err(SemanticError::new(
+                        format!(
+                            "array indexing requires a Copy element type in v0, got `{}`",
+                            element.source_name()
+                        ),
+                        span,
+                    ));
+                }
+
+                Ok(*element)
+            }
+            Type::Slice(element) => {
+                if !matches!(base.kind, ExprKind::Var(_)) {
+                    return Err(SemanticError::new(
+                        "slice indexing requires a direct local slice in v0",
+                        base.span,
+                    ));
+                }
+                self.validate_index_type_and_non_negative_literal(index, &index_ty, "slice")?;
+
+                if !element.is_copy() {
+                    return Err(SemanticError::new(
+                        format!(
+                            "slice indexing requires a Copy element type in v0, got `{}`",
+                            element.source_name()
+                        ),
+                        span,
+                    ));
+                }
+
+                Ok(*element)
+            }
+            _ => Err(SemanticError::new(
                 format!(
-                    "indexing requires a fixed-size array, got `{}`",
+                    "indexing requires a fixed-size array or slice, got `{}`",
                     base_ty.source_name()
                 ),
                 base.span,
-            ));
-        };
-
-        self.validate_index_type_and_bounds(index, &index_ty, len)?;
-
-        if !element.is_copy() {
-            return Err(SemanticError::new(
-                format!(
-                    "array indexing requires a Copy element type in v0, got `{}`",
-                    element.source_name()
-                ),
-                span,
-            ));
+            )),
         }
-
-        Ok(*element)
     }
 
     fn check_index_expr(
@@ -1298,10 +1334,34 @@ impl<'a> Checker<'a> {
         index_ty: &Type,
         len: usize,
     ) -> Result<(), SemanticError> {
+        self.validate_index_type_and_non_negative_literal(index, index_ty, "array")?;
+
+        if let Some(index_value) = const_int_expr(index) {
+            let out_of_bounds = match usize::try_from(index_value) {
+                Ok(index_value) => index_value >= len,
+                Err(_) => true,
+            };
+            if out_of_bounds {
+                return Err(SemanticError::new(
+                    format!("array index {index_value} is out of bounds for length {len}"),
+                    index.span,
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_index_type_and_non_negative_literal(
+        &self,
+        index: &Expr,
+        index_ty: &Type,
+        kind: &str,
+    ) -> Result<(), SemanticError> {
         if index_ty != &Type::Int {
             return Err(SemanticError::new(
                 format!(
-                    "array index must have type `int`, got `{}`",
+                    "{kind} index must have type `int`, got `{}`",
                     index_ty.source_name()
                 ),
                 index.span,
@@ -1309,17 +1369,9 @@ impl<'a> Checker<'a> {
         }
 
         if let Some(index_value) = const_int_expr(index) {
-            let out_of_bounds = if index_value < 0 {
-                true
-            } else {
-                match usize::try_from(index_value) {
-                    Ok(index_value) => index_value >= len,
-                    Err(_) => true,
-                }
-            };
-            if out_of_bounds {
+            if index_value < 0 {
                 return Err(SemanticError::new(
-                    format!("array index {index_value} is out of bounds for length {len}"),
+                    format!("{kind} index {index_value} must be non-negative"),
                     index.span,
                 ));
             }
@@ -2028,14 +2080,25 @@ impl<'a> Checker<'a> {
         }
 
         let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
-        if !matches!(arg_ty, Type::Array { .. }) {
-            return Err(SemanticError::new(
-                format!(
-                    "`len` expects a fixed-size array, got `{}`",
-                    arg_ty.source_name()
-                ),
-                args[0].span,
-            ));
+        match &arg_ty {
+            Type::Array { .. } => {}
+            Type::Slice(_) => {
+                if !matches!(args[0].expr.kind, ExprKind::Var(_)) {
+                    return Err(SemanticError::new(
+                        "`len` on slices requires a direct local slice in v0",
+                        args[0].span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(SemanticError::new(
+                    format!(
+                        "`len` expects a fixed-size array or slice, got `{}`",
+                        arg_ty.source_name()
+                    ),
+                    args[0].span,
+                ));
+            }
         }
 
         Ok(Type::Int)
@@ -2580,10 +2643,7 @@ impl<'a> Checker<'a> {
                     ty.span,
                 ));
             }
-            return Err(SemanticError::new(
-                "slice type syntax `[]T` is reserved until slice ownership and native ABI are defined",
-                ty.span,
-            ));
+            return Ok(Type::Slice(Box::new(self.type_from_ref(&ty.args[0])?)));
         }
 
         if let Some(len) = ty.array_len {
@@ -3012,8 +3072,17 @@ fn nested_scope_depth(locals: &HashMap<String, Local>) -> usize {
 fn is_builtin_type_name(name: &str) -> bool {
     matches!(
         name,
-        "int" | "bool" | "string" | "unit" | "Option" | "Result"
+        "int" | "bool" | "string" | "unit" | "Option" | "Result" | "Slice"
     )
+}
+
+fn type_contains_slice(ty: &Type) -> bool {
+    match ty {
+        Type::Slice(_) => true,
+        Type::Option(inner) | Type::Array { element: inner, .. } => type_contains_slice(inner),
+        Type::Result(ok, err) => type_contains_slice(ok) || type_contains_slice(err),
+        Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => false,
+    }
 }
 
 fn reject_builtin_value_name(name: &str, span: Span) -> Result<(), SemanticError> {
@@ -4883,34 +4952,41 @@ func main() {
     }
 
     #[test]
-    fn rejects_slice_type_refs_as_reserved() {
-        let error = check_error(
+    fn allows_slice_literals_len_and_copy_index() {
+        check_ok(
             r#"
-func read(values []int) {
-    print(1)
+func main() {
+    values := []int{1, 2, 3}
+    first := values[0]
+    count := len(values)
+    print(first + count)
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("slice type syntax `[]T` is reserved"));
     }
 
     #[test]
-    fn rejects_slice_type_refs_in_nested_type_positions() {
-        let error = check_error(
+    fn allows_slice_function_params_returns_and_nested_payloads() {
+        check_ok(
             r#"
-func read() []int {
-    return [0]int{}
+func first(values []int) int {
+    return values[0]
 }
 
-func main() {}
+func wrap(values []int) Option[[]int] {
+    return Some(values)
+}
+
+func main() {
+    values := []int{1, 2}
+    print(first(values))
+}
 "#,
         );
-        assert!(error
-            .message
-            .contains("slice type syntax `[]T` is reserved"));
+    }
 
+    #[test]
+    fn rejects_slice_fields_until_struct_cleanup_exists() {
         let error = check_error(
             r#"
 type Bag struct {
@@ -4922,33 +4998,53 @@ func main() {}
         );
         assert!(error
             .message
-            .contains("slice type syntax `[]T` is reserved"));
+            .contains("slice fields require struct cleanup support"));
+    }
 
+    #[test]
+    fn rejects_slice_index_for_non_copy_elements() {
         let error = check_error(
             r#"
-func read(values Option[[]int]) {
-    print(1)
+func main() {
+    values := []string{"kim"}
+    name := values[0]
+    print(name)
 }
-
-func main() {}
 "#,
         );
         assert!(error
             .message
-            .contains("slice type syntax `[]T` is reserved"));
+            .contains("slice indexing requires a Copy element type"));
+    }
 
+    #[test]
+    fn rejects_inline_slice_len_until_temporary_cleanup_exists() {
         let error = check_error(
             r#"
-func read(values [2][]int) {
-    print(1)
+func main() {
+    count := len([]int{1, 2})
+    print(count)
 }
-
-func main() {}
 "#,
         );
         assert!(error
             .message
-            .contains("slice type syntax `[]T` is reserved"));
+            .contains("`len` on slices requires a direct local slice"));
+    }
+
+    #[test]
+    fn rejects_inline_slice_index_until_temporary_cleanup_exists() {
+        let error = check_error(
+            r#"
+func main() {
+    value := []int{1, 2}[0]
+    print(value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice indexing requires a direct local slice"));
     }
 
     #[test]
@@ -5239,7 +5335,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("indexing requires a fixed-size array, got `int`"));
+            .contains("indexing requires a fixed-size array or slice, got `int`"));
     }
 
     #[test]
@@ -5284,7 +5380,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("array index -1 is out of bounds for length 3"));
+            .contains("array index -1 must be non-negative"));
     }
 
     #[test]
@@ -5317,7 +5413,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("`len` expects a fixed-size array, got `int`"));
+            .contains("`len` expects a fixed-size array or slice, got `int`"));
     }
 
     #[test]

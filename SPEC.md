@@ -162,15 +162,15 @@ Array rules:
   non-copy elements.
 - Fixed-size array element method receivers are supported for `con` and `mut`
   receiver modes.
-- Slice type syntax `[]T` is parsed but rejected by semantic analysis until
-  compiler-managed cleanup for owned heap resources is implemented. The accepted
-  v0 direction is owned, move-only slices rather than Go-style aliasing slice
-  headers. `append` is reserved as a future built-in value name, but slice
-  values, append/growth, mutable range values, borrowed indexing as a
-  first-class expression, and non-copy element extraction are reserved for later
-  slices.
+- Slice type syntax `[]T` denotes an owned, move-only growable buffer. It is not
+  a Go-style aliasing slice header. The first source-level slice surface supports
+  slice literals, `len(slice)`, and Copy-only `slice[i]` value access. `append`
+  is reserved as a future built-in value name, while append/growth, slice range,
+  mutable range values, slice element borrow arguments, and non-copy element
+  extraction remain reserved for later slices.
 
-Fixed-size array indexing and length are intentionally smaller than full slices.
+Fixed-size array indexing and length share the value-read surface with the first
+owned slice implementation.
 
 ```go
 value := values[i]
@@ -178,6 +178,9 @@ count := len(values)
 values[i] = 5
 show(con users[i])
 rename(mut users[i].name)
+slice := []int{1, 2, 3}
+sliceCount := len(slice)
+sliceValue := slice[0]
 for ; i < 3; values[slot] = i {
     slot = i
     i = i + 1
@@ -186,8 +189,8 @@ for ; i < 3; values[slot] = i {
 
 Indexing and length rules:
 
-- `values[i]` is valid only when `values` has fixed-size array type `[N]T` and
-  `i` has type `int`.
+- `values[i]` is valid when `values` has fixed-size array type `[N]T` or slice
+  type `[]T` and `i` has type `int`.
 - `values[i]` yields a value only when `T` is `Copy`.
 - `con values[i]` and `mut values[i]` are valid as direct function call
   arguments even when `T` is non-copy. Field paths rooted in an array element,
@@ -196,11 +199,18 @@ Indexing and length rules:
   `mut`.
 - Borrow overlap checks treat indexed borrows from the same array root
   conservatively in v0. Distinct runtime indexes are not yet proven disjoint.
-- `len(values)` returns `int` for fixed-size arrays and does not move `values`.
+- `len(values)` returns `int` for fixed-size arrays and owned slices and does
+  not move `values`.
 - Integer literal indexes outside `0 <= i < N` are rejected by `mlg check`.
-- Non-literal indexes are checked by generated native code before element
-  access. An out-of-bounds runtime index terminates the program with a Mallang
-  runtime error instead of performing unchecked C memory access.
+- Negative integer literal slice indexes are rejected by `mlg check`. Slice
+  upper bounds are checked by generated native code because slice length is a
+  runtime header value.
+- Non-literal indexes are checked by generated native code before element access.
+  An out-of-bounds runtime index terminates the program with a Mallang runtime
+  error instead of performing unchecked C memory access.
+- In this slice, `len(slice)` and `slice[i]` require a direct local slice source.
+  Inline cleanup temporaries such as `len([]int{1})` are deferred until borrowed
+  temporary cleanup is implemented.
 - `values[i] = expr` requires `values` to be a direct `mut` local array binding
   or `mut` array parameter in v0.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
@@ -217,32 +227,25 @@ Indexing and length rules:
   conditions and indexed post expressions.
 - In a three-clause `for`, `continue` skips the remaining body and then executes
   the post assignment before the next condition check.
-- Slice type syntax `[]T` is reserved at semantic checking because enabling
-  owned slices requires compiler-managed cleanup/drop lowering first.
+- Slice literals use `[]T{...}` and produce owned heap-backed slices. Empty
+  slices use a null data pointer with zero length and capacity.
+- The native ABI uses an internal header equivalent to `{ data, len, cap }` with
+  compiler-owned allocation and cleanup.
+- Copying a slice header is not a language operation. Assigning, passing, or
+  returning an owned slice moves it, following the existing non-copy value rules.
+- Slice fields in structs are rejected until struct cleanup support exists.
 
 Future v0 slice rules:
 
-- `[]T` will denote an owned, move-only growable buffer, not a borrowed view.
-- The native ABI will use an internal header equivalent to `{ data, len, cap }`
-  with compiler-owned allocation and cleanup. Empty slices may use a null data
-  pointer with zero length and capacity.
-- Copying a slice header is not a language operation. Assigning or passing an
-  owned slice moves it, following the existing non-copy value rules.
 - `append(values, item)` will be a built-in that consumes the owned slice and
   the owned item, then returns a new owned slice. Updating a local therefore
   uses normal mutable reassignment, such as `values = append(values, item)`.
-- `len(values)` will extend from fixed-size arrays to owned slices without
-  moving `values`.
-- `values[i]` as a value will remain Copy-only. `con values[i]` and
-  `mut values[i]` can extend the existing element-borrow surface after slice
-  bounds checks and alias checks are defined for slice roots.
+- `con values[i]` and `mut values[i]` can extend the existing element-borrow
+  surface after slice root alias/overlap rules are defined.
 - Range over slices starts with index-only and Copy value iteration. Mutable
   range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.
-- The compiler may carry an internal slice type shell before `[]T` is accepted
-  by semantic analysis, but user programs still receive the reserved-feature
-  diagnostic until cleanup/drop lowering and value construction are implemented.
 - The backend may also emit internal drop helper shells for cleanup types before
   automatic scope-exit drop insertion is implemented.
 - The typed IR may carry explicit internal drop statements before semantic

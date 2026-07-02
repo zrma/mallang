@@ -32,7 +32,7 @@
 2. Semantic `Type::Slice(Box<Type>)`와 IR/backend type shell을 추가하되,
    정상 value construction은 아직 제한한다. 이 shell은 P34에서 완료됐다.
 3. `[]T{...}` literal, `len(slice)`, Copy-only `slice[i]` value access를
-   구현한다.
+   구현한다. 이 단계는 P47에서 완료됐다.
 4. consuming `append(values, item)` built-in을 구현한다.
 5. slice range와 element borrow를 별도 slice로 확장한다.
 

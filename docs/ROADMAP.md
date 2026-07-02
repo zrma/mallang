@@ -390,3 +390,11 @@
 - [x] expression branch별 cleanup root move merge/drop normalization 추가
 - [x] C backend에서 expression cleanup trailer를 temp block으로 lowering
 - [x] source-level slice surface는 reserved 상태 유지
+
+## P47: Owned Slice Literal/Len/Index Surface
+
+- [x] source-level `[]T`를 owned move-only slice type으로 허용
+- [x] `[]T{...}` slice literal semantic/IR/backend lowering 추가
+- [x] `len(slice)` read-only builtin surface 추가
+- [x] Copy-only `slice[i]` value access와 native bounds check 추가
+- [x] `append`, slice range, slice element borrow는 후속 work로 유지

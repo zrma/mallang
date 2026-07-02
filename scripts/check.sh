@@ -185,16 +185,16 @@ if "${CARGO[@]}" run --bin mlg -- check "$main_param_fail_source" >/dev/null 2>&
   echo "main parameter check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
-slice_reserved_fail_source="target/mallang/check-slice-reserved-fail.mlg"
-cat >"$slice_reserved_fail_source" <<'MLG'
+slice_struct_cleanup_fail_source="target/mallang/check-slice-struct-cleanup-fail.mlg"
+cat >"$slice_struct_cleanup_fail_source" <<'MLG'
 type Bag struct {
     values Option[[]int]
 }
 
 func main() {}
 MLG
-if "${CARGO[@]}" run --bin mlg -- check "$slice_reserved_fail_source" >/dev/null 2>&1; then
-  echo "slice reserved check failure smoke failed: expected non-zero exit" >&2
+if "${CARGO[@]}" run --bin mlg -- check "$slice_struct_cleanup_fail_source" >/dev/null 2>&1; then
+  echo "slice struct cleanup check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
 array_print_fail_source="target/mallang/check-array-print-fail.mlg"
@@ -332,6 +332,13 @@ fi
 arrays_output="$(target/mallang/arrays)"
 if [[ "$arrays_output" != "20" ]]; then
   echo "arrays native build smoke failed: expected 20, got '$arrays_output'" >&2
+  exit 1
+fi
+"${CARGO[@]}" run --bin mlg -- check examples/slices.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/slices.mlg -o target/mallang/slices >/dev/null
+slices_output="$(target/mallang/slices)"
+if [[ "$slices_output" != "8" ]]; then
+  echo "slices native build smoke failed: expected 8, got '$slices_output'" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
