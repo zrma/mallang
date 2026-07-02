@@ -434,3 +434,12 @@
 - [x] cleanup element overwrite 시 RHS temp, old element drop, slot assignment 순서 보존
 - [x] `examples/slice-element-assignment.mlg` native smoke 추가
 - [x] indexed field assignment, borrowed indexing expression, mutable range values는 후속 work로 유지
+
+## P52: Indexed Field Assignment
+
+- [x] local-rooted array/slice element field path assignment 허용
+- [x] nested indexed field path, 예: `users[i].profile.name = expr`, 지원
+- [x] non-Copy indexed element를 value extraction 없이 assignment target IR로 lowering
+- [x] native C backend에서 array/slice indexed lvalue field assignment lowering
+- [x] `examples/indexed-field-assignment.mlg` native smoke 추가
+- [x] borrowed indexing expression, mutable range values는 후속 work로 유지

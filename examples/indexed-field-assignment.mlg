@@ -1,0 +1,24 @@
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut arrayUsers := [1]User{User{name: "kim", age: 30}}
+    arrayUsers[0].age = 31
+    printAge(con arrayUsers[0].age)
+
+    mut sliceUsers := []User{User{name: "lee", age: 20}}
+    sliceUsers[0].name = "park"
+    sliceUsers[0].age = 21
+    printUser(con sliceUsers[0])
+}
+
+func printAge(con age int) {
+    print(age)
+}
+
+func printUser(con user User) {
+    print(user.name)
+    print(user.age)
+}

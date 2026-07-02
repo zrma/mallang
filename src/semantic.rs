@@ -1428,12 +1428,12 @@ impl<'a> Checker<'a> {
         expr: &Expr,
         locals: &mut HashMap<String, Local>,
     ) -> Result<(), SemanticError> {
-        let mut place = direct_local_place(
+        let mut place = direct_borrow_place(
             base,
-            "field assignment target must start from a direct local variable in v0",
+            "field assignment target must be a direct local variable, field, or indexed element in v0",
         )?;
         place.fields.push(field.to_string());
-        let (base_ty, base_mutable) = {
+        let base_mutable = {
             let Some(local) = locals.get(&place.root) else {
                 return Err(SemanticError::new(
                     format!("unknown variable `{}`", place.root),
@@ -1446,7 +1446,7 @@ impl<'a> Checker<'a> {
                     base.span,
                 ));
             }
-            (local.ty.clone(), local.mutable)
+            local.mutable
         };
         if !base_mutable {
             return Err(SemanticError::new(
@@ -1455,8 +1455,10 @@ impl<'a> Checker<'a> {
             ));
         }
 
+        let base_ty = self.resolve_assignment_place_type(base, locals)?;
+        let field_path = [field.to_string()];
         let field_ty =
-            self.resolve_field_path_type(&base_ty, &place.fields, base.span, "field assignment")?;
+            self.resolve_field_path_type(&base_ty, &field_path, base.span, "field assignment")?;
         let value_ty =
             self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&field_ty))?;
         if value_ty != field_ty {
@@ -1471,6 +1473,72 @@ impl<'a> Checker<'a> {
         }
 
         Ok(())
+    }
+
+    fn resolve_assignment_place_type(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<Type, SemanticError> {
+        match &expr.kind {
+            ExprKind::Var(name) => {
+                let Some(local) = locals.get(name) else {
+                    return Err(SemanticError::new(
+                        format!("unknown variable `{name}`"),
+                        expr.span,
+                    ));
+                };
+                if local.moved {
+                    return Err(SemanticError::new(
+                        format!("assignment to moved value `{name}`"),
+                        expr.span,
+                    ));
+                }
+                Ok(local.ty.clone())
+            }
+            ExprKind::FieldAccess { base, field } => {
+                let base_ty = self.resolve_assignment_place_type(base, locals)?;
+                self.resolve_field_path_type(
+                    &base_ty,
+                    std::slice::from_ref(field),
+                    expr.span,
+                    "field assignment",
+                )
+            }
+            ExprKind::Index { base, index } => {
+                let base_ty = self.resolve_assignment_place_type(base, locals)?;
+                match base_ty {
+                    Type::Array { len, element } => {
+                        self.check_index_expr(index, locals, len)?;
+                        Ok(*element)
+                    }
+                    Type::Slice(element) => {
+                        if !matches!(base.kind, ExprKind::Var(_)) {
+                            return Err(SemanticError::new(
+                                "slice indexed field assignment requires a direct local slice in v0",
+                                base.span,
+                            ));
+                        }
+                        let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+                        self.validate_index_type_and_non_negative_literal(
+                            index, &index_ty, "slice",
+                        )?;
+                        Ok(*element)
+                    }
+                    _ => Err(SemanticError::new(
+                        format!(
+                            "indexed field assignment target must be a fixed-size array or slice, got `{}`",
+                            base_ty.source_name()
+                        ),
+                        base.span,
+                    )),
+                }
+            }
+            _ => Err(SemanticError::new(
+                "field assignment target must be a direct local variable, field, or indexed element in v0",
+                expr.span,
+            )),
+        }
     }
 
     fn check_index_assign(
@@ -2973,18 +3041,6 @@ fn is_blank_identifier(name: &str) -> bool {
     name == "_"
 }
 
-fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
-    match &expr.kind {
-        ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
-        ExprKind::FieldAccess { base, field } => {
-            let mut place = direct_local_place(base, message)?;
-            place.fields.push(field.clone());
-            Ok(place)
-        }
-        _ => Err(SemanticError::new(message, expr.span)),
-    }
-}
-
 fn const_int_expr(expr: &Expr) -> Option<i64> {
     match &expr.kind {
         ExprKind::Int(value) => Some(*value),
@@ -4119,6 +4175,80 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_indexed_field_assignment_on_array_and_slice_elements() {
+        check_ok(
+            r#"
+type Profile struct {
+    name string
+}
+
+type User struct {
+    profile Profile
+    age int
+}
+
+func main() {
+    mut arrayUsers := [1]User{User{profile: Profile{name: "kim"}, age: 30}}
+    arrayUsers[0].profile.name = "lee"
+    printName(con arrayUsers[0].profile.name)
+
+    mut sliceUsers := []User{User{profile: Profile{name: "park"}, age: 20}}
+    sliceUsers[0].age = 21
+    sliceUsers[0].profile.name = "choi"
+    printAge(con sliceUsers[0].age)
+    printName(con sliceUsers[0].profile.name)
+}
+
+func printName(con name string) {
+    print(name)
+}
+
+func printAge(con age int) {
+    print(age)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_indexed_field_assignment_on_immutable_binding() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := []User{User{age: 20}}
+    users[0].age = 21
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign field of immutable binding `users`"));
+    }
+
+    #[test]
+    fn rejects_negative_slice_indexed_field_assignment_index() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := []User{User{age: 20}}
+    users[-1].age = 21
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice index -1 must be non-negative"));
     }
 
     #[test]

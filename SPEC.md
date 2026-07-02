@@ -180,6 +180,7 @@ count := len(values)
 values[i] = 5
 show(con users[i])
 rename(mut users[i].name)
+users[i].name = "lee"
 slice := []int{1, 2, 3}
 sliceCount := len(slice)
 sliceValue := slice[0]
@@ -215,6 +216,10 @@ Indexing and length rules:
   temporary cleanup is implemented.
 - Slice element borrow arguments also require a direct local slice source in
   v0, such as `con values[i]` or `mut values[i].field`.
+- Indexed field assignment such as `users[i].name = expr` is valid for
+  local-rooted fixed-size arrays and direct local slices when the root binding is
+  mutable. Slice indexed field assignment uses the same negative literal and
+  native runtime `mlg_len` bounds checks as slice element assignment.
 - `values[i] = expr` requires `values` to be a direct `mut` local array/slice
   binding or `mut` array/slice parameter in v0.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
@@ -250,8 +255,6 @@ Indexing and length rules:
 
 Future v0 slice rules:
 
-- Indexed field assignment such as `users[i].name = expr` remains deferred until
-  assignment places accept indexed roots.
 - Mutable range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.

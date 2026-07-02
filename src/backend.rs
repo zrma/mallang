@@ -186,7 +186,7 @@ impl<'a> CGenerator<'a> {
                 ))
             }
             IrStmtKind::FieldAssign { base, field, expr } => {
-                let base = self.emit_stmt_expr_with_env(base, env)?;
+                let base = self.emit_assignment_target_expr(base, env)?;
                 let expr = self.emit_stmt_expr_with_env(expr, env)?;
                 let mut prelude = base.prelude;
                 prelude.extend(expr.prelude);
@@ -3906,6 +3906,48 @@ func main() {
 
         assert!(c.contains("(mlg_user).mlg_age = 31;"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
+    }
+
+    #[test]
+    fn generates_c_for_indexed_field_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut arrayUsers := [1]User{User{name: "kim", age: 30}}
+    arrayUsers[0].age = 31
+
+    mut sliceUsers := []User{User{name: "lee", age: 20}}
+    sliceUsers[0].name = "park"
+    sliceUsers[0].age = 21
+    showName(con sliceUsers[0].name)
+    showAge(con sliceUsers[0].age)
+}
+
+func showName(con name string) {
+    print(name)
+}
+
+func showAge(con age int) {
+    print(age)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("((mlg_arrayUsers).mlg_data[mallang_check_index(0, 1)]).mlg_age = 31;"));
+        assert!(c.contains("mallang runtime error: slice index out of bounds"));
+        assert!(c.contains(">= (mlg_sliceUsers).mlg_len"));
+        assert!(c.contains("((mlg_sliceUsers).mlg_data[mallang_index_value_"));
+        assert!(c.contains("]).mlg_name = \"park\";"));
+        assert!(c.contains("]).mlg_age = 21;"));
     }
 
     #[test]

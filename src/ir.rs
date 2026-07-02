@@ -362,7 +362,7 @@ impl<'a> Lowerer<'a> {
                 }
             }
             StmtKind::FieldAssign { base, field, expr } => {
-                let base = self.lower_expr(base, locals)?;
+                let base = self.lower_assignment_target_expr(base, locals)?;
                 let Type::Struct(type_name) = &base.ty else {
                     return Err(IrError::new(
                         "semantic analysis accepted field assignment on non-struct value",
@@ -4683,6 +4683,37 @@ func main() {
         let IrStmtKind::FieldAssign { base, field, expr } = &ir.functions[0].body[1].kind else {
             panic!("expected field assignment");
         };
+        assert_eq!(base.ty, Type::Struct("User".to_string()));
+        assert_eq!(field, "age");
+        assert_eq!(expr.ty, Type::Int);
+    }
+
+    #[test]
+    fn ir_lowers_indexed_field_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := []User{User{age: 20}}
+    users[0].age = 21
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::FieldAssign { base, field, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected field assignment");
+        };
+        let IrExprKind::Index { base: root, index } = &base.kind else {
+            panic!("expected indexed field assignment base");
+        };
+        assert!(matches!(root.ty, Type::Slice(_)));
+        assert_eq!(index.ty, Type::Int);
         assert_eq!(base.ty, Type::Struct("User".to_string()));
         assert_eq!(field, "age");
         assert_eq!(expr.ty, Type::Int);

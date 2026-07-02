@@ -49,7 +49,7 @@ This repository is the Mallang language PoC workspace.
   method receivers.
 - Owned move-only slices with `[]T` literals, `len(slice)`, Copy-only
   `slice[i]`, consuming `append(slice, item)`, and range loops with Copy value
-  iteration plus element borrow and assignment.
+  iteration plus element borrow, assignment, and indexed field assignment.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -127,6 +127,8 @@ cargo run --bin mlg -- build examples/slice-element-borrow.mlg -o target/mallang
 target/mallang/slice-element-borrow
 cargo run --bin mlg -- build examples/slice-element-assignment.mlg -o target/mallang/slice-element-assignment
 target/mallang/slice-element-assignment
+cargo run --bin mlg -- build examples/indexed-field-assignment.mlg -o target/mallang/indexed-field-assignment
+target/mallang/indexed-field-assignment
 cargo run --bin mlg -- build examples/array-element-methods.mlg -o target/mallang/array-element-methods
 target/mallang/array-element-methods
 cargo run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi
@@ -183,6 +185,7 @@ scripts/check.sh
 - `examples/array-element-borrow.mlg`: native smoke for fixed array element borrow arguments.
 - `examples/slice-element-borrow.mlg`: native smoke for owned slice element borrow arguments.
 - `examples/slice-element-assignment.mlg`: native smoke for owned slice element assignment.
+- `examples/indexed-field-assignment.mlg`: native smoke for indexed array/slice field assignment.
 - `examples/array-element-methods.mlg`: native smoke for fixed array element method receivers.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
