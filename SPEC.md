@@ -377,6 +377,9 @@ con name T  // const/read-only borrow
 mut name T  // mutable borrow
 ```
 
+`con` and `mut` are the only borrow mode markers in v0. `in` is not a borrow
+keyword or compatibility alias.
+
 Call sites must make borrow mode explicit.
 
 ```go

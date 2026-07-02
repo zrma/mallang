@@ -260,6 +260,22 @@ mod tests {
     }
 
     #[test]
+    fn lexes_in_as_identifier_not_borrow_keyword() {
+        let tokens = lex("in con mut").unwrap();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();
+
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Ident("in".to_string()),
+                TokenKind::Keyword(Keyword::Con),
+                TokenKind::Keyword(Keyword::Mut),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
     fn skips_line_comments() {
         let tokens = lex("x := 1 // ignored\n y := 2").unwrap();
         let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();
