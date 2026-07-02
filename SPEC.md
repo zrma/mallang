@@ -167,8 +167,9 @@ Array rules:
   slice literals, `len(slice)`, Copy-only `slice[i]` value access, and consuming
   `append(slice, item)` growth. Slice range supports the same Copy value
   iteration surface as arrays. Slice element borrow arguments extend the same
-  local-rooted borrow surface as fixed-size arrays. Mutable range values and
-  non-copy element extraction remain reserved for later slices.
+  local-rooted borrow surface as fixed-size arrays. Direct mutable slice element
+  assignment is supported for `Copy` and non-copy element types. Mutable range
+  values and non-copy element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -214,15 +215,17 @@ Indexing and length rules:
   temporary cleanup is implemented.
 - Slice element borrow arguments also require a direct local slice source in
   v0, such as `con values[i]` or `mut values[i].field`.
-- `values[i] = expr` requires `values` to be a direct `mut` local array binding
-  or `mut` array parameter in v0.
+- `values[i] = expr` requires `values` to be a direct `mut` local array/slice
+  binding or `mut` array/slice parameter in v0.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
-  and follows the same direct mutable array rules.
-- Array element assignment supports `Copy` and non-copy element types.
+  and follows the same direct mutable indexed-place rules.
+- Indexed element assignment supports `Copy` and non-copy element types.
 - For non-copy element types, the right-hand expression is owned and moves into
-  the array slot.
-- Array element assignment uses the same compile-time literal and native runtime
-  bounds checks as array indexing.
+  the array or slice slot.
+- Fixed-size array element assignment uses the same compile-time literal and
+  native runtime bounds checks as array indexing. Slice element assignment
+  rejects negative literal indexes at `mlg check` time and uses native runtime
+  upper-bound checks against `mlg_len`.
 - The assignment index is evaluated and bounds-checked before the right-hand
   expression is evaluated.
 - The native backend lowers `for` clause conditions and post assignments that
@@ -247,6 +250,8 @@ Indexing and length rules:
 
 Future v0 slice rules:
 
+- Indexed field assignment such as `users[i].name = expr` remains deferred until
+  assignment places accept indexed roots.
 - Mutable range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.

@@ -25,6 +25,8 @@
   한정한다.
 - `con slice[i]` / `mut slice[i]`는 기존 element borrow surface를 확장하되,
   direct local slice source와 conservative same-root overlap rule로 연다.
+- `slice[i] = expr`는 direct mutable slice source에 한해 열고, RHS owned
+  value를 slot으로 move한다.
 
 ## 구현 순서
 
@@ -37,6 +39,7 @@
    완료됐다.
 5. slice range를 별도 slice로 확장한다. 이 단계는 P49에서 완료됐다.
 6. slice element borrow를 별도 slice로 확장한다. 이 단계는 P50에서 완료됐다.
+7. slice element assignment를 별도 slice로 확장한다. 이 단계는 P51에서 완료됐다.
 
 ## 제외
 

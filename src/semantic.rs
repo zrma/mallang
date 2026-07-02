@@ -1483,7 +1483,7 @@ impl<'a> Checker<'a> {
     ) -> Result<(), SemanticError> {
         let ExprKind::Var(name) = &base.kind else {
             return Err(SemanticError::new(
-                "array assignment target must be a direct mutable local array in v0",
+                "indexed assignment target must be a direct mutable local array or slice in v0",
                 base.span,
             ));
         };
@@ -1505,29 +1505,38 @@ impl<'a> Checker<'a> {
         };
         if !mutable {
             return Err(SemanticError::new(
-                format!("cannot assign through immutable array binding `{name}`"),
+                format!("cannot assign through immutable indexed binding `{name}`"),
                 base.span,
             ));
         }
 
-        let Type::Array { len, element } = base_ty else {
-            return Err(SemanticError::new(
-                format!(
-                    "array assignment target must be a fixed-size array, got `{}`",
-                    base_ty.source_name()
-                ),
-                base.span,
-            ));
+        let element = match base_ty {
+            Type::Array { len, element } => {
+                self.check_index_expr(index, locals, len)?;
+                element
+            }
+            Type::Slice(element) => {
+                let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+                self.validate_index_type_and_non_negative_literal(index, &index_ty, "slice")?;
+                element
+            }
+            _ => {
+                return Err(SemanticError::new(
+                    format!(
+                        "indexed assignment target must be a fixed-size array or slice, got `{}`",
+                        base_ty.source_name()
+                    ),
+                    base.span,
+                ));
+            }
         };
-
-        self.check_index_expr(index, locals, len)?;
 
         let value_ty =
             self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&element))?;
         if value_ty != *element {
             return Err(SemanticError::new(
                 format!(
-                    "array assignment type mismatch: expected `{}`, got `{}`",
+                    "indexed assignment type mismatch: expected `{}`, got `{}`",
                     element.source_name(),
                     value_ty.source_name()
                 ),
@@ -5456,7 +5465,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("cannot assign through immutable array binding `values`"));
+            .contains("cannot assign through immutable indexed binding `values`"));
     }
 
     #[test]
@@ -6061,6 +6070,93 @@ func show(con value int) {
         assert!(error
             .message
             .contains("slice index -1 must be non-negative"));
+    }
+
+    #[test]
+    fn allows_slice_element_assignment_for_copy_and_non_copy_elements() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut values := []int{1, 2}
+    values[1] = 5
+    print(values[1])
+
+    mut users := []User{User{name: "kim", age: 30}}
+    users[0] = User{name: "lee", age: 20}
+    show(con users[0])
+}
+
+func show(con user User) {
+    print(user.age)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_slice_element_assignment_in_for_body() {
+        check_ok(
+            r#"
+func main() {
+    mut values := []int{0, 0, 0}
+    mut i := 0
+    for i < 3 {
+        values[i] = i
+        i = i + 1
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_slice_element_assignment_on_immutable_binding() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1, 2}
+    values[0] = 5
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign through immutable indexed binding `values`"));
+    }
+
+    #[test]
+    fn rejects_negative_slice_element_assignment_index() {
+        let error = check_error(
+            r#"
+func main() {
+    mut values := []int{1}
+    values[-1] = 2
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice index -1 must be non-negative"));
+    }
+
+    #[test]
+    fn rejects_slice_element_assignment_type_mismatch() {
+        let error = check_error(
+            r#"
+func main() {
+    mut values := []int{1}
+    values[0] = "bad"
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("indexed assignment type mismatch: expected `int`, got `string`"));
     }
 
     #[test]

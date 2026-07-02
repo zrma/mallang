@@ -520,24 +520,41 @@ impl<'a> CGenerator<'a> {
                     code: format!("({}).{}", code, c_field(field)),
                 })
             }
-            IrExprKind::Index { base, index } => {
-                let Type::Array { len, .. } = &base.ty else {
-                    return Err(CompileError::new(
-                        "IR invariant violation: index assignment base must be an array",
-                    ));
-                };
-                let base = self.emit_stmt_expr_with_env(base, env)?;
-                let index = self.emit_stmt_expr_with_env(index, env)?;
-                let mut prelude = base.prelude;
-                prelude.extend(index.prelude);
-                Ok(CExpr {
-                    prelude,
-                    code: format!(
-                        "({}).mlg_data[mallang_check_index({}, {len})]",
-                        base.code, index.code
-                    ),
-                })
-            }
+            IrExprKind::Index { base, index } => match &base.ty {
+                Type::Array { len, .. } => {
+                    let base = self.emit_stmt_expr_with_env(base, env)?;
+                    let index = self.emit_stmt_expr_with_env(index, env)?;
+                    let mut prelude = base.prelude;
+                    prelude.extend(index.prelude);
+                    Ok(CExpr {
+                        prelude,
+                        code: format!(
+                            "({}).mlg_data[mallang_check_index({}, {len})]",
+                            base.code, index.code
+                        ),
+                    })
+                }
+                Type::Slice(_) => {
+                    let base = self.emit_stmt_expr_with_env(base, env)?;
+                    let index = self.emit_stmt_expr_with_env(index, env)?;
+                    let index_temp = index_value_temp_name(target);
+                    let mut prelude = base.prelude;
+                    prelude.extend(index.prelude);
+                    prelude.push(format!("int64_t {index_temp} = {};", index.code));
+                    prelude.push(format!(
+                            "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                            base.code,
+                            c_field("len")
+                        ));
+                    Ok(CExpr {
+                        prelude,
+                        code: format!("({}).{}[{index_temp}]", base.code, c_field("data")),
+                    })
+                }
+                _ => Err(CompileError::new(
+                    "IR invariant violation: index assignment base must be an array or slice",
+                )),
+            },
             _ => Err(CompileError::new(
                 "IR invariant violation: invalid assignment target",
             )),
@@ -551,11 +568,6 @@ impl<'a> CGenerator<'a> {
         expr: &IrExpr,
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
-        let Type::Array { len, .. } = &base.ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: index assignment base must be an array",
-            ));
-        };
         let IrExprKind::Var(name) = &base.kind else {
             return Err(CompileError::new(
                 "IR invariant violation: index assignment base must be a variable",
@@ -565,18 +577,34 @@ impl<'a> CGenerator<'a> {
         let index_temp = index_assign_value_temp_name(index);
         let index = self.emit_stmt_expr_with_env(index, env)?;
         let value = self.emit_stmt_expr_with_env(expr, env)?;
-        let target = c_assignment_target(name, env);
 
         let mut prelude = index.prelude;
         prelude.push(format!("int64_t {index_temp} = {};", index.code));
-        prelude.push(format!(
-            "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
-        ));
+        let target = c_assignment_target(name, env);
+        match &base.ty {
+            Type::Array { len, .. } => {
+                prelude.push(format!(
+                    "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+                ));
+            }
+            Type::Slice(_) => {
+                prelude.push(format!(
+                    "if ({index_temp} < 0 || {index_temp} >= ({target}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    c_field("len")
+                ));
+            }
+            _ => {
+                return Err(CompileError::new(
+                    "IR invariant violation: index assignment base must be an array or slice",
+                ));
+            }
+        }
         prelude.extend(value.prelude);
+        let data_field = c_field("data");
 
         Ok(finish_with_prelude(
             prelude,
-            format!("({target}).mlg_data[{index_temp}] = {};", value.code),
+            format!("({target}).{data_field}[{index_temp}] = {};", value.code),
         ))
     }
 
@@ -3606,6 +3634,68 @@ func main() {
         assert!(c.contains("if (mallang_index_assign_value_"));
         assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
         assert!(c.contains("] = 5;"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_element_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut values := []int{1, 2, 3}
+    values[1] = 5
+    print(values[1])
+
+    mut users := []User{User{name: "kim"}, User{name: "lee"}}
+    users[1] = User{name: "park"}
+    show(con users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mallang_index_assign_value_"));
+        assert!(c.contains("mallang runtime error: slice index out of bounds"));
+        assert!(c.contains(">= (mlg_values).mlg_len"));
+        assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = 5;"));
+        assert!(c.contains(">= (mlg_users).mlg_len"));
+        assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
+        assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
+    }
+
+    #[test]
+    fn generates_c_for_cleanup_slice_element_assignment() {
+        let program = parse(
+            r#"
+func main() {
+    mut rows := [][]int{[]int{1}, []int{2}}
+    rows[0] = []int{3}
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains("mlg_drop_Slice_int(&((mlg_rows).mlg_data[mallang_index_value_"));
+        assert!(c.contains("(mlg_rows).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains("mlg_drop_Slice_Slice_int(&(mlg_rows));"));
     }
 
     #[test]

@@ -425,3 +425,12 @@
 - [x] native C backend에서 `mlg_len` bounds guard 뒤 hidden-reference argument lowering
 - [x] `examples/slice-element-borrow.mlg` native smoke 추가
 - [x] borrowed indexing expression, slice element assignment, mutable range values는 후속 work로 유지
+
+## P51: Slice Element Assignment
+
+- [x] direct mutable slice source의 `values[i] = expr` 허용
+- [x] Copy/non-copy element RHS를 owned value로 slice slot에 move
+- [x] native C backend에서 `mlg_len` bounds guard 뒤 element assignment lowering
+- [x] cleanup element overwrite 시 RHS temp, old element drop, slot assignment 순서 보존
+- [x] `examples/slice-element-assignment.mlg` native smoke 추가
+- [x] indexed field assignment, borrowed indexing expression, mutable range values는 후속 work로 유지

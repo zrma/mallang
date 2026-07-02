@@ -162,9 +162,10 @@
 - [x] Slice append/growth.
 - [x] Slice range with Copy value iteration.
 - [x] Slice element borrow arguments for direct local owned slices.
+- [x] Slice element assignment for direct mutable owned slices.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Slice element assignment.
+- Indexed field assignment.
 - Borrowed indexing expressions.
 - Mutable range values.
 - Modules/packages.

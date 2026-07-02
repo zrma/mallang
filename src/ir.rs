@@ -386,16 +386,19 @@ impl<'a> Lowerer<'a> {
             }
             StmtKind::IndexAssign { base, index, expr } => {
                 let base = self.lower_expr(base, locals)?;
-                let Type::Array { element, .. } = &base.ty else {
-                    return Err(IrError::new(
-                        "semantic analysis accepted array assignment on non-array value",
-                        stmt.span,
-                    ));
+                let element = match &base.ty {
+                    Type::Array { element, .. } | Type::Slice(element) => element,
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted indexed assignment on non-array non-slice value",
+                            stmt.span,
+                        ));
+                    }
                 };
                 let index = self.lower_expr(index, locals)?;
                 if index.ty != Type::Int {
                     return Err(IrError::new(
-                        "semantic analysis accepted array assignment with non-int index",
+                        "semantic analysis accepted indexed assignment with non-int index",
                         index.span,
                     ));
                 }
@@ -878,15 +881,18 @@ impl<'a> Lowerer<'a> {
                 let index = self.lower_expr(index, locals)?;
                 if index.ty != Type::Int {
                     return Err(IrError::new(
-                        "semantic analysis accepted array assignment with non-int index",
+                        "semantic analysis accepted indexed assignment with non-int index",
                         index.span,
                     ));
                 }
-                let Type::Array { element, .. } = &base.ty else {
-                    return Err(IrError::new(
-                        "semantic analysis accepted array assignment target on non-array value",
-                        expr.span,
-                    ));
+                let element = match &base.ty {
+                    Type::Array { element, .. } | Type::Slice(element) => element,
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted indexed assignment target on non-array non-slice value",
+                            expr.span,
+                        ));
+                    }
                 };
                 let element_ty = element.as_ref().clone();
                 (
@@ -3510,6 +3516,31 @@ func add(a int, b int) int {
     }
 
     #[test]
+    fn evaluates_cleanup_slice_element_rhs_before_assignment_drop() {
+        let slice_ty = test_slice_ty();
+        let outer_slice_ty = Type::Slice(Box::new(slice_ty.clone()));
+        let body = vec![IrStmt {
+            kind: IrStmtKind::IndexAssign {
+                base: test_var("values", outer_slice_ty),
+                index: IrExpr {
+                    kind: IrExprKind::Int(0),
+                    ty: Type::Int,
+                    span: test_span(),
+                },
+                expr: test_var("replacement", slice_ty),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        assert_eq!(body.len(), 3);
+        let temp = assert_cleanup_rhs_temp(&body[0], "replacement");
+        assert_drop_index(&body[1], "values");
+        assert_index_assign_from_temp(&body[2], &temp);
+    }
+
+    #[test]
     fn inserts_cleanup_drops_for_if_branch_local_roots() {
         let slice_ty = test_slice_ty();
         let body = vec![IrStmt {
@@ -5062,6 +5093,32 @@ func main() {
             panic!("expected index assignment");
         };
         assert!(matches!(base.ty, Type::Array { .. }));
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+    }
+
+    #[test]
+    fn ir_lowers_slice_element_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := []User{User{age: 1}, User{age: 2}}
+    users[1] = User{age: 3}
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected index assignment");
+        };
+        assert!(matches!(base.ty, Type::Slice(_)));
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Struct("User".to_string()));
     }
