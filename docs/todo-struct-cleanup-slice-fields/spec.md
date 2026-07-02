@@ -22,9 +22,8 @@
 - Borrowed slice views.
 - First-class references.
 - Statement-spanning borrow lifetimes.
-- Consuming `append(bag.values, item)` and direct element assignment
-  `bag.values[i] = item`; current consuming/assignment paths still require
-  direct mutable slice sources.
+- Consuming `append(bag.values, item)`; direct element assignment
+  `bag.values[i] = item` is handled by P56.
 
 ## C-체크리스트
 

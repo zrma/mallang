@@ -1542,35 +1542,41 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         span: Span,
     ) -> Result<(), SemanticError> {
-        let ExprKind::Var(name) = &base.kind else {
-            return Err(SemanticError::new(
-                "indexed assignment target must be a direct mutable local array or slice in v0",
-                base.span,
-            ));
-        };
-
-        let (base_ty, mutable) = {
-            let Some(local) = locals.get(name) else {
+        let place = direct_borrow_place(
+            base,
+            "indexed assignment target must be a local-rooted mutable array or slice in v0",
+        )?;
+        let (mutable, root_has_fields) = {
+            let Some(local) = locals.get(&place.root) else {
                 return Err(SemanticError::new(
-                    format!("unknown variable `{name}`"),
+                    format!("unknown variable `{}`", place.root),
                     base.span,
                 ));
             };
             if local.moved {
                 return Err(SemanticError::new(
-                    format!("use of moved value `{name}`"),
+                    format!("use of moved value `{}`", place.root),
                     base.span,
                 ));
             }
-            (local.ty.clone(), local.mutable)
+            (local.mutable, !place.fields.is_empty())
         };
         if !mutable {
-            return Err(SemanticError::new(
-                format!("cannot assign through immutable indexed binding `{name}`"),
-                base.span,
-            ));
+            let message = if root_has_fields {
+                format!(
+                    "cannot assign through immutable indexed place of binding `{}`",
+                    place.root
+                )
+            } else {
+                format!(
+                    "cannot assign through immutable indexed binding `{}`",
+                    place.root
+                )
+            };
+            return Err(SemanticError::new(message, base.span));
         }
 
+        let base_ty = self.resolve_assignment_place_type(base, locals)?;
         let element = match base_ty {
             Type::Array { len, element } => {
                 self.check_index_expr(index, locals, len)?;
@@ -6336,6 +6342,31 @@ func main() {
     }
 
     #[test]
+    fn allows_local_rooted_slice_element_assignment() {
+        check_ok(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values[1] = 5
+    print(bag.values[1])
+
+    mut store := Store{bags: []Bag{Bag{values: []int{3}}, Bag{values: []int{4}}}}
+    store.bags[0] = Bag{values: []int{7, 8}}
+    print(len(store.bags[0].values))
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_slice_element_assignment_on_immutable_binding() {
         let error = check_error(
             r#"
@@ -6348,6 +6379,25 @@ func main() {
         assert!(error
             .message
             .contains("cannot assign through immutable indexed binding `values`"));
+    }
+
+    #[test]
+    fn rejects_local_rooted_slice_element_assignment_on_immutable_root() {
+        let error = check_error(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    bag := Bag{values: []int{1, 2}}
+    bag.values[0] = 5
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign through immutable indexed place of binding `bag`"));
     }
 
     #[test]

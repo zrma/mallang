@@ -385,7 +385,7 @@ impl<'a> Lowerer<'a> {
                 }
             }
             StmtKind::IndexAssign { base, index, expr } => {
-                let base = self.lower_expr(base, locals)?;
+                let base = self.lower_assignment_target_expr(base, locals)?;
                 let element = match &base.ty {
                     Type::Array { element, .. } | Type::Slice(element) => element,
                     _ => {
@@ -5185,6 +5185,37 @@ func main() {
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Struct("User".to_string()));
         assert!(matches!(&expr.kind, IrExprKind::Var(name) if name == temp_name));
+    }
+
+    #[test]
+    fn ir_lowers_local_rooted_slice_element_assignment() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values[1] = 5
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected index assignment");
+        };
+        let IrExprKind::FieldAccess { base: root, field } = &base.kind else {
+            panic!("expected field-rooted slice assignment target");
+        };
+        assert!(matches!(&root.kind, IrExprKind::Var(name) if name == "bag"));
+        assert_eq!(field, "values");
+        assert!(matches!(base.ty, Type::Slice(_)));
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(expr.ty, Type::Int);
     }
 
     #[test]

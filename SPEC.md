@@ -228,10 +228,10 @@ Indexing and length rules:
   local-rooted fixed-size arrays and direct local slices when the root binding is
   mutable. Slice indexed field assignment uses the same negative literal and
   native runtime `mlg_len` bounds checks as slice element assignment.
-- `values[i] = expr` requires `values` to be a direct `mut` local array/slice
-  binding or `mut` array/slice parameter in v0.
+- Indexed element assignment requires a local-rooted mutable array/slice source,
+  such as `values[i] = expr` or `bag.values[i] = expr`.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
-  and follows the same direct mutable indexed-place rules.
+  and follows the same mutable indexed-place rules.
 - Indexed element assignment supports `Copy` and non-copy element types.
 - For non-copy element types, the right-hand expression is owned and moves into
   the array or slice slot.

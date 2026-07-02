@@ -568,20 +568,16 @@ impl<'a> CGenerator<'a> {
         expr: &IrExpr,
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
-        let IrExprKind::Var(name) = &base.kind else {
-            return Err(CompileError::new(
-                "IR invariant violation: index assignment base must be a variable",
-            ));
-        };
-
+        let base_ty = base.ty.clone();
+        let base = self.emit_assignment_target_expr(base, env)?;
         let index_temp = index_assign_value_temp_name(index);
         let index = self.emit_stmt_expr_with_env(index, env)?;
         let value = self.emit_stmt_expr_with_env(expr, env)?;
 
-        let mut prelude = index.prelude;
+        let mut prelude = base.prelude;
+        prelude.extend(index.prelude);
         prelude.push(format!("int64_t {index_temp} = {};", index.code));
-        let target = c_assignment_target(name, env);
-        match &base.ty {
+        match &base_ty {
             Type::Array { len, .. } => {
                 prelude.push(format!(
                     "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
@@ -589,7 +585,8 @@ impl<'a> CGenerator<'a> {
             }
             Type::Slice(_) => {
                 prelude.push(format!(
-                    "if ({index_temp} < 0 || {index_temp} >= ({target}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    base.code,
                     c_field("len")
                 ));
             }
@@ -604,7 +601,10 @@ impl<'a> CGenerator<'a> {
 
         Ok(finish_with_prelude(
             prelude,
-            format!("({target}).{data_field}[{index_temp}] = {};", value.code),
+            format!(
+                "({}).{data_field}[{index_temp}] = {};",
+                base.code, value.code
+            ),
         ))
     }
 
@@ -2219,15 +2219,18 @@ fn slice_literal_temp_name(expr: &IrExpr) -> String {
 }
 
 fn index_source_temp_name(expr: &IrExpr) -> String {
-    format!("mallang_index_src_{}", expr.span.start)
+    format!("mallang_index_src_{}_{}", expr.span.start, expr.span.end)
 }
 
 fn index_value_temp_name(expr: &IrExpr) -> String {
-    format!("mallang_index_value_{}", expr.span.start)
+    format!("mallang_index_value_{}_{}", expr.span.start, expr.span.end)
 }
 
 fn index_assign_value_temp_name(expr: &IrExpr) -> String {
-    format!("mallang_index_assign_value_{}", expr.span.start)
+    format!(
+        "mallang_index_assign_value_{}_{}",
+        expr.span.start, expr.span.end
+    )
 }
 
 fn checked_unary_operand_temp_name(expr: &IrExpr) -> String {
@@ -3757,6 +3760,45 @@ func show(con name string) {
         assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
         assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
         assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
+    }
+
+    #[test]
+    fn generates_c_for_local_rooted_slice_element_assignment() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values[1] = 5
+
+    mut store := Store{bags: []Bag{Bag{values: []int{3}}, Bag{values: []int{4}}}}
+    store.bags[0] = Bag{values: []int{7, 8}}
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains(">= ((mlg_bag).mlg_values).mlg_len"));
+        assert!(c.contains("((mlg_bag).mlg_values).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = 5;"));
+        assert!(c.contains("mlg_struct_Bag mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains(
+            "mlg_drop_Struct_Bag(&(((mlg_store).mlg_bags).mlg_data[mallang_index_value_"
+        ));
+        assert!(c.contains("((mlg_store).mlg_bags).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains("mlg_drop_Struct_Store(&(mlg_store));"));
+        assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
     }
 
     #[test]

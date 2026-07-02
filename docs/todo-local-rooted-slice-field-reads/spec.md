@@ -22,6 +22,7 @@
 
 - `append(bag.values, item)`처럼 field slice를 consuming append source로 쓰는 경로.
 - `bag.values[i] = item`처럼 direct element assignment target으로 쓰는 경로.
+  이 경로는 P56에서 완료됐다.
 - Inline cleanup temporary sources such as `len([]int{1})`.
 - First-class references and statement-spanning borrow lifetimes.
 

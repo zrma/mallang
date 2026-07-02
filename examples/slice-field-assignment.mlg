@@ -1,0 +1,18 @@
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values[1] = 5
+    print(bag.values[1])
+
+    mut store := Store{bags: []Bag{Bag{values: []int{3}}, Bag{values: []int{4}}}}
+    store.bags[0] = Bag{values: []int{7, 8}}
+    print(len(store.bags[0].values))
+    print(store.bags[0].values[1])
+}

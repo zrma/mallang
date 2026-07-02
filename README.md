@@ -52,7 +52,7 @@ This repository is the Mallang language PoC workspace.
   iteration plus element borrow, assignment, indexed field assignment, and
   read-only indexed expressions for non-copy elements.
 - Struct cleanup for owned slice fields, plus local-rooted slice field
-  `len`/index/range/borrow reads.
+  `len`/index/range/borrow reads and element assignment.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -116,6 +116,8 @@ cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
 cargo run --bin mlg -- build examples/slice-field-read.mlg -o target/mallang/slice-field-read
 target/mallang/slice-field-read
+cargo run --bin mlg -- build examples/slice-field-assignment.mlg -o target/mallang/slice-field-assignment
+target/mallang/slice-field-assignment
 cargo run --bin mlg -- build examples/print-struct.mlg -o target/mallang/print-struct
 target/mallang/print-struct
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
@@ -182,6 +184,7 @@ scripts/check.sh
 - `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
 - `examples/match-arm-prelude.mlg`: native smoke for `match` expression arms that need C preludes.
 - `examples/slice-field-read.mlg`: native smoke for local-rooted slice field len/index/range/borrow reads.
+- `examples/slice-field-assignment.mlg`: native smoke for local-rooted slice field element assignment.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/print-struct.mlg`: native smoke for printing struct values with nested fields.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
