@@ -165,6 +165,7 @@
 - [x] Slice element assignment for direct mutable owned slices.
 - [x] Indexed field assignment for array/slice element fields.
 - [x] Borrowed indexing expressions for read-only non-copy element inspection.
+- [x] Struct cleanup for owned slice fields.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Mutable range values.

@@ -1956,7 +1956,13 @@ impl<'a> CGenerator<'a> {
                 self.emit_drop_helper(ok, emitted, visiting, output)?;
                 self.emit_drop_helper(err, emitted, visiting, output)?;
             }
-            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => {}
+            Type::Struct(name) => {
+                let struct_def = self.struct_def(name)?;
+                for field in &struct_def.fields {
+                    self.emit_drop_helper(&field.ty, emitted, visiting, output)?;
+                }
+            }
+            Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
         visiting.pop();
 
@@ -2054,12 +2060,28 @@ impl<'a> CGenerator<'a> {
                 output.push('}');
                 Ok(output)
             }
-            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => {
-                Err(CompileError::new(format!(
-                    "IR invariant violation: drop helper requested for non-cleanup type `{}`",
-                    ty.source_name()
-                )))
+            Type::Struct(name) => {
+                let struct_def = self.struct_def(name)?;
+                let mut output = String::new();
+                for field in &struct_def.fields {
+                    if !field.ty.needs_cleanup() {
+                        continue;
+                    }
+                    output.push_str(&format!(
+                        "{}(&(mlg_value->{}));\n",
+                        drop_fn_name(&field.ty),
+                        c_field(&field.name)
+                    ));
+                }
+                if output.ends_with('\n') {
+                    output.pop();
+                }
+                Ok(output)
             }
+            Type::Int | Type::Bool | Type::String | Type::Unit => Err(CompileError::new(format!(
+                "IR invariant violation: drop helper requested for non-cleanup type `{}`",
+                ty.source_name()
+            ))),
         }
     }
 }
@@ -2527,7 +2549,19 @@ func add(a int, b int) int {
     #[test]
     fn generates_c_drop_helpers_for_internal_cleanup_types() {
         let program = IrProgram {
-            structs: Vec::new(),
+            structs: vec![IrStruct {
+                name: "Holder".to_string(),
+                fields: vec![
+                    IrStructField {
+                        name: "values".to_string(),
+                        ty: Type::Slice(Box::new(Type::Int)),
+                    },
+                    IrStructField {
+                        name: "count".to_string(),
+                        ty: Type::Int,
+                    },
+                ],
+            }],
             functions: vec![
                 IrFunction {
                     name: "consume".to_string(),
@@ -2555,6 +2589,9 @@ func add(a int, b int) int {
         ));
         assert!(c.contains(
             "static void mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
+        ));
+        assert!(c.contains(
+            "static void mlg_drop_Struct_Holder(mlg_struct_Holder *mlg_value) {\n    mlg_drop_Slice_int(&(mlg_value->mlg_values));\n}"
         ));
     }
 
@@ -3526,7 +3563,6 @@ func main() {
         assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 2; mlg_i = (mlg_i + 1)) {"));
         assert!(c.contains("for (int64_t mallang_range_index_"));
         assert!(!c.contains("mlg__"));
-        assert!(!c.contains("mlg_value"));
     }
 
     #[test]
@@ -3670,8 +3706,11 @@ func show(con name string) {
         assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
         assert!(c.contains("] = 5;"));
         assert!(c.contains(">= (mlg_users).mlg_len"));
+        assert!(c.contains("mlg_struct_User mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains(" = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(c.contains("mlg_drop_Struct_User(&((mlg_users).mlg_data[mallang_index_value_"));
         assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
-        assert!(c.contains("] = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
         assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
         assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
     }
@@ -3723,8 +3762,13 @@ func show(con name string) {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("mlg_struct_User mlg_data[2];"));
+        assert!(c.contains("mlg_struct_User mlg_mallang_cleanup_assign_rhs_"));
+        assert!(c.contains(" = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(
+            c.contains("mlg_drop_Struct_User(&((mlg_users).mlg_data[mallang_check_index(1, 2)]));")
+        );
         assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
-        assert!(c.contains("] = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
         assert!(
             c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));")
         );

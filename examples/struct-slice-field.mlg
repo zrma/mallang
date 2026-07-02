@@ -1,0 +1,15 @@
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values = []int{3}
+    bag = Bag{values: []int{4, 5}}
+    take(bag)
+    print(1)
+}
+
+func take(bag Bag) {
+    print(2)
+}

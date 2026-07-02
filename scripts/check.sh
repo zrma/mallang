@@ -185,18 +185,6 @@ if "${CARGO[@]}" run --bin mlg -- check "$main_param_fail_source" >/dev/null 2>&
   echo "main parameter check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
-slice_struct_cleanup_fail_source="target/mallang/check-slice-struct-cleanup-fail.mlg"
-cat >"$slice_struct_cleanup_fail_source" <<'MLG'
-type Bag struct {
-    values Option[[]int]
-}
-
-func main() {}
-MLG
-if "${CARGO[@]}" run --bin mlg -- check "$slice_struct_cleanup_fail_source" >/dev/null 2>&1; then
-  echo "slice struct cleanup check failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
 array_print_fail_source="target/mallang/check-array-print-fail.mlg"
 cat >"$array_print_fail_source" <<'MLG'
 func main() {
@@ -381,6 +369,13 @@ fi
 indexed_field_read_output="$(target/mallang/indexed-field-read)"
 if [[ "$indexed_field_read_output" != $'User{name: kim, age: 30, profile: Profile{label: primary, score: 7}}\nlee\nprimary\n20\npark\n11' ]]; then
   echo "indexed field read native build smoke failed: expected borrowed indexed field output, got '$indexed_field_read_output'" >&2
+  exit 1
+fi
+"${CARGO[@]}" run --bin mlg -- check examples/struct-slice-field.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/struct-slice-field.mlg -o target/mallang/struct-slice-field >/dev/null
+struct_slice_field_output="$(target/mallang/struct-slice-field)"
+if [[ "$struct_slice_field_output" != $'2\n1' ]]; then
+  echo "struct slice field native build smoke failed: expected 2 and 1, got '$struct_slice_field_output'" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null

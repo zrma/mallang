@@ -102,7 +102,8 @@ impl Type {
             Self::Option(inner) => inner.needs_cleanup(),
             Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
             Self::Array { element, .. } => element.needs_cleanup(),
-            Self::Int | Self::Bool | Self::String | Self::Unit | Self::Struct(_) => false,
+            Self::Struct(_) => true,
+            Self::Int | Self::Bool | Self::String | Self::Unit => false,
         }
     }
 }
@@ -200,16 +201,7 @@ impl<'a> Checker<'a> {
                 }
                 fields.push(FieldSig {
                     name: field.name.clone(),
-                    ty: {
-                        let ty = self.type_from_ref(&field.ty)?;
-                        if type_contains_slice(&ty) {
-                            return Err(SemanticError::new(
-                                "slice fields require struct cleanup support in v0",
-                                field.ty.span,
-                            ));
-                        }
-                        ty
-                    },
+                    ty: self.type_from_ref(&field.ty)?,
                     ty_span: field.ty.span,
                 });
             }
@@ -3255,15 +3247,6 @@ fn is_builtin_type_name(name: &str) -> bool {
     )
 }
 
-fn type_contains_slice(ty: &Type) -> bool {
-    match ty {
-        Type::Slice(_) => true,
-        Type::Option(inner) | Type::Array { element: inner, .. } => type_contains_slice(inner),
-        Type::Result(ok, err) => type_contains_slice(ok) || type_contains_slice(err),
-        Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => false,
-    }
-}
-
 fn reject_builtin_value_name(name: &str, span: Span) -> Result<(), SemanticError> {
     if is_builtin_value_name(name) {
         return Err(SemanticError::new(
@@ -5314,19 +5297,18 @@ func main() {
     }
 
     #[test]
-    fn rejects_slice_fields_until_struct_cleanup_exists() {
-        let error = check_error(
+    fn allows_slice_fields_with_struct_cleanup() {
+        check_ok(
             r#"
 type Bag struct {
     values []int
 }
 
-func main() {}
+func main() {
+    bag := Bag{values: []int{1, 2}}
+}
 "#,
         );
-        assert!(error
-            .message
-            .contains("slice fields require struct cleanup support"));
     }
 
     #[test]
@@ -5398,6 +5380,7 @@ func main() {
     #[test]
     fn classifies_internal_slice_types_as_cleanup_resources() {
         assert!(Type::Slice(Box::new(Type::Int)).needs_cleanup());
+        assert!(Type::Struct("Bag".to_string()).needs_cleanup());
         assert!(Type::Option(Box::new(Type::Slice(Box::new(Type::Int)))).needs_cleanup());
         assert!(Type::Array {
             len: 2,

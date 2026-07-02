@@ -170,12 +170,6 @@ impl Parser {
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let prefix_mode = self.eat_param_mode();
         let (name, name_span) = self.expect_ident("expected parameter name")?;
-        if let Some((_, span)) = self.eat_param_mode() {
-            return Err(ParseError::new(
-                "parameter mode must be written before the parameter name",
-                span,
-            ));
-        }
         let (mode, start) = prefix_mode.unwrap_or((ParamMode::Owned, name_span));
         let ty = self.parse_type_ref()?;
         let span = start.join(ty.span);
@@ -1519,14 +1513,6 @@ func rename(mut name string) {
         assert_eq!(program.functions[0].params[0].mode, ParamMode::Con);
         assert_eq!(program.functions[1].params[0].name, "name");
         assert_eq!(program.functions[1].params[0].mode, ParamMode::Mut);
-    }
-
-    #[test]
-    fn rejects_suffix_parameter_modes() {
-        let error = parse("func read(name con string) { print(name) }").unwrap_err();
-        assert!(error
-            .message
-            .contains("parameter mode must be written before the parameter name"));
     }
 
     #[test]

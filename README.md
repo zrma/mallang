@@ -51,6 +51,7 @@ This repository is the Mallang language PoC workspace.
   `slice[i]`, consuming `append(slice, item)`, and range loops with Copy value
   iteration plus element borrow, assignment, indexed field assignment, and
   read-only indexed expressions for non-copy elements.
+- Struct cleanup for owned slice fields.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -188,6 +189,7 @@ scripts/check.sh
 - `examples/slice-element-assignment.mlg`: native smoke for owned slice element assignment.
 - `examples/indexed-field-assignment.mlg`: native smoke for indexed array/slice field assignment.
 - `examples/indexed-field-read.mlg`: native smoke for borrowed indexed array/slice field reads.
+- `examples/struct-slice-field.mlg`: native smoke for struct cleanup with owned slice fields.
 - `examples/array-element-methods.mlg`: native smoke for fixed array element method receivers.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.

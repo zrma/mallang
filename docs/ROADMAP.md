@@ -145,7 +145,7 @@
 - [x] read borrow keyword를 `in`에서 `con`으로 교체
 - [x] parameter/receiver mode를 `con name T` / `mut name T` prefix로 고정
 - [x] call argument mode를 `con expr` / `mut expr`로 고정
-- [x] suffix mode `name con T` / `name mut T` reject 추가
+- [x] suffix mode compatibility path 없이 prefix grammar로 고정
 - [x] examples/docs/tests를 canonical borrow syntax로 갱신
 
 ## P13: For-Clause Prelude Lowering
@@ -451,4 +451,13 @@
 - [x] indexed element의 non-Copy field move는 계속 reject
 - [x] native C backend에서 read-only indexed field access smoke 추가
 - [x] `examples/indexed-field-read.mlg` native smoke 추가
+- [x] first-class references, statement-spanning borrow lifetimes, mutable range values는 후속 work로 유지
+
+## P54: Struct Cleanup for Slice Fields
+
+- [x] struct field의 `[]T` reject 제거
+- [x] `Type::Struct`를 cleanup-capable root로 분류
+- [x] C backend에서 struct drop helper가 cleanup field helper를 호출
+- [x] struct local/reassignment/owned parameter cleanup insertion에 기존 cleanup pipeline 재사용
+- [x] `examples/struct-slice-field.mlg` native smoke 추가
 - [x] first-class references, statement-spanning borrow lifetimes, mutable range values는 후속 work로 유지

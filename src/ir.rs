@@ -5113,12 +5113,32 @@ func main() {
         let checked = check(&program).unwrap();
         let ir = lower(&checked).unwrap();
 
-        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[1].kind else {
+        let IrStmtKind::Let {
+            name: temp_name,
+            ty,
+            expr,
+            ..
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected cleanup assignment temp");
+        };
+        assert!(temp_name.starts_with("mallang_cleanup_assign_rhs_"));
+        assert_eq!(ty, &Type::Struct("User".to_string()));
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+
+        let IrStmtKind::Drop { expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected indexed cleanup drop");
+        };
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+        assert!(matches!(expr.kind, IrExprKind::Index { .. }));
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[3].kind else {
             panic!("expected index assignment");
         };
         assert!(matches!(base.ty, Type::Array { .. }));
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Struct("User".to_string()));
+        assert!(matches!(&expr.kind, IrExprKind::Var(name) if name == temp_name));
     }
 
     #[test]
@@ -5139,12 +5159,32 @@ func main() {
         let checked = check(&program).unwrap();
         let ir = lower(&checked).unwrap();
 
-        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[1].kind else {
+        let IrStmtKind::Let {
+            name: temp_name,
+            ty,
+            expr,
+            ..
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected cleanup assignment temp");
+        };
+        assert!(temp_name.starts_with("mallang_cleanup_assign_rhs_"));
+        assert_eq!(ty, &Type::Struct("User".to_string()));
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+
+        let IrStmtKind::Drop { expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected indexed cleanup drop");
+        };
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+        assert!(matches!(expr.kind, IrExprKind::Index { .. }));
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[3].kind else {
             panic!("expected index assignment");
         };
         assert!(matches!(base.ty, Type::Slice(_)));
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Struct("User".to_string()));
+        assert!(matches!(&expr.kind, IrExprKind::Var(name) if name == temp_name));
     }
 
     #[test]

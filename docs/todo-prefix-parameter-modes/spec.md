@@ -6,7 +6,7 @@
 - `con name T`는 const/read-only borrow, `mut name T`는 mutable borrow,
   아무 mode가 없으면 owned value로 고정한다.
 - 기존 `in` borrow keyword와 `name in T` / `name mut T` suffix surface는 v0
-  PoC에서 제거한다.
+  PoC에서 제거하며 compatibility alias나 별도 legacy 진단을 두지 않는다.
 
 ## 범위
 
@@ -15,7 +15,7 @@
 - Parser: call argument mode를 `con expr` / `mut expr`로 parse.
 - Semantic diagnostics: read-borrow argument mismatch를 `con` 기준으로 표시.
 - Examples/docs/tests: borrow surface를 canonical prefix syntax로 갱신.
-- 내부 enum 이름도 `ParamMode::Con` / `ArgMode::Con`으로 고정해 legacy `In` alias를 남기지 않는다.
+- 내부 enum 이름도 `ParamMode::Con` / `ArgMode::Con`으로 고정한다.
 
 ## C-체크리스트
 

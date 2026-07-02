@@ -258,7 +258,8 @@ Indexing and length rules:
   compiler-owned allocation and cleanup.
 - Copying a slice header is not a language operation. Assigning, passing, or
   returning an owned slice moves it, following the existing non-copy value rules.
-- Slice fields in structs are rejected until struct cleanup support exists.
+- Slice fields in structs are supported. Struct drop helpers recursively clean up
+  fields that own cleanup resources.
 
 Future v0 slice rules:
 
@@ -316,6 +317,9 @@ print(account.profile.displayName)
 Rules:
 
 - Struct values are move-only in v0.
+- Struct values are cleanup-capable roots. Structs without cleanup fields lower
+  to no-op drop helpers; structs with owned slice fields recursively drop those
+  fields at scope exit, reassignment, or owned parameter cleanup.
 - Literal fields must name every declared field exactly once.
 - Field access reads a field by name.
 - Field assignment updates a field path rooted in a mutable local struct binding.
