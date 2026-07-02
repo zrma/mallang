@@ -1,0 +1,16 @@
+func main() {
+    values := [3]int{1, 2, 3}
+    mut i := 0
+    mut slot := 0
+    mut total := 0
+
+    for ; i < len(values); total = total + values[slot] {
+        slot = i
+        i = i + 1
+        if slot == 1 {
+            continue
+        }
+    }
+
+    print(total)
+}

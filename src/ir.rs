@@ -1664,7 +1664,7 @@ fn lower_param(param: &ParamSig) -> IrParam {
 fn arg_mode_for_param(mode: ParamMode) -> ArgMode {
     match mode {
         ParamMode::Owned => ArgMode::Owned,
-        ParamMode::In => ArgMode::In,
+        ParamMode::Con => ArgMode::Con,
         ParamMode::Mut => ArgMode::Mut,
     }
 }
@@ -2139,7 +2139,7 @@ func main() {
 
         assert_eq!(ir.functions[0].name, "User.age");
         assert_eq!(ir.functions[0].params.len(), 1);
-        assert_eq!(ir.functions[0].params[0].mode, ParamMode::In);
+        assert_eq!(ir.functions[0].params[0].mode, ParamMode::Con);
 
         let IrStmtKind::Expr { expr } = &ir.functions[1].body[1].kind else {
             panic!("expected print expression");
@@ -2152,7 +2152,7 @@ func main() {
         };
         assert_eq!(callee, "User.age");
         assert_eq!(args.len(), 1);
-        assert_eq!(args[0].mode, ArgMode::In);
+        assert_eq!(args[0].mode, ArgMode::Con);
     }
 
     #[test]

@@ -119,10 +119,10 @@
 - [x] Nested field assignment and nested field borrow arguments.
 - [x] Print struct values with printable fields in the C backend.
 - [x] Canonical `con name T` / `mut name T` prefix parameter modes.
+- [x] Native lowering for `for` clause condition/post expressions that need
+  temporary prelude statements.
 - Slice `[]T`, append/growth, mutable range values, and non-copy array element
   mutation.
-- Broader native lowering for `for` clause header expressions that need
-  temporary prelude statements.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

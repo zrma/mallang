@@ -190,7 +190,7 @@ impl Parser {
 
     fn eat_param_mode(&mut self) -> Option<(ParamMode, Span)> {
         if let Some(span) = self.eat_keyword(Keyword::Con) {
-            Some((ParamMode::In, span))
+            Some((ParamMode::Con, span))
         } else {
             self.eat_keyword(Keyword::Mut)
                 .map(|span| (ParamMode::Mut, span))
@@ -1000,7 +1000,7 @@ impl Parser {
 
     fn parse_arg(&mut self) -> Result<Arg, ParseError> {
         let (mode, start) = if let Some(span) = self.eat_keyword(Keyword::Con) {
-            (ArgMode::In, span)
+            (ArgMode::Con, span)
         } else if let Some(span) = self.eat_keyword(Keyword::Mut) {
             (ArgMode::Mut, span)
         } else {
@@ -1466,7 +1466,7 @@ func rename(mut name string) {
         .unwrap();
 
         assert_eq!(program.functions[0].params[0].name, "name");
-        assert_eq!(program.functions[0].params[0].mode, ParamMode::In);
+        assert_eq!(program.functions[0].params[0].mode, ParamMode::Con);
         assert_eq!(program.functions[1].params[0].name, "name");
         assert_eq!(program.functions[1].params[0].mode, ParamMode::Mut);
     }
@@ -1688,7 +1688,7 @@ func main() {
         assert_eq!(program.functions.len(), 2);
         let receiver = program.functions[0].receiver.as_ref().unwrap();
         assert_eq!(receiver.name, "self");
-        assert_eq!(receiver.mode, ParamMode::In);
+        assert_eq!(receiver.mode, ParamMode::Con);
         assert_eq!(receiver.ty.name, "User");
 
         let StmtKind::Expr { expr } = &program.functions[1].body.statements[1].kind else {

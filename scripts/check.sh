@@ -27,7 +27,7 @@ fi
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
-"${CARGO[@]}" run --bin mlg -- examples/hello.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/first.mlg -o target/mallang/first >/dev/null
@@ -112,6 +112,13 @@ fi
 array_for_post_output="$(target/mallang/array-for-post)"
 if [[ "$array_for_post_output" != "6" ]]; then
   echo "array for-post native build smoke failed: expected 6, got '$array_for_post_output'" >&2
+  exit 1
+fi
+"${CARGO[@]}" run --bin mlg -- check examples/for-clause-prelude.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/for-clause-prelude.mlg -o target/mallang/for-clause-prelude >/dev/null
+for_clause_prelude_output="$(target/mallang/for-clause-prelude)"
+if [[ "$for_clause_prelude_output" != "6" ]]; then
+  echo "for-clause prelude native build smoke failed: expected 6, got '$for_clause_prelude_output'" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null

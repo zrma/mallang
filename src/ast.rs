@@ -42,7 +42,7 @@ pub struct Param {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamMode {
     Owned,
-    In,
+    Con,
     Mut,
 }
 
@@ -224,7 +224,7 @@ pub struct Arg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgMode {
     Owned,
-    In,
+    Con,
     Mut,
 }
 

@@ -11,7 +11,7 @@ commands:
   format: cargo fmt --all --check
   test: cargo test --workspace
   clippy: cargo clippy --workspace --all-targets -- -D warnings
-  lexer_smoke: cargo run --bin mlg -- examples/hello.mlg
+  lexer_smoke: cargo run --bin mlg -- lex examples/hello.mlg
 vcs:
   system: jj
   default_bookmark: main

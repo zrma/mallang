@@ -153,6 +153,15 @@ impl<'a> CGenerator<'a> {
         stmt: &IrStmt,
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
+        self.emit_stmt_with_env_and_continue(stmt, env, None)
+    }
+
+    fn emit_stmt_with_env_and_continue(
+        &self,
+        stmt: &IrStmt,
+        env: &HashMap<String, String>,
+        continue_label: Option<&str>,
+    ) -> Result<String, CompileError> {
         match &stmt.kind {
             IrStmtKind::Let { name, ty, expr, .. } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
@@ -189,7 +198,7 @@ impl<'a> CGenerator<'a> {
                 condition,
                 then_body,
                 else_body,
-            } => self.emit_if_stmt(condition, then_body, else_body, env),
+            } => self.emit_if_stmt(condition, then_body, else_body, env, continue_label),
             IrStmtKind::For {
                 init,
                 condition,
@@ -210,8 +219,12 @@ impl<'a> CGenerator<'a> {
                 body,
             } => self.emit_range_for_stmt(index_name, value_name, source, element_ty, body, env),
             IrStmtKind::Break => Ok("break;".to_string()),
-            IrStmtKind::Continue => Ok("continue;".to_string()),
-            IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
+            IrStmtKind::Continue => Ok(continue_label
+                .map(|label| format!("goto {label};"))
+                .unwrap_or_else(|| "continue;".to_string())),
+            IrStmtKind::Match { scrutinee, arms } => {
+                self.emit_match_stmt(scrutinee, arms, env, continue_label)
+            }
             IrStmtKind::Expr { expr } => {
                 if let IrExprKind::Call { callee, args } = &expr.kind {
                     if callee == "print" {
@@ -231,6 +244,7 @@ impl<'a> CGenerator<'a> {
         then_body: &[IrStmt],
         else_body: &[IrStmt],
         env: &HashMap<String, String>,
+        continue_label: Option<&str>,
     ) -> Result<String, CompileError> {
         let mut output = String::new();
         let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
@@ -240,7 +254,7 @@ impl<'a> CGenerator<'a> {
         }
         output.push_str(&format!("if ({}) {{\n", c_condition(&code)));
         for stmt in then_body {
-            let code = self.emit_stmt_with_env(stmt, env)?;
+            let code = self.emit_stmt_with_env_and_continue(stmt, env, continue_label)?;
             push_indented_lines(&mut output, &code, 1);
         }
         if else_body.is_empty() {
@@ -250,7 +264,7 @@ impl<'a> CGenerator<'a> {
 
         output.push_str("} else {\n");
         for stmt in else_body {
-            let code = self.emit_stmt_with_env(stmt, env)?;
+            let code = self.emit_stmt_with_env_and_continue(stmt, env, continue_label)?;
             push_indented_lines(&mut output, &code, 1);
         }
         output.push('}');
@@ -368,42 +382,49 @@ impl<'a> CGenerator<'a> {
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
         let mut output = String::new();
-        let init_code = if let Some(init) = init {
+        output.push_str("{\n");
+
+        if let Some(init) = init {
             let (prelude, code) = self.emit_for_init(init, env)?;
             for line in prelude {
-                output.push_str(&line);
-                output.push('\n');
+                push_indented_lines(&mut output, &line, 1);
             }
-            code
-        } else {
-            String::new()
-        };
-
-        let condition_code = if let Some(condition) = condition {
-            let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
-            if !prelude.is_empty() {
-                return Err(CompileError::new(
-                    "for-clause conditions with temporary preludes are not supported in the native backend yet",
-                ));
-            }
-            c_condition(&code)
-        } else {
-            String::new()
-        };
-
-        let post_code = post
-            .map(|post| self.emit_for_post(post, env))
-            .transpose()?
-            .unwrap_or_default();
-
-        output.push_str(&format!(
-            "for ({}; {}; {}) {{\n",
-            init_code, condition_code, post_code
-        ));
-        for stmt in body {
-            let code = self.emit_stmt_with_env(stmt, env)?;
-            push_indented_lines(&mut output, &code, 1);
+            push_indented_lines(&mut output, &format!("{code};"), 1);
         }
+
+        let continue_label = post.map(for_post_label);
+        output.push_str("    while (true) {\n");
+        if let Some(condition) = condition {
+            let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+            for line in prelude {
+                push_indented_lines(&mut output, &line, 2);
+            }
+            push_indented_lines(
+                &mut output,
+                &format!("if (!({})) {{", c_condition(&code)),
+                2,
+            );
+            push_indented_lines(&mut output, "break;", 3);
+            push_indented_lines(&mut output, "}", 2);
+        }
+
+        for stmt in body {
+            let code =
+                self.emit_stmt_with_env_and_continue(stmt, env, continue_label.as_deref())?;
+            push_indented_lines(&mut output, &code, 2);
+        }
+
+        if let Some(post) = post {
+            let label = continue_label
+                .as_deref()
+                .expect("for post label must exist when post exists");
+            push_indented_lines(&mut output, &format!("{label}: {{"), 2);
+            let code = self.emit_for_post_stmt(post, env)?;
+            push_indented_lines(&mut output, &code, 3);
+            push_indented_lines(&mut output, "}", 2);
+        }
+
+        output.push_str("    }\n");
         output.push('}');
         Ok(output)
     }
@@ -424,7 +445,7 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_for_post(
+    fn emit_for_post_stmt(
         &self,
         post: &IrForPost,
         env: &HashMap<String, String>,
@@ -433,12 +454,12 @@ impl<'a> CGenerator<'a> {
             IrForPost::Assign { target, expr } => {
                 let target = self.emit_assignment_target_expr(target, env)?;
                 let expr = self.emit_stmt_expr_with_env(expr, env)?;
-                if !target.prelude.is_empty() || !expr.prelude.is_empty() {
-                    return Err(CompileError::new(
-                        "for-clause post assignments with temporary preludes are not supported in the native backend yet",
-                    ));
-                }
-                Ok(format!("{} = {}", target.code, expr.code))
+                let mut prelude = target.prelude;
+                prelude.extend(expr.prelude);
+                Ok(finish_with_prelude(
+                    prelude,
+                    format!("{} = {};", target.code, expr.code),
+                ))
             }
         }
     }
@@ -522,6 +543,7 @@ impl<'a> CGenerator<'a> {
         scrutinee: &IrExpr,
         arms: &[IrMatchBlockArm],
         env: &HashMap<String, String>,
+        continue_label: Option<&str>,
     ) -> Result<String, CompileError> {
         let mut output = String::new();
         let scrutinee_code = if let IrExprKind::Var(name) = &scrutinee.kind {
@@ -538,8 +560,12 @@ impl<'a> CGenerator<'a> {
         };
 
         match &scrutinee.ty {
-            Type::Option(_) => self.emit_option_match_stmt(&scrutinee_code, arms, env, output),
-            Type::Result(_, _) => self.emit_result_match_stmt(&scrutinee_code, arms, env, output),
+            Type::Option(_) => {
+                self.emit_option_match_stmt(&scrutinee_code, arms, env, continue_label, output)
+            }
+            Type::Result(_, _) => {
+                self.emit_result_match_stmt(&scrutinee_code, arms, env, continue_label, output)
+            }
             _ => Err(CompileError::new(
                 "IR invariant violation: match on non-ADT value",
             )),
@@ -551,6 +577,7 @@ impl<'a> CGenerator<'a> {
         scrutinee: &str,
         arms: &[IrMatchBlockArm],
         env: &HashMap<String, String>,
+        continue_label: Option<&str>,
         mut output: String,
     ) -> Result<String, CompileError> {
         output.push_str(&format!("switch (({scrutinee}).tag) {{\n"));
@@ -560,13 +587,13 @@ impl<'a> CGenerator<'a> {
                     output.push_str("case 1: {\n");
                     let mut arm_env = env.clone();
                     arm_env.insert(binding.clone(), format!("({scrutinee}).some"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, &mut output)?;
+                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
                     output.push_str("    break;\n");
                     output.push_str("}\n");
                 }
                 IrMatchPattern::None => {
                     output.push_str("case 0: {\n");
-                    self.emit_match_stmt_body(&arm.body, env, &mut output)?;
+                    self.emit_match_stmt_body(&arm.body, env, continue_label, &mut output)?;
                     output.push_str("    break;\n");
                     output.push_str("}\n");
                 }
@@ -586,6 +613,7 @@ impl<'a> CGenerator<'a> {
         scrutinee: &str,
         arms: &[IrMatchBlockArm],
         env: &HashMap<String, String>,
+        continue_label: Option<&str>,
         mut output: String,
     ) -> Result<String, CompileError> {
         output.push_str(&format!("switch (({scrutinee}).tag) {{\n"));
@@ -595,7 +623,7 @@ impl<'a> CGenerator<'a> {
                     output.push_str("case 0: {\n");
                     let mut arm_env = env.clone();
                     arm_env.insert(binding.clone(), format!("({scrutinee}).ok"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, &mut output)?;
+                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
                     output.push_str("    break;\n");
                     output.push_str("}\n");
                 }
@@ -603,7 +631,7 @@ impl<'a> CGenerator<'a> {
                     output.push_str("case 1: {\n");
                     let mut arm_env = env.clone();
                     arm_env.insert(binding.clone(), format!("({scrutinee}).err"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, &mut output)?;
+                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
                     output.push_str("    break;\n");
                     output.push_str("}\n");
                 }
@@ -622,10 +650,11 @@ impl<'a> CGenerator<'a> {
         &self,
         body: &[IrStmt],
         env: &HashMap<String, String>,
+        continue_label: Option<&str>,
         output: &mut String,
     ) -> Result<(), CompileError> {
         for stmt in body {
-            let code = self.emit_stmt_with_env(stmt, env)?;
+            let code = self.emit_stmt_with_env_and_continue(stmt, env, continue_label)?;
             push_indented_lines(output, &code, 1);
         }
         Ok(())
@@ -1486,7 +1515,7 @@ impl Type {
     fn c_param_type(&self, mode: ParamMode) -> String {
         match mode {
             ParamMode::Owned => self.c_name(),
-            ParamMode::In => match self {
+            ParamMode::Con => match self {
                 Self::String => "const char * const *".to_string(),
                 Self::Unit => "const void *".to_string(),
                 _ => format!("const {} *", self.c_name()),
@@ -1624,7 +1653,7 @@ fn c_assignment_target(name: &str, env: &HashMap<String, String>) -> String {
 fn c_arg_code(mode: ArgMode, code: String) -> String {
     match mode {
         ArgMode::Owned => code,
-        ArgMode::In | ArgMode::Mut => format!("&({code})"),
+        ArgMode::Con | ArgMode::Mut => format!("&({code})"),
     }
 }
 
@@ -1694,6 +1723,12 @@ fn push_indented_lines(output: &mut String, code: &str, level: usize) {
 
 fn match_scrutinee_temp_name(expr: &IrExpr) -> String {
     format!("mallang_match_tmp_{}", expr.span.start)
+}
+
+fn for_post_label(post: &IrForPost) -> String {
+    match post {
+        IrForPost::Assign { target, .. } => format!("mallang_for_post_{}", target.span.start),
+    }
 }
 
 fn range_source_temp_name(expr: &IrExpr) -> String {
@@ -1912,7 +1947,11 @@ func main() {
         let ir = lower(&checked).unwrap();
         let c = generate_c_from_ir(&ir).unwrap();
 
-        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("int64_t mlg_i = 0;"));
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("if (!(mlg_i < 3)) {"));
+        assert!(c.contains("mallang_for_post_"));
+        assert!(c.contains("mlg_i = (mlg_i + 1);"));
     }
 
     #[test]
@@ -1932,7 +1971,10 @@ func main() {
         let ir = lower(&checked).unwrap();
         let c = generate_c_from_ir(&ir).unwrap();
 
-        assert!(c.contains("for (; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("if (!(mlg_i < 3)) {"));
+        assert!(c.contains("mallang_for_post_"));
+        assert!(c.contains("mlg_i = (mlg_i + 1);"));
     }
 
     #[test]
@@ -1954,7 +1996,9 @@ func main() {
         let ir = lower(&checked).unwrap();
         let c = generate_c_from_ir(&ir).unwrap();
 
-        assert!(c.contains("for (; ; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("mallang_for_post_"));
+        assert!(c.contains("mlg_i = (mlg_i + 1);"));
     }
 
     #[test]
@@ -2376,9 +2420,39 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("static int64_t mallang_check_index"));
-        assert!(c.contains(
-            "for (; mlg_i < 3; (mlg_values).mlg_data[mallang_check_index(mlg_slot, 3)] = mlg_i) {"
-        ));
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("mallang_for_post_"));
+        assert!(c.contains("(mlg_values).mlg_data[mallang_check_index(mlg_slot, 3)] = mlg_i;"));
+    }
+
+    #[test]
+    fn generates_c_for_for_clause_condition_and_post_preludes() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    mut i := 0
+    mut slot := 0
+    mut total := 0
+    for ; i < len(values); total = total + values[slot] {
+        slot = i
+        i = i + 1
+    }
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("(void)(mlg_values);"));
+        assert!(c.contains("if (!(mlg_i < 3)) {"));
+        assert!(c.contains("mallang_for_post_"));
+        assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
+        assert!(c.contains("int64_t mallang_index_value_"));
+        assert!(c.contains("mlg_total = (mlg_total + (mallang_index_src_"));
     }
 
     #[test]

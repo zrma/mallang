@@ -165,9 +165,11 @@ Indexing and length rules:
   bounds checks as array indexing.
 - The assignment index is evaluated and bounds-checked before the right-hand
   expression is evaluated.
-- The current native backend supports `for` post array assignment when the
-  target and right-hand expression lower without temporary prelude statements;
-  broader header lowering is deferred.
+- The native backend lowers `for` clause conditions and post assignments that
+  need temporary prelude statements, including fixed-size array `len(values)`
+  conditions and indexed post expressions.
+- In a three-clause `for`, `continue` skips the remaining body and then executes
+  the post assignment before the next condition check.
 - Slice type syntax `[]T` is still deferred because owned slices, borrowed
   views, append/growth, and mutation require a larger ownership decision.
 

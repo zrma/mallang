@@ -15,7 +15,7 @@
 - Parser: call argument mode를 `con expr` / `mut expr`로 parse.
 - Semantic diagnostics: read-borrow argument mismatch를 `con` 기준으로 표시.
 - Examples/docs/tests: borrow surface를 canonical prefix syntax로 갱신.
-- 내부 enum 이름 `ParamMode::In` / `ArgMode::In`은 구현 세부로 유지한다.
+- 내부 enum 이름도 `ParamMode::Con` / `ArgMode::Con`으로 고정해 legacy `In` alias를 남기지 않는다.
 
 ## C-체크리스트
 

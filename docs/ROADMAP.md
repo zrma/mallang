@@ -144,3 +144,10 @@
 - [x] call argument mode를 `con expr` / `mut expr`로 고정
 - [x] suffix mode `name con T` / `name mut T` reject 추가
 - [x] examples/docs/tests를 canonical borrow syntax로 갱신
+
+## P13: For-Clause Prelude Lowering
+
+- [x] `for` clause condition에서 prelude가 필요한 expression lowering 지원
+- [x] `for` clause post assignment target/RHS에서 prelude가 필요한 lowering 지원
+- [x] post가 있는 `for` clause body의 `continue`를 post label로 lowering
+- [x] native smoke에서 condition/post prelude와 `continue` post 실행 검증

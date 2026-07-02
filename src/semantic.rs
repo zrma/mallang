@@ -1871,7 +1871,7 @@ impl<'a> Checker<'a> {
                     ));
                 }
             }
-            ParamMode::In => {
+            ParamMode::Con => {
                 register_receiver_borrow(base, &mut call_borrows, BorrowKind::Shared)?;
                 let receiver_ty = self.check_expr_with_expected(
                     base,
@@ -1945,7 +1945,7 @@ impl<'a> Checker<'a> {
                     ValueUse::Owned,
                     Some(&param.ty),
                 )?,
-                (ParamMode::In, ArgMode::In) => {
+                (ParamMode::Con, ArgMode::Con) => {
                     self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Shared)?;
                     self.check_borrow_arg(arg, locals, false)?
                 }
@@ -1959,7 +1959,7 @@ impl<'a> Checker<'a> {
                         arg.span,
                     ));
                 }
-                (ParamMode::In, _) => {
+                (ParamMode::Con, _) => {
                     return Err(SemanticError::new(
                         format!("parameter `{}` expects `con` argument", param.name),
                         arg.span,

@@ -40,7 +40,9 @@ fn main() {
             usage(&program);
             Ok(())
         }
-        _ => run_lex(&program, &args),
+        command => Err(format!(
+            "unknown subcommand `{command}`; run `{program} --help` for usage"
+        )),
     };
 
     if let Err(error) = result {
@@ -56,7 +58,6 @@ fn usage(program: &str) {
     eprintln!("  {program} check <source-file>");
     eprintln!("  {program} ir <source-file>");
     eprintln!("  {program} build <source-file> [-o <output>]");
-    eprintln!("  {program} <source-file>  # alias for lex");
 }
 
 fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
