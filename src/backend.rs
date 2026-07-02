@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use crate::{
-    ast::{ArgMode, BinaryOp, ParamMode, Program},
+    ast::{ArgMode, BinaryOp, ParamMode, Program, UnaryOp},
     ir::{
         lower, IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrFunction,
         IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrProgram, IrStmt, IrStmtKind,
@@ -889,18 +889,43 @@ impl<'a> CGenerator<'a> {
                     code: format!("{}({})", c_ident(callee), arg_codes.join(", ")),
                 })
             }
-            IrExprKind::Unary { op, expr } => {
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
-                Ok(CExpr {
-                    prelude,
-                    code: format!("({}{})", op.c_operator(), code),
-                })
+            IrExprKind::Unary { op, expr: inner } => {
+                self.emit_unary_stmt_expr(expr, *op, inner, env)
             }
             IrExprKind::Binary { op, left, right } => {
                 let operand_ty = left.ty.clone();
                 self.emit_binary_stmt_expr(expr, *op, left, right, &operand_ty, env)
             }
         }
+    }
+
+    fn emit_unary_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        op: UnaryOp,
+        inner: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(inner, env)?;
+
+        if op == UnaryOp::Negate && expr.ty == Type::Int {
+            let operand_temp = checked_unary_operand_temp_name(expr);
+            let result_temp = checked_unary_result_temp_name(expr);
+            prelude.push(format!("int64_t {operand_temp} = {code};"));
+            prelude.push(format!("int64_t {result_temp};"));
+            prelude.push(format!(
+                "if (__builtin_sub_overflow((int64_t)0, {operand_temp}, &{result_temp})) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            ));
+            return Ok(CExpr {
+                prelude,
+                code: result_temp,
+            });
+        }
+
+        Ok(CExpr {
+            prelude,
+            code: format!("({}{})", op.c_operator(), code),
+        })
     }
 
     fn emit_binary_stmt_expr(
@@ -917,15 +942,36 @@ impl<'a> CGenerator<'a> {
         let mut prelude = left.prelude;
         prelude.extend(right.prelude);
 
+        if let Some(builtin) = checked_int_binary_builtin(op).filter(|_| operand_ty == &Type::Int) {
+            let left_temp = checked_binary_left_temp_name(expr);
+            let right_temp = checked_binary_right_temp_name(expr);
+            let result_temp = checked_binary_result_temp_name(expr);
+            prelude.push(format!("int64_t {left_temp} = {};", left.code));
+            prelude.push(format!("int64_t {right_temp} = {};", right.code));
+            prelude.push(format!("int64_t {result_temp};"));
+            prelude.push(format!(
+                "if ({builtin}({left_temp}, {right_temp}, &{result_temp})) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            ));
+            return Ok(CExpr {
+                prelude,
+                code: result_temp,
+            });
+        }
+
         if matches!(op, BinaryOp::Divide | BinaryOp::Remainder) && operand_ty == &Type::Int {
+            let dividend_temp = dividend_temp_name(expr);
             let divisor_temp = divisor_temp_name(expr);
+            prelude.push(format!("int64_t {dividend_temp} = {};", left.code));
             prelude.push(format!("int64_t {divisor_temp} = {};", right.code));
             prelude.push(format!(
                 "if ({divisor_temp} == 0) {{\n    fprintf(stderr, \"mallang runtime error: division by zero\\n\");\n    exit(1);\n}}"
             ));
+            prelude.push(format!(
+                "if ({dividend_temp} == INT64_MIN && {divisor_temp} == -1) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            ));
             return Ok(CExpr {
                 prelude,
-                code: c_binary_expr(op, &expr.ty, operand_ty, left.code, divisor_temp),
+                code: c_binary_expr(op, &expr.ty, operand_ty, dividend_temp, divisor_temp),
             });
         }
 
@@ -1709,6 +1755,45 @@ fn index_assign_value_temp_name(expr: &IrExpr) -> String {
     format!("mallang_index_assign_value_{}", expr.span.start)
 }
 
+fn checked_unary_operand_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_checked_unary_operand_{}", expr.span.start)
+}
+
+fn checked_unary_result_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_checked_unary_result_{}", expr.span.start)
+}
+
+fn checked_binary_left_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_checked_left_{}_{}", expr.span.start, expr.span.end)
+}
+
+fn checked_binary_right_temp_name(expr: &IrExpr) -> String {
+    format!(
+        "mallang_checked_right_{}_{}",
+        expr.span.start, expr.span.end
+    )
+}
+
+fn checked_binary_result_temp_name(expr: &IrExpr) -> String {
+    format!(
+        "mallang_checked_result_{}_{}",
+        expr.span.start, expr.span.end
+    )
+}
+
+fn checked_int_binary_builtin(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::Add => Some("__builtin_add_overflow"),
+        BinaryOp::Subtract => Some("__builtin_sub_overflow"),
+        BinaryOp::Multiply => Some("__builtin_mul_overflow"),
+        _ => None,
+    }
+}
+
+fn dividend_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_dividend_{}_{}", expr.span.start, expr.span.end)
+}
+
 fn divisor_temp_name(expr: &IrExpr) -> String {
     format!("mallang_divisor_{}_{}", expr.span.start, expr.span.end)
 }
@@ -1999,10 +2084,43 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("int64_t mallang_divisor_"));
+        assert!(c.contains("int64_t mallang_dividend_"));
         assert!(c.contains("mallang runtime error: division by zero"));
+        assert!(c.contains("mallang runtime error: integer overflow"));
         assert!(c.contains("if (mallang_divisor_"));
+        assert!(c.contains(" == INT64_MIN && mallang_divisor_"));
         assert!(c.contains(" / mallang_divisor_"));
         assert!(c.contains(" % mallang_divisor_"));
+    }
+
+    #[test]
+    fn generates_c_guards_for_checked_integer_arithmetic() {
+        let program = parse(
+            r#"
+func main() {
+    value := 20
+    step := 3
+    print(value + step)
+    print(value - step)
+    print(value * step)
+    print(-step)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("__builtin_sub_overflow"));
+        assert!(c.contains("__builtin_mul_overflow"));
+        assert!(c.contains("int64_t mallang_checked_left_"));
+        assert!(c.contains("int64_t mallang_checked_right_"));
+        assert!(c.contains("int64_t mallang_checked_result_"));
+        assert!(c.contains("int64_t mallang_checked_unary_operand_"));
+        assert!(c.contains("int64_t mallang_checked_unary_result_"));
+        assert!(c.contains("mallang runtime error: integer overflow"));
     }
 
     #[test]
@@ -2041,7 +2159,8 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("while (mlg_count < 3) {"));
-        assert!(c.contains("mlg_count = (mlg_count + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_count = mallang_checked_result_"));
     }
 
     #[test]
@@ -2084,7 +2203,8 @@ func main() {
         assert!(c.contains("while (true) {"));
         assert!(c.contains("if (!(mlg_i < 3)) {"));
         assert!(c.contains("mallang_for_post_"));
-        assert!(c.contains("mlg_i = (mlg_i + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_i = mallang_checked_result_"));
     }
 
     #[test]
@@ -2107,7 +2227,8 @@ func main() {
         assert!(c.contains("while (true) {"));
         assert!(c.contains("if (!(mlg_i < 3)) {"));
         assert!(c.contains("mallang_for_post_"));
-        assert!(c.contains("mlg_i = (mlg_i + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_i = mallang_checked_result_"));
     }
 
     #[test]
@@ -2131,7 +2252,8 @@ func main() {
 
         assert!(c.contains("while (true) {"));
         assert!(c.contains("mallang_for_post_"));
-        assert!(c.contains("mlg_i = (mlg_i + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_i = mallang_checked_result_"));
     }
 
     #[test]
@@ -2479,7 +2601,8 @@ func main() {
         assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
         assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
         assert!(c.contains(".mlg_data[mlg_i];"));
-        assert!(c.contains("mlg_total = ((mlg_total + mlg_i) + mlg_value);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_total = mallang_checked_result_"));
     }
 
     #[test]
@@ -2567,7 +2690,8 @@ func main() {
         assert!(c.contains("mallang runtime error: array index out of bounds"));
         assert!(c.contains(".mlg_data[mallang_index_value_"));
         assert!(c.contains("(void)(mlg_values);"));
-        assert!(c.contains("int64_t mlg_total = ((mallang_index_src_"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("int64_t mlg_total = mallang_checked_result_"));
     }
 
     #[test]
@@ -2679,7 +2803,8 @@ func main() {
         assert!(c.contains("mallang_for_post_"));
         assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
         assert!(c.contains("int64_t mallang_index_value_"));
-        assert!(c.contains("mlg_total = (mlg_total + (mallang_index_src_"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_total = mallang_checked_result_"));
     }
 
     #[test]
@@ -2736,7 +2861,8 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("void mlg_Counter_inc(mlg_struct_Counter * mlg_self);"));
-        assert!(c.contains("((*mlg_self)).mlg_value = (((*mlg_self)).mlg_value + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("((*mlg_self)).mlg_value = mallang_checked_result_"));
         assert!(c.contains("mlg_Counter_inc(&(mlg_counter));"));
     }
 
@@ -2858,7 +2984,8 @@ func bump(mut age int) {
         assert!(c.contains("mlg_rename(&((mlg_user).mlg_name));"));
         assert!(c.contains("mlg_bump(&((mlg_user).mlg_age));"));
         assert!(c.contains("(*mlg_name) = \"lee\";"));
-        assert!(c.contains("(*mlg_age) = ((*mlg_age) + 1);"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("(*mlg_age) = mallang_checked_result_"));
     }
 
     #[test]

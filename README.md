@@ -42,6 +42,8 @@ This repository is the Mallang language PoC workspace.
   ownership and native ABI are defined.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
+- Integer arithmetic guards overflow before native execution can reach C signed
+  overflow undefined behavior.
 
 ## Bootstrap
 
@@ -58,6 +60,8 @@ cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division
 target/mallang/int-division
+cargo run --bin mlg -- build examples/checked-arithmetic.mlg -o target/mallang/checked-arithmetic
+target/mallang/checked-arithmetic
 cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement
 target/mallang/if-statement
 cargo run --bin mlg -- build examples/for-loop.mlg -o target/mallang/for-loop
@@ -136,6 +140,7 @@ scripts/check.sh
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/int-division.mlg`: native smoke for guarded integer division and remainder.
+- `examples/checked-arithmetic.mlg`: native smoke for checked integer arithmetic.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/for-loop.mlg`: native smoke for condition-only `for` loops.
 - `examples/loop-control.mlg`: native smoke for `break` and `continue`.
@@ -192,7 +197,7 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
-guarded integer division/remainder, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
+guarded integer division/remainder, checked integer arithmetic, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
 condition-only, conditionless, and `for init; condition; post` loops with
 `break` / `continue`, `else if` sugar, branch-aware returns,
 struct/method/nested-field, struct print output, and built-in ADT

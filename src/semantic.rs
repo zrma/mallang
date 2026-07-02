@@ -701,7 +701,14 @@ impl<'a> Checker<'a> {
             ExprKind::Unary { op, expr } => {
                 let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
                 match (*op, &ty) {
-                    (UnaryOp::Negate, Type::Int) => Ok(Type::Int),
+                    (UnaryOp::Negate, Type::Int) => {
+                        if let Some(value) = const_int_expr(expr) {
+                            value
+                                .checked_neg()
+                                .ok_or_else(|| SemanticError::new("integer overflow", expr.span))?;
+                        }
+                        Ok(Type::Int)
+                    }
                     (UnaryOp::Not, Type::Bool) => Ok(Type::Bool),
                     (UnaryOp::Negate, _) => Err(SemanticError::new(
                         "`-` expects an `int` operand",
@@ -2233,11 +2240,7 @@ impl<'a> Checker<'a> {
             | BinaryOp::Divide
             | BinaryOp::Remainder => {
                 if left_ty == Type::Int {
-                    if matches!(op, BinaryOp::Divide | BinaryOp::Remainder)
-                        && const_int_expr(right) == Some(0)
-                    {
-                        return Err(SemanticError::new("division by zero", right.span));
-                    }
+                    check_const_int_arithmetic(op, left, right)?;
                     Ok(Type::Int)
                 } else {
                     Err(SemanticError::new(
@@ -2576,8 +2579,61 @@ fn const_int_expr(expr: &Expr) -> Option<i64> {
             op: UnaryOp::Negate,
             expr,
         } => const_int_expr(expr)?.checked_neg(),
+        ExprKind::Binary { op, left, right } => {
+            let left = const_int_expr(left)?;
+            let right = const_int_expr(right)?;
+            match op {
+                BinaryOp::Add => left.checked_add(right),
+                BinaryOp::Subtract => left.checked_sub(right),
+                BinaryOp::Multiply => left.checked_mul(right),
+                BinaryOp::Divide => left.checked_div(right),
+                BinaryOp::Remainder => left.checked_rem(right),
+                _ => None,
+            }
+        }
         _ => None,
     }
+}
+
+fn check_const_int_arithmetic(
+    op: BinaryOp,
+    left: &Expr,
+    right: &Expr,
+) -> Result<(), SemanticError> {
+    let Some(left_value) = const_int_expr(left) else {
+        return Ok(());
+    };
+    let Some(right_value) = const_int_expr(right) else {
+        return Ok(());
+    };
+
+    let result = match op {
+        BinaryOp::Add => left_value.checked_add(right_value),
+        BinaryOp::Subtract => left_value.checked_sub(right_value),
+        BinaryOp::Multiply => left_value.checked_mul(right_value),
+        BinaryOp::Divide => {
+            if right_value == 0 {
+                return Err(SemanticError::new("division by zero", right.span));
+            }
+            left_value.checked_div(right_value)
+        }
+        BinaryOp::Remainder => {
+            if right_value == 0 {
+                return Err(SemanticError::new("division by zero", right.span));
+            }
+            left_value.checked_rem(right_value)
+        }
+        _ => Some(left_value),
+    };
+
+    if result.is_none() {
+        return Err(SemanticError::new(
+            "integer overflow",
+            left.span.join(right.span),
+        ));
+    }
+
+    Ok(())
 }
 
 fn register_borrow_place(
@@ -3441,6 +3497,42 @@ func check(left bool, right bool, score int) bool {
     fn rejects_literal_remainder_by_zero() {
         let error = check_error("func main() { print(10 % 0) }");
         assert!(error.message.contains("division by zero"));
+    }
+
+    #[test]
+    fn rejects_literal_addition_overflow() {
+        let error = check_error("func main() { print(9223372036854775807 + 1) }");
+        assert!(error.message.contains("integer overflow"));
+    }
+
+    #[test]
+    fn rejects_literal_subtraction_overflow() {
+        let error = check_error("func main() { print(-9223372036854775807 - 2) }");
+        assert!(error.message.contains("integer overflow"));
+    }
+
+    #[test]
+    fn rejects_literal_multiplication_overflow() {
+        let error = check_error("func main() { print(3037000500 * 3037000500) }");
+        assert!(error.message.contains("integer overflow"));
+    }
+
+    #[test]
+    fn rejects_literal_negation_overflow() {
+        let error = check_error("func main() { print(-(-9223372036854775807 - 1)) }");
+        assert!(error.message.contains("integer overflow"));
+    }
+
+    #[test]
+    fn rejects_literal_division_overflow() {
+        let error = check_error("func main() { print((-9223372036854775807 - 1) / -1) }");
+        assert!(error.message.contains("integer overflow"));
+    }
+
+    #[test]
+    fn rejects_literal_remainder_overflow() {
+        let error = check_error("func main() { print((-9223372036854775807 - 1) % -1) }");
+        assert!(error.message.contains("integer overflow"));
     }
 
     #[test]

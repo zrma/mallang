@@ -1,0 +1,11 @@
+func main() {
+    value := 40
+    step := 2
+
+    print(value + step)
+    print(value - step)
+    print(value * step)
+    print(-step)
+    print(value / step)
+    print(value % 3)
+}

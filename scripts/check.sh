@@ -74,6 +74,83 @@ if "${CARGO[@]}" run --bin mlg -- run "$remainder_fail_source" >/dev/null 2>&1; 
   echo "native remainder failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/checked-arithmetic.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/checked-arithmetic.mlg -o target/mallang/checked-arithmetic >/dev/null
+checked_arithmetic_output="$(target/mallang/checked-arithmetic)"
+if [[ "$checked_arithmetic_output" != $'42\n38\n80\n-2\n20\n1' ]]; then
+  echo "checked arithmetic native build smoke failed: expected checked arithmetic output, got '$checked_arithmetic_output'" >&2
+  exit 1
+fi
+checked_add_fail_source="target/mallang/run-checked-add-fail.mlg"
+cat >"$checked_add_fail_source" <<'MLG'
+func main() {
+    value := 9223372036854775807
+    one := 1
+    print(value + one)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_add_fail_source" >/dev/null 2>&1; then
+  echo "native checked add failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+checked_sub_fail_source="target/mallang/run-checked-sub-fail.mlg"
+cat >"$checked_sub_fail_source" <<'MLG'
+func main() {
+    value := -9223372036854775807
+    two := 2
+    print(value - two)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_sub_fail_source" >/dev/null 2>&1; then
+  echo "native checked subtract failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+checked_mul_fail_source="target/mallang/run-checked-mul-fail.mlg"
+cat >"$checked_mul_fail_source" <<'MLG'
+func main() {
+    value := 3037000500
+    print(value * value)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_mul_fail_source" >/dev/null 2>&1; then
+  echo "native checked multiply failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+checked_neg_fail_source="target/mallang/run-checked-neg-fail.mlg"
+cat >"$checked_neg_fail_source" <<'MLG'
+func main() {
+    value := -9223372036854775807 - 1
+    print(-value)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_neg_fail_source" >/dev/null 2>&1; then
+  echo "native checked negation failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+checked_div_fail_source="target/mallang/run-checked-div-fail.mlg"
+cat >"$checked_div_fail_source" <<'MLG'
+func main() {
+    value := -9223372036854775807 - 1
+    divisor := -1
+    print(value / divisor)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_div_fail_source" >/dev/null 2>&1; then
+  echo "native checked division overflow failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+checked_rem_fail_source="target/mallang/run-checked-rem-fail.mlg"
+cat >"$checked_rem_fail_source" <<'MLG'
+func main() {
+    value := -9223372036854775807 - 1
+    divisor := -1
+    print(value % divisor)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$checked_rem_fail_source" >/dev/null 2>&1; then
+  echo "native checked remainder overflow failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

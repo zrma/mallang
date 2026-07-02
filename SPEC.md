@@ -59,7 +59,9 @@ func greet(con name string) string {
 - Integer literals are base-10 in v0.
 - Arithmetic operators `+`, `-`, `*`, `/`, and `%` support `int` operands.
   Literal division or remainder by zero is rejected by `mlg check`; dynamic zero
-  divisors fail with a Mallang runtime error in native code.
+  divisors fail with a Mallang runtime error in native code. Literal arithmetic
+  overflow is rejected by `mlg check`; dynamic arithmetic overflow fails with a
+  Mallang runtime error in native code.
 - Equality operators `==` and `!=` support `int`, `bool`, and `string`. String
   equality compares contents and does not move the compared values.
 - Bool operators `!`, `&&`, and `||` support `bool` operands. `&&` and `||`
