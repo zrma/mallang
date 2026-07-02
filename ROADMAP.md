@@ -142,6 +142,7 @@
 - [x] Split C backend unit tests into a dedicated test module.
 - [x] Keep mutable range value syntax deferred with parser/semantic regressions.
 - [x] Keep by-reference range iteration syntax deferred with parser regression coverage.
+- [x] Keep general non-slice field partial moves deferred with semantic regression coverage.
 
 ## Later
 
@@ -192,6 +193,7 @@
 - [x] C backend unit test module split.
 - [x] Mutable range values deferred with explicit regression coverage.
 - [x] By-reference range iteration deferred with explicit regression coverage.
+- [x] General non-slice field partial moves deferred with explicit regression coverage.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future borrowed iteration.

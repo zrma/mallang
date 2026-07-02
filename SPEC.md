@@ -353,7 +353,9 @@ Rules:
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed. Owned slice fields are the v0 exception:
   moving `bag.values` takes the slice buffer and leaves `bag.values` empty so
-  later struct cleanup remains safe.
+  later struct cleanup remains safe. Moving a non-slice cleanup field such as
+  `user.profile` remains rejected because it would leave the parent struct
+  partially initialized without a general partial-move model.
 - Field paths rooted in local bindings can be used as borrow arguments, such as
   `show(con user.name)` or `rename(mut user.profile.name)`.
 - Mutable field borrow arguments require the root binding to be `mut`.

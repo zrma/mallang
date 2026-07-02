@@ -5539,6 +5539,30 @@ func consume(values []int) {
     }
 
     #[test]
+    fn rejects_moving_non_slice_cleanup_field_without_partial_move_semantics() {
+        let error = check_error(
+            r#"
+type Profile struct {
+    tags []int
+}
+
+type User struct {
+    profile Profile
+}
+
+func main() {
+    user := User{profile: Profile{tags: []int{1}}}
+    profile := user.profile
+    print(len(profile.tags))
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("moving non-copy field out of `user` is not supported"));
+    }
+
+    #[test]
     fn allows_indexed_slice_field_append_take_with_different_target_index() {
         check_ok(
             r#"

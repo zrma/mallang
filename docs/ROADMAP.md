@@ -580,3 +580,9 @@
 - [x] `for i, con value := range values` syntax를 v0에서 계속 reject하도록 parser regression 추가
 - [x] range binding syntax가 `con`/`mut` marker를 모두 받지 않는다고 SPEC에 명시
 - [x] future borrowed range iteration은 statement-spanning borrow lifetime 설계 뒤에 열도록 고정
+
+## P70: General Field Partial Moves Deferred
+
+- [x] owned slice field take만 v0 field-take 예외로 유지
+- [x] non-slice cleanup field move, 예: `profile := user.profile`, reject semantic regression 추가
+- [x] partial-move/destructuring 설계 전까지 parent struct를 부분 초기화 상태로 만들지 않는다고 SPEC에 명시
