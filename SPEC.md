@@ -248,8 +248,8 @@ Future v0 slice rules:
 - The typed IR may carry explicit internal drop statements before semantic
   lowering inserts them automatically.
 - Initial automatic drop insertion may cover straight-line owned cleanup
-  parameters, locals, and local reassignment before full control-flow cleanup
-  insertion is complete.
+  parameters, locals, local reassignment, and `if`/`match` branch-local
+  cleanup roots before full control-flow cleanup insertion is complete.
 
 `unit` is the implicit return type of functions that do not return a value.
 

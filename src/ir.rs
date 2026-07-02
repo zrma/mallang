@@ -1904,6 +1904,7 @@ fn insert_straight_line_cleanup_drops(
         .collect::<Vec<_>>();
 
     for stmt in body {
+        let stmt = insert_branch_local_cleanup_drops(stmt);
         if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = cleanup_moved_roots_in_expr(expr);
             push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
@@ -1925,6 +1926,36 @@ fn insert_straight_line_cleanup_drops(
 
     push_cleanup_drops(&mut output, &active, &HashSet::new(), fallback_span);
     output
+}
+
+fn insert_branch_local_cleanup_drops(mut stmt: IrStmt) -> IrStmt {
+    stmt.kind = match stmt.kind {
+        IrStmtKind::If {
+            condition,
+            then_body,
+            else_body,
+        } => IrStmtKind::If {
+            condition,
+            then_body: insert_straight_line_cleanup_drops(then_body, &[], stmt.span),
+            else_body: insert_straight_line_cleanup_drops(else_body, &[], stmt.span),
+        },
+        IrStmtKind::Match { scrutinee, arms } => IrStmtKind::Match {
+            scrutinee,
+            arms: arms
+                .into_iter()
+                .map(|arm| {
+                    let span = arm.span;
+                    IrMatchBlockArm {
+                        pattern: arm.pattern,
+                        body: insert_straight_line_cleanup_drops(arm.body, &[], span),
+                        span,
+                    }
+                })
+                .collect(),
+        },
+        kind => kind,
+    };
+    stmt
 }
 
 fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
@@ -2136,6 +2167,14 @@ mod tests {
         }
     }
 
+    fn test_bool(value: bool) -> IrExpr {
+        IrExpr {
+            kind: IrExprKind::Bool(value),
+            ty: Type::Bool,
+            span: test_span(),
+        }
+    }
+
     fn assert_drop_of(stmt: &IrStmt, expected_name: &str) {
         let IrStmtKind::Drop { expr } = &stmt.kind else {
             panic!("expected drop statement");
@@ -2292,6 +2331,104 @@ func add(a int, b int) int {
         assert_drop_of(&body[0], "values");
         assert!(matches!(body[1].kind, IrStmtKind::Assign { .. }));
         assert_drop_of(&body[2], "values");
+    }
+
+    #[test]
+    fn inserts_cleanup_drops_for_if_branch_local_roots() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::If {
+                condition: test_bool(true),
+                then_body: vec![IrStmt {
+                    kind: IrStmtKind::Let {
+                        mutable: false,
+                        name: "left".to_string(),
+                        ty: slice_ty.clone(),
+                        expr: test_var("seed_left", slice_ty.clone()),
+                    },
+                    span: test_span(),
+                }],
+                else_body: vec![IrStmt {
+                    kind: IrStmtKind::Let {
+                        mutable: false,
+                        name: "right".to_string(),
+                        ty: slice_ty.clone(),
+                        expr: test_var("seed_right", slice_ty),
+                    },
+                    span: test_span(),
+                }],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(then_body.len(), 2);
+        assert_eq!(else_body.len(), 2);
+        assert_drop_of(&then_body[1], "left");
+        assert_drop_of(&else_body[1], "right");
+    }
+
+    #[test]
+    fn inserts_cleanup_drops_for_match_arm_local_roots() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Match {
+                scrutinee: IrExpr {
+                    kind: IrExprKind::Var("maybe".to_string()),
+                    ty: Type::Option(Box::new(Type::Int)),
+                    span: test_span(),
+                },
+                arms: vec![
+                    IrMatchBlockArm {
+                        pattern: IrMatchPattern::Some("value".to_string()),
+                        body: vec![IrStmt {
+                            kind: IrStmtKind::Let {
+                                mutable: false,
+                                name: "some_values".to_string(),
+                                ty: slice_ty.clone(),
+                                expr: test_var("seed_some", slice_ty.clone()),
+                            },
+                            span: test_span(),
+                        }],
+                        span: test_span(),
+                    },
+                    IrMatchBlockArm {
+                        pattern: IrMatchPattern::None,
+                        body: vec![IrStmt {
+                            kind: IrStmtKind::Let {
+                                mutable: false,
+                                name: "none_values".to_string(),
+                                ty: slice_ty.clone(),
+                                expr: test_var("seed_none", slice_ty),
+                            },
+                            span: test_span(),
+                        }],
+                        span: test_span(),
+                    },
+                ],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::Match { arms, .. } = &body[0].kind else {
+            panic!("expected match statement");
+        };
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].body.len(), 2);
+        assert_eq!(arms[1].body.len(), 2);
+        assert_drop_of(&arms[0].body[1], "some_values");
+        assert_drop_of(&arms[1].body[1], "none_values");
     }
 
     #[test]
