@@ -5,8 +5,8 @@
 - Borrow parameter/call surface를 `con`/`mut` prefix mode로 정리한다.
 - `con name T`는 const/read-only borrow, `mut name T`는 mutable borrow,
   아무 mode가 없으면 owned value로 고정한다.
-- 기존 `in` borrow keyword와 `name in T` / `name mut T` suffix surface는 v0
-  PoC에서 제거하며 compatibility alias나 별도 legacy 진단을 두지 않는다.
+- 초기 실험 후보였던 `in` borrow keyword와 `name in T` / `name mut T`
+  suffix surface는 v0 문법이 아니며, canonical prefix grammar만 지원한다.
 
 ## 범위
 

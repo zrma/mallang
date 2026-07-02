@@ -145,7 +145,7 @@
 - [x] read borrow keyword를 `in`에서 `con`으로 교체
 - [x] parameter/receiver mode를 `con name T` / `mut name T` prefix로 고정
 - [x] call argument mode를 `con expr` / `mut expr`로 고정
-- [x] suffix mode compatibility path 없이 prefix grammar로 고정
+- [x] suffix mode 없이 prefix grammar만 지원
 - [x] examples/docs/tests를 canonical borrow syntax로 갱신
 
 ## P13: For-Clause Prelude Lowering
