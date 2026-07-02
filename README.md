@@ -31,6 +31,7 @@ The current executable can lex, parse, and build the first native subset.
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
 cargo run --bin mlg -- parse examples/first.mlg
+cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 ```
@@ -47,7 +48,10 @@ scripts/check.sh
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `src/lexer.rs`: initial hand-written lexer.
-- `src/token.rs`: token model shared by later parser work.
+- `src/parser.rs`: AST parser for the current v0 subset.
+- `src/semantic.rs`: semantic checker for name/type/function diagnostics.
+- `src/backend.rs`: C backend for the first native subset.
+- `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone
 

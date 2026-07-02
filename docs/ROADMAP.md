@@ -21,7 +21,8 @@
 - [x] first native subset용 name resolver 추가
 - [x] first native subset용 primitive type checker 추가
 - [x] first native subset용 function signature checker 추가
-- [ ] immutable binding reassignment reject
+- [x] immutable binding reassignment reject
+- [x] `mlg check` subcommand 추가
 
 ## P3: Ownership Lite
 

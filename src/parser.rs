@@ -161,6 +161,10 @@ impl Parser {
             return self.parse_let_statement();
         }
 
+        if self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::Equal) {
+            return self.parse_assign_statement();
+        }
+
         let expr = self.parse_expression()?;
         let span = expr.span;
         Ok(Stmt {
@@ -188,6 +192,18 @@ impl Parser {
                 name,
                 expr,
             },
+            span,
+        })
+    }
+
+    fn parse_assign_statement(&mut self) -> Result<Stmt, ParseError> {
+        let (name, start) = self.expect_ident("expected assignment target")?;
+        self.expect(TokenTag::Equal, "expected `=` in assignment")?;
+        let expr = self.parse_expression()?;
+        let span = start.join(expr.span);
+
+        Ok(Stmt {
+            kind: StmtKind::Assign { name, expr },
             span,
         })
     }
@@ -265,6 +281,10 @@ impl Parser {
             }),
             TokenKind::Keyword(Keyword::False) => Ok(Expr {
                 kind: ExprKind::Bool(false),
+                span: token.span,
+            }),
+            TokenKind::Keyword(Keyword::Nil) => Ok(Expr {
+                kind: ExprKind::Nil,
                 span: token.span,
             }),
             TokenKind::Minus => {
@@ -446,6 +466,7 @@ enum TokenTag {
     Comma,
     Semicolon,
     ColonEqual,
+    Equal,
     Eof,
 }
 
@@ -461,6 +482,7 @@ impl TokenTag {
                 | (Self::Comma, TokenKind::Comma)
                 | (Self::Semicolon, TokenKind::Semicolon)
                 | (Self::ColonEqual, TokenKind::ColonEqual)
+                | (Self::Equal, TokenKind::Equal)
                 | (Self::Eof, TokenKind::Eof)
         )
     }
@@ -519,6 +541,19 @@ func add(a int, b int) int {
                 op: BinaryOp::Multiply,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn parses_assignment_and_nil_expression() {
+        let program = parse("func main() { mut x := nil x = 2 }").unwrap();
+        assert!(matches!(
+            program.functions[0].body.statements[0].kind,
+            StmtKind::Let { .. }
+        ));
+        assert!(matches!(
+            program.functions[0].body.statements[1].kind,
+            StmtKind::Assign { .. }
         ));
     }
 }

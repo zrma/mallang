@@ -1,11 +1,11 @@
 use std::{collections::HashMap, fmt};
 
-use crate::ast::{
-    Arg, BinaryOp, Expr, ExprKind, Function, ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
-};
+use crate::ast::{Arg, BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
+use crate::semantic::{check, CheckedProgram, FunctionSig, Type};
 
 pub fn generate_c(program: &Program) -> Result<String, CompileError> {
-    CGenerator::new(program).generate()
+    let checked = check(program).map_err(|error| CompileError::new(error.to_string()))?;
+    CGenerator::new(&checked).generate()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,80 +29,33 @@ impl fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
-struct CGenerator<'a> {
-    program: &'a Program,
-    signatures: HashMap<&'a str, FunctionSig>,
+struct CGenerator<'program, 'checked> {
+    checked: &'checked CheckedProgram<'program>,
 }
 
-impl<'a> CGenerator<'a> {
-    fn new(program: &'a Program) -> Self {
-        Self {
-            program,
-            signatures: HashMap::new(),
-        }
+impl<'program, 'checked> CGenerator<'program, 'checked> {
+    fn new(checked: &'checked CheckedProgram<'program>) -> Self {
+        Self { checked }
     }
 
-    fn generate(mut self) -> Result<String, CompileError> {
-        self.collect_signatures()?;
-
+    fn generate(self) -> Result<String, CompileError> {
         let mut output = String::new();
         output.push_str("#include <stdbool.h>\n");
         output.push_str("#include <stdint.h>\n");
         output.push_str("#include <stdio.h>\n\n");
 
-        for function in &self.program.functions {
+        for function in &self.checked.program.functions {
             output.push_str(&self.prototype(function)?);
             output.push_str(";\n");
         }
         output.push('\n');
 
-        for function in &self.program.functions {
+        for function in &self.checked.program.functions {
             output.push_str(&self.emit_function(function)?);
             output.push('\n');
         }
 
         Ok(output)
-    }
-
-    fn collect_signatures(&mut self) -> Result<(), CompileError> {
-        for function in &self.program.functions {
-            if self.signatures.contains_key(function.name.as_str()) {
-                return Err(CompileError::new(format!(
-                    "duplicate function `{}`",
-                    function.name
-                )));
-            }
-
-            let return_type = if function.name == "main" {
-                Type::Int
-            } else {
-                type_from_optional_ref(function.return_type.as_ref())?
-            };
-            let mut params = Vec::new();
-            for param in &function.params {
-                if !matches!(param.mode, ParamMode::Owned) {
-                    return Err(CompileError::new(format!(
-                        "C backend does not support borrowed parameter `{}` yet",
-                        param.name
-                    )));
-                }
-                params.push((param.name.clone(), type_from_ref(&param.ty)?));
-            }
-
-            self.signatures.insert(
-                function.name.as_str(),
-                FunctionSig {
-                    return_type,
-                    params,
-                },
-            );
-        }
-
-        if !self.signatures.contains_key("main") {
-            return Err(CompileError::new("program must declare `func main()`"));
-        }
-
-        Ok(())
     }
 
     fn prototype(&self, function: &Function) -> Result<String, CompileError> {
@@ -189,6 +142,10 @@ impl<'a> CGenerator<'a> {
                     typed.code
                 ))
             }
+            StmtKind::Assign { name, expr } => {
+                let typed = self.emit_expr(expr, locals)?;
+                Ok(format!("{} = {};", c_ident(name), typed.code))
+            }
             StmtKind::Return { expr } => {
                 let typed = self.emit_expr(expr, locals)?;
                 if typed.ty != return_type {
@@ -259,6 +216,9 @@ impl<'a> CGenerator<'a> {
                 ty: Type::Bool,
                 code: if *value { "true" } else { "false" }.to_string(),
             }),
+            ExprKind::Nil => Err(CompileError::new(
+                "`nil` should have been rejected by semantic analysis",
+            )),
             ExprKind::Var(name) => {
                 let Some(ty) = locals.get(name).copied() else {
                     return Err(CompileError::new(format!("unknown variable `{name}`")));
@@ -381,24 +341,11 @@ impl<'a> CGenerator<'a> {
     }
 
     fn function_sig(&self, name: &str) -> Result<&FunctionSig, CompileError> {
-        self.signatures
+        self.checked
+            .signatures
             .get(name)
             .ok_or_else(|| CompileError::new(format!("unknown function `{name}`")))
     }
-}
-
-#[derive(Debug, Clone)]
-struct FunctionSig {
-    return_type: Type,
-    params: Vec<(String, Type)>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Type {
-    Int,
-    Bool,
-    String,
-    Unit,
 }
 
 impl Type {
@@ -408,15 +355,6 @@ impl Type {
             Self::Bool => "bool",
             Self::String => "const char *",
             Self::Unit => "void",
-        }
-    }
-
-    fn source_name(self) -> &'static str {
-        match self {
-            Self::Int => "int",
-            Self::Bool => "bool",
-            Self::String => "string",
-            Self::Unit => "unit",
         }
     }
 }
@@ -442,20 +380,6 @@ impl BinaryOp {
             Self::Greater => ">",
             Self::GreaterEqual => ">=",
         }
-    }
-}
-
-fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, CompileError> {
-    ty.map_or(Ok(Type::Unit), type_from_ref)
-}
-
-fn type_from_ref(ty: &TypeRef) -> Result<Type, CompileError> {
-    match ty.name.as_str() {
-        "int" => Ok(Type::Int),
-        "bool" => Ok(Type::Bool),
-        "string" => Ok(Type::String),
-        "unit" => Ok(Type::Unit),
-        _ => Err(CompileError::new(format!("unknown type `{}`", ty.name))),
     }
 }
 

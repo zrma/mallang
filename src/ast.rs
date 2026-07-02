@@ -55,6 +55,10 @@ pub enum StmtKind {
         name: String,
         expr: Expr,
     },
+    Assign {
+        name: String,
+        expr: Expr,
+    },
     Return {
         expr: Expr,
     },
@@ -74,6 +78,7 @@ pub enum ExprKind {
     Int(i64),
     String(String),
     Bool(bool),
+    Nil,
     Var(String),
     Call {
         callee: Box<Expr>,

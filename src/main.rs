@@ -4,7 +4,7 @@ use std::{
     process::{self, Command},
 };
 
-use mallang::{generate_c, lex, parse};
+use mallang::{check, generate_c, lex, parse};
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
@@ -23,6 +23,10 @@ fn main() {
         "parse" => {
             args.remove(0);
             run_parse(&program, &args)
+        }
+        "check" => {
+            args.remove(0);
+            run_check(&program, &args)
         }
         "build" => {
             args.remove(0);
@@ -45,6 +49,7 @@ fn usage(program: &str) {
     eprintln!("usage:");
     eprintln!("  {program} lex <source-file>");
     eprintln!("  {program} parse <source-file>");
+    eprintln!("  {program} check <source-file>");
     eprintln!("  {program} build <source-file> [-o <output>]");
     eprintln!("  {program} <source-file>  # alias for lex");
 }
@@ -75,6 +80,15 @@ fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_check(program: &str, args: &[String]) -> Result<(), String> {
+    let path = single_source_arg(program, "check", args)?;
+    let source = read_source(path)?;
+    let program_ast = parse(&source).map_err(|error| format!("{path}: {error}"))?;
+    check(&program_ast).map_err(|error| format!("{path}: {error}"))?;
+    println!("{path}: ok");
+    Ok(())
+}
+
 fn run_build(program: &str, args: &[String]) -> Result<(), String> {
     if args.is_empty() {
         return Err(format!(
@@ -100,6 +114,7 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
 
     let source = read_source(source_path)?;
     let program_ast = parse(&source).map_err(|error| format!("{source_path}: {error}"))?;
+    check(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
     let c_source = generate_c(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
 
     let source_stem = Path::new(source_path)

@@ -22,7 +22,8 @@
 - [x] Add first-subset name resolution for local variables and direct function calls.
 - [x] Add first-subset primitive type checking for `int`, `bool`, `string`, and `unit`.
 - [x] Add first-subset function signature checking.
-- Reject `nil`, pointer-like syntax, and unresolved identifiers.
+- [x] Reject `nil`, pointer-like syntax, and unresolved identifiers.
+- [x] Reject immutable binding reassignment.
 - Support `if` expressions with compatible branch types.
 
 ## Milestone 3: Ownership and Borrowing
