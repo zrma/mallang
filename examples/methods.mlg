@@ -1,0 +1,14 @@
+type User struct {
+    name string
+    age int
+}
+
+func (self in User) age() int {
+    return self.age
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.name)
+    print(user.age())
+}

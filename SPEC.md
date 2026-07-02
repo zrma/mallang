@@ -136,8 +136,30 @@ Rules:
 - Non-copy fields such as `string` can be borrowed for calls like `print`, but
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed.
-- v0 does not include methods, field assignment, recursive by-value structs, or
-  struct pattern matching.
+- v0 does not include field assignment, recursive by-value structs, or struct
+  pattern matching.
+
+Methods use Go-like receiver declarations with Mallang's existing parameter
+mode syntax.
+
+```go
+func (self in User) age() int {
+    return self.age
+}
+
+print(user.age())
+```
+
+Rules:
+
+- The receiver must be a struct type in v0.
+- Receiver modes are the same as parameter modes: owned, `in`, and `mut`.
+- A method call implicitly passes the receiver according to the method
+  declaration.
+- Returning or storing borrowed values is still unsupported, so methods with
+  `in` receivers cannot return non-copy fields such as `string` by value.
+- v0 does not include method values, interfaces, dynamic dispatch, or receiver
+  overloading outside concrete struct receivers.
 
 ## Functions
 

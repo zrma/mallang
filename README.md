@@ -25,6 +25,7 @@ This repository is the Mallang language PoC workspace.
   `Option`, `Result`, and `match`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   field access.
+- Go-like receiver methods with Mallang parameter modes.
 
 ## Bootstrap
 
@@ -47,6 +48,8 @@ cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-tem
 target/mallang/match-temp
 cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
+cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
+target/mallang/methods
 ```
 
 Run the full local gate:
@@ -65,6 +68,7 @@ scripts/check.sh
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
+- `examples/methods.mlg`: native smoke for struct receiver methods.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -89,5 +93,5 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`,
-statement/expression `if`, struct, and built-in ADT subset via C source
+statement/expression `if`, struct/method, and built-in ADT subset via C source
 generation and `clang`.

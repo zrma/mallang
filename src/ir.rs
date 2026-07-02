@@ -2,10 +2,10 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, MatchArm, MatchPattern, ParamMode, Stmt,
-        StmtKind, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchPattern, ParamMode,
+        Stmt, StmtKind, UnaryOp,
     },
-    semantic::{CheckedProgram, FunctionSig, ParamSig, StructSig, Type},
+    semantic::{CheckedProgram, FunctionSig, MethodKey, MethodSig, ParamSig, StructSig, Type},
     token::Span,
 };
 
@@ -203,8 +203,11 @@ impl<'a> Lowerer<'a> {
         let structs = self.lower_structs()?;
         let mut functions = Vec::new();
         for function in &self.checked.program.functions {
-            let sig = self.function_sig(&function.name, function.span)?;
+            let (receiver, sig, ir_name) = self.callable_sig(function)?;
             let mut locals = HashMap::new();
+            if let Some(receiver) = receiver {
+                locals.insert(receiver.name.clone(), receiver.ty.clone());
+            }
             for param in &sig.params {
                 locals.insert(param.name.clone(), param.ty.clone());
             }
@@ -212,9 +215,14 @@ impl<'a> Lowerer<'a> {
             for stmt in &function.body.statements {
                 body.push(self.lower_stmt(stmt, &mut locals, &sig.return_type)?);
             }
+            let mut params = Vec::new();
+            if let Some(receiver) = receiver {
+                params.push(lower_param(receiver));
+            }
+            params.extend(sig.params.iter().map(lower_param));
             functions.push(IrFunction {
-                name: function.name.clone(),
-                params: sig.params.iter().map(lower_param).collect(),
+                name: ir_name,
+                params,
                 return_type: sig.return_type.clone(),
                 body,
             });
@@ -917,9 +925,13 @@ impl<'a> Lowerer<'a> {
         expected: Option<&Type>,
         span: Span,
     ) -> Result<(IrExprKind, Type), IrError> {
+        if let ExprKind::FieldAccess { base, field } = &callee.kind {
+            return self.lower_method_call(base, field, args, locals, span);
+        }
+
         let ExprKind::Var(name) = &callee.kind else {
             return Err(IrError::new(
-                "only direct calls should reach IR lowering",
+                "only direct function and method calls should reach IR lowering",
                 callee.span,
             ));
         };
@@ -967,11 +979,110 @@ impl<'a> Lowerer<'a> {
         ))
     }
 
+    fn lower_method_call(
+        &self,
+        base: &Expr,
+        method_name: &str,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let receiver_probe = self.lower_expr(base, locals)?;
+        let key = MethodKey {
+            receiver: receiver_probe.ty.clone(),
+            name: method_name.to_string(),
+        };
+        let sig = self.method_sig(&key, span)?;
+
+        let receiver = self.lower_expr_with_expected(base, locals, Some(&sig.receiver.ty))?;
+        let mut lowered_args = vec![IrArg {
+            mode: arg_mode_for_param(sig.receiver.mode),
+            expr: receiver,
+            span: base.span,
+        }];
+        for (arg, param) in args.iter().zip(sig.function.params.iter()) {
+            lowered_args.push(IrArg {
+                mode: arg.mode,
+                expr: self.lower_expr_with_expected(&arg.expr, locals, Some(&param.ty))?,
+                span: arg.span,
+            });
+        }
+
+        Ok((
+            IrExprKind::Call {
+                callee: method_ir_name(&sig.receiver.ty, method_name),
+                args: lowered_args,
+            },
+            sig.function.return_type.clone(),
+        ))
+    }
+
     fn function_sig(&self, name: &str, span: Span) -> Result<&FunctionSig, IrError> {
         self.checked
             .signatures
             .get(name)
             .ok_or_else(|| IrError::new(format!("unknown function `{name}`"), span))
+    }
+
+    fn method_sig(&self, key: &MethodKey, span: Span) -> Result<&MethodSig, IrError> {
+        self.checked.methods.get(key).ok_or_else(|| {
+            IrError::new(
+                format!(
+                    "unknown method `{}` on `{}`",
+                    key.name,
+                    key.receiver.source_name()
+                ),
+                span,
+            )
+        })
+    }
+
+    fn callable_sig(
+        &self,
+        function: &Function,
+    ) -> Result<(Option<&ParamSig>, &FunctionSig, String), IrError> {
+        if let Some(receiver) = &function.receiver {
+            let receiver_ty = self.type_from_ref(&receiver.ty)?;
+            let key = MethodKey {
+                receiver: receiver_ty,
+                name: function.name.clone(),
+            };
+            let method = self.method_sig(&key, function.span)?;
+            Ok((
+                Some(&method.receiver),
+                &method.function,
+                method_ir_name(&method.receiver.ty, &function.name),
+            ))
+        } else {
+            Ok((
+                None,
+                self.function_sig(&function.name, function.span)?,
+                function.name.clone(),
+            ))
+        }
+    }
+
+    fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
+        match ty.name.as_str() {
+            "int" if ty.args.is_empty() => Ok(Type::Int),
+            "bool" if ty.args.is_empty() => Ok(Type::Bool),
+            "string" if ty.args.is_empty() => Ok(Type::String),
+            "unit" if ty.args.is_empty() => Ok(Type::Unit),
+            "Option" if ty.args.len() == 1 => {
+                Ok(Type::Option(Box::new(self.type_from_ref(&ty.args[0])?)))
+            }
+            "Result" if ty.args.len() == 2 => Ok(Type::Result(
+                Box::new(self.type_from_ref(&ty.args[0])?),
+                Box::new(self.type_from_ref(&ty.args[1])?),
+            )),
+            name if ty.args.is_empty() && self.checked.structs.contains_key(name) => {
+                Ok(Type::Struct(name.to_string()))
+            }
+            _ => Err(IrError::new(
+                "semantic analysis accepted unknown type reference",
+                ty.span,
+            )),
+        }
     }
 
     fn struct_sig(&self, name: &str, span: Span) -> Result<&StructSig, IrError> {
@@ -988,6 +1099,18 @@ fn lower_param(param: &ParamSig) -> IrParam {
         mode: param.mode,
         ty: param.ty.clone(),
     }
+}
+
+fn arg_mode_for_param(mode: ParamMode) -> ArgMode {
+    match mode {
+        ParamMode::Owned => ArgMode::Owned,
+        ParamMode::In => ArgMode::In,
+        ParamMode::Mut => ArgMode::Mut,
+    }
+}
+
+fn method_ir_name(receiver: &Type, method: &str) -> String {
+    format!("{}.{}", receiver.source_name(), method)
 }
 
 struct PreparedMatchArm<'a> {
@@ -1194,5 +1317,46 @@ func main() {
         };
         assert_eq!(args[0].expr.ty, Type::Int);
         assert!(matches!(args[0].expr.kind, IrExprKind::FieldAccess { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_method_declarations_and_calls() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func (self in User) age() int {
+    return self.age
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age())
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert_eq!(ir.functions[0].name, "User.age");
+        assert_eq!(ir.functions[0].params.len(), 1);
+        assert_eq!(ir.functions[0].params[0].mode, ParamMode::In);
+
+        let IrStmtKind::Expr { expr } = &ir.functions[1].body[1].kind else {
+            panic!("expected print expression");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected print call");
+        };
+        let IrExprKind::Call { callee, args } = &args[0].expr.kind else {
+            panic!("expected method call");
+        };
+        assert_eq!(callee, "User.age");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].mode, ArgMode::In);
     }
 }

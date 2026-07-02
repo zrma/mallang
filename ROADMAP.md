@@ -58,7 +58,7 @@
 - [x] Add C backend layout for built-in ADTs.
 - [x] Generate native code for non-local `match` scrutinee expressions.
 - [x] Struct declarations, named literals, and field access.
-- Struct methods.
+- [x] Struct receiver methods.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

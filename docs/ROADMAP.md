@@ -58,5 +58,5 @@
 - [x] `type Name struct { ... }` parser/semantic 추가
 - [x] named struct literal과 field access 추가
 - [x] struct typed IR와 C backend typedef/literal/access 추가
-- [ ] struct methods 설계/구현
+- [x] struct receiver methods 설계/구현
 - [ ] field assignment와 field-level borrow 규칙 설계

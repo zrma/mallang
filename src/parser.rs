@@ -119,6 +119,11 @@ impl Parser {
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
         let start = self.expect_keyword(Keyword::Func, "expected `func` declaration")?;
+        let receiver = if self.at(TokenTag::LeftParen) {
+            Some(self.parse_receiver()?)
+        } else {
+            None
+        };
         let (name, _) = self.expect_ident("expected function name")?;
         self.expect(TokenTag::LeftParen, "expected `(` after function name")?;
 
@@ -146,11 +151,19 @@ impl Parser {
 
         Ok(Function {
             name,
+            receiver,
             params,
             return_type,
             body,
             span,
         })
+    }
+
+    fn parse_receiver(&mut self) -> Result<Param, ParseError> {
+        self.expect(TokenTag::LeftParen, "expected `(` before method receiver")?;
+        let receiver = self.parse_param()?;
+        self.expect(TokenTag::RightParen, "expected `)` after method receiver")?;
+        Ok(receiver)
     }
 
     fn parse_param(&mut self) -> Result<Param, ParseError> {
@@ -938,6 +951,45 @@ func main() {
             panic!("expected print call");
         };
         assert!(matches!(args[0].expr.kind, ExprKind::FieldAccess { .. }));
+    }
+
+    #[test]
+    fn parses_method_declaration_and_call() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func (self in User) age() int {
+    return self.age
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age())
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.functions.len(), 2);
+        let receiver = program.functions[0].receiver.as_ref().unwrap();
+        assert_eq!(receiver.name, "self");
+        assert_eq!(receiver.mode, ParamMode::In);
+        assert_eq!(receiver.ty.name, "User");
+
+        let StmtKind::Expr { expr } = &program.functions[1].body.statements[1].kind else {
+            panic!("expected expression statement");
+        };
+        let ExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected print call");
+        };
+        let ExprKind::Call { callee, .. } = &args[0].expr.kind else {
+            panic!("expected method call");
+        };
+        assert!(matches!(callee.kind, ExprKind::FieldAccess { .. }));
     }
 
     #[test]

@@ -64,3 +64,10 @@ if [[ "$structs_output" != $'kim\n30' ]]; then
   echo "structs native build smoke failed: expected kim and 30, got '$structs_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/methods.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/methods.mlg -o target/mallang/methods >/dev/null
+methods_output="$(target/mallang/methods)"
+if [[ "$methods_output" != $'kim\n30' ]]; then
+  echo "methods native build smoke failed: expected kim and 30, got '$methods_output'" >&2
+  exit 1
+fi

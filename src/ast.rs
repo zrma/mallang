@@ -24,6 +24,7 @@ pub struct FieldDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
+    pub receiver: Option<Param>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeRef>,
     pub body: Block,

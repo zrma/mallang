@@ -945,7 +945,7 @@ fn c_ident(name: &str) -> String {
     if name == "main" {
         return name.to_string();
     }
-    format!("mlg_{name}")
+    format!("mlg_{}", c_type_ident(name))
 }
 
 fn c_field(name: &str) -> String {
@@ -1135,5 +1135,34 @@ func main() {
             "mlg_struct_User mlg_user = (mlg_struct_User){ .mlg_name = \"kim\", .mlg_age = 30 };"
         ));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
+    }
+
+    #[test]
+    fn generates_c_for_struct_methods() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func (self in User) age() int {
+    return self.age
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age())
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mlg_User_age(mlg_struct_User mlg_self);"));
+        assert!(c.contains("return (mlg_self).mlg_age;"));
+        assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_User_age(mlg_user)));"));
     }
 }

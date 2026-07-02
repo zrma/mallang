@@ -16,6 +16,7 @@ pub fn check(program: &Program) -> Result<CheckedProgram<'_>, SemanticError> {
 pub struct CheckedProgram<'a> {
     pub program: &'a Program,
     pub signatures: HashMap<&'a str, FunctionSig>,
+    pub methods: HashMap<MethodKey, MethodSig>,
     pub structs: HashMap<&'a str, StructSig>,
 }
 
@@ -23,6 +24,18 @@ pub struct CheckedProgram<'a> {
 pub struct FunctionSig {
     pub return_type: Type,
     pub params: Vec<ParamSig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodSig {
+    pub receiver: ParamSig,
+    pub function: FunctionSig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MethodKey {
+    pub receiver: Type,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +121,7 @@ impl std::error::Error for SemanticError {}
 struct Checker<'a> {
     program: &'a Program,
     signatures: HashMap<&'a str, FunctionSig>,
+    methods: HashMap<MethodKey, MethodSig>,
     structs: HashMap<&'a str, StructSig>,
 }
 
@@ -116,6 +130,7 @@ impl<'a> Checker<'a> {
         Self {
             program,
             signatures: HashMap::new(),
+            methods: HashMap::new(),
             structs: HashMap::new(),
         }
     }
@@ -130,6 +145,7 @@ impl<'a> Checker<'a> {
         Ok(CheckedProgram {
             program: self.program,
             signatures: self.signatures,
+            methods: self.methods,
             structs: self.structs,
         })
     }
@@ -180,14 +196,13 @@ impl<'a> Checker<'a> {
 
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
         for function in &self.program.functions {
-            if self.signatures.contains_key(function.name.as_str()) {
-                return Err(SemanticError::new(
-                    format!("duplicate function `{}`", function.name),
-                    function.span,
-                ));
-            }
-
             if function.name == "main" {
+                if function.receiver.is_some() {
+                    return Err(SemanticError::new(
+                        "`main` must not declare a method receiver",
+                        function.span,
+                    ));
+                }
                 if !function.params.is_empty() {
                     return Err(SemanticError::new(
                         "`main` must not take parameters",
@@ -205,20 +220,50 @@ impl<'a> Checker<'a> {
             let return_type = self.type_from_optional_ref(function.return_type.as_ref())?;
             let mut params = Vec::new();
             for param in &function.params {
-                params.push(ParamSig {
-                    name: param.name.clone(),
-                    mode: param.mode,
-                    ty: self.type_from_ref(&param.ty)?,
-                });
+                params.push(self.param_sig(param)?);
             }
 
-            self.signatures.insert(
-                function.name.as_str(),
-                FunctionSig {
-                    return_type,
-                    params,
-                },
-            );
+            let function_sig = FunctionSig {
+                return_type,
+                params,
+            };
+            if let Some(receiver) = &function.receiver {
+                let receiver = self.param_sig(receiver)?;
+                if !matches!(receiver.ty, Type::Struct(_)) {
+                    return Err(SemanticError::new(
+                        "method receiver must be a struct type in v0",
+                        function.receiver.as_ref().unwrap().span,
+                    ));
+                }
+                let key = MethodKey {
+                    receiver: receiver.ty.clone(),
+                    name: function.name.clone(),
+                };
+                if self
+                    .methods
+                    .insert(
+                        key,
+                        MethodSig {
+                            receiver,
+                            function: function_sig,
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(SemanticError::new(
+                        format!("duplicate method `{}`", function.name),
+                        function.span,
+                    ));
+                }
+            } else {
+                if self.signatures.contains_key(function.name.as_str()) {
+                    return Err(SemanticError::new(
+                        format!("duplicate function `{}`", function.name),
+                        function.span,
+                    ));
+                }
+                self.signatures.insert(function.name.as_str(), function_sig);
+            }
         }
 
         if !self.signatures.contains_key("main") {
@@ -232,8 +277,18 @@ impl<'a> Checker<'a> {
     }
 
     fn check_function(&self, function: &Function) -> Result<(), SemanticError> {
-        let sig = self.function_sig(&function.name, function.span)?;
+        let (receiver, sig) = self.callable_sig(function)?;
         let mut locals = HashMap::new();
+        if let Some(receiver) = receiver {
+            locals.insert(
+                receiver.name.clone(),
+                Local {
+                    ty: receiver.ty.clone(),
+                    mutable: matches!(receiver.mode, ParamMode::Mut),
+                    moved: false,
+                },
+            );
+        }
         for param in &sig.params {
             if locals
                 .insert(
@@ -273,6 +328,31 @@ impl<'a> Checker<'a> {
         }
 
         Ok(())
+    }
+
+    fn param_sig(&self, param: &crate::ast::Param) -> Result<ParamSig, SemanticError> {
+        Ok(ParamSig {
+            name: param.name.clone(),
+            mode: param.mode,
+            ty: self.type_from_ref(&param.ty)?,
+        })
+    }
+
+    fn callable_sig(
+        &self,
+        function: &Function,
+    ) -> Result<(Option<&ParamSig>, &FunctionSig), SemanticError> {
+        if let Some(receiver) = &function.receiver {
+            let receiver_ty = self.type_from_ref(&receiver.ty)?;
+            let key = MethodKey {
+                receiver: receiver_ty,
+                name: function.name.clone(),
+            };
+            let method = self.method_sig(&key, function.span)?;
+            Ok((Some(&method.receiver), &method.function))
+        } else {
+            Ok((None, self.function_sig(&function.name, function.span)?))
+        }
     }
 
     fn check_stmt(
@@ -983,9 +1063,13 @@ impl<'a> Checker<'a> {
         expected: Option<&Type>,
         span: Span,
     ) -> Result<Type, SemanticError> {
+        if let ExprKind::FieldAccess { base, field } = &callee.kind {
+            return self.check_method_call(base, field, args, locals, span);
+        }
+
         let ExprKind::Var(name) = &callee.kind else {
             return Err(SemanticError::new(
-                "only direct function calls are supported in v0",
+                "only direct function and method calls are supported in v0",
                 callee.span,
             ));
         };
@@ -1012,19 +1096,120 @@ impl<'a> Checker<'a> {
         }
 
         let sig = self.function_sig(name, callee.span)?;
-        if args.len() != sig.params.len() {
+        self.check_call_args(name, args, &sig.params, locals, HashMap::new(), span)?;
+        Ok(sig.return_type.clone())
+    }
+
+    fn check_method_call(
+        &self,
+        base: &Expr,
+        method_name: &str,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
+        let Type::Struct(_) = base_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "method call requires a struct receiver, got `{}`",
+                    base_ty.source_name()
+                ),
+                base.span,
+            ));
+        };
+        let key = MethodKey {
+            receiver: base_ty.clone(),
+            name: method_name.to_string(),
+        };
+        let sig = self.method_sig(&key, span)?;
+        let mut call_borrows = HashMap::new();
+        match sig.receiver.mode {
+            ParamMode::Owned => {
+                let receiver_ty = self.check_expr_with_expected(
+                    base,
+                    locals,
+                    ValueUse::Owned,
+                    Some(&sig.receiver.ty),
+                )?;
+                if receiver_ty != sig.receiver.ty {
+                    return Err(SemanticError::new(
+                        format!(
+                            "receiver type mismatch for `{method_name}`: expected `{}`, got `{}`",
+                            sig.receiver.ty.source_name(),
+                            receiver_ty.source_name()
+                        ),
+                        base.span,
+                    ));
+                }
+            }
+            ParamMode::In => {
+                register_receiver_borrow(base, &mut call_borrows, BorrowKind::Shared)?;
+                let receiver_ty = self.check_expr_with_expected(
+                    base,
+                    locals,
+                    ValueUse::Borrow,
+                    Some(&sig.receiver.ty),
+                )?;
+                if receiver_ty != sig.receiver.ty {
+                    return Err(SemanticError::new(
+                        format!(
+                            "receiver type mismatch for `{method_name}`: expected `{}`, got `{}`",
+                            sig.receiver.ty.source_name(),
+                            receiver_ty.source_name()
+                        ),
+                        base.span,
+                    ));
+                }
+            }
+            ParamMode::Mut => {
+                register_receiver_borrow(base, &mut call_borrows, BorrowKind::Exclusive)?;
+                let receiver_ty = self.check_receiver_borrow(base, locals, true)?;
+                if receiver_ty != sig.receiver.ty {
+                    return Err(SemanticError::new(
+                        format!(
+                            "receiver type mismatch for `{method_name}`: expected `{}`, got `{}`",
+                            sig.receiver.ty.source_name(),
+                            receiver_ty.source_name()
+                        ),
+                        base.span,
+                    ));
+                }
+            }
+        }
+
+        self.check_call_args(
+            method_name,
+            args,
+            &sig.function.params,
+            locals,
+            call_borrows,
+            span,
+        )?;
+        Ok(sig.function.return_type.clone())
+    }
+
+    fn check_call_args(
+        &self,
+        name: &str,
+        args: &[Arg],
+        params: &[ParamSig],
+        locals: &mut HashMap<String, Local>,
+        mut call_borrows: HashMap<String, BorrowKind>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if args.len() != params.len() {
             return Err(SemanticError::new(
                 format!(
                     "function `{name}` expects {} arguments, got {}",
-                    sig.params.len(),
+                    params.len(),
                     args.len()
                 ),
                 span,
             ));
         }
 
-        let mut call_borrows = HashMap::new();
-        for (arg, param) in args.iter().zip(sig.params.iter()) {
+        for (arg, param) in args.iter().zip(params.iter()) {
             let arg_ty = match (param.mode, arg.mode) {
                 (ParamMode::Owned, ArgMode::Owned) => self.check_expr_with_expected(
                     &arg.expr,
@@ -1071,7 +1256,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        Ok(sig.return_type.clone())
+        Ok(())
     }
 
     fn check_some_constructor(
@@ -1214,6 +1399,40 @@ impl<'a> Checker<'a> {
         Ok(local.ty.clone())
     }
 
+    fn check_receiver_borrow(
+        &self,
+        receiver: &Expr,
+        locals: &mut HashMap<String, Local>,
+        mutable: bool,
+    ) -> Result<Type, SemanticError> {
+        let ExprKind::Var(name) = &receiver.kind else {
+            return Err(SemanticError::new(
+                "mutable method receivers must be direct local variables in v0",
+                receiver.span,
+            ));
+        };
+        let Some(local) = locals.get(name) else {
+            return Err(SemanticError::new(
+                format!("unknown variable `{name}`"),
+                receiver.span,
+            ));
+        };
+        if local.moved {
+            return Err(SemanticError::new(
+                format!("borrow of moved value `{name}`"),
+                receiver.span,
+            ));
+        }
+        if mutable && !local.mutable {
+            return Err(SemanticError::new(
+                format!("cannot mutably borrow immutable binding `{name}`"),
+                receiver.span,
+            ));
+        }
+
+        Ok(local.ty.clone())
+    }
+
     fn check_binary(
         &self,
         op: BinaryOp,
@@ -1272,6 +1491,19 @@ impl<'a> Checker<'a> {
         self.signatures
             .get(name)
             .ok_or_else(|| SemanticError::new(format!("unknown function `{name}`"), span))
+    }
+
+    fn method_sig(&self, key: &MethodKey, span: Span) -> Result<&MethodSig, SemanticError> {
+        self.methods.get(key).ok_or_else(|| {
+            SemanticError::new(
+                format!(
+                    "unknown method `{}` on `{}`",
+                    key.name,
+                    key.receiver.source_name()
+                ),
+                span,
+            )
+        })
     }
 
     fn struct_sig(&self, name: &str, span: Span) -> Result<&StructSig, SemanticError> {
@@ -1381,6 +1613,29 @@ fn borrow_arg_name(arg: &Arg) -> Result<&str, SemanticError> {
         ));
     };
     Ok(name)
+}
+
+fn register_receiver_borrow(
+    receiver: &Expr,
+    call_borrows: &mut HashMap<String, BorrowKind>,
+    kind: BorrowKind,
+) -> Result<(), SemanticError> {
+    let ExprKind::Var(name) = &receiver.kind else {
+        return Ok(());
+    };
+    match (call_borrows.get(name).copied(), kind) {
+        (None, kind) => {
+            call_borrows.insert(name.clone(), kind);
+            Ok(())
+        }
+        (Some(BorrowKind::Shared), BorrowKind::Shared) => Ok(()),
+        (Some(BorrowKind::Shared), BorrowKind::Exclusive)
+        | (Some(BorrowKind::Exclusive), BorrowKind::Shared)
+        | (Some(BorrowKind::Exclusive), BorrowKind::Exclusive) => Err(SemanticError::new(
+            format!("borrow of `{name}` overlaps with an active borrow in this call"),
+            receiver.span,
+        )),
+    }
 }
 
 fn expect_constructor_arg<'a>(
@@ -1497,6 +1752,65 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_read_receiver_method_call() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func (self in User) age() int {
+    return self.age
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age())
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_method_call() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    print(user.missing())
+}
+"#,
+        );
+        assert!(error.message.contains("unknown method `missing`"));
+    }
+
+    #[test]
+    fn owned_receiver_method_moves_value() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func (self User) consume() {
+}
+
+func main() {
+    user := User{name: "kim"}
+    user.consume()
+    print(user.name)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `user`"));
     }
 
     #[test]
