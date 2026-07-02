@@ -1,0 +1,18 @@
+func main() {
+    ignoreOption(maybe(false))
+    ignoreResult(read(false))
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(1) } else { None }
+}
+
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+
+func ignoreOption(value Option[int]) {
+}
+
+func ignoreResult(value Result[int, string]) {
+}

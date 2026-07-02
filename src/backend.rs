@@ -53,7 +53,7 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdio.h>\n\n");
 
         for function in &self.program.functions {
-            output.push_str(&self.prototype(function));
+            output.push_str(&self.prototype(function)?);
             output.push_str(";\n");
         }
         output.push('\n');
@@ -66,30 +66,35 @@ impl<'a> CGenerator<'a> {
         Ok(output)
     }
 
-    fn prototype(&self, function: &IrFunction) -> String {
+    fn prototype(&self, function: &IrFunction) -> Result<String, CompileError> {
         let params = if function.name == "main" || function.params.is_empty() {
             "void".to_string()
         } else {
             function
                 .params
                 .iter()
-                .map(|param| format!("{} {}", param.ty.c_name(), c_ident(&param.name)))
-                .collect::<Vec<_>>()
+                .map(|param| Ok(format!("{} {}", param.ty.c_name()?, c_ident(&param.name))))
+                .collect::<Result<Vec<_>, CompileError>>()?
                 .join(", ")
         };
 
         let return_type = if function.name == "main" {
-            "int"
+            "int".to_string()
         } else {
-            function.return_type.c_name()
+            function.return_type.c_name()?.to_string()
         };
 
-        format!("{} {}({})", return_type, c_ident(&function.name), params)
+        Ok(format!(
+            "{} {}({})",
+            return_type,
+            c_ident(&function.name),
+            params
+        ))
     }
 
     fn emit_function(&self, function: &IrFunction) -> Result<String, CompileError> {
         let mut output = String::new();
-        output.push_str(&self.prototype(function));
+        output.push_str(&self.prototype(function)?);
         output.push_str(" {\n");
 
         for stmt in &function.body {
@@ -111,7 +116,7 @@ impl<'a> CGenerator<'a> {
         match &stmt.kind {
             IrStmtKind::Let { name, ty, expr, .. } => Ok(format!(
                 "{} {} = {};",
-                ty.c_name(),
+                ty.c_name()?,
                 c_ident(name),
                 self.emit_expr(expr)?
             )),
@@ -138,7 +143,7 @@ impl<'a> CGenerator<'a> {
 
         let arg = &args[0].expr;
         let code = self.emit_expr(arg)?;
-        match arg.ty {
+        match &arg.ty {
             Type::Int => Ok(format!("printf(\"%lld\\n\", (long long)({code}));")),
             Type::Bool => Ok(format!(
                 "printf(\"%s\\n\", ({code}) ? \"true\" : \"false\");"
@@ -147,6 +152,10 @@ impl<'a> CGenerator<'a> {
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),
+            Type::Option(_) | Type::Result(_, _) => Err(CompileError::new(format!(
+                "printing `{}` values is not implemented yet",
+                arg.ty.source_name()
+            ))),
         }
     }
 
@@ -192,12 +201,16 @@ impl<'a> CGenerator<'a> {
 }
 
 impl Type {
-    fn c_name(self) -> &'static str {
+    fn c_name(&self) -> Result<&'static str, CompileError> {
         match self {
-            Self::Int => "int64_t",
-            Self::Bool => "bool",
-            Self::String => "const char *",
-            Self::Unit => "void",
+            Self::Int => Ok("int64_t"),
+            Self::Bool => Ok("bool"),
+            Self::String => Ok("const char *"),
+            Self::Unit => Ok("void"),
+            Self::Option(_) | Self::Result(_, _) => Err(CompileError::new(format!(
+                "C backend layout for `{}` is not implemented yet",
+                self.source_name()
+            ))),
         }
     }
 }
@@ -301,5 +314,26 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
+    }
+
+    #[test]
+    fn rejects_adt_types_until_backend_layout_exists() {
+        let program = parse(
+            r#"
+func main() {
+}
+
+func accept(value Option[int]) {
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let error = generate_c_from_ir(&ir).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("C backend layout for `Option[int]` is not implemented yet"));
     }
 }

@@ -138,7 +138,7 @@ impl<'a> Lowerer<'a> {
             let sig = self.function_sig(&function.name, function.span)?;
             let mut locals = HashMap::new();
             for param in &sig.params {
-                locals.insert(param.name.clone(), param.ty);
+                locals.insert(param.name.clone(), param.ty.clone());
             }
             let mut body = Vec::new();
             for stmt in &function.body.statements {
@@ -147,7 +147,7 @@ impl<'a> Lowerer<'a> {
             functions.push(IrFunction {
                 name: function.name.clone(),
                 params: sig.params.iter().map(lower_param).collect(),
-                return_type: sig.return_type,
+                return_type: sig.return_type.clone(),
                 body,
             });
         }
@@ -167,11 +167,12 @@ impl<'a> Lowerer<'a> {
                 expr,
             } => {
                 let expr = self.lower_expr(expr, locals)?;
-                locals.insert(name.clone(), expr.ty);
+                let ty = expr.ty.clone();
+                locals.insert(name.clone(), ty.clone());
                 IrStmtKind::Let {
                     mutable: *mutable,
                     name: name.clone(),
-                    ty: expr.ty,
+                    ty,
                     expr,
                 }
             }
@@ -208,7 +209,13 @@ impl<'a> Lowerer<'a> {
                 ));
             }
             ExprKind::Var(name) => {
-                let Some(ty) = locals.get(name).copied() else {
+                if matches!(name.as_str(), "None") {
+                    return Err(IrError::new(
+                        "ADT constructor lowering is planned but not implemented yet",
+                        expr.span,
+                    ));
+                }
+                let Some(ty) = locals.get(name).cloned() else {
                     return Err(IrError::new(
                         format!("unknown variable `{name}` during IR lowering"),
                         expr.span,
@@ -236,7 +243,7 @@ impl<'a> Lowerer<'a> {
                         expr.span,
                     ));
                 }
-                let ty = then_branch.ty;
+                let ty = then_branch.ty.clone();
                 (
                     IrExprKind::If {
                         condition: Box::new(condition),
@@ -249,7 +256,7 @@ impl<'a> Lowerer<'a> {
             ExprKind::Call { callee, args } => self.lower_call(callee, args, locals, expr.span)?,
             ExprKind::Unary { op, expr } => {
                 let expr = self.lower_expr(expr, locals)?;
-                let ty = match (op, expr.ty) {
+                let ty = match (*op, &expr.ty) {
                     (UnaryOp::Negate, Type::Int) => Type::Int,
                     (UnaryOp::Not, Type::Bool) => Type::Bool,
                     _ => {
@@ -315,6 +322,13 @@ impl<'a> Lowerer<'a> {
             ));
         };
 
+        if matches!(name.as_str(), "Some" | "Ok" | "Err") {
+            return Err(IrError::new(
+                "ADT constructor lowering is planned but not implemented yet",
+                span,
+            ));
+        }
+
         let mut lowered_args = Vec::new();
         for arg in args {
             lowered_args.push(IrArg {
@@ -340,7 +354,7 @@ impl<'a> Lowerer<'a> {
                 callee: name.clone(),
                 args: lowered_args,
             },
-            sig.return_type,
+            sig.return_type.clone(),
         ))
     }
 
@@ -356,7 +370,7 @@ fn lower_param(param: &ParamSig) -> IrParam {
     IrParam {
         name: param.name.clone(),
         mode: param.mode,
-        ty: param.ty,
+        ty: param.ty.clone(),
     }
 }
 
@@ -389,10 +403,10 @@ func add(a int, b int) int {
         assert_eq!(ir.functions[1].return_type, Type::Int);
         assert_eq!(ir.functions[1].params.len(), 2);
 
-        let IrStmtKind::Let { ty, .. } = ir.functions[0].body[0].kind else {
+        let IrStmtKind::Let { ty, .. } = &ir.functions[0].body[0].kind else {
             panic!("expected typed let");
         };
-        assert_eq!(ty, Type::Int);
+        assert_eq!(*ty, Type::Int);
     }
 
     #[test]
@@ -414,5 +428,25 @@ func main() {
         };
         assert_eq!(*ty, Type::String);
         assert!(matches!(expr.kind, IrExprKind::If { .. }));
+    }
+
+    #[test]
+    fn ir_rejects_adt_constructors_until_tagged_ir_exists() {
+        let program = parse(
+            r#"
+func find() Option[int] {
+    return None
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let error = lower(&checked).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("ADT constructor lowering is planned"));
     }
 }

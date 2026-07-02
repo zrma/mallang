@@ -36,6 +36,7 @@ cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
+cargo run --bin mlg -- check examples/adt.mlg
 ```
 
 Run the full local gate:
@@ -50,6 +51,7 @@ scripts/check.sh
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
+- `examples/adt.mlg`: check-only smoke for `Option` / `Result` constructors.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.

@@ -31,26 +31,35 @@ pub struct ParamSig {
     pub ty: Type,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     Bool,
     String,
     Unit,
+    Option(Box<Type>),
+    Result(Box<Type>, Box<Type>),
 }
 
 impl Type {
-    pub fn source_name(self) -> &'static str {
+    pub fn source_name(&self) -> String {
         match self {
-            Self::Int => "int",
-            Self::Bool => "bool",
-            Self::String => "string",
-            Self::Unit => "unit",
+            Self::Int => "int".to_string(),
+            Self::Bool => "bool".to_string(),
+            Self::String => "string".to_string(),
+            Self::Unit => "unit".to_string(),
+            Self::Option(inner) => format!("Option[{}]", inner.source_name()),
+            Self::Result(ok, err) => format!("Result[{}, {}]", ok.source_name(), err.source_name()),
         }
     }
 
-    pub fn is_copy(self) -> bool {
-        matches!(self, Self::Int | Self::Bool | Self::Unit)
+    pub fn is_copy(&self) -> bool {
+        match self {
+            Self::Int | Self::Bool | Self::Unit => true,
+            Self::String => false,
+            Self::Option(inner) => inner.is_copy(),
+            Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
+        }
     }
 }
 
@@ -167,7 +176,7 @@ impl<'a> Checker<'a> {
                 .insert(
                     param.name.clone(),
                     Local {
-                        ty: param.ty,
+                        ty: param.ty.clone(),
                         mutable: matches!(param.mode, ParamMode::Mut),
                         moved: false,
                     },
@@ -186,7 +195,7 @@ impl<'a> Checker<'a> {
             if matches!(stmt.kind, StmtKind::Return { .. }) {
                 returned = true;
             }
-            self.check_stmt(stmt, &mut locals, sig.return_type)?;
+            self.check_stmt(stmt, &mut locals, &sig.return_type)?;
         }
 
         if sig.return_type != Type::Unit && !returned {
@@ -207,7 +216,7 @@ impl<'a> Checker<'a> {
         &self,
         stmt: &Stmt,
         locals: &mut HashMap<String, Local>,
-        return_type: Type,
+        return_type: &Type,
     ) -> Result<Type, SemanticError> {
         match &stmt.kind {
             StmtKind::Let {
@@ -220,7 +229,7 @@ impl<'a> Checker<'a> {
                     .insert(
                         name.clone(),
                         Local {
-                            ty,
+                            ty: ty.clone(),
                             mutable: *mutable,
                             moved: false,
                         },
@@ -235,24 +244,28 @@ impl<'a> Checker<'a> {
                 Ok(Type::Unit)
             }
             StmtKind::Assign { name, expr } => {
-                let value_ty = self.check_expr(expr, locals, ValueUse::Owned)?;
-                let Some(local) = locals.get(name) else {
-                    return Err(SemanticError::new(
-                        format!("unknown variable `{name}`"),
-                        stmt.span,
-                    ));
+                let (local_ty, local_mutable) = {
+                    let Some(local) = locals.get(name) else {
+                        return Err(SemanticError::new(
+                            format!("unknown variable `{name}`"),
+                            stmt.span,
+                        ));
+                    };
+                    (local.ty.clone(), local.mutable)
                 };
-                if !local.mutable {
+                if !local_mutable {
                     return Err(SemanticError::new(
                         format!("cannot assign to immutable binding `{name}`"),
                         stmt.span,
                     ));
                 }
-                if value_ty != local.ty {
+                let value_ty =
+                    self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&local_ty))?;
+                if value_ty != local_ty {
                     return Err(SemanticError::new(
                         format!(
                             "assignment type mismatch for `{name}`: expected `{}`, got `{}`",
-                            local.ty.source_name(),
+                            local_ty.source_name(),
                             value_ty.source_name()
                         ),
                         stmt.span,
@@ -261,8 +274,13 @@ impl<'a> Checker<'a> {
                 Ok(Type::Unit)
             }
             StmtKind::Return { expr } => {
-                let value_ty = self.check_expr(expr, locals, ValueUse::Owned)?;
-                if value_ty != return_type {
+                let value_ty = self.check_expr_with_expected(
+                    expr,
+                    locals,
+                    ValueUse::Owned,
+                    Some(return_type),
+                )?;
+                if &value_ty != return_type {
                     return Err(SemanticError::new(
                         format!(
                             "return type mismatch: expected `{}`, got `{}`",
@@ -284,6 +302,16 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         value_use: ValueUse,
     ) -> Result<Type, SemanticError> {
+        self.check_expr_with_expected(expr, locals, value_use, None)
+    }
+
+    fn check_expr_with_expected(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
+        expected: Option<&Type>,
+    ) -> Result<Type, SemanticError> {
         match &expr.kind {
             ExprKind::Int(_) => Ok(Type::Int),
             ExprKind::String(_) => Ok(Type::String),
@@ -292,23 +320,31 @@ impl<'a> Checker<'a> {
                 "`nil` is reserved; use Option[T] when optional values are implemented",
                 expr.span,
             )),
+            ExprKind::Var(name) if name == "None" => {
+                self.check_none_constructor(expected, expr.span)
+            }
             ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
             ExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
             } => self.check_if_expr(
-                condition,
-                then_branch,
-                else_branch,
+                IfExprParts {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    span: expr.span,
+                },
                 locals,
                 value_use,
-                expr.span,
+                expected,
             ),
-            ExprKind::Call { callee, args } => self.check_call(callee, args, locals, expr.span),
+            ExprKind::Call { callee, args } => {
+                self.check_call(callee, args, locals, expected, expr.span)
+            }
             ExprKind::Unary { op, expr } => {
                 let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
-                match (op, ty) {
+                match (*op, &ty) {
                     (UnaryOp::Negate, Type::Int) => Ok(Type::Int),
                     (UnaryOp::Not, Type::Bool) => Ok(Type::Bool),
                     (UnaryOp::Negate, _) => Err(SemanticError::new(
@@ -327,45 +363,116 @@ impl<'a> Checker<'a> {
 
     fn check_if_expr(
         &self,
-        condition: &Expr,
-        then_branch: &Expr,
-        else_branch: &Expr,
+        parts: IfExprParts<'_>,
         locals: &mut HashMap<String, Local>,
         value_use: ValueUse,
-        span: Span,
+        expected: Option<&Type>,
     ) -> Result<Type, SemanticError> {
-        let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+        let condition_ty = self.check_expr(parts.condition, locals, ValueUse::Owned)?;
         if condition_ty != Type::Bool {
             return Err(SemanticError::new(
                 "if condition must have type `bool`",
-                condition.span,
+                parts.condition.span,
             ));
         }
 
-        let mut then_locals = locals.clone();
-        let then_ty = self.check_expr(then_branch, &mut then_locals, value_use)?;
-        let mut else_locals = locals.clone();
-        let else_ty = self.check_expr(else_branch, &mut else_locals, value_use)?;
+        let branch_check = self.check_if_branches(
+            parts.then_branch,
+            parts.else_branch,
+            locals,
+            value_use,
+            expected,
+        )?;
 
-        if then_ty != else_ty {
+        if branch_check.then_ty != branch_check.else_ty {
             return Err(SemanticError::new(
                 format!(
                     "if branches must have the same type: got `{}` and `{}`",
-                    then_ty.source_name(),
-                    else_ty.source_name()
+                    branch_check.then_ty.source_name(),
+                    branch_check.else_ty.source_name()
                 ),
-                span,
+                parts.span,
             ));
         }
-        if then_ty == Type::Unit {
+        if branch_check.then_ty == Type::Unit {
             return Err(SemanticError::new(
                 "if expression branches must produce a value in v0",
-                span,
+                parts.span,
             ));
         }
 
-        merge_branch_moves(locals, &then_locals, &else_locals);
-        Ok(then_ty)
+        merge_branch_moves(locals, &branch_check.then_locals, &branch_check.else_locals);
+        Ok(branch_check.then_ty)
+    }
+
+    fn check_if_branches(
+        &self,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        locals: &HashMap<String, Local>,
+        value_use: ValueUse,
+        expected: Option<&Type>,
+    ) -> Result<IfBranchCheck, SemanticError> {
+        if let Some(expected) = expected {
+            let mut then_locals = locals.clone();
+            let then_ty = self.check_expr_with_expected(
+                then_branch,
+                &mut then_locals,
+                value_use,
+                Some(expected),
+            )?;
+            let mut else_locals = locals.clone();
+            let else_ty = self.check_expr_with_expected(
+                else_branch,
+                &mut else_locals,
+                value_use,
+                Some(expected),
+            )?;
+            return Ok(IfBranchCheck {
+                then_ty,
+                then_locals,
+                else_ty,
+                else_locals,
+            });
+        }
+
+        let mut then_locals = locals.clone();
+        match self.check_expr(then_branch, &mut then_locals, value_use) {
+            Ok(then_ty) => {
+                let mut else_locals = locals.clone();
+                let else_ty = self.check_expr_with_expected(
+                    else_branch,
+                    &mut else_locals,
+                    value_use,
+                    Some(&then_ty),
+                )?;
+                Ok(IfBranchCheck {
+                    then_ty,
+                    then_locals,
+                    else_ty,
+                    else_locals,
+                })
+            }
+            Err(then_error) => {
+                let mut else_locals = locals.clone();
+                let else_ty = self.check_expr(else_branch, &mut else_locals, value_use)?;
+                let mut then_locals = locals.clone();
+                let then_ty = self
+                    .check_expr_with_expected(
+                        then_branch,
+                        &mut then_locals,
+                        value_use,
+                        Some(&else_ty),
+                    )
+                    .map_err(|_| then_error)?;
+                Ok(IfBranchCheck {
+                    then_ty,
+                    then_locals,
+                    else_ty,
+                    else_locals,
+                })
+            }
+        }
     }
 
     fn check_var(
@@ -388,7 +495,7 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let ty = local.ty;
+        let ty = local.ty.clone();
         if matches!(value_use, ValueUse::Owned) && !ty.is_copy() {
             local.moved = true;
         }
@@ -401,6 +508,7 @@ impl<'a> Checker<'a> {
         callee: &Expr,
         args: &[Arg],
         locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
         span: Span,
     ) -> Result<Type, SemanticError> {
         let ExprKind::Var(name) = &callee.kind else {
@@ -409,6 +517,13 @@ impl<'a> Checker<'a> {
                 callee.span,
             ));
         };
+
+        match name.as_str() {
+            "Some" => return self.check_some_constructor(args, locals, expected, span),
+            "Ok" => return self.check_ok_constructor(args, locals, expected, span),
+            "Err" => return self.check_err_constructor(args, locals, expected, span),
+            _ => {}
+        }
 
         if name == "print" {
             if args.len() != 1 {
@@ -439,9 +554,12 @@ impl<'a> Checker<'a> {
         let mut call_borrows = HashMap::new();
         for (arg, param) in args.iter().zip(sig.params.iter()) {
             let arg_ty = match (param.mode, arg.mode) {
-                (ParamMode::Owned, ArgMode::Owned) => {
-                    self.check_expr(&arg.expr, locals, ValueUse::Owned)?
-                }
+                (ParamMode::Owned, ArgMode::Owned) => self.check_expr_with_expected(
+                    &arg.expr,
+                    locals,
+                    ValueUse::Owned,
+                    Some(&param.ty),
+                )?,
                 (ParamMode::In, ArgMode::In) => {
                     self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Shared)?;
                     self.check_borrow_arg(arg, locals, false)?
@@ -481,7 +599,96 @@ impl<'a> Checker<'a> {
             }
         }
 
-        Ok(sig.return_type)
+        Ok(sig.return_type.clone())
+    }
+
+    fn check_some_constructor(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let arg = expect_constructor_arg("Some", args, span)?;
+        let expected_payload = match expected {
+            Some(Type::Option(inner)) => Some(inner.as_ref()),
+            _ => None,
+        };
+        let payload_ty =
+            self.check_expr_with_expected(&arg.expr, locals, ValueUse::Owned, expected_payload)?;
+        Ok(Type::Option(Box::new(payload_ty)))
+    }
+
+    fn check_none_constructor(
+        &self,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let Some(expected) = expected else {
+            return Err(SemanticError::new(
+                "`None` requires expected `Option[T]` context",
+                span,
+            ));
+        };
+        if !matches!(expected, Type::Option(_)) {
+            return Err(SemanticError::new(
+                "`None` requires expected `Option[T]` context",
+                span,
+            ));
+        }
+        Ok(expected.clone())
+    }
+
+    fn check_ok_constructor(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let arg = expect_constructor_arg("Ok", args, span)?;
+        let Some(Type::Result(expected_ok, expected_err)) = expected else {
+            return Err(SemanticError::new(
+                "`Ok` requires expected `Result[T, E]` context",
+                span,
+            ));
+        };
+        let ok_ty = self.check_expr_with_expected(
+            &arg.expr,
+            locals,
+            ValueUse::Owned,
+            Some(expected_ok.as_ref()),
+        )?;
+        Ok(Type::Result(
+            Box::new(ok_ty),
+            Box::new(expected_err.as_ref().clone()),
+        ))
+    }
+
+    fn check_err_constructor(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let arg = expect_constructor_arg("Err", args, span)?;
+        let Some(Type::Result(expected_ok, expected_err)) = expected else {
+            return Err(SemanticError::new(
+                "`Err` requires expected `Result[T, E]` context",
+                span,
+            ));
+        };
+        let err_ty = self.check_expr_with_expected(
+            &arg.expr,
+            locals,
+            ValueUse::Owned,
+            Some(expected_err.as_ref()),
+        )?;
+        Ok(Type::Result(
+            Box::new(expected_ok.as_ref().clone()),
+            Box::new(err_ty),
+        ))
     }
 
     fn register_call_borrow(
@@ -532,7 +739,7 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        Ok(local.ty)
+        Ok(local.ty.clone())
     }
 
     fn check_binary(
@@ -596,11 +803,25 @@ impl<'a> Checker<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Local {
     ty: Type,
     mutable: bool,
     moved: bool,
+}
+
+struct IfExprParts<'a> {
+    condition: &'a Expr,
+    then_branch: &'a Expr,
+    else_branch: &'a Expr,
+    span: Span,
+}
+
+struct IfBranchCheck {
+    then_ty: Type,
+    then_locals: HashMap<String, Local>,
+    else_ty: Type,
+    else_locals: HashMap<String, Local>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -623,6 +844,27 @@ fn borrow_arg_name(arg: &Arg) -> Result<&str, SemanticError> {
         ));
     };
     Ok(name)
+}
+
+fn expect_constructor_arg<'a>(
+    constructor: &str,
+    args: &'a [Arg],
+    span: Span,
+) -> Result<&'a Arg, SemanticError> {
+    if args.len() != 1 {
+        return Err(SemanticError::new(
+            format!("`{constructor}` expects exactly one argument"),
+            span,
+        ));
+    }
+    let arg = &args[0];
+    if !matches!(arg.mode, ArgMode::Owned) {
+        return Err(SemanticError::new(
+            format!("`{constructor}` expects an owned argument"),
+            arg.span,
+        ));
+    }
+    Ok(arg)
 }
 
 fn merge_branch_moves(
@@ -658,11 +900,7 @@ fn type_from_ref(ty: &TypeRef) -> Result<Type, SemanticError> {
                     ty.span,
                 ));
             }
-            type_from_ref(&ty.args[0])?;
-            Err(SemanticError::new(
-                "`Option[T]` type checking is planned but not implemented yet",
-                ty.span,
-            ))
+            Ok(Type::Option(Box::new(type_from_ref(&ty.args[0])?)))
         }
         "Result" => {
             if ty.args.len() != 2 {
@@ -671,11 +909,9 @@ fn type_from_ref(ty: &TypeRef) -> Result<Type, SemanticError> {
                     ty.span,
                 ));
             }
-            type_from_ref(&ty.args[0])?;
-            type_from_ref(&ty.args[1])?;
-            Err(SemanticError::new(
-                "`Result[T, E]` type checking is planned but not implemented yet",
-                ty.span,
+            Ok(Type::Result(
+                Box::new(type_from_ref(&ty.args[0])?),
+                Box::new(type_from_ref(&ty.args[1])?),
             ))
         }
         _ => Err(SemanticError::new(
@@ -746,11 +982,67 @@ func add(a int, b int) int {
     }
 
     #[test]
-    fn rejects_planned_option_type_with_clear_diagnostic() {
+    fn allows_option_constructors_with_expected_context() {
+        check_ok(
+            r#"
+func find(flag bool) Option[int] {
+    return if flag { Some(1) } else { None }
+}
+
+func main() {}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_result_constructors_with_expected_context() {
+        check_ok(
+            r#"
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+
+func main() {}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_none_as_function_argument_with_expected_option_type() {
+        check_ok(
+            r#"
+func main() {
+    accept(None)
+}
+
+func accept(value Option[int]) {
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_none_without_expected_option_context() {
+        let error = check_error("func main() { value := None }");
+        assert!(error
+            .message
+            .contains("`None` requires expected `Option[T]` context"));
+    }
+
+    #[test]
+    fn rejects_ok_without_expected_result_context() {
+        let error = check_error("func main() { value := Ok(1) }");
+        assert!(error
+            .message
+            .contains("`Ok` requires expected `Result[T, E]` context"));
+    }
+
+    #[test]
+    fn rejects_option_constructor_payload_mismatch() {
         let error = check_error(
             r#"
 func find() Option[int] {
-    return None
+    return Some("nope")
 }
 
 func main() {}
@@ -758,7 +1050,25 @@ func main() {}
         );
         assert!(error
             .message
-            .contains("`Option[T]` type checking is planned"));
+            .contains("return type mismatch: expected `Option[int]`, got `Option[string]`"));
+    }
+
+    #[test]
+    fn ownership_moves_option_payloads() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    wrapped := Some(s)
+    print(s)
+    consume(wrapped)
+}
+
+func consume(value Option[string]) {
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `s`"));
     }
 
     #[test]

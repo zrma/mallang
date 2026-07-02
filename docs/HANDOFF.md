@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, `if` expression, generic type refs, typed IR, first native subset C backend, `mlg check`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: ADT constructors, statement-form `if`, statement-spanning borrow lifetimes, full C backend, `match`
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, `if` expression, generic type refs, `Option`/`Result` constructor type checking, typed IR, first native subset C backend, `mlg check`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: ADT tagged IR/backend layout, statement-form `if`, statement-spanning borrow lifetimes, full C backend, `match`
 
 ## 빠른 시작
 
@@ -15,6 +15,7 @@ scripts/check.sh
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
+cargo run --bin mlg -- check examples/adt.mlg
 ```
 
 ## 주요 문서
@@ -27,8 +28,8 @@ target/mallang/first
 
 ## 다음 구현 후보
 
-1. `Some` / `None` / `Ok` / `Err` constructor type checking 추가
-2. expected-type context 설계: `None`, `Ok`, `Err` inference 범위 결정
-3. statement-form `if`와 block expression 범위 결정
-4. backend를 typed IR coverage 기준으로 확장
+1. `Option` / `Result` exhaustive `match` syntax와 type checking 추가
+2. tagged typed IR 설계: `Option` / `Result` layout-independent representation
+3. C backend layout for built-in ADTs 추가
+4. statement-form `if`와 block expression 범위 결정
 5. `mlg ir` debug subcommand 도입 여부 결정

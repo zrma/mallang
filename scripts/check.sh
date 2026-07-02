@@ -35,3 +35,4 @@ if [[ "$if_output" != "pass" ]]; then
   echo "if native build smoke failed: expected pass, got '$if_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/adt.mlg >/dev/null
