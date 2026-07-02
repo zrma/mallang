@@ -110,8 +110,25 @@ Move types:
 string struct
 ```
 
-Arrays and slices are reserved for a later v0 slice and are expected to be
-move-only unless explicitly designed otherwise.
+Fixed-size arrays use Go-like `[N]T` type syntax. The first v0 implementation
+slice will support compile-time integer lengths and element types that already
+work in the native backend.
+
+```go
+values := [3]int{1, 2, 3}
+```
+
+Array rules:
+
+- `N` must be a non-negative integer literal.
+- Array literals must provide exactly `N` elements.
+- Every element must have the array element type.
+- Arrays are move-only in v0, even when the element type is `Copy`.
+- The first native layout is a C struct wrapper with a fixed `data[N]` field,
+  not a raw C array, so array values can be assigned, moved, and passed through
+  the existing value pipeline.
+- Slices `[]T`, indexing, `len`, append/growth, and array mutation are reserved
+  for later slices.
 
 `unit` is the implicit return type of functions that do not return a value.
 
@@ -309,7 +326,31 @@ Rules:
 - `break` and `continue` are only valid inside loops.
 - A `for` statement is not considered return-complete in v0, even when its
   condition is statically `true`.
-- v0 does not yet include `range` or post declarations.
+- v0 does not yet include post declarations.
+
+Range loops are a Go-like iteration form. The first v0 implementation slice is
+array-only.
+
+```go
+for i, value := range values {
+    print(i)
+    print(value)
+}
+```
+
+Range rules:
+
+- The range source must be a fixed-size array.
+- The loop introduces immutable `int` index and immutable element value
+  bindings scoped to the loop body.
+- The element binding is allowed only when the element type is `Copy` in the
+  first implementation slice.
+- The range source is read for iteration and is still usable after the loop.
+- `break` and `continue` follow the same nearest-loop rules as other `for`
+  forms.
+- Mutable range variables, one-variable range, blank identifiers, range over
+  slices/maps/strings, and by-reference element iteration are reserved for later
+  slices.
 
 Expression form:
 

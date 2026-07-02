@@ -91,3 +91,14 @@
 - [x] field-level borrow arguments 추가
 - [x] nested field assignment와 nested field borrow argument 추가
 - [x] printable field를 가진 struct native print 추가
+
+## P7: Arrays And Range
+
+- [x] fixed-size array와 array-only `range`의 v0 surface 결정
+- [ ] `[N]T` type reference parser 추가
+- [ ] `[N]T{...}` fixed-size array literal parser 추가
+- [ ] fixed-size array semantic/type checking 추가
+- [ ] array-only `for i, value := range values { ... }` parser/semantic 추가
+- [ ] fixed-size array typed IR와 C struct-wrapper layout 추가
+- [ ] array-only `range` C backend/native smoke 추가
+- [ ] slice `[]T`, indexing, `len`, append/growth, mutable range는 후속 slice로 분리
