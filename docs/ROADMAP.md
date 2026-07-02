@@ -260,3 +260,10 @@
 - [x] shadowed inner binding move가 outer binding move로 merge되지 않게 고정
 - [x] `for`/`range` body shadowing을 위한 native C block lowering 추가
 - [x] native smoke에서 nested shadowing 출력 검증
+
+## P29: Control-Flow Scope Regression
+
+- [x] `match` expression payload shadowing native smoke 추가
+- [x] statement `match` payload move가 outer binding move로 merge되지 않는 semantic test 추가
+- [x] condition-only `for` body shadowing semantic/native smoke 추가
+- [x] `examples/shadowing.mlg`로 control-flow scope isolation 회귀 고정

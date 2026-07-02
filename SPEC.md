@@ -106,8 +106,8 @@ Rules:
 
 - Reassignment requires a `mut` local binding.
 - Redeclaring a binding in the same block is rejected.
-- Shadowing is allowed only in a nested block, including `if`, `for`, and
-  `range` bodies.
+- Shadowing is allowed only in a nested block or arm-local scope, including
+  `if`, `for`, `range` bodies, and `match` arms.
 - A move of a shadowed inner binding does not move the outer binding.
 - v0 does not support uninitialized locals.
 

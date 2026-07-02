@@ -69,8 +69,8 @@
 - [x] Reject recursive struct value type definitions.
 - [x] Reject top-level type/function declaration name conflicts.
 - [x] Reject user value bindings that collide with built-in value names.
-- [x] Allow shadowing only in nested blocks while rejecting same-block
-  redeclarations.
+- [x] Allow shadowing only in nested blocks or arm-local scopes while rejecting
+  same-block redeclarations.
 - [x] Reject non-printable `print` arguments before native backend lowering.
 - [x] Reject statement-only `print` in value positions before native backend
   lowering.

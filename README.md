@@ -156,7 +156,7 @@ scripts/check.sh
 - `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
 - `examples/range-blank.mlg`: native smoke for blank identifiers in array range loops.
 - `examples/range-index.mlg`: native build/run smoke for one-variable array range over non-copy elements.
-- `examples/shadowing.mlg`: native smoke for nested block shadowing and outer move isolation.
+- `examples/shadowing.mlg`: native smoke for nested block shadowing, match payload shadowing, and outer move isolation.
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.

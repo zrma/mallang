@@ -23,6 +23,33 @@ func main() {
         item := "range"
         print(item)
     }
+
+    maybe := Some("inner")
+    picked := match maybe {
+        case Some(value) { value }
+        case None { "fallback" }
+    }
+    print(value)
+    print(picked)
+
+    maybe2 := Some("arm")
+    match maybe2 {
+        case Some(value) {
+            consume(value)
+        }
+        case None {
+            print(value)
+        }
+    }
+    print(value)
+
+    mut active := true
+    for active {
+        active := "while"
+        print(active)
+        break
+    }
+    print(value)
 }
 
 func consume(value string) {

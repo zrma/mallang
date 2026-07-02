@@ -244,7 +244,7 @@ fi
 "${CARGO[@]}" run --bin mlg -- check examples/shadowing.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/shadowing.mlg -o target/mallang/shadowing >/dev/null
 shadowing_output="$(target/mallang/shadowing)"
-if [[ "$shadowing_output" != $'7\nouter\nkeep\nloop\nrange' ]]; then
+if [[ "$shadowing_output" != $'7\nouter\nkeep\nloop\nrange\nouter\ninner\nouter\nwhile\nouter' ]]; then
   echo "shadowing native build smoke failed: expected nested shadowing output, got '$shadowing_output'" >&2
   exit 1
 fi

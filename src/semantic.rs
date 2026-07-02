@@ -3326,6 +3326,47 @@ func main() {
     }
 
     #[test]
+    fn match_payload_shadow_move_does_not_move_outer_binding() {
+        check_ok(
+            r#"
+func main() {
+    value := "outer"
+    maybe := Some("inner")
+    match maybe {
+        case Some(value) {
+            consume(value)
+        }
+        case None {
+            print(value)
+        }
+    }
+    print(value)
+}
+
+func consume(value string) {
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_condition_for_body_to_shadow_condition_binding() {
+        check_ok(
+            r#"
+func main() {
+    mut active := true
+    for active {
+        active := "shadow"
+        print(active)
+        break
+    }
+    print(active)
+}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_method_name_to_match_receiver_type_name() {
         check_ok(
             r#"
