@@ -139,6 +139,10 @@ Fixed-size array indexing and length are intentionally smaller than full slices.
 value := values[i]
 count := len(values)
 values[i] = 5
+for ; i < 3; values[slot] = i {
+    slot = i
+    i = i + 1
+}
 ```
 
 Indexing and length rules:
@@ -154,11 +158,16 @@ Indexing and length rules:
   runtime error instead of performing unchecked C memory access.
 - `values[i] = expr` requires `values` to be a direct `mut` local array binding
   or `mut` array parameter in v0.
+- `values[i] = expr` can also be used as a Go-like `for` clause post target
+  and follows the same direct mutable array and `Copy` element rules.
 - Array element assignment is supported only when the element type is `Copy`.
 - Array element assignment uses the same compile-time literal and native runtime
   bounds checks as array indexing.
 - The assignment index is evaluated and bounds-checked before the right-hand
   expression is evaluated.
+- The current native backend supports `for` post array assignment when the
+  target and right-hand expression lower without temporary prelude statements;
+  broader header lowering is deferred.
 - Slice type syntax `[]T` is still deferred because owned slices, borrowed
   views, append/growth, and mutation require a larger ownership decision.
 

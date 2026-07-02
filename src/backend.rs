@@ -70,6 +70,15 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdio.h>\n");
         output.push_str("#include <stdlib.h>\n");
         output.push_str("#include <string.h>\n\n");
+        output.push_str("static int64_t mallang_check_index(int64_t index, int64_t len) {\n");
+        output.push_str("    if (index < 0 || index >= len) {\n");
+        output.push_str(
+            "        fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n",
+        );
+        output.push_str("        exit(1);\n");
+        output.push_str("    }\n");
+        output.push_str("    return index;\n");
+        output.push_str("}\n\n");
 
         let defined_types = self.collect_defined_types();
         let mut emitted_types = Vec::new();
@@ -446,6 +455,24 @@ impl<'a> CGenerator<'a> {
                 Ok(CExpr {
                     prelude,
                     code: format!("({}).{}", code, c_field(field)),
+                })
+            }
+            IrExprKind::Index { base, index } => {
+                let Type::Array { len, .. } = &base.ty else {
+                    return Err(CompileError::new(
+                        "IR invariant violation: index assignment base must be an array",
+                    ));
+                };
+                let base = self.emit_stmt_expr_with_env(base, env)?;
+                let index = self.emit_stmt_expr_with_env(index, env)?;
+                let mut prelude = base.prelude;
+                prelude.extend(index.prelude);
+                Ok(CExpr {
+                    prelude,
+                    code: format!(
+                        "({}).mlg_data[mallang_check_index({}, {len})]",
+                        base.code, index.code
+                    ),
                 })
             }
             _ => Err(CompileError::new(
@@ -2325,6 +2352,33 @@ func main() {
         assert!(c.contains("if (mallang_index_assign_value_"));
         assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
         assert!(c.contains("] = 5;"));
+    }
+
+    #[test]
+    fn generates_c_for_fixed_size_array_element_assignment_in_for_post() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [3]int{0, 0, 0}
+    mut slot := 0
+    mut i := 0
+    for ; i < 3; values[slot] = i {
+        slot = i
+        i = i + 1
+    }
+    print(values[0] + values[1] + values[2])
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("static int64_t mallang_check_index"));
+        assert!(c.contains(
+            "for (; mlg_i < 3; (mlg_values).mlg_data[mallang_check_index(mlg_slot, 3)] = mlg_i) {"
+        ));
     }
 
     #[test]

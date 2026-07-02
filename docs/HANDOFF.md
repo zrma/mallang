@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, array-only `for i, value := range values { ... }`, fixed-size array `values[i]` indexing for `Copy` elements with compile-time literal and native runtime bounds checks, fixed-size array `values[i] = expr` assignment for mutable `Copy` element arrays, fixed-size array `len(values)`, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, fixed-size array typed IR/C struct-wrapper layout, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: slice surface syntax, borrowed/non-copy indexing, non-copy array element assignment, statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, array-only `for i, value := range values { ... }`, fixed-size array `values[i]` indexing for `Copy` elements with compile-time literal and native runtime bounds checks, fixed-size array `values[i] = expr` assignment for mutable `Copy` element arrays including `for` clause post targets, fixed-size array `len(values)`, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, fixed-size array typed IR/C struct-wrapper layout, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: slice surface syntax, borrowed/non-copy indexing, non-copy array element assignment, statement-spanning borrow lifetimes, for-clause header lowering for complex expressions that need temporary preludes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
 
@@ -32,6 +32,8 @@ cargo run --bin mlg -- check examples/arrays.mlg
 cargo run --bin mlg -- ir examples/arrays.mlg
 cargo run --bin mlg -- build examples/arrays.mlg -o target/mallang/arrays
 target/mallang/arrays
+cargo run --bin mlg -- build examples/array-for-post.mlg -o target/mallang/array-for-post
+target/mallang/array-for-post
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
@@ -85,5 +87,6 @@ target/mallang/match-statement
 1. slice `[]T`, append/growth, mutable range value의 ownership surface 결정
 2. borrowed/non-copy indexing과 non-copy array element assignment의 ownership boundary 결정
 3. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
-4. full C backend 범위를 native subset별로 쪼개기
-5. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정
+4. for-clause header prelude lowering을 statement-lowering으로 풀지 결정
+5. full C backend 범위를 native subset별로 쪼개기
+6. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정

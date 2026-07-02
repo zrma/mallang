@@ -570,7 +570,9 @@ impl<'a> Lowerer<'a> {
             ForPost::Assign { target, expr } => {
                 let target = self.lower_expr(target, locals)?;
                 match &target.kind {
-                    IrExprKind::Var(_) | IrExprKind::FieldAccess { .. } => {}
+                    IrExprKind::Var(_)
+                    | IrExprKind::FieldAccess { .. }
+                    | IrExprKind::Index { .. } => {}
                     _ => {
                         return Err(IrError::new(
                             "semantic analysis accepted invalid for post target",
@@ -2297,6 +2299,40 @@ func main() {
             panic!("expected index assignment");
         };
         assert!(matches!(base.ty, Type::Array { .. }));
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(expr.ty, Type::Int);
+    }
+
+    #[test]
+    fn ir_lowers_fixed_size_array_element_assignment_in_for_post() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [3]int{0, 0, 0}
+    mut slot := 0
+    mut i := 0
+    for ; i < 3; values[slot] = i {
+        slot = i
+        i = i + 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For { post, .. } = &ir.functions[0].body[3].kind else {
+            panic!("expected for statement");
+        };
+        let Some(IrForPost::Assign { target, expr }) = post.as_deref() else {
+            panic!("expected for post assignment");
+        };
+        let IrExprKind::Index { base, index } = &target.kind else {
+            panic!("expected index assignment target");
+        };
+        assert!(matches!(&base.kind, IrExprKind::Var(name) if name == "values"));
+        assert!(matches!(&index.kind, IrExprKind::Var(name) if name == "slot"));
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Int);
     }

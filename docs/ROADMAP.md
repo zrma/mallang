@@ -128,3 +128,11 @@
 - [x] assignment index compile-time/runtime bounds check 적용
 - [x] typed IR와 C backend에서 checked element assignment 추가
 - [x] native smoke에서 assignment 이후 range/index/len 결과 검증
+
+## P11: Fixed Array For-Post Assignment
+
+- [x] `for ...; ...; values[i] = expr` post parser 추가
+- [x] 기존 fixed array element assignment semantic 규칙을 for post에 재사용
+- [x] typed IR에서 index assignment target을 for post로 lowering
+- [x] C `for` header에서 사용할 수 있는 runtime bounds helper 추가
+- [x] native smoke에서 for post array assignment 실행 결과 검증

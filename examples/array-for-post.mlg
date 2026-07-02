@@ -1,0 +1,10 @@
+func main() {
+    mut values := [3]int{0, 0, 0}
+    mut slot := 0
+    mut i := 0
+    for ; i < 3; values[slot] = i {
+        slot = i
+        i = i + 1
+    }
+    print(values[0] + values[1] + values[2])
+}

@@ -511,12 +511,14 @@ impl Parser {
         let target = self.parse_expression()?;
         let target_span = target.span;
         self.expect(TokenTag::Equal, "expected `=` in for post")?;
-        let expr = self.parse_expression()?;
+        let expr = self.parse_expression_without_struct_literals()?;
 
         match target.kind {
-            ExprKind::Var(_) | ExprKind::FieldAccess { .. } => Ok(ForPost::Assign { target, expr }),
+            ExprKind::Var(_) | ExprKind::FieldAccess { .. } | ExprKind::Index { .. } => {
+                Ok(ForPost::Assign { target, expr })
+            }
             _ => Err(ParseError::new(
-                "for post target must be a variable or field access",
+                "for post target must be a variable, field access, or index expression",
                 target_span,
             )),
         }
@@ -1367,6 +1369,35 @@ func add(a int, b int) int {
             }
         ));
         assert!(matches!(post, Some(ForPost::Assign { .. })));
+    }
+
+    #[test]
+    fn parses_for_clause_index_assignment_post() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [3]int{0, 0, 0}
+    mut slot := 0
+    mut i := 0
+    for ; i < 3; values[slot] = i {
+        slot = i
+        i = i + 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        let StmtKind::For { post, .. } = &program.functions[0].body.statements[3].kind else {
+            panic!("expected for statement");
+        };
+        let Some(ForPost::Assign { target, .. }) = post else {
+            panic!("expected for post assignment");
+        };
+        let ExprKind::Index { base, index } = &target.kind else {
+            panic!("expected index assignment target");
+        };
+        assert!(matches!(&base.kind, ExprKind::Var(name) if name == "values"));
+        assert!(matches!(&index.kind, ExprKind::Var(name) if name == "slot"));
     }
 
     #[test]

@@ -612,8 +612,11 @@ impl<'a> Checker<'a> {
                 ExprKind::FieldAccess { base, field } => {
                     self.check_field_assign(base, field, expr, locals)
                 }
+                ExprKind::Index { base, index } => {
+                    self.check_index_assign(base, index, expr, locals, span)
+                }
                 _ => Err(SemanticError::new(
-                    "for post target must be a variable or field access",
+                    "for post target must be a variable, field access, or index expression",
                     target.span,
                 )),
             },
@@ -3774,6 +3777,24 @@ func main() {
     values[index] = 5
     print(values[index])
     consume(values)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_fixed_size_array_element_assignment_in_for_post() {
+        check_ok(
+            r#"
+func main() {
+    mut values := [3]int{0, 0, 0}
+    mut slot := 0
+    mut i := 0
+    for ; i < 3; values[slot] = i {
+        slot = i
+        i = i + 1
+    }
+    print(values[0])
 }
 "#,
         );

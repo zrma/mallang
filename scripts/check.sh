@@ -107,6 +107,13 @@ if [[ "$arrays_output" != "20" ]]; then
   echo "arrays native build smoke failed: expected 20, got '$arrays_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/array-for-post.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/array-for-post.mlg -o target/mallang/array-for-post >/dev/null
+array_for_post_output="$(target/mallang/array-for-post)"
+if [[ "$array_for_post_output" != "6" ]]; then
+  echo "array for-post native build smoke failed: expected 6, got '$array_for_post_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"
