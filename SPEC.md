@@ -171,10 +171,10 @@ Array rules:
   iteration surface as arrays. Slice element borrow arguments extend the same
   local-rooted borrow surface as fixed-size arrays. Direct mutable slice element
   assignment is supported for `Copy` and non-copy element types. Same-field
-  append reassignment is supported for direct owned slice field paths. Read-only
-  indexed expressions can inspect non-copy slice elements without moving them.
-  Mutable range values, indexed field append sources, and non-copy element
-  extraction remain reserved for later slices.
+  append reassignment is supported for owned slice field paths, including stable
+  indexed field paths. Read-only indexed expressions can inspect non-copy slice
+  elements without moving them. Mutable range values, general partial field
+  moves, and non-copy element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -257,6 +257,14 @@ Indexing and length rules:
   `shelf.bag.values = append(shelf.bag.values, item)`, when the root binding is
   mutable. General partial moves out of fields, such as
   `grown := append(bag.values, item)`, remain unsupported in v0.
+- Indexed owned slice field paths can also use same-field append reassignment,
+  such as `store.bags[i].values = append(store.bags[i].values, item)`, when the
+  target and source paths match structurally and every index expression in the
+  matched path is stable. Stable index expressions are side-effect-free
+  expression forms such as literals, variables, field/index reads, unary
+  expressions, and binary expressions over stable operands. Calls, `if`,
+  `match`, and literals that allocate cleanup resources are not stable index
+  expressions for this rule.
 - `append` arguments do not take `con` or `mut` mode markers.
 - Native `append` grows capacity with compiler-owned allocation. Allocation
   failure, length overflow, and allocation-size overflow terminate the program

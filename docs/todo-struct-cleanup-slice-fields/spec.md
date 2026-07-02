@@ -23,8 +23,9 @@
 - First-class references.
 - Statement-spanning borrow lifetimes.
 - General partial moves from slice fields. Direct element assignment
-  `bag.values[i] = item` is handled by P56, and direct field path same-field
-  append reassignment is handled by P57.
+  `bag.values[i] = item` is handled by P56, direct field path same-field
+  append reassignment is handled by P57, and stable indexed field append
+  reassignment is handled by P58.
 
 ## C-체크리스트
 

@@ -1573,12 +1573,6 @@ impl<'a> Checker<'a> {
                         Ok(*element)
                     }
                     Type::Slice(element) => {
-                        if !matches!(base.kind, ExprKind::Var(_)) {
-                            return Err(SemanticError::new(
-                                "slice indexed field assignment requires a direct local slice in v0",
-                                base.span,
-                            ));
-                        }
                         let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
                         self.validate_index_type_and_non_negative_literal(
                             index, &index_ty, "slice",
@@ -3129,6 +3123,101 @@ fn is_same_direct_field_path(left: &Expr, right: &Expr) -> bool {
                 field: right_field,
             },
         ) => left_field == right_field && is_same_direct_field_path(left_base, right_base),
+        (
+            ExprKind::Index {
+                base: left_base,
+                index: left_index,
+            },
+            ExprKind::Index {
+                base: right_base,
+                index: right_index,
+            },
+        ) => {
+            is_same_direct_field_path(left_base, right_base)
+                && is_stable_place_index_expr(left_index)
+                && is_stable_place_index_expr(right_index)
+                && is_same_expr_ignoring_span(left_index, right_index)
+        }
+        _ => false,
+    }
+}
+
+fn is_stable_place_index_expr(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => true,
+        ExprKind::Var(_) => true,
+        ExprKind::Unary { expr, .. } => is_stable_place_index_expr(expr),
+        ExprKind::Binary { left, right, .. } => {
+            is_stable_place_index_expr(left) && is_stable_place_index_expr(right)
+        }
+        ExprKind::FieldAccess { base, .. } => is_stable_place_index_expr(base),
+        ExprKind::Index { base, index } => {
+            is_stable_place_index_expr(base) && is_stable_place_index_expr(index)
+        }
+        ExprKind::If { .. }
+        | ExprKind::Match { .. }
+        | ExprKind::StructLiteral { .. }
+        | ExprKind::ArrayLiteral { .. }
+        | ExprKind::Call { .. } => false,
+    }
+}
+
+fn is_same_expr_ignoring_span(left: &Expr, right: &Expr) -> bool {
+    match (&left.kind, &right.kind) {
+        (ExprKind::Int(left), ExprKind::Int(right)) => left == right,
+        (ExprKind::String(left), ExprKind::String(right)) => left == right,
+        (ExprKind::Bool(left), ExprKind::Bool(right)) => left == right,
+        (ExprKind::Nil, ExprKind::Nil) => true,
+        (ExprKind::Var(left), ExprKind::Var(right)) => left == right,
+        (
+            ExprKind::Unary {
+                op: left_op,
+                expr: left_expr,
+            },
+            ExprKind::Unary {
+                op: right_op,
+                expr: right_expr,
+            },
+        ) => left_op == right_op && is_same_expr_ignoring_span(left_expr, right_expr),
+        (
+            ExprKind::Binary {
+                op: left_op,
+                left: left_left,
+                right: left_right,
+            },
+            ExprKind::Binary {
+                op: right_op,
+                left: right_left,
+                right: right_right,
+            },
+        ) => {
+            left_op == right_op
+                && is_same_expr_ignoring_span(left_left, right_left)
+                && is_same_expr_ignoring_span(left_right, right_right)
+        }
+        (
+            ExprKind::FieldAccess {
+                base: left_base,
+                field: left_field,
+            },
+            ExprKind::FieldAccess {
+                base: right_base,
+                field: right_field,
+            },
+        ) => left_field == right_field && is_same_expr_ignoring_span(left_base, right_base),
+        (
+            ExprKind::Index {
+                base: left_base,
+                index: left_index,
+            },
+            ExprKind::Index {
+                base: right_base,
+                index: right_index,
+            },
+        ) => {
+            is_same_expr_ignoring_span(left_base, right_base)
+                && is_same_expr_ignoring_span(left_index, right_index)
+        }
         _ => false,
     }
 }
@@ -5341,6 +5430,29 @@ func main() {
     }
 
     #[test]
+    fn allows_append_to_reassign_same_indexed_slice_field() {
+        check_ok(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2, 3}}}}
+    i := 1
+    store.bags[i].values = append(store.bags[i].values, 4)
+    print(len(store.bags[i].values))
+    print(store.bags[i].values[2])
+}
+"#,
+        );
+    }
+
+    #[test]
     fn append_consumes_source_slice() {
         let error = check_error(
             r#"
@@ -5371,6 +5483,57 @@ func main() {
 "#,
         );
         assert!(error.message.contains("moving non-copy field out of `bag`"));
+    }
+
+    #[test]
+    fn rejects_indexed_slice_field_append_with_different_source_index() {
+        let error = check_error(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2}}}}
+    i := 0
+    store.bags[i].values = append(store.bags[i + 1].values, 3)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("moving non-copy field out of indexed element"));
+    }
+
+    #[test]
+    fn rejects_indexed_slice_field_append_with_call_index() {
+        let error = check_error(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func pick() int {
+    return 0
+}
+
+func main() {
+    mut store := Store{bags: []Bag{Bag{values: []int{1}}}}
+    store.bags[pick()].values = append(store.bags[pick()].values, 2)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("moving non-copy field out of indexed element"));
     }
 
     #[test]

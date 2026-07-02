@@ -492,3 +492,13 @@
 - [x] `grown := append(bag.values, item)` 같은 general partial field move는
       계속 reject
 - [x] `examples/slice-field-append.mlg` native smoke 추가
+
+## P58: Indexed Slice Field Append Reassignment
+
+- [x] `store.bags[i].values = append(store.bags[i].values, item)` 허용
+- [x] matched path의 index expression은 stable expression으로 제한
+- [x] local-rooted slice indexed field assignment source 제약을 direct local slice에서
+      local-rooted slice place로 완화
+- [x] 같은 indexed field append에서는 cleanup overwrite drop을 생략
+- [x] mismatched source index와 call index는 general partial move 경로로 계속 reject
+- [x] `examples/indexed-slice-field-append.mlg` native smoke 추가

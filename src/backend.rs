@@ -3723,6 +3723,38 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_indexed_slice_field_append_reassignment() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2}}}}
+    i := 1
+    store.bags[i].values = append(store.bags[i].values, 3)
+    print(store.bags[i].values[1])
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
+        assert!(c.contains(".mlg_values = mallang_slice_append_tmp_"));
+        assert!(c.contains("mallang runtime error: slice index out of bounds"));
+        assert!(!c.contains("mlg_drop_Slice_int(&(((mlg_store).mlg_bags"));
+        assert!(c.contains("mlg_drop_Struct_Store(&(mlg_store));"));
+    }
+
+    #[test]
     fn generates_c_for_fixed_size_array_element_assignment() {
         let program = parse(
             r#"

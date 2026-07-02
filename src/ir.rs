@@ -2838,6 +2838,78 @@ fn is_same_direct_ir_field_path(left: &IrExpr, right: &IrExpr) -> bool {
                 field: right_field,
             },
         ) => left_field == right_field && is_same_direct_ir_field_path(left_base, right_base),
+        (
+            IrExprKind::Index {
+                base: left_base,
+                index: left_index,
+            },
+            IrExprKind::Index {
+                base: right_base,
+                index: right_index,
+            },
+        ) => {
+            is_same_direct_ir_field_path(left_base, right_base)
+                && is_same_ir_expr_ignoring_span(left_index, right_index)
+        }
+        _ => false,
+    }
+}
+
+fn is_same_ir_expr_ignoring_span(left: &IrExpr, right: &IrExpr) -> bool {
+    match (&left.kind, &right.kind) {
+        (IrExprKind::Int(left), IrExprKind::Int(right)) => left == right,
+        (IrExprKind::String(left), IrExprKind::String(right)) => left == right,
+        (IrExprKind::Bool(left), IrExprKind::Bool(right)) => left == right,
+        (IrExprKind::Var(left), IrExprKind::Var(right)) => left == right,
+        (
+            IrExprKind::Unary {
+                op: left_op,
+                expr: left_expr,
+            },
+            IrExprKind::Unary {
+                op: right_op,
+                expr: right_expr,
+            },
+        ) => left_op == right_op && is_same_ir_expr_ignoring_span(left_expr, right_expr),
+        (
+            IrExprKind::Binary {
+                op: left_op,
+                left: left_left,
+                right: left_right,
+            },
+            IrExprKind::Binary {
+                op: right_op,
+                left: right_left,
+                right: right_right,
+            },
+        ) => {
+            left_op == right_op
+                && is_same_ir_expr_ignoring_span(left_left, right_left)
+                && is_same_ir_expr_ignoring_span(left_right, right_right)
+        }
+        (
+            IrExprKind::FieldAccess {
+                base: left_base,
+                field: left_field,
+            },
+            IrExprKind::FieldAccess {
+                base: right_base,
+                field: right_field,
+            },
+        ) => left_field == right_field && is_same_ir_expr_ignoring_span(left_base, right_base),
+        (
+            IrExprKind::Index {
+                base: left_base,
+                index: left_index,
+            },
+            IrExprKind::Index {
+                base: right_base,
+                index: right_index,
+            },
+        ) => {
+            is_same_ir_expr_ignoring_span(left_base, right_base)
+                && is_same_ir_expr_ignoring_span(left_index, right_index)
+        }
         _ => false,
     }
 }
@@ -5099,6 +5171,60 @@ func main() {
         assert_eq!(field, "values");
         assert_eq!(item.ty, Type::Int);
         assert_drop_of(&ir.functions[0].body[3], "bag");
+    }
+
+    #[test]
+    fn ir_lowers_indexed_slice_field_append_without_overwrite_drop() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2}}}}
+    i := 1
+    store.bags[i].values = append(store.bags[i].values, 3)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert_eq!(ir.functions[0].body.len(), 4);
+        let IrStmtKind::FieldAssign { base, field, expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected indexed field assignment");
+        };
+        assert_eq!(field, "values");
+        let IrExprKind::Index { base: bags, index } = &base.kind else {
+            panic!("expected indexed assignment base");
+        };
+        assert_eq!(index.ty, Type::Int);
+        let IrExprKind::FieldAccess { base: store, field } = &bags.kind else {
+            panic!("expected store.bags base");
+        };
+        assert!(matches!(store.kind, IrExprKind::Var(ref name) if name == "store"));
+        assert_eq!(field, "bags");
+
+        let IrExprKind::SliceAppend { slice, item } = &expr.kind else {
+            panic!("expected slice append expression");
+        };
+        assert_eq!(item.ty, Type::Int);
+        let IrExprKind::FieldAccess {
+            base: append_base,
+            field,
+        } = &slice.kind
+        else {
+            panic!("expected append field source");
+        };
+        assert_eq!(field, "values");
+        assert!(matches!(append_base.kind, IrExprKind::Index { .. }));
+        assert_drop_of(&ir.functions[0].body[3], "store");
     }
 
     #[test]
