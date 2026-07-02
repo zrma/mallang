@@ -35,6 +35,7 @@ This repository is the Mallang language PoC workspace.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
+- Fixed-size array element borrow arguments and `con`/`mut` method receivers.
 
 ## Bootstrap
 
@@ -95,6 +96,8 @@ cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-b
 target/mallang/field-borrow
 cargo run --bin mlg -- build examples/array-element-borrow.mlg -o target/mallang/array-element-borrow
 target/mallang/array-element-borrow
+cargo run --bin mlg -- build examples/array-element-methods.mlg -o target/mallang/array-element-methods
+target/mallang/array-element-methods
 cargo run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi
 target/mallang/mut-parameter-abi
 cargo run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields
@@ -142,6 +145,7 @@ scripts/check.sh
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
 - `examples/array-element-borrow.mlg`: native smoke for fixed array element borrow arguments.
+- `examples/array-element-methods.mlg`: native smoke for fixed array element method receivers.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
 - `examples/return-completeness.mlg`: native smoke for branch-aware return analysis.

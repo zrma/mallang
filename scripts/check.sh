@@ -220,6 +220,13 @@ if [[ "$array_element_borrow_output" != $'kim\npark' ]]; then
   echo "array element borrow native build smoke failed: expected kim and park, got '$array_element_borrow_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/array-element-methods.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/array-element-methods.mlg -o target/mallang/array-element-methods >/dev/null
+array_element_methods_output="$(target/mallang/array-element-methods)"
+if [[ "$array_element_methods_output" != "3" ]]; then
+  echo "array element methods native build smoke failed: expected 3, got '$array_element_methods_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/mut-parameter-abi.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi >/dev/null
 mut_parameter_abi_output="$(target/mallang/mut-parameter-abi)"

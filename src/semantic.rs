@@ -1827,7 +1827,7 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         span: Span,
     ) -> Result<Type, SemanticError> {
-        let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
+        let base_ty = self.check_receiver_probe_type(base, locals)?;
         let Type::Struct(_) = base_ty else {
             return Err(SemanticError::new(
                 format!(
@@ -1864,12 +1864,7 @@ impl<'a> Checker<'a> {
             }
             ParamMode::Con => {
                 register_receiver_borrow(base, &mut call_borrows, BorrowKind::Shared)?;
-                let receiver_ty = self.check_expr_with_expected(
-                    base,
-                    locals,
-                    ValueUse::Borrow,
-                    Some(&sig.receiver.ty),
-                )?;
+                let receiver_ty = self.check_receiver_borrow(base, locals, false)?;
                 if receiver_ty != sig.receiver.ty {
                     return Err(SemanticError::new(
                         format!(
@@ -1906,6 +1901,17 @@ impl<'a> Checker<'a> {
             span,
         )?;
         Ok(sig.function.return_type.clone())
+    }
+
+    fn check_receiver_probe_type(
+        &self,
+        receiver: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<Type, SemanticError> {
+        if is_direct_borrow_expr(receiver) {
+            return self.resolve_borrow_expr_type(receiver, locals);
+        }
+        self.check_expr(receiver, locals, ValueUse::Borrow)
     }
 
     fn check_call_args(
@@ -2162,32 +2168,38 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         mutable: bool,
     ) -> Result<Type, SemanticError> {
-        let ExprKind::Var(name) = &receiver.kind else {
-            return Err(SemanticError::new(
-                "mutable method receivers must be direct local variables in v0",
-                receiver.span,
-            ));
-        };
-        let Some(local) = locals.get(name) else {
-            return Err(SemanticError::new(
-                format!("unknown variable `{name}`"),
-                receiver.span,
-            ));
-        };
-        if local.moved {
-            return Err(SemanticError::new(
-                format!("borrow of moved value `{name}`"),
-                receiver.span,
-            ));
-        }
-        if mutable && !local.mutable {
-            return Err(SemanticError::new(
-                format!("cannot mutably borrow immutable binding `{name}`"),
-                receiver.span,
-            ));
+        let place = direct_borrow_place(
+            receiver,
+            "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array elements in v0",
+        )?;
+        let name = place.root.clone();
+        let fields = place.fields.clone();
+        {
+            let Some(local) = locals.get(&name) else {
+                return Err(SemanticError::new(
+                    format!("unknown variable `{name}`"),
+                    receiver.span,
+                ));
+            };
+            if local.moved {
+                return Err(SemanticError::new(
+                    format!("borrow of moved value `{name}`"),
+                    receiver.span,
+                ));
+            }
+            if mutable && !local.mutable {
+                let message = if fields.is_empty() {
+                    format!("cannot mutably borrow immutable binding `{name}`")
+                } else if fields.iter().any(|field| field == INDEX_BORROW_SEGMENT) {
+                    format!("cannot mutably borrow place of immutable binding `{name}`")
+                } else {
+                    format!("cannot mutably borrow field of immutable binding `{name}`")
+                };
+                return Err(SemanticError::new(message, receiver.span));
+            }
         }
 
-        Ok(local.ty.clone())
+        self.resolve_borrow_expr_type(receiver, locals)
     }
 
     fn check_binary(
@@ -2509,6 +2521,16 @@ fn direct_borrow_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace
     }
 }
 
+fn is_direct_borrow_expr(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Var(_) => true,
+        ExprKind::FieldAccess { base, .. } | ExprKind::Index { base, .. } => {
+            is_direct_borrow_expr(base)
+        }
+        _ => false,
+    }
+}
+
 fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
     match &expr.kind {
         ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
@@ -2566,15 +2588,11 @@ fn register_receiver_borrow(
     call_borrows: &mut Vec<(BorrowPlace, BorrowKind)>,
     kind: BorrowKind,
 ) -> Result<(), SemanticError> {
-    let ExprKind::Var(name) = &receiver.kind else {
-        return Ok(());
-    };
-    register_borrow_place(
-        BorrowPlace::root(name.clone()),
-        kind,
-        receiver.span,
-        call_borrows,
-    )
+    let place = direct_borrow_place(
+        receiver,
+        "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array elements in v0",
+    )?;
+    register_borrow_place(place, kind, receiver.span, call_borrows)
 }
 
 fn expect_constructor_arg<'a>(
@@ -2829,6 +2847,51 @@ func main() {
     }
 
     #[test]
+    fn allows_array_element_read_receiver_method_call() {
+        check_ok(
+            r#"
+type User struct {
+    age int
+}
+
+func (con self User) age() int {
+    return self.age
+}
+
+func main() {
+    users := [1]User{User{age: 30}}
+    print(users[0].age())
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_array_element_mut_receiver_method_call() {
+        check_ok(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    mut counters := [1]Counter{Counter{value: 1}}
+    counters[0].inc()
+    show(con counters[0].value)
+}
+
+func show(con value int) {
+    print(value)
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_mut_receiver_method_call_on_immutable_binding() {
         let error = check_error(
             r#"
@@ -2849,6 +2912,52 @@ func main() {
         assert!(error
             .message
             .contains("cannot mutably borrow immutable binding `counter`"));
+    }
+
+    #[test]
+    fn rejects_array_element_mut_receiver_method_call_on_immutable_binding() {
+        let error = check_error(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    counters := [1]Counter{Counter{value: 1}}
+    counters[0].inc()
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow place of immutable binding `counters`"));
+    }
+
+    #[test]
+    fn rejects_array_element_receiver_overlapping_argument_borrow() {
+        let error = check_error(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) touch(mut value int) {
+    value = value + 1
+}
+
+func main() {
+    mut counters := [1]Counter{Counter{value: 1}}
+    counters[0].touch(mut counters[0].value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("borrow of `counters[?].value` overlaps with an active borrow"));
     }
 
     #[test]

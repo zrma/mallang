@@ -1702,16 +1702,24 @@ impl<'a> Lowerer<'a> {
         locals: &HashMap<String, Type>,
         span: Span,
     ) -> Result<(IrExprKind, Type), IrError> {
-        let receiver_probe = self.lower_expr(base, locals)?;
+        let receiver_probe = self.lower_receiver_probe_expr(base, locals)?;
         let key = MethodKey {
             receiver: receiver_probe.ty.clone(),
             name: method_name.to_string(),
         };
         let sig = self.method_sig(&key, span)?;
 
-        let receiver = self.lower_expr_with_expected(base, locals, Some(&sig.receiver.ty))?;
+        let receiver_mode = arg_mode_for_param(sig.receiver.mode);
+        let receiver = match receiver_mode {
+            ArgMode::Owned => {
+                self.lower_expr_with_expected(base, locals, Some(&sig.receiver.ty))?
+            }
+            ArgMode::Con | ArgMode::Mut => {
+                self.lower_borrow_expr_with_expected(base, locals, Some(&sig.receiver.ty))?
+            }
+        };
         let mut lowered_args = vec![IrArg {
-            mode: arg_mode_for_param(sig.receiver.mode),
+            mode: receiver_mode,
             expr: receiver,
             span: base.span,
         }];
@@ -1730,6 +1738,17 @@ impl<'a> Lowerer<'a> {
             },
             sig.function.return_type.clone(),
         ))
+    }
+
+    fn lower_receiver_probe_expr(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+    ) -> Result<IrExpr, IrError> {
+        if is_direct_borrow_expr(expr) {
+            return self.lower_borrow_expr(expr, locals);
+        }
+        self.lower_expr(expr, locals)
     }
 
     fn lower_call_arg_expr(
@@ -1848,6 +1867,16 @@ fn arg_mode_for_param(mode: ParamMode) -> ArgMode {
         ParamMode::Owned => ArgMode::Owned,
         ParamMode::Con => ArgMode::Con,
         ParamMode::Mut => ArgMode::Mut,
+    }
+}
+
+fn is_direct_borrow_expr(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Var(_) => true,
+        ExprKind::FieldAccess { base, .. } | ExprKind::Index { base, .. } => {
+            is_direct_borrow_expr(base)
+        }
+        _ => false,
     }
 }
 
@@ -2335,6 +2364,46 @@ func main() {
         assert_eq!(callee, "User.age");
         assert_eq!(args.len(), 1);
         assert_eq!(args[0].mode, ArgMode::Con);
+    }
+
+    #[test]
+    fn ir_lowers_array_element_method_receivers() {
+        let program = parse(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    mut counters := [1]Counter{Counter{value: 1}}
+    counters[0].inc()
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let IrStmtKind::Expr { expr } = &main.body[1].kind else {
+            panic!("expected method call expression");
+        };
+        let IrExprKind::Call { callee, args } = &expr.kind else {
+            panic!("expected method call");
+        };
+        assert_eq!(callee, "Counter.inc");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].mode, ArgMode::Mut);
+        assert_eq!(args[0].expr.ty, Type::Struct("Counter".to_string()));
+        assert!(matches!(args[0].expr.kind, IrExprKind::Index { .. }));
     }
 
     #[test]

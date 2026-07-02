@@ -132,6 +132,8 @@ Array rules:
   `Copy` and non-copy elements.
 - Fixed-size array element borrow arguments are supported for `Copy` and
   non-copy elements.
+- Fixed-size array element method receivers are supported for `con` and `mut`
+  receiver modes.
 - Slices `[]T`, append/growth, mutable range values, borrowed indexing as a
   first-class expression, and non-copy element extraction are reserved for later
   slices.
@@ -265,6 +267,9 @@ Rules:
 - Receiver modes are the same as parameter modes: owned, `con`, and `mut`.
 - A method call implicitly passes the receiver according to the method
   declaration.
+- `con` and `mut` method receivers may be direct local variables, local-rooted
+  field paths, or fixed-size array element paths such as `users[i].age()` and
+  `counters[i].inc()`.
 - Returning or storing borrowed values is still unsupported, so methods with
   `con` receivers cannot return non-copy fields such as `string` by value.
 - v0 does not include method values, interfaces, dynamic dispatch, or receiver

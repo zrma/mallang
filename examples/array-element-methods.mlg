@@ -1,0 +1,18 @@
+type Counter struct {
+    value int
+}
+
+func main() {
+    mut counters := [2]Counter{Counter{value: 1}, Counter{value: 2}}
+
+    counters[1].inc()
+    show(con counters[1].value)
+}
+
+func (mut self Counter) inc() {
+    self.value = self.value + 1
+}
+
+func show(con value int) {
+    print(value)
+}

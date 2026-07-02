@@ -123,6 +123,7 @@
   temporary prelude statements.
 - [x] Fixed-size array element borrow arguments for copy and non-copy elements.
 - [x] Fixed-size array non-copy element assignment.
+- [x] Fixed-size array element method receivers.
 - Slice `[]T`, append/growth, and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.

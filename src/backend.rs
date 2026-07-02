@@ -2587,6 +2587,43 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_array_element_method_receivers() {
+        let program = parse(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    mut counters := [2]Counter{Counter{value: 1}, Counter{value: 2}}
+    counters[1].inc()
+    show(con counters[1].value)
+}
+
+func show(con value int) {
+    print(value)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("void mlg_Counter_inc(mlg_struct_Counter * mlg_self);"));
+        assert!(
+            c.contains("mlg_Counter_inc(&((mlg_counters).mlg_data[mallang_check_index(1, 2)]));")
+        );
+        assert!(c.contains(
+            "mlg_show(&(((mlg_counters).mlg_data[mallang_check_index(1, 2)]).mlg_value));"
+        ));
+    }
+
+    #[test]
     fn generates_c_for_field_assignment() {
         let program = parse(
             r#"

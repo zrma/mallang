@@ -165,3 +165,10 @@
 - [x] owned RHS move semantics 유지
 - [x] for-post non-copy index target lowering 지원
 - [x] native smoke에서 struct element replacement 검증
+
+## P16: Array Element Method Receivers
+
+- [x] receiver method lookup을 direct local/field/index borrow place type으로 확장
+- [x] `con`/`mut` receiver borrow와 explicit argument overlap check 공유
+- [x] IR에서 array element receiver를 borrow argument lowering으로 처리
+- [x] native smoke에서 `counters[i].inc()` caller-visible mutation 검증
