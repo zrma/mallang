@@ -3872,6 +3872,24 @@ func main() {
     }
 
     #[test]
+    fn rejects_assigning_range_value_binding() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [1]int{7}
+    for index, value := range values {
+        value = value + index
+    }
+}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("cannot assign to immutable binding `value`"));
+    }
+
+    #[test]
     fn match_payload_shadow_move_does_not_move_outer_binding() {
         check_ok(
             r#"

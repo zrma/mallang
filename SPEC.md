@@ -560,6 +560,7 @@ Range rules:
 - The two-variable range form introduces immutable `int` index and immutable
   element value bindings scoped to the loop body.
 - The one-variable range form introduces only the immutable `int` index binding.
+- Range binding syntax intentionally has no `mut` marker in v0.
 - Either range binding may be `_`. A blank binding is not added to the loop body
   scope.
 - The element binding is allowed only when the element type is `Copy`; if the
@@ -571,7 +572,9 @@ Range rules:
 - `break` and `continue` follow the same nearest-loop rules as other `for`
   forms.
 - Mutable range variables, range over maps/strings, and by-reference element
-  iteration are reserved for later slices.
+  iteration are reserved for later slices. A future mutable range design must
+  decide whether it mutates a copied loop-local value, borrows the element, or
+  lowers to indexed element assignment.
 
 Expression form:
 

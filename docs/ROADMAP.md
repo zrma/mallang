@@ -567,3 +567,10 @@
 - [x] `c.rs` production module을 C output orchestration과 module boundary 중심으로 유지
 - [x] C backend test names와 `backend::c::tests::*` path 유지
 - [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P68: Mutable Range Values Deferred
+
+- [x] `for i, mut value := range values` syntax를 v0에서 계속 reject하도록 parser regression 추가
+- [x] 기존 range value binding이 immutable local임을 semantic regression으로 고정
+- [x] SPEC에 mutable range design이 copied local mutation, element borrow, indexed assignment 중 하나를 나중에 결정해야 한다고 명시
+- [x] by-reference range iteration은 별도 future design 후보로 유지
