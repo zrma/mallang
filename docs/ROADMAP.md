@@ -99,6 +99,6 @@
 - [x] `[N]T{...}` fixed-size array literal parser 추가
 - [x] fixed-size array semantic/type checking 추가
 - [ ] array-only `for i, value := range values { ... }` parser/semantic 추가
-- [ ] fixed-size array typed IR와 C struct-wrapper layout 추가
+- [x] fixed-size array typed IR와 C struct-wrapper layout 추가
 - [ ] array-only `range` C backend/native smoke 추가
 - [ ] slice `[]T`, indexing, `len`, append/growth, mutable range는 후속 slice로 분리

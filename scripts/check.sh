@@ -100,6 +100,13 @@ if [[ "$for_empty_condition_output" != $'8\n5\nonce' ]]; then
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/arrays.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- ir examples/arrays.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/arrays.mlg -o target/mallang/arrays >/dev/null
+arrays_output="$(target/mallang/arrays)"
+if [[ -n "$arrays_output" ]]; then
+  echo "arrays native build smoke failed: expected empty output, got '$arrays_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"

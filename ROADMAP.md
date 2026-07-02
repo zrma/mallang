@@ -80,7 +80,7 @@
 - [x] Generate native C `for` loops for `for init; condition; post`.
 - [x] Generate native C `for` loops for initless clause loops.
 - [x] Generate native C loops for conditionless `for` forms.
-- [ ] Generate native C layout for fixed-size arrays.
+- [x] Generate native C layout for fixed-size arrays.
 - [ ] Generate native C loops for array-only `range`.
 
 ## Later

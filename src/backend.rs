@@ -684,6 +684,9 @@ impl<'a> CGenerator<'a> {
             IrExprKind::StructLiteral { type_name, fields } => {
                 self.emit_struct_literal_stmt_expr(type_name, fields, env)
             }
+            IrExprKind::ArrayLiteral { elements } => {
+                self.emit_array_literal_stmt_expr(&expr.ty, elements, env)
+            }
             IrExprKind::FieldAccess { base, field } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(base, env)?;
                 Ok(CExpr {
@@ -815,6 +818,45 @@ impl<'a> CGenerator<'a> {
                 field_codes.join(", ")
             ),
         })
+    }
+
+    fn emit_array_literal_stmt_expr(
+        &self,
+        ty: &Type,
+        elements: &[IrExpr],
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Array { len, .. } = ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: array literal without array type",
+            ));
+        };
+        if elements.len() != *len {
+            return Err(CompileError::new(
+                "IR invariant violation: array literal length mismatch",
+            ));
+        }
+
+        let mut prelude = Vec::new();
+        let mut element_codes = Vec::new();
+        for element in elements {
+            let emitted = self.emit_stmt_expr_with_env(element, env)?;
+            prelude.extend(emitted.prelude);
+            element_codes.push(emitted.code);
+        }
+
+        let code = if *len == 0 {
+            format!("({}){{ .{} = 0 }}", ty.c_name(), c_field("empty"))
+        } else {
+            format!(
+                "({}){{ .{} = {{ {} }} }}",
+                ty.c_name(),
+                c_field("data"),
+                element_codes.join(", ")
+            )
+        };
+
+        Ok(CExpr { prelude, code })
     }
 
     fn emit_match_stmt_expr(
@@ -1015,9 +1057,8 @@ impl<'a> CGenerator<'a> {
                 output.push('\n');
             }
             Type::Array { .. } => {
-                return Err(CompileError::new(
-                    "fixed-size arrays are not supported by the C backend yet",
-                ));
+                output.push_str(&self.typedef_for_array(ty)?);
+                output.push('\n');
             }
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
@@ -1139,6 +1180,11 @@ impl<'a> CGenerator<'a> {
                     self.collect_expr_types(&field.expr, types);
                 }
             }
+            IrExprKind::ArrayLiteral { elements } => {
+                for element in elements {
+                    self.collect_expr_types(element, types);
+                }
+            }
             IrExprKind::FieldAccess { base, .. } => self.collect_expr_types(base, types),
             IrExprKind::Call { args, .. } => {
                 for arg in args {
@@ -1188,6 +1234,32 @@ impl<'a> CGenerator<'a> {
         output.push_str(&Type::Struct(struct_def.name.clone()).c_name());
         output.push_str(";\n");
         output
+    }
+
+    fn typedef_for_array(&self, ty: &Type) -> Result<String, CompileError> {
+        let Type::Array { len, element } = ty else {
+            return Err(CompileError::new("internal error: expected array type"));
+        };
+
+        let mut output = String::new();
+        output.push_str("typedef struct {\n");
+        if *len == 0 {
+            output.push_str("    char ");
+            output.push_str(&c_field("empty"));
+            output.push_str(";\n");
+        } else {
+            output.push_str("    ");
+            output.push_str(&element.c_name());
+            output.push(' ');
+            output.push_str(&c_field("data"));
+            output.push('[');
+            output.push_str(&len.to_string());
+            output.push_str("];\n");
+        }
+        output.push_str("} ");
+        output.push_str(&ty.c_name());
+        output.push_str(";\n");
+        Ok(output)
     }
 }
 
@@ -1957,6 +2029,31 @@ func main() {
             "mlg_struct_User mlg_user = (mlg_struct_User){ .mlg_name = \"kim\", .mlg_age = 30 };"
         ));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
+    }
+
+    #[test]
+    fn generates_c_for_fixed_size_array_literals() {
+        let program = parse(
+            r#"
+func consume(values [3]int) {
+}
+
+func main() {
+    values := [3]int{1, 2, 3}
+    consume(values)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("typedef struct"));
+        assert!(c.contains("int64_t mlg_data[3];"));
+        assert!(c.contains("mlg_Array_3_int"));
+        assert!(c.contains("(mlg_Array_3_int){ .mlg_data = { 1, 2, 3 } }"));
+        assert!(c.contains("mlg_consume(mlg_values);"));
     }
 
     #[test]

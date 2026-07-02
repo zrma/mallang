@@ -139,6 +139,9 @@ pub enum IrExprKind {
         type_name: String,
         fields: Vec<IrFieldValue>,
     },
+    ArrayLiteral {
+        elements: Vec<IrExpr>,
+    },
     FieldAccess {
         base: Box<IrExpr>,
         field: String,
@@ -551,11 +554,8 @@ impl<'a> Lowerer<'a> {
             ExprKind::StructLiteral { type_name, fields } => {
                 self.lower_struct_literal(type_name, fields, locals, expected, expr.span)?
             }
-            ExprKind::ArrayLiteral { .. } => {
-                return Err(IrError::new(
-                    "semantic analysis accepted fixed-size array literal before array lowering",
-                    expr.span,
-                ));
+            ExprKind::ArrayLiteral { ty, elements } => {
+                self.lower_array_literal(ty, elements, locals, expected, expr.span)?
             }
             ExprKind::FieldAccess { base, field } => {
                 self.lower_field_access(base, field, locals, expr.span)?
@@ -758,6 +758,53 @@ impl<'a> Lowerer<'a> {
             },
             ty,
         ))
+    }
+
+    fn lower_array_literal(
+        &self,
+        ty_ref: &crate::ast::TypeRef,
+        elements: &[Expr],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let ty = self.type_from_ref(ty_ref)?;
+        if let Some(expected) = expected {
+            if expected != &ty {
+                return Err(IrError::new(
+                    "semantic analysis accepted mismatched array literal type",
+                    span,
+                ));
+            }
+        }
+
+        let Type::Array { len, element } = &ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted array literal without array type",
+                ty_ref.span,
+            ));
+        };
+
+        if elements.len() != *len {
+            return Err(IrError::new(
+                "semantic analysis accepted array literal length mismatch",
+                span,
+            ));
+        }
+
+        let mut lowered = Vec::new();
+        for element_expr in elements {
+            let expr = self.lower_expr_with_expected(element_expr, locals, Some(element))?;
+            if expr.ty != **element {
+                return Err(IrError::new(
+                    "semantic analysis accepted array literal element type mismatch",
+                    element_expr.span,
+                ));
+            }
+            lowered.push(expr);
+        }
+
+        Ok((IrExprKind::ArrayLiteral { elements: lowered }, ty))
     }
 
     fn lower_field_access(
@@ -1394,11 +1441,17 @@ impl<'a> Lowerer<'a> {
     }
 
     fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
-        if ty.array_len.is_some() {
-            return Err(IrError::new(
-                "fixed-size array types are parsed but not lowered to IR yet",
-                ty.span,
-            ));
+        if let Some(len) = ty.array_len {
+            if ty.name != "Array" || ty.args.len() != 1 {
+                return Err(IrError::new(
+                    "semantic analysis accepted malformed fixed-size array type reference",
+                    ty.span,
+                ));
+            }
+            return Ok(Type::Array {
+                len,
+                element: Box::new(self.type_from_ref(&ty.args[0])?),
+            });
         }
 
         match ty.name.as_str() {
@@ -1953,7 +2006,7 @@ func main() {
     }
 
     #[test]
-    fn ir_rejects_fixed_size_array_literals_until_lowering_slice() {
+    fn ir_lowers_fixed_size_array_literals() {
         let program = parse(
             r#"
 func main() {
@@ -1963,9 +2016,21 @@ func main() {
         )
         .unwrap();
         let checked = check(&program).unwrap();
-        let error = lower(&checked).unwrap_err();
-        assert!(error
-            .message
-            .contains("semantic analysis accepted fixed-size array literal before array lowering"));
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { ty, expr, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected let statement");
+        };
+        let Type::Array { len, element } = ty else {
+            panic!("expected array type");
+        };
+        assert_eq!(*len, 2);
+        assert_eq!(**element, Type::Int);
+
+        let IrExprKind::ArrayLiteral { elements } = &expr.kind else {
+            panic!("expected array literal");
+        };
+        assert_eq!(elements.len(), 2);
+        assert_eq!(expr.ty, ty.clone());
     }
 }

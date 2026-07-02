@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: fixed-size array typed IR/C backend layout, array-only `range`, slice surface syntax, statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, fixed-size array typed IR/C struct-wrapper layout, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: array-only `range`, slice surface syntax, statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
 
@@ -29,6 +29,9 @@ target/mallang/for-clause-initless
 cargo run --bin mlg -- build examples/for-empty-condition.mlg -o target/mallang/for-empty-condition
 target/mallang/for-empty-condition
 cargo run --bin mlg -- check examples/arrays.mlg
+cargo run --bin mlg -- ir examples/arrays.mlg
+cargo run --bin mlg -- build examples/arrays.mlg -o target/mallang/arrays
+target/mallang/arrays
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
@@ -79,9 +82,7 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. fixed-size array typed IR/C struct-wrapper layout 추가
-2. array-only `for i, value := range values { ... }` parser/semantic/backend 추가
-3. `[N]T{...}` array literal backend smoke 추가
-4. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
-5. full C backend 범위를 native subset별로 쪼개기
-6. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정
+1. array-only `for i, value := range values { ... }` parser/semantic/backend 추가
+2. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+3. full C backend 범위를 native subset별로 쪼개기
+4. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정
