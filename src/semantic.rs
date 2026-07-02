@@ -541,6 +541,7 @@ impl<'a> Checker<'a> {
                 }
 
                 if let Some(condition) = condition {
+                    let condition_start_locals = loop_locals.clone();
                     let condition_ty =
                         self.check_expr(condition, &mut loop_locals, ValueUse::Owned)?;
                     if condition_ty != Type::Bool {
@@ -549,6 +550,12 @@ impl<'a> Checker<'a> {
                             condition.span,
                         ));
                     }
+                    reject_loop_persistent_moves(
+                        &condition_start_locals,
+                        &loop_locals,
+                        loop_scope_depth,
+                        condition.span,
+                    )?;
                 }
 
                 let mut body_locals = loop_locals.clone();
@@ -559,10 +566,23 @@ impl<'a> Checker<'a> {
                     loop_depth + 1,
                     loop_scope_depth + 1,
                 )?;
+                reject_loop_persistent_moves(
+                    &loop_locals,
+                    &body_locals,
+                    loop_scope_depth,
+                    body.span,
+                )?;
                 let mut post_locals = loop_locals.clone();
                 merge_loop_body_moves(&mut post_locals, &body_locals);
                 if let Some(post) = post {
+                    let post_start_locals = post_locals.clone();
                     self.check_for_post(post, &mut post_locals, stmt.span)?;
+                    reject_loop_persistent_moves(
+                        &post_start_locals,
+                        &post_locals,
+                        loop_scope_depth,
+                        stmt.span,
+                    )?;
                 }
                 merge_loop_body_moves(locals, &loop_locals);
                 merge_loop_body_moves(locals, &body_locals);
@@ -1186,6 +1206,7 @@ impl<'a> Checker<'a> {
             loop_depth + 1,
             body_scope_depth,
         )?;
+        reject_loop_persistent_moves(locals, &body_locals, range_scope_depth, parts.body.span)?;
         merge_loop_body_moves(locals, &body_locals);
         Ok(())
     }
@@ -2951,6 +2972,31 @@ fn merge_loop_body_moves(
     }
 }
 
+fn reject_loop_persistent_moves(
+    before_locals: &HashMap<String, Local>,
+    after_locals: &HashMap<String, Local>,
+    loop_scope_depth: usize,
+    span: Span,
+) -> Result<(), SemanticError> {
+    for (name, after) in after_locals {
+        let Some(before) = before_locals.get(name) else {
+            continue;
+        };
+        if after.moved
+            && !before.moved
+            && same_binding(before, after)
+            && after.scope_depth <= loop_scope_depth
+            && !after.ty.is_copy()
+        {
+            return Err(SemanticError::new(
+                format!("loop cannot move persistent value `{name}` in v0"),
+                span,
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn same_binding(left: &Local, right: &Local) -> bool {
     left.scope_depth == right.scope_depth
 }
@@ -4208,7 +4254,7 @@ func main() {
     }
 
     #[test]
-    fn for_statement_merges_body_moves() {
+    fn rejects_for_statement_body_persistent_move() {
         let error = check_error(
             r#"
 func main() {
@@ -4223,7 +4269,106 @@ func consume(value string) {
 }
 "#,
         );
-        assert!(error.message.contains("use of moved value `s`"));
+        assert!(error
+            .message
+            .contains("loop cannot move persistent value `s` in v0"));
+    }
+
+    #[test]
+    fn rejects_for_condition_persistent_move() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    for consume(s) {
+        break
+    }
+}
+
+func consume(value string) bool {
+    return true
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("loop cannot move persistent value `s` in v0"));
+    }
+
+    #[test]
+    fn rejects_for_post_persistent_move() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    mut out := ""
+    for ; false; out = s {
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("loop cannot move persistent value `s` in v0"));
+    }
+
+    #[test]
+    fn rejects_for_init_binding_persistent_move() {
+        let error = check_error(
+            r#"
+func main() {
+    for s := "hello"; true; {
+        consume(s)
+        break
+    }
+}
+
+func consume(value string) {
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("loop cannot move persistent value `s` in v0"));
+    }
+
+    #[test]
+    fn rejects_range_body_persistent_move() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [1]int{1}
+    s := "hello"
+    for _ := range values {
+        consume(s)
+    }
+}
+
+func consume(value string) {
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("loop cannot move persistent value `s` in v0"));
+    }
+
+    #[test]
+    fn allows_for_body_local_move() {
+        check_ok(
+            r#"
+func main() {
+    for true {
+        s := "hello"
+        consume(s)
+        break
+    }
+}
+
+func consume(value string) {
+}
+"#,
+        );
     }
 
     #[test]

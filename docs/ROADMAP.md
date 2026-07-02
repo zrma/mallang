@@ -360,3 +360,11 @@
 - [x] normal loop exit와 `break` 이후 for-init cleanup root drop
 - [x] loop body `return` 전 for-init cleanup root drop
 - [x] loop body에서 for-init root가 move되는 runtime state tracking은 다음 단계로 유지
+
+## P43: Loop Persistent Move Safety
+
+- [x] `for` condition/body/post에서 loop-persistent move-only binding move reject
+- [x] three-clause `for` init binding move reject
+- [x] `range` body에서 outer move-only binding move reject
+- [x] loop body-local move-only binding move는 허용 유지
+- [x] runtime moved-state tracking 대신 v0 정적 제한으로 cleanup safety 유지

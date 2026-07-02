@@ -462,8 +462,10 @@ Rules:
 - In the three-clause form, post is a single variable or field assignment.
 - Bindings introduced by the init clause are scoped to the loop header and body.
 - Bindings introduced inside the body do not leak outside the body.
-- Moving an outer value inside the body makes the value unavailable after the
-  loop in v0.
+- Moving a loop-persistent move-only value in a `for` condition, body, or post
+  statement is rejected in v0. This includes outer bindings and three-clause
+  init bindings. Move-only values created inside the body may still be moved
+  within that iteration.
 - `break` exits the nearest enclosing loop.
 - `continue` skips to the next iteration of the nearest enclosing loop.
 - `break` and `continue` are only valid inside loops.

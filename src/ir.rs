@@ -4107,11 +4107,14 @@ type User struct {
 
 func main() {
     mut users := [2]User{User{age: 1}, User{age: 2}}
-    replacement := User{age: 3}
     mut i := 0
-    for ; i < 1; users[i] = replacement {
+    for ; i < 1; users[i] = makeUser() {
         i = i + 1
     }
+}
+
+func makeUser() User {
+    return User{age: 3}
 }
 "#,
         )
@@ -4119,7 +4122,7 @@ func main() {
         let checked = check(&program).unwrap();
         let ir = lower(&checked).unwrap();
 
-        let IrStmtKind::For { post, .. } = &ir.functions[0].body[3].kind else {
+        let IrStmtKind::For { post, .. } = &ir.functions[0].body[2].kind else {
             panic!("expected for statement");
         };
         let Some(IrForPost::Assign { target, expr }) = post.as_deref() else {
