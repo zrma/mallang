@@ -463,6 +463,20 @@ impl<'a> Checker<'a> {
                 merge_branch_moves(locals, &then_locals, &else_locals);
                 Ok(then_returns && else_returns)
             }
+            StmtKind::For { condition, body } => {
+                let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+                if condition_ty != Type::Bool {
+                    return Err(SemanticError::new(
+                        "for condition must have type `bool`",
+                        condition.span,
+                    ));
+                }
+
+                let mut body_locals = locals.clone();
+                self.check_block_statements(body, &mut body_locals, return_type)?;
+                merge_loop_body_moves(locals, &body_locals);
+                Ok(false)
+            }
             StmtKind::Match { scrutinee, arms } => {
                 self.check_match_stmt(scrutinee, arms, locals, return_type, stmt.span)
             }
@@ -2072,6 +2086,15 @@ fn merge_many_branch_moves<'a>(
     }
 }
 
+fn merge_loop_body_moves(
+    locals: &mut HashMap<String, Local>,
+    body_locals: &HashMap<String, Local>,
+) {
+    for (name, local) in locals {
+        local.moved |= body_locals.get(name).is_some_and(|body| body.moved);
+    }
+}
+
 fn is_builtin_type_name(name: &str) -> bool {
     matches!(
         name,
@@ -2514,6 +2537,71 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_for_statement_with_bool_condition() {
+        check_ok(
+            r#"
+func main() {
+    mut count := 0
+    for count < 3 {
+        count = count + 1
+    }
+    print(count)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_non_bool_for_statement_condition() {
+        let error = check_error(
+            r#"
+func main() {
+    for 1 {
+        print("bad")
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("for condition must have type `bool`"));
+    }
+
+    #[test]
+    fn for_statement_body_locals_do_not_leak() {
+        let error = check_error(
+            r#"
+func main() {
+    for false {
+        inner := 1
+    }
+    print(inner)
+}
+"#,
+        );
+        assert!(error.message.contains("unknown variable `inner`"));
+    }
+
+    #[test]
+    fn for_statement_merges_body_moves() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    for false {
+        consume(s)
+    }
+    print(s)
+}
+
+func consume(value string) {
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `s`"));
     }
 
     #[test]

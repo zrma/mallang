@@ -236,6 +236,10 @@ impl Parser {
             return self.parse_if_statement();
         }
 
+        if self.at_keyword(Keyword::For) {
+            return self.parse_for_statement();
+        }
+
         if self.at_keyword(Keyword::Match) {
             return self.parse_match_statement();
         }
@@ -343,6 +347,18 @@ impl Parser {
                 then_block,
                 else_block,
             },
+            span,
+        })
+    }
+
+    fn parse_for_statement(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_keyword(Keyword::For, "expected `for`")?;
+        let condition = self.parse_expression_without_struct_literals()?;
+        let body = self.parse_block()?;
+        let span = start.join(body.span);
+
+        Ok(Stmt {
+            kind: StmtKind::For { condition, body },
             span,
         })
     }
@@ -1017,6 +1033,18 @@ func add(a int, b int) int {
     fn rejects_pipeline_target_without_call() {
         let error = parse("func main() { x := 1 |> double }").unwrap_err();
         assert!(error.message.contains("pipeline target must be a call"));
+    }
+
+    #[test]
+    fn parses_for_statement() {
+        let program = parse("func main() { for keepGoing { tick() } }").unwrap();
+        let StmtKind::For { condition, body } = &program.functions[0].body.statements[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(matches!(&condition.kind, ExprKind::Var(name) if name == "keepGoing"));
+        assert_eq!(body.statements.len(), 1);
+        assert!(matches!(body.statements[0].kind, StmtKind::Expr { .. }));
     }
 
     #[test]

@@ -16,6 +16,7 @@
 - [x] Pratt expression parser 추가
 - [x] `else if` sugar parser 추가
 - [x] `|>` pipeline call sugar parser/native smoke 추가
+- [x] condition-only `for` statement parser/native smoke 추가
 - [x] `examples/first.mlg`를 AST로 파싱하는 test 추가
 
 ## P2: Static Semantics
@@ -29,6 +30,7 @@
 - [x] `if` expression type checking 추가
 - [x] statement-form `if` type checking 추가
 - [x] statement-form `if` return-completeness analysis 추가
+- [x] condition-only `for` statement checking 추가
 - [x] `mlg check` subcommand 추가
 
 ## P3: Ownership Lite
@@ -53,6 +55,7 @@
 - [x] prelude가 필요한 `match` expression arm용 C temp lowering 추가
 - [x] `&&` / `||` short-circuit native smoke 추가
 - [x] `|>` pipeline call sugar native smoke 추가
+- [x] condition-only `for` statement C backend/native smoke 추가
 
 ## P5: Built-in ADTs
 

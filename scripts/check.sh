@@ -64,6 +64,13 @@ if [[ "$if_statement_output" != "then" ]]; then
   echo "if statement native build smoke failed: expected then, got '$if_statement_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/for-loop.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/for-loop.mlg -o target/mallang/for-loop >/dev/null
+for_loop_output="$(target/mallang/for-loop)"
+if [[ "$for_loop_output" != $'1\n2\n3\n4' ]]; then
+  echo "for loop native build smoke failed: expected 1, 2, 3, 4 got '$for_loop_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"

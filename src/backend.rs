@@ -177,6 +177,7 @@ impl<'a> CGenerator<'a> {
                 then_body,
                 else_body,
             } => self.emit_if_stmt(condition, then_body, else_body, env),
+            IrStmtKind::For { condition, body } => self.emit_for_stmt(condition, body, env),
             IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
             IrStmtKind::Expr { expr } => {
                 if let IrExprKind::Call { callee, args } = &expr.kind {
@@ -216,6 +217,44 @@ impl<'a> CGenerator<'a> {
 
         output.push_str("} else {\n");
         for stmt in else_body {
+            let code = self.emit_stmt_with_env(stmt, env)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
+        output.push('}');
+        Ok(output)
+    }
+
+    fn emit_for_stmt(
+        &self,
+        condition: &IrExpr,
+        body: &[IrStmt],
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+        let mut output = String::new();
+
+        if prelude.is_empty() {
+            output.push_str(&format!("while ({}) {{\n", c_condition(&code)));
+            for stmt in body {
+                let code = self.emit_stmt_with_env(stmt, env)?;
+                push_indented_lines(&mut output, &code, 1);
+            }
+            output.push('}');
+            return Ok(output);
+        }
+
+        output.push_str("while (true) {\n");
+        for line in prelude {
+            push_indented_lines(&mut output, &line, 1);
+        }
+        push_indented_lines(
+            &mut output,
+            &format!("if (!({})) {{", c_condition(&code)),
+            1,
+        );
+        push_indented_lines(&mut output, "break;", 2);
+        push_indented_lines(&mut output, "}", 1);
+        for stmt in body {
             let code = self.emit_stmt_with_env(stmt, env)?;
             push_indented_lines(&mut output, &code, 1);
         }
@@ -888,6 +927,12 @@ impl<'a> CGenerator<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
+            IrStmtKind::For { condition, body } => {
+                self.collect_expr_types(condition, types);
+                for stmt in body {
+                    self.collect_stmt_types(stmt, types);
+                }
+            }
             IrStmtKind::Match { scrutinee, arms } => {
                 self.collect_expr_types(scrutinee, types);
                 for arm in arms {
@@ -1337,6 +1382,28 @@ func check(score int, left bool, right bool) bool {
 
         assert!(c.contains(" || "));
         assert!(c.contains(" && "));
+    }
+
+    #[test]
+    fn generates_c_for_for_statement() {
+        let program = parse(
+            r#"
+func main() {
+    mut count := 0
+    for count < 3 {
+        count = count + 1
+    }
+    print(count)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("while (mlg_count < 3) {"));
+        assert!(c.contains("mlg_count = (mlg_count + 1);"));
     }
 
     #[test]

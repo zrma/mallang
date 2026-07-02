@@ -89,6 +89,10 @@ pub enum StmtKind {
         then_block: Block,
         else_block: Option<Block>,
     },
+    For {
+        condition: Expr,
+        body: Block,
+    },
     Match {
         scrutinee: Expr,
         arms: Vec<MatchBlockArm>,

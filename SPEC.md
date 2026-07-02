@@ -65,7 +65,7 @@ func greet(name in string) string {
 Reserved words:
 
 ```text
-func return if else match case mut in true false struct type nil
+func return if else for match case mut in true false struct type nil
 ```
 
 `nil` is reserved so the compiler can produce a clear error instead of treating
@@ -263,6 +263,26 @@ Statement rules:
 - An `if` statement is return-complete only when both `then` and `else` blocks
   are return-complete.
 - `else if` is sugar for a nested statement-form `if` inside the `else` branch.
+
+`for` is a statement. The first v0 form is condition-only, matching Go's
+`while`-like loop shape.
+
+```go
+for enabled {
+    tick()
+}
+```
+
+Rules:
+
+- The condition must have type `bool`.
+- Bindings introduced inside the body do not leak outside the body.
+- Moving an outer value inside the body makes the value unavailable after the
+  loop in v0.
+- A `for` statement is not considered return-complete in v0, even when its
+  condition is statically `true`.
+- v0 does not yet include `break`, `continue`, `range`, or Go's three-clause
+  `for init; condition; post` form.
 
 Expression form:
 

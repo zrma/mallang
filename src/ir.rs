@@ -77,6 +77,10 @@ pub enum IrStmtKind {
         then_body: Vec<IrStmt>,
         else_body: Vec<IrStmt>,
     },
+    For {
+        condition: IrExpr,
+        body: Vec<IrStmt>,
+    },
     Match {
         scrutinee: IrExpr,
         arms: Vec<IrMatchBlockArm>,
@@ -355,6 +359,20 @@ impl<'a> Lowerer<'a> {
                     then_body,
                     else_body,
                 }
+            }
+            StmtKind::For { condition, body } => {
+                let condition = self.lower_expr(condition, locals)?;
+                if condition.ty != Type::Bool {
+                    return Err(IrError::new(
+                        "semantic analysis accepted a non-bool for condition",
+                        condition.span,
+                    ));
+                }
+
+                let mut body_locals = locals.clone();
+                let body = self.lower_block_statements(body, &mut body_locals, return_type)?;
+
+                IrStmtKind::For { condition, body }
             }
             StmtKind::Match { scrutinee, arms } => {
                 let scrutinee = self.lower_expr(scrutinee, locals)?;
@@ -1442,6 +1460,29 @@ func main() {
         assert_eq!(condition.ty, Type::Bool);
         assert_eq!(then_body.len(), 1);
         assert_eq!(else_body.len(), 1);
+    }
+
+    #[test]
+    fn ir_lowers_for_statement() {
+        let program = parse(
+            r#"
+func main() {
+    mut count := 0
+    for count < 3 {
+        count = count + 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For { condition, body } = &ir.functions[0].body[1].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(condition.ty, Type::Bool);
+        assert_eq!(body.len(), 1);
     }
 
     #[test]

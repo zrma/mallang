@@ -24,8 +24,8 @@ This repository is the Mallang language PoC workspace.
   assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
-  `else if` sugar, `bool` logical operators, `|>` pipeline call sugar,
-  `Option`, `Result`, and expression/statement `match`.
+  condition-only `for` loops, `else if` sugar, `bool` logical operators, `|>`
+  pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
@@ -50,6 +50,8 @@ cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement
 target/mallang/if-statement
+cargo run --bin mlg -- build examples/for-loop.mlg -o target/mallang/for-loop
+target/mallang/for-loop
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
@@ -103,6 +105,7 @@ scripts/check.sh
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
+- `examples/for-loop.mlg`: native smoke for condition-only `for` loops.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
@@ -147,6 +150,7 @@ func add(a int, b int) int {
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
 `bool` logical operators, `|>` pipeline call sugar, statement/expression `if`,
-`else if` sugar, branch-aware returns, struct/method/nested-field, struct print
-output, and built-in ADT expression/statement `match` plus ADT print output via
-C source generation and `clang`.
+condition-only `for` loops, `else if` sugar, branch-aware returns,
+struct/method/nested-field, struct print output, and built-in ADT
+expression/statement `match` plus ADT print output via C source generation and
+`clang`.
