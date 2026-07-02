@@ -37,7 +37,8 @@
 - [x] Support explicit mutable borrow calls with `mut expr`.
 - [x] Reject use-after-move.
 - [x] Reject overlapping mutable/read borrows within one call.
-- For v0, disallow storing or returning borrowed values.
+- [x] Disallow moving non-copy borrowed parameters into owned locals, owned
+  arguments, or returns.
 
 ## Milestone 4: Native Backend
 

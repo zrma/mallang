@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call nested-field-aware borrow conflict checks, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: statement-spanning borrow lifetimes, full C backend, borrowed value return/storage rejection audit, method values/interfaces/dynamic dispatch
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
 
@@ -52,6 +52,6 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. borrowed value return/storage 금지 규칙이 현재 parameter modes에 충분히 적용되는지 점검
-2. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+1. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+2. full C backend 범위를 native subset별로 쪼개기
 3. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정

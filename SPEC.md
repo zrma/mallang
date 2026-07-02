@@ -222,6 +222,9 @@ Rules:
   reads use normal value syntax, and assignment through a `mut T` parameter
   updates the caller's local variable or field path.
 - Borrow arguments may be local variables or field paths rooted in local variables.
+- Non-copy borrowed parameters cannot be moved into owned locals, owned
+  arguments, or return values. Copy borrowed parameters such as `int` and `bool`
+  may still be copied out as values.
 - Borrowed values cannot be stored in variables in v0.
 - Borrowed values cannot be returned in v0.
 - Non-`unit` functions must return on every path the v0 checker can prove.

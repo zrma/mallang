@@ -285,6 +285,7 @@ impl<'a> Checker<'a> {
                 Local {
                     ty: receiver.ty.clone(),
                     mutable: matches!(receiver.mode, ParamMode::Mut),
+                    borrowed: !matches!(receiver.mode, ParamMode::Owned),
                     moved: false,
                 },
             );
@@ -296,6 +297,7 @@ impl<'a> Checker<'a> {
                     Local {
                         ty: param.ty.clone(),
                         mutable: matches!(param.mode, ParamMode::Mut),
+                        borrowed: !matches!(param.mode, ParamMode::Owned),
                         moved: false,
                     },
                 )
@@ -369,6 +371,7 @@ impl<'a> Checker<'a> {
                         Local {
                             ty: ty.clone(),
                             mutable: *mutable,
+                            borrowed: false,
                             moved: false,
                         },
                     )
@@ -1150,6 +1153,7 @@ impl<'a> Checker<'a> {
                 Local {
                     ty: ty.clone(),
                     mutable: false,
+                    borrowed: false,
                     moved: false,
                 },
             );
@@ -1174,6 +1178,7 @@ impl<'a> Checker<'a> {
                 Local {
                     ty: ty.clone(),
                     mutable: false,
+                    borrowed: false,
                     moved: false,
                 },
             );
@@ -1277,6 +1282,12 @@ impl<'a> Checker<'a> {
 
         let ty = local.ty.clone();
         if matches!(value_use, ValueUse::Owned) && !ty.is_copy() {
+            if local.borrowed {
+                return Err(SemanticError::new(
+                    format!("cannot move borrowed value `{name}`"),
+                    span,
+                ));
+            }
             local.moved = true;
         }
 
@@ -1855,6 +1866,7 @@ impl<'a> Checker<'a> {
 struct Local {
     ty: Type,
     mutable: bool,
+    borrowed: bool,
     moved: bool,
 }
 
@@ -2987,6 +2999,78 @@ func main() {
 
 func touch(s mut string) {
     print(s)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_returning_non_copy_borrowed_param() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    print(leak(in s))
+}
+
+func leak(s in string) string {
+    return s
+}
+"#,
+        );
+        assert!(error.message.contains("cannot move borrowed value `s`"));
+    }
+
+    #[test]
+    fn ownership_rejects_storing_non_copy_borrowed_param() {
+        let error = check_error(
+            r#"
+func main() {
+    mut s := "hello"
+    leak(mut s)
+}
+
+func leak(s mut string) {
+    alias := s
+    print(alias)
+}
+"#,
+        );
+        assert!(error.message.contains("cannot move borrowed value `s`"));
+    }
+
+    #[test]
+    fn ownership_rejects_passing_non_copy_borrowed_param_as_owned() {
+        let error = check_error(
+            r#"
+func main() {
+    mut s := "hello"
+    leak(mut s)
+}
+
+func leak(s mut string) {
+    consume(s)
+}
+
+func consume(s string) {
+    print(s)
+}
+"#,
+        );
+        assert!(error.message.contains("cannot move borrowed value `s`"));
+    }
+
+    #[test]
+    fn ownership_allows_returning_copy_borrowed_param() {
+        check_ok(
+            r#"
+func main() {
+    x := 1
+    print(id(in x))
+}
+
+func id(x in int) int {
+    return x
 }
 "#,
         );
