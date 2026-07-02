@@ -107,6 +107,13 @@ if [[ "$arrays_output" != "20" ]]; then
   echo "arrays native build smoke failed: expected 20, got '$arrays_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/non-copy-array-assignment.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment >/dev/null
+non_copy_array_assignment_output="$(target/mallang/non-copy-array-assignment)"
+if [[ "$non_copy_array_assignment_output" != "park" ]]; then
+  echo "non-copy array assignment native build smoke failed: expected park, got '$non_copy_array_assignment_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/array-for-post.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/array-for-post.mlg -o target/mallang/array-for-post >/dev/null
 array_for_post_output="$(target/mallang/array-for-post)"

@@ -124,7 +124,7 @@
 
 - [x] `values[i] = expr` statement parser 추가
 - [x] mutable fixed-size array binding/parameter에만 element assignment 허용
-- [x] Copy element assignment만 v0에서 허용
+- [x] Copy element assignment semantic 경로 추가
 - [x] assignment index compile-time/runtime bounds check 적용
 - [x] typed IR와 C backend에서 checked element assignment 추가
 - [x] native smoke에서 assignment 이후 range/index/len 결과 검증
@@ -158,3 +158,10 @@
 - [x] non-copy array element를 `con`/`mut` function argument로 lowering
 - [x] backend에서 array element borrow를 checked lvalue address로 lowering
 - [x] native smoke에서 `con users[i].field`와 `mut users[i].field` 검증
+
+## P15: Non-Copy Array Element Assignment
+
+- [x] Copy-only assignment guard 제거
+- [x] owned RHS move semantics 유지
+- [x] for-post non-copy index target lowering 지원
+- [x] native smoke에서 struct element replacement 검증

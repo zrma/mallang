@@ -127,12 +127,13 @@ Array rules:
 - The first native layout is a C struct wrapper with a fixed `data[N]` field,
   not a raw C array, so array values can be assigned, moved, and passed through
   the existing value pipeline.
-- Fixed-size array indexing, `len`, and mutable element assignment are supported
-  for `Copy` elements.
+- Fixed-size array indexing as a value is supported for `Copy` elements.
+- Fixed-size array `len` and mutable element assignment are supported for
+  `Copy` and non-copy elements.
 - Fixed-size array element borrow arguments are supported for `Copy` and
   non-copy elements.
 - Slices `[]T`, append/growth, mutable range values, borrowed indexing as a
-  first-class expression, and non-copy element assignment are reserved for later
+  first-class expression, and non-copy element extraction are reserved for later
   slices.
 
 Fixed-size array indexing and length are intentionally smaller than full slices.
@@ -169,8 +170,10 @@ Indexing and length rules:
 - `values[i] = expr` requires `values` to be a direct `mut` local array binding
   or `mut` array parameter in v0.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
-  and follows the same direct mutable array and `Copy` element rules.
-- Array element assignment is supported only when the element type is `Copy`.
+  and follows the same direct mutable array rules.
+- Array element assignment supports `Copy` and non-copy element types.
+- For non-copy element types, the right-hand expression is owned and moves into
+  the array slot.
 - Array element assignment uses the same compile-time literal and native runtime
   bounds checks as array indexing.
 - The assignment index is evaluated and bounds-checked before the right-hand

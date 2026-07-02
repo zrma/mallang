@@ -377,12 +377,6 @@ impl<'a> Lowerer<'a> {
                         stmt.span,
                     ));
                 };
-                if !element.is_copy() {
-                    return Err(IrError::new(
-                        "semantic analysis accepted assignment to non-copy array element",
-                        stmt.span,
-                    ));
-                }
                 let index = self.lower_expr(index, locals)?;
                 if index.ty != Type::Int {
                     return Err(IrError::new(
@@ -568,7 +562,7 @@ impl<'a> Lowerer<'a> {
     ) -> Result<IrForPost, IrError> {
         match post {
             ForPost::Assign { target, expr } => {
-                let target = self.lower_expr(target, locals)?;
+                let target = self.lower_assignment_target_expr(target, locals)?;
                 match &target.kind {
                     IrExprKind::Var(_)
                     | IrExprKind::FieldAccess { .. }
@@ -802,6 +796,84 @@ impl<'a> Lowerer<'a> {
             _ => {
                 return Err(IrError::new(
                     "semantic analysis accepted invalid borrow argument expression",
+                    expr.span,
+                ));
+            }
+        };
+
+        Ok(IrExpr {
+            kind,
+            ty,
+            span: expr.span,
+        })
+    }
+
+    fn lower_assignment_target_expr(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+    ) -> Result<IrExpr, IrError> {
+        let (kind, ty) = match &expr.kind {
+            ExprKind::Var(name) => {
+                let Some(ty) = locals.get(name).cloned() else {
+                    return Err(IrError::new(
+                        format!("unknown variable `{name}` during IR lowering"),
+                        expr.span,
+                    ));
+                };
+                (IrExprKind::Var(name.clone()), ty)
+            }
+            ExprKind::FieldAccess { base, field } => {
+                let base = self.lower_assignment_target_expr(base, locals)?;
+                let Type::Struct(type_name) = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted field assignment target on non-struct value",
+                        expr.span,
+                    ));
+                };
+                let sig = self.struct_sig(type_name, expr.span)?;
+                let Some(field_sig) = sig.fields.iter().find(|candidate| candidate.name == *field)
+                else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unknown field assignment target",
+                        expr.span,
+                    ));
+                };
+                (
+                    IrExprKind::FieldAccess {
+                        base: Box::new(base),
+                        field: field.clone(),
+                    },
+                    field_sig.ty.clone(),
+                )
+            }
+            ExprKind::Index { base, index } => {
+                let base = self.lower_assignment_target_expr(base, locals)?;
+                let index = self.lower_expr(index, locals)?;
+                if index.ty != Type::Int {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array assignment with non-int index",
+                        index.span,
+                    ));
+                }
+                let Type::Array { element, .. } = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array assignment target on non-array value",
+                        expr.span,
+                    ));
+                };
+                let element_ty = element.as_ref().clone();
+                (
+                    IrExprKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                    element_ty,
+                )
+            }
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted invalid assignment target expression",
                     expr.span,
                 ));
             }
@@ -2462,6 +2534,32 @@ func main() {
     }
 
     #[test]
+    fn ir_lowers_non_copy_array_element_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := [2]User{User{age: 1}, User{age: 2}}
+    users[1] = User{age: 3}
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected index assignment");
+        };
+        assert!(matches!(base.ty, Type::Array { .. }));
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
+    }
+
+    #[test]
     fn ir_lowers_fixed_size_array_element_assignment_in_for_post() {
         let program = parse(
             r#"
@@ -2493,5 +2591,41 @@ func main() {
         assert!(matches!(&index.kind, IrExprKind::Var(name) if name == "slot"));
         assert_eq!(index.ty, Type::Int);
         assert_eq!(expr.ty, Type::Int);
+    }
+
+    #[test]
+    fn ir_lowers_non_copy_array_element_assignment_in_for_post() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := [2]User{User{age: 1}, User{age: 2}}
+    replacement := User{age: 3}
+    mut i := 0
+    for ; i < 1; users[i] = replacement {
+        i = i + 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For { post, .. } = &ir.functions[0].body[3].kind else {
+            panic!("expected for statement");
+        };
+        let Some(IrForPost::Assign { target, expr }) = post.as_deref() else {
+            panic!("expected for post assignment");
+        };
+        let IrExprKind::Index { index, .. } = &target.kind else {
+            panic!("expected index assignment target");
+        };
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(target.ty, Type::Struct("User".to_string()));
+        assert_eq!(expr.ty, Type::Struct("User".to_string()));
     }
 }

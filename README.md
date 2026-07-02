@@ -61,6 +61,8 @@ cargo run --bin mlg -- build examples/for-clause-initless.mlg -o target/mallang/
 target/mallang/for-clause-initless
 cargo run --bin mlg -- build examples/for-empty-condition.mlg -o target/mallang/for-empty-condition
 target/mallang/for-empty-condition
+cargo run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment
+target/mallang/non-copy-array-assignment
 cargo run --bin mlg -- build examples/for-clause-prelude.mlg -o target/mallang/for-clause-prelude
 target/mallang/for-clause-prelude
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
@@ -123,6 +125,7 @@ scripts/check.sh
 - `examples/for-clause.mlg`: native smoke for `for init; condition; post`.
 - `examples/for-clause-initless.mlg`: native smoke for initless `for ; condition; post`.
 - `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
+- `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.

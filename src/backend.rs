@@ -2440,6 +2440,38 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_non_copy_array_element_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim"}, User{name: "lee"}}
+    users[1] = User{name: "park"}
+    show(con users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_struct_User mlg_data[2];"));
+        assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = (mlg_struct_User){ .mlg_name = \"park\" };"));
+        assert!(
+            c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));")
+        );
+    }
+
+    #[test]
     fn generates_c_for_fixed_size_array_element_assignment_in_for_post() {
         let program = parse(
             r#"

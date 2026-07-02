@@ -53,8 +53,8 @@
   element bindings.
 - [x] Type-check fixed-size array indexing for copy elements.
 - [x] Type-check `len([N]T)` as a read-only built-in returning `int`.
-- [x] Type-check fixed-size array element assignment for mutable copy-element
-  arrays.
+- [x] Type-check fixed-size array element assignment for mutable copy and
+  non-copy element arrays.
 - [x] Type-check fixed-size array element assignment in `for` clause post
   targets.
 
@@ -122,8 +122,8 @@
 - [x] Native lowering for `for` clause condition/post expressions that need
   temporary prelude statements.
 - [x] Fixed-size array element borrow arguments for copy and non-copy elements.
-- Slice `[]T`, append/growth, mutable range values, and non-copy array element
-  mutation.
+- [x] Fixed-size array non-copy element assignment.
+- Slice `[]T`, append/growth, and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

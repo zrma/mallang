@@ -1246,15 +1246,6 @@ impl<'a> Checker<'a> {
         };
 
         self.check_index_expr(index, locals, len)?;
-        if !element.is_copy() {
-            return Err(SemanticError::new(
-                format!(
-                    "array element assignment requires a Copy element type in v0, got `{}`",
-                    element.source_name()
-                ),
-                span,
-            ));
-        }
 
         let value_ty =
             self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&element))?;
@@ -3869,8 +3860,8 @@ func main() {
     }
 
     #[test]
-    fn rejects_array_element_assignment_for_non_copy_elements() {
-        let error = check_error(
+    fn allows_array_element_assignment_for_non_copy_elements() {
+        check_ok(
             r#"
 type User struct {
     age int
@@ -3882,9 +3873,25 @@ func main() {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("array element assignment requires a Copy element type in v0, got `User`"));
+    }
+
+    #[test]
+    fn array_element_assignment_moves_non_copy_rhs() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := [1]User{User{age: 1}}
+    replacement := User{age: 2}
+    users[0] = replacement
+    print(replacement.age)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `replacement`"));
     }
 
     #[test]
