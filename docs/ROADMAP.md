@@ -352,3 +352,11 @@
 - [x] `break`/`continue` 전에 loop body-local cleanup roots drop
 - [x] loop body 안의 `return` 전에 outer cleanup roots와 body-local roots drop
 - [x] outer cleanup root loop moves와 for-init cleanup은 다음 단계로 유지
+
+## P42: For-Init Cleanup Trailer
+
+- [x] `IrStmtKind::For`에 loop-exit cleanup trailer 추가
+- [x] cleanup type `for` init binding을 loop cleanup root로 추적
+- [x] normal loop exit와 `break` 이후 for-init cleanup root drop
+- [x] loop body `return` 전 for-init cleanup root drop
+- [x] loop body에서 for-init root가 move되는 runtime state tracking은 다음 단계로 유지

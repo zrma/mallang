@@ -212,11 +212,13 @@ impl<'a> CGenerator<'a> {
                 condition,
                 post,
                 body,
+                cleanup,
             } => self.emit_for_stmt(
                 init.as_deref(),
                 condition.as_deref(),
                 post.as_deref(),
                 body,
+                cleanup,
                 env,
             ),
             IrStmtKind::RangeFor {
@@ -286,10 +288,11 @@ impl<'a> CGenerator<'a> {
         condition: Option<&IrExpr>,
         post: Option<&IrForPost>,
         body: &[IrStmt],
+        cleanup: &[IrStmt],
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
-        if init.is_some() || post.is_some() {
-            return self.emit_for_clause_stmt(init, condition, post, body, env);
+        if init.is_some() || post.is_some() || !cleanup.is_empty() {
+            return self.emit_for_clause_stmt(init, condition, post, body, cleanup, env);
         }
 
         let (prelude, code) = if let Some(condition) = condition {
@@ -404,6 +407,7 @@ impl<'a> CGenerator<'a> {
         condition: Option<&IrExpr>,
         post: Option<&IrForPost>,
         body: &[IrStmt],
+        cleanup: &[IrStmt],
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
         let mut output = String::new();
@@ -452,6 +456,10 @@ impl<'a> CGenerator<'a> {
         }
 
         output.push_str("    }\n");
+        for stmt in cleanup {
+            let code = self.emit_stmt_with_env(stmt, env)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
         output.push('}');
         Ok(output)
     }
@@ -1497,6 +1505,7 @@ impl<'a> CGenerator<'a> {
                 condition,
                 post,
                 body,
+                cleanup,
             } => {
                 if let Some(init) = init.as_deref() {
                     self.collect_for_init_types(init, types);
@@ -1508,6 +1517,9 @@ impl<'a> CGenerator<'a> {
                     self.collect_for_post_types(post, types);
                 }
                 for stmt in body {
+                    self.collect_stmt_types(stmt, types);
+                }
+                for stmt in cleanup {
                     self.collect_stmt_types(stmt, types);
                 }
             }
@@ -2333,6 +2345,58 @@ func add(a int, b int) int {
         let c = generate_c_from_ir(&program).unwrap();
 
         assert!(c.contains("void mlg_consume(mlg_Slice_int mlg_values) {\n    mlg_drop_Slice_int(&(mlg_values));\n}"));
+    }
+
+    #[test]
+    fn generates_c_for_for_init_cleanup_trailer() {
+        let slice_ty = Type::Slice(Box::new(Type::Int));
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![IrFunction {
+                name: "main".to_string(),
+                params: vec![crate::ir::IrParam {
+                    name: "seed".to_string(),
+                    mode: ParamMode::Owned,
+                    ty: slice_ty.clone(),
+                }],
+                return_type: Type::Unit,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::For {
+                        init: Some(Box::new(IrForInit::Let {
+                            mutable: false,
+                            name: "loop_values".to_string(),
+                            ty: slice_ty.clone(),
+                            expr: IrExpr {
+                                kind: IrExprKind::Var("seed".to_string()),
+                                ty: slice_ty.clone(),
+                                span,
+                            },
+                        })),
+                        condition: None,
+                        post: None,
+                        body: Vec::new(),
+                        cleanup: vec![IrStmt {
+                            kind: IrStmtKind::Drop {
+                                expr: IrExpr {
+                                    kind: IrExprKind::Var("loop_values".to_string()),
+                                    ty: slice_ty,
+                                    span,
+                                },
+                            },
+                            span,
+                        }],
+                    },
+                    span,
+                }],
+            }],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mlg_loop_values = mlg_seed;"));
+        assert!(c.contains("while (true) {"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_loop_values));"));
     }
 
     #[test]

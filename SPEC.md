@@ -250,7 +250,8 @@ Future v0 slice rules:
 - Initial automatic drop insertion may cover straight-line owned cleanup
   parameters, locals, local reassignment, `if`/`match` branch-local cleanup
   roots, `if`/`match` outer cleanup root branch moves, and `for`/`range`
-  body-local cleanup roots before full loop cleanup state tracking is complete.
+  body-local cleanup roots. `for` init cleanup roots may use a loop-exit
+  cleanup trailer before full loop cleanup state tracking is complete.
 
 `unit` is the implicit return type of functions that do not return a value.
 

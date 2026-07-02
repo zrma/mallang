@@ -90,6 +90,7 @@ pub enum IrStmtKind {
         condition: Option<Box<IrExpr>>,
         post: Option<Box<IrForPost>>,
         body: Vec<IrStmt>,
+        cleanup: Vec<IrStmt>,
     },
     RangeFor {
         index_name: String,
@@ -465,6 +466,7 @@ impl<'a> Lowerer<'a> {
                     condition,
                     post,
                     body,
+                    cleanup: Vec::new(),
                 }
             }
             StmtKind::RangeFor {
@@ -1915,6 +1917,7 @@ fn insert_straight_line_cleanup_drops(
         fallback_span,
         &HashSet::new(),
         &HashSet::new(),
+        &HashSet::new(),
     )
     .body
 }
@@ -1924,7 +1927,8 @@ fn insert_cleanup_drops(
     initial_active: Vec<CleanupBinding>,
     fallback_span: Span,
     tail_excluded_roots: &HashSet<String>,
-    loop_exit_excluded_roots: &HashSet<String>,
+    break_excluded_roots: &HashSet<String>,
+    continue_excluded_roots: &HashSet<String>,
 ) -> CleanupInsertion {
     let mut output = Vec::new();
     let mut active = initial_active;
@@ -1932,8 +1936,12 @@ fn insert_cleanup_drops(
 
     let mut statements = body.into_iter();
     while let Some(stmt) = statements.next() {
-        let (stmt, branch_moved_roots) =
-            insert_branch_cleanup_drops(stmt, &active, loop_exit_excluded_roots);
+        let (stmt, branch_moved_roots) = insert_branch_cleanup_drops(
+            stmt,
+            &active,
+            break_excluded_roots,
+            continue_excluded_roots,
+        );
         if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = cleanup_moved_roots_in_expr(expr);
             moved_in_body.extend(returned_roots.iter().cloned());
@@ -1945,8 +1953,18 @@ fn insert_cleanup_drops(
                 continues: false,
             };
         }
-        if matches!(stmt.kind, IrStmtKind::Break | IrStmtKind::Continue) {
-            push_cleanup_drops(&mut output, &active, loop_exit_excluded_roots, stmt.span);
+        if matches!(stmt.kind, IrStmtKind::Break) {
+            push_cleanup_drops(&mut output, &active, break_excluded_roots, stmt.span);
+            output.push(stmt);
+            output.extend(statements);
+            return CleanupInsertion {
+                body: output,
+                moved_roots: moved_in_body,
+                continues: false,
+            };
+        }
+        if matches!(stmt.kind, IrStmtKind::Continue) {
+            push_cleanup_drops(&mut output, &active, continue_excluded_roots, stmt.span);
             output.push(stmt);
             output.extend(statements);
             return CleanupInsertion {
@@ -1984,7 +2002,8 @@ fn insert_cleanup_drops(
 fn insert_branch_cleanup_drops(
     mut stmt: IrStmt,
     active: &[CleanupBinding],
-    loop_exit_excluded_roots: &HashSet<String>,
+    break_excluded_roots: &HashSet<String>,
+    continue_excluded_roots: &HashSet<String>,
 ) -> (IrStmt, HashSet<String>) {
     let mut moved_roots = HashSet::new();
     let span = stmt.span;
@@ -2004,14 +2023,16 @@ fn insert_branch_cleanup_drops(
                 branch_active.clone(),
                 span,
                 &tail_excluded_roots,
-                loop_exit_excluded_roots,
+                break_excluded_roots,
+                continue_excluded_roots,
             );
             let mut else_insertion = insert_cleanup_drops(
                 else_body,
                 branch_active.clone(),
                 span,
                 &tail_excluded_roots,
-                loop_exit_excluded_roots,
+                break_excluded_roots,
+                continue_excluded_roots,
             );
             let branch_moved_roots =
                 merged_cleanup_roots(&branch_active, [&then_insertion, &else_insertion]);
@@ -2047,22 +2068,42 @@ fn insert_branch_cleanup_drops(
             condition,
             post,
             body,
+            cleanup: existing_cleanup,
         } => {
-            let loop_active = active.to_vec();
-            let loop_excluded_roots = cleanup_binding_names(&loop_active);
+            let init_moved_roots = init
+                .as_deref()
+                .map(cleanup_moved_roots_in_for_init)
+                .unwrap_or_default();
+            let mut loop_active = cleanup_bindings_after_moved_roots(active, &init_moved_roots);
+            let pre_loop_roots = cleanup_binding_names(&loop_active);
+            if let Some(binding) = init.as_deref().and_then(cleanup_binding_from_for_init) {
+                loop_active.push(binding);
+            }
+            let loop_persistent_roots = cleanup_binding_names(&loop_active);
             let insertion = insert_cleanup_drops(
                 body,
-                loop_active,
+                loop_active.clone(),
                 span,
-                &loop_excluded_roots,
-                &loop_excluded_roots,
+                &loop_persistent_roots,
+                &loop_persistent_roots,
+                &loop_persistent_roots,
             );
+            let mut cleanup = existing_cleanup;
+            push_loop_cleanup_drops(
+                &mut cleanup,
+                &loop_active,
+                &pre_loop_roots,
+                &insertion.moved_roots,
+                span,
+            );
+            moved_roots.extend(init_moved_roots);
 
             IrStmtKind::For {
                 init,
                 condition,
                 post,
                 body: insertion.body,
+                cleanup,
             }
         }
         IrStmtKind::RangeFor {
@@ -2078,6 +2119,7 @@ fn insert_branch_cleanup_drops(
                 body,
                 loop_active,
                 span,
+                &loop_excluded_roots,
                 &loop_excluded_roots,
                 &loop_excluded_roots,
             );
@@ -2102,7 +2144,8 @@ fn insert_branch_cleanup_drops(
                         arm_active.clone(),
                         arm.span,
                         &tail_excluded_roots,
-                        loop_exit_excluded_roots,
+                        break_excluded_roots,
+                        continue_excluded_roots,
                     );
                     (arm.pattern, insertion, arm.span)
                 })
@@ -2201,6 +2244,38 @@ fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
             span: stmt.span,
         }),
         _ => None,
+    }
+}
+
+fn cleanup_binding_from_for_init(init: &IrForInit) -> Option<CleanupBinding> {
+    match init {
+        IrForInit::Let { name, ty, expr, .. } if ty.needs_cleanup() => Some(CleanupBinding {
+            name: name.clone(),
+            ty: ty.clone(),
+            span: expr.span,
+        }),
+        _ => None,
+    }
+}
+
+fn cleanup_moved_roots_in_for_init(init: &IrForInit) -> HashSet<String> {
+    match init {
+        IrForInit::Let { expr, .. } => cleanup_moved_roots_in_expr(expr),
+    }
+}
+
+fn push_loop_cleanup_drops(
+    output: &mut Vec<IrStmt>,
+    active: &[CleanupBinding],
+    pre_loop_roots: &HashSet<String>,
+    moved_roots: &HashSet<String>,
+    span: Span,
+) {
+    for binding in active.iter().rev() {
+        if pre_loop_roots.contains(&binding.name) || moved_roots.contains(&binding.name) {
+            continue;
+        }
+        push_cleanup_drop(output, binding, span);
     }
 }
 
@@ -2873,6 +2948,7 @@ func add(a int, b int) int {
                     },
                     span: test_span(),
                 }],
+                cleanup: Vec::new(),
             },
             span: test_span(),
         }];
@@ -2910,6 +2986,7 @@ func add(a int, b int) int {
                         span: test_span(),
                     },
                 ],
+                cleanup: Vec::new(),
             },
             span: test_span(),
         }];
@@ -2948,6 +3025,7 @@ func add(a int, b int) int {
                         span: test_span(),
                     },
                 ],
+                cleanup: Vec::new(),
             },
             span: test_span(),
         }];
@@ -2986,6 +3064,7 @@ func add(a int, b int) int {
                     },
                     span: test_span(),
                 }],
+                cleanup: Vec::new(),
             },
             span: test_span(),
         }];
@@ -3022,6 +3101,7 @@ func add(a int, b int) int {
                     kind: IrStmtKind::Continue,
                     span: test_span(),
                 }],
+                cleanup: Vec::new(),
             },
             span: test_span(),
         }];
@@ -3077,6 +3157,108 @@ func add(a int, b int) int {
         assert_eq!(body.len(), 2);
         assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
         assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn inserts_for_init_cleanup_after_loop() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: Some(Box::new(IrForInit::Let {
+                    mutable: false,
+                    name: "loop_values".to_string(),
+                    ty: slice_ty.clone(),
+                    expr: test_var("seed", slice_ty),
+                })),
+                condition: None,
+                post: None,
+                body: Vec::new(),
+                cleanup: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, cleanup, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert!(body.is_empty());
+        assert_eq!(cleanup.len(), 1);
+        assert_drop_of(&cleanup[0], "loop_values");
+    }
+
+    #[test]
+    fn preserves_for_init_cleanup_across_continue() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: Some(Box::new(IrForInit::Let {
+                    mutable: false,
+                    name: "loop_values".to_string(),
+                    ty: slice_ty.clone(),
+                    expr: test_var("seed", slice_ty),
+                })),
+                condition: None,
+                post: None,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Continue,
+                    span: test_span(),
+                }],
+                cleanup: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, cleanup, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(body.len(), 1);
+        assert!(matches!(body[0].kind, IrStmtKind::Continue));
+        assert_eq!(cleanup.len(), 1);
+        assert_drop_of(&cleanup[0], "loop_values");
+    }
+
+    #[test]
+    fn inserts_for_init_cleanup_before_return_inside_loop() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: Some(Box::new(IrForInit::Let {
+                    mutable: false,
+                    name: "loop_values".to_string(),
+                    ty: slice_ty.clone(),
+                    expr: test_var("seed", slice_ty),
+                })),
+                condition: None,
+                post: None,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Return {
+                        expr: IrExpr {
+                            kind: IrExprKind::Int(1),
+                            ty: Type::Int,
+                            span: test_span(),
+                        },
+                    },
+                    span: test_span(),
+                }],
+                cleanup: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, cleanup, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(body.len(), 2);
+        assert_drop_of(&body[0], "loop_values");
+        assert!(matches!(body[1].kind, IrStmtKind::Return { .. }));
+        assert_eq!(cleanup.len(), 1);
+        assert_drop_of(&cleanup[0], "loop_values");
     }
 
     #[test]
@@ -3178,6 +3360,7 @@ func main() {
             condition,
             post,
             body,
+            ..
         } = &ir.functions[0].body[1].kind
         else {
             panic!("expected for statement");
@@ -3209,6 +3392,7 @@ func main() {
             condition,
             post,
             body,
+            ..
         } = &ir.functions[0].body[0].kind
         else {
             panic!("expected for statement");
@@ -3239,6 +3423,7 @@ func main() {
             condition,
             post,
             body,
+            ..
         } = &ir.functions[0].body[0].kind
         else {
             panic!("expected for statement");
@@ -3279,6 +3464,7 @@ func main() {
             condition,
             post,
             body,
+            ..
         } = &ir.functions[0].body[1].kind
         else {
             panic!("expected for statement");
@@ -3313,6 +3499,7 @@ func main() {
             condition,
             post,
             body,
+            ..
         } = &ir.functions[0].body[1].kind
         else {
             panic!("expected for statement");
