@@ -322,3 +322,10 @@
 - [x] function tail과 top-level `return` 전에 `IrStmtKind::Drop` 삽입
 - [x] returned cleanup root는 drop 대상에서 제외
 - [x] branch/loop/reassignment cleanup insertion은 다음 단계로 유지
+
+## P38: Straight-Line Cleanup Reassignment Drop
+
+- [x] active cleanup root reassignment 전에 old value `IrStmtKind::Drop` 삽입
+- [x] reassignment RHS로 move된 cleanup root는 active roots에서 제거
+- [x] reassigned cleanup root는 새 value cleanup 대상으로 유지
+- [x] branch/loop control-flow cleanup insertion은 다음 단계로 유지

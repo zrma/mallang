@@ -1913,6 +1913,9 @@ fn insert_straight_line_cleanup_drops(
 
         let moved_roots = cleanup_moved_roots_in_stmt(&stmt);
         let new_binding = cleanup_binding_from_stmt(&stmt);
+        if let Some(binding) = cleanup_reassigned_active_binding(&stmt, &active, &moved_roots) {
+            push_cleanup_drop(&mut output, binding, stmt.span);
+        }
         output.push(stmt);
         active.retain(|binding| !moved_roots.contains(&binding.name));
         if let Some(binding) = new_binding {
@@ -1933,6 +1936,20 @@ fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
         }),
         _ => None,
     }
+}
+
+fn cleanup_reassigned_active_binding<'a>(
+    stmt: &IrStmt,
+    active: &'a [CleanupBinding],
+    moved_roots: &HashSet<String>,
+) -> Option<&'a CleanupBinding> {
+    let IrStmtKind::Assign { name, expr } = &stmt.kind else {
+        return None;
+    };
+    if !expr.ty.needs_cleanup() || moved_roots.contains(name) {
+        return None;
+    }
+    active.iter().find(|binding| binding.name == *name)
 }
 
 fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
@@ -2014,17 +2031,21 @@ fn push_cleanup_drops(
         if excluded_roots.contains(&binding.name) {
             continue;
         }
-        output.push(IrStmt {
-            kind: IrStmtKind::Drop {
-                expr: IrExpr {
-                    kind: IrExprKind::Var(binding.name.clone()),
-                    ty: binding.ty.clone(),
-                    span: binding.span,
-                },
-            },
-            span,
-        });
+        push_cleanup_drop(output, binding, span);
     }
+}
+
+fn push_cleanup_drop(output: &mut Vec<IrStmt>, binding: &CleanupBinding, span: Span) {
+    output.push(IrStmt {
+        kind: IrStmtKind::Drop {
+            expr: IrExpr {
+                kind: IrExprKind::Var(binding.name.clone()),
+                ty: binding.ty.clone(),
+                span: binding.span,
+            },
+        },
+        span,
+    });
 }
 
 fn arg_mode_for_param(mode: ParamMode) -> ArgMode {
@@ -2240,6 +2261,37 @@ func add(a int, b int) int {
         assert_eq!(body.len(), 2);
         assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
         assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn drops_old_cleanup_root_before_reassignment() {
+        let slice_ty = test_slice_ty();
+        let params = vec![
+            IrParam {
+                name: "values".to_string(),
+                mode: ParamMode::Owned,
+                ty: slice_ty.clone(),
+            },
+            IrParam {
+                name: "replacement".to_string(),
+                mode: ParamMode::Owned,
+                ty: slice_ty.clone(),
+            },
+        ];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Assign {
+                name: "values".to_string(),
+                expr: test_var("replacement", slice_ty),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 3);
+        assert_drop_of(&body[0], "values");
+        assert!(matches!(body[1].kind, IrStmtKind::Assign { .. }));
+        assert_drop_of(&body[2], "values");
     }
 
     #[test]
