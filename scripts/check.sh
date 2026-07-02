@@ -175,6 +175,32 @@ if "${CARGO[@]}" run --bin mlg -- check "$wrapped_recursive_struct_fail_source" 
   echo "wrapped recursive struct check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+array_print_fail_source="target/mallang/check-array-print-fail.mlg"
+cat >"$array_print_fail_source" <<'MLG'
+func main() {
+    values := [2]int{1, 2}
+    print(values)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$array_print_fail_source" >/dev/null 2>&1; then
+  echo "array print check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+struct_array_print_fail_source="target/mallang/check-struct-array-print-fail.mlg"
+cat >"$struct_array_print_fail_source" <<'MLG'
+type Box struct {
+    values [1]int
+}
+
+func main() {
+    box := Box{values: [1]int{1}}
+    print(box)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$struct_array_print_fail_source" >/dev/null 2>&1; then
+  echo "struct array print check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

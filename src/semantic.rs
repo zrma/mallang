@@ -1838,8 +1838,14 @@ impl<'a> Checker<'a> {
                 ));
             }
             let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
-            if matches!(arg_ty, Type::Unit) {
-                return Err(SemanticError::new("cannot print unit value", args[0].span));
+            if !self.is_printable_type(&arg_ty) {
+                return Err(SemanticError::new(
+                    format!(
+                        "cannot print value of type `{}` in v0",
+                        arg_ty.source_name()
+                    ),
+                    args[0].span,
+                ));
             }
             return Ok(Type::Unit);
         }
@@ -2392,6 +2398,21 @@ impl<'a> Checker<'a> {
         }
 
         Ok(current_ty)
+    }
+
+    fn is_printable_type(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Int | Type::Bool | Type::String => true,
+            Type::Option(inner) => self.is_printable_type(inner),
+            Type::Result(ok, err) => self.is_printable_type(ok) && self.is_printable_type(err),
+            Type::Struct(name) => self.structs.get(name.as_str()).is_some_and(|struct_sig| {
+                struct_sig
+                    .fields
+                    .iter()
+                    .all(|field| self.is_printable_type(&field.ty))
+            }),
+            Type::Unit | Type::Array { .. } => false,
+        }
     }
 
     fn type_from_optional_ref(&self, ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
@@ -3001,6 +3022,85 @@ func main() {}
         assert!(error
             .message
             .contains("recursive type definition involving `Bucket`"));
+    }
+
+    #[test]
+    fn rejects_printing_unit_value() {
+        let error = check_error(
+            r#"
+func main() {
+    print(noop())
+}
+
+func noop() {}
+"#,
+        );
+        assert!(error.message.contains("cannot print value of type `unit`"));
+    }
+
+    #[test]
+    fn rejects_printing_fixed_size_array_value() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [2]int{1, 2}
+    print(values)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot print value of type `[2]int`"));
+    }
+
+    #[test]
+    fn rejects_printing_adt_with_non_printable_payload() {
+        let error = check_error(
+            r#"
+func main() {
+    print(makeValues())
+}
+
+func makeValues() Option[[1]int] {
+    return Some([1]int{1})
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot print value of type `Option[[1]int]`"));
+
+        let error = check_error(
+            r#"
+func main() {
+    print(makeResult())
+}
+
+func makeResult() Result[int, [1]int] {
+    return Err([1]int{1})
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot print value of type `Result[int, [1]int]`"));
+    }
+
+    #[test]
+    fn rejects_printing_struct_with_non_printable_field() {
+        let error = check_error(
+            r#"
+type Box struct {
+    values [1]int
+}
+
+func main() {
+    box := Box{values: [1]int{1}}
+    print(box)
+}
+"#,
+        );
+        assert!(error.message.contains("cannot print value of type `Box`"));
     }
 
     #[test]

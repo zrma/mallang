@@ -250,8 +250,9 @@ Rules:
   whole-struct/field borrows and same-field exclusive borrows are rejected,
   while disjoint mutable field borrows such as `mut pair.left`,
   `mut pair.right`, `mut user.name.first`, and `mut user.name.last` are allowed.
-- `print` displays struct values as `Type{field: value, ...}` when every field
-  type is printable in the native backend.
+- `print` displays struct values as `Type{field: value, ...}` only when every
+  field type is printable. Structs containing fixed-size arrays are rejected by
+  `mlg check` until an array display format is designed.
 - v0 rejects recursive by-value structs. This includes direct recursion and
   recursion through `Option`, `Result`, or fixed-size arrays. Recursive data
   modeling needs a future owned indirection or borrowed view design.
@@ -522,7 +523,9 @@ Rules:
 - `match` scrutinees are evaluated once, including expression scrutinees such as
   direct function calls.
 - `print` displays ADT values as `Some(value)`, `None`, `Ok(value)`, and
-  `Err(value)` when the payload type itself is printable in the native backend.
+  `Err(value)` when the payload type itself is printable. ADTs containing
+  fixed-size arrays are rejected by `mlg check` until an array display format is
+  designed.
 - v0 does not include `unwrap`, `?`, nested patterns, or user-defined enum
   declarations.
 

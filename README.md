@@ -29,6 +29,8 @@ This repository is the Mallang language PoC workspace.
   `break` / `continue`, `else if` sugar, `bool` operators, `|>`
   pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - `Option` and `Result` values with printable payloads can be printed natively.
+- `mlg check` rejects `print` for non-printable values such as fixed-size
+  arrays and composites containing fixed-size arrays.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
@@ -201,6 +203,6 @@ Current status: implemented for the first `int`, `bool`, `string`, string equali
 guarded integer division/remainder, checked integer arithmetic, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
 condition-only, conditionless, and `for init; condition; post` loops with
 `break` / `continue`, `else if` sugar, branch-aware returns,
-struct/method/nested-field, recursive struct value-type rejection, struct print output, and built-in ADT
+struct/method/nested-field, recursive struct value-type rejection, semantic printability checks, struct print output, and built-in ADT
 expression/statement `match` plus ADT print output via C source generation and
 `clang`.

@@ -228,3 +228,10 @@
 - [x] indirect recursive struct value type semantic reject 추가
 - [x] `Option`/`Result`/fixed array wrapper 안의 recursive struct reference reject 추가
 - [x] `mlg check` failure smoke 추가
+
+## P25: Printability Semantic Check
+
+- [x] `print` 가능 타입 집합을 semantic checker에 고정
+- [x] fixed-size array `print` semantic reject 추가
+- [x] non-printable payload/field를 가진 `Option`/`Result`/`struct` print reject 추가
+- [x] `mlg check` failure smoke 추가
