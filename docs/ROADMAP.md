@@ -59,4 +59,5 @@
 - [x] named struct literal과 field access 추가
 - [x] struct typed IR와 C backend typedef/literal/access 추가
 - [x] struct receiver methods 설계/구현
-- [ ] field assignment와 field-level borrow 규칙 설계
+- [x] direct mutable field assignment 추가
+- [ ] field-level borrow arguments와 nested field assignment 규칙 설계

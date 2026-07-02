@@ -123,6 +123,7 @@ Struct literals use named fields.
 
 ```go
 user := User{name: "kim", age: 30}
+user.age = 31
 print(user.name)
 print(user.age)
 ```
@@ -132,12 +133,13 @@ Rules:
 - Struct values are move-only in v0.
 - Literal fields must name every declared field exactly once.
 - Field access reads a field by name.
+- Field assignment updates a direct field of a mutable local struct binding.
 - Copy fields such as `int` and `bool` can be read as values.
 - Non-copy fields such as `string` can be borrowed for calls like `print`, but
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed.
-- v0 does not include field assignment, recursive by-value structs, or struct
-  pattern matching.
+- v0 does not include nested field assignment, field-level borrow arguments,
+  recursive by-value structs, or struct pattern matching.
 
 Methods use Go-like receiver declarations with Mallang's existing parameter
 mode syntax.

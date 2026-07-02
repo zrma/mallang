@@ -64,6 +64,11 @@ pub enum IrStmtKind {
         name: String,
         expr: IrExpr,
     },
+    FieldAssign {
+        base: IrExpr,
+        field: String,
+        expr: IrExpr,
+    },
     Return {
         expr: IrExpr,
     },
@@ -282,6 +287,29 @@ impl<'a> Lowerer<'a> {
                 let expr = self.lower_expr_with_expected(expr, locals, Some(&expected))?;
                 IrStmtKind::Assign {
                     name: name.clone(),
+                    expr,
+                }
+            }
+            StmtKind::FieldAssign { base, field, expr } => {
+                let base = self.lower_expr(base, locals)?;
+                let Type::Struct(type_name) = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted field assignment on non-struct value",
+                        stmt.span,
+                    ));
+                };
+                let sig = self.struct_sig(type_name, stmt.span)?;
+                let Some(field_sig) = sig.fields.iter().find(|candidate| candidate.name == *field)
+                else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unknown field assignment",
+                        stmt.span,
+                    ));
+                };
+                let expr = self.lower_expr_with_expected(expr, locals, Some(&field_sig.ty))?;
+                IrStmtKind::FieldAssign {
+                    base,
+                    field: field.clone(),
                     expr,
                 }
             }
@@ -1358,5 +1386,32 @@ func main() {
         assert_eq!(callee, "User.age");
         assert_eq!(args.len(), 1);
         assert_eq!(args[0].mode, ArgMode::In);
+    }
+
+    #[test]
+    fn ir_lowers_field_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age = 31
+    print(user.age)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::FieldAssign { base, field, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected field assignment");
+        };
+        assert_eq!(base.ty, Type::Struct("User".to_string()));
+        assert_eq!(field, "age");
+        assert_eq!(expr.ty, Type::Int);
     }
 }

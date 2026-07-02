@@ -416,6 +416,10 @@ impl<'a> Checker<'a> {
                 }
                 Ok(Type::Unit)
             }
+            StmtKind::FieldAssign { base, field, expr } => {
+                self.check_field_assign(base, field, expr, locals)?;
+                Ok(Type::Unit)
+            }
             StmtKind::Return { expr } => {
                 let value_ty = self.check_expr_with_expected(
                     expr,
@@ -745,6 +749,77 @@ impl<'a> Checker<'a> {
         }
 
         Ok(field_sig.ty.clone())
+    }
+
+    fn check_field_assign(
+        &self,
+        base: &Expr,
+        field: &str,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<(), SemanticError> {
+        let ExprKind::Var(name) = &base.kind else {
+            return Err(SemanticError::new(
+                "field assignment target must start from a direct local variable in v0",
+                base.span,
+            ));
+        };
+        let (base_ty, base_mutable) = {
+            let Some(local) = locals.get(name) else {
+                return Err(SemanticError::new(
+                    format!("unknown variable `{name}`"),
+                    base.span,
+                ));
+            };
+            if local.moved {
+                return Err(SemanticError::new(
+                    format!("assignment to field of moved value `{name}`"),
+                    base.span,
+                ));
+            }
+            (local.ty.clone(), local.mutable)
+        };
+        if !base_mutable {
+            return Err(SemanticError::new(
+                format!("cannot assign field of immutable binding `{name}`"),
+                base.span,
+            ));
+        }
+
+        let Type::Struct(type_name) = base_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "field assignment requires a struct value, got `{}`",
+                    base_ty.source_name()
+                ),
+                base.span,
+            ));
+        };
+        let struct_sig = self.struct_sig(&type_name, base.span)?;
+        let Some(field_sig) = struct_sig
+            .fields
+            .iter()
+            .find(|candidate| candidate.name == field)
+        else {
+            return Err(SemanticError::new(
+                format!("unknown field `{field}` on `{type_name}`"),
+                base.span,
+            ));
+        };
+        let value_ty =
+            self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&field_sig.ty))?;
+        if value_ty != field_sig.ty {
+            return Err(SemanticError::new(
+                format!(
+                    "field `{field}` assignment type mismatch: expected `{}`, got `{}`",
+                    field_sig.ty.source_name(),
+                    value_ty.source_name()
+                ),
+                expr.span,
+            ));
+        }
+
+        Ok(())
     }
 
     fn prepare_match_arms<'b>(
@@ -1773,6 +1848,61 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_field_assignment_on_mutable_struct_binding() {
+        check_ok(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age = 31
+    print(user.age)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_field_assignment_on_immutable_binding() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    user := User{age: 30}
+    user.age = 31
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign field of immutable binding `user`"));
+    }
+
+    #[test]
+    fn rejects_field_assignment_type_mismatch() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age = "old"
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("field `age` assignment type mismatch"));
     }
 
     #[test]

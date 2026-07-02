@@ -76,6 +76,11 @@ pub enum StmtKind {
         name: String,
         expr: Expr,
     },
+    FieldAssign {
+        base: Expr,
+        field: String,
+        expr: Expr,
+    },
     Return {
         expr: Expr,
     },

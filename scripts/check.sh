@@ -71,3 +71,10 @@ if [[ "$methods_output" != $'kim\n30' ]]; then
   echo "methods native build smoke failed: expected kim and 30, got '$methods_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/field-assignment.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/field-assignment >/dev/null
+field_assignment_output="$(target/mallang/field-assignment)"
+if [[ "$field_assignment_output" != $'kim\n31' ]]; then
+  echo "field assignment native build smoke failed: expected kim and 31, got '$field_assignment_output'" >&2
+  exit 1
+fi

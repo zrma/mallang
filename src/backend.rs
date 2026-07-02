@@ -152,6 +152,16 @@ impl<'a> CGenerator<'a> {
                     format!("{} = {};", c_ident(name), code),
                 ))
             }
+            IrStmtKind::FieldAssign { base, field, expr } => {
+                let base = self.emit_stmt_expr(base)?;
+                let expr = self.emit_stmt_expr(expr)?;
+                let mut prelude = base.prelude;
+                prelude.extend(expr.prelude);
+                Ok(finish_with_prelude(
+                    prelude,
+                    format!("({}).{} = {};", base.code, c_field(field), expr.code),
+                ))
+            }
             IrStmtKind::Return { expr } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr(expr)?;
                 Ok(finish_with_prelude(prelude, format!("return {};", code)))
@@ -727,6 +737,10 @@ impl<'a> CGenerator<'a> {
             IrStmtKind::Assign { expr, .. }
             | IrStmtKind::Return { expr }
             | IrStmtKind::Expr { expr } => self.collect_expr_types(expr, types),
+            IrStmtKind::FieldAssign { base, expr, .. } => {
+                self.collect_expr_types(base, types);
+                self.collect_expr_types(expr, types);
+            }
             IrStmtKind::If {
                 condition,
                 then_body,
@@ -1164,5 +1178,29 @@ func main() {
         assert!(c.contains("int64_t mlg_User_age(mlg_struct_User mlg_self);"));
         assert!(c.contains("return (mlg_self).mlg_age;"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_User_age(mlg_user)));"));
+    }
+
+    #[test]
+    fn generates_c_for_field_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age = 31
+    print(user.age)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("(mlg_user).mlg_age = 31;"));
+        assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
     }
 }

@@ -241,11 +241,10 @@ impl Parser {
             return self.parse_let_statement();
         }
 
-        if self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::Equal) {
-            return self.parse_assign_statement();
-        }
-
         let expr = self.parse_expression()?;
+        if self.at(TokenTag::Equal) {
+            return self.finish_assign_statement(expr);
+        }
         let span = expr.span;
         Ok(Stmt {
             kind: StmtKind::Expr { expr },
@@ -276,16 +275,28 @@ impl Parser {
         })
     }
 
-    fn parse_assign_statement(&mut self) -> Result<Stmt, ParseError> {
-        let (name, start) = self.expect_ident("expected assignment target")?;
+    fn finish_assign_statement(&mut self, target: Expr) -> Result<Stmt, ParseError> {
+        let start = target.span;
         self.expect(TokenTag::Equal, "expected `=` in assignment")?;
         let expr = self.parse_expression()?;
         let span = start.join(expr.span);
 
-        Ok(Stmt {
-            kind: StmtKind::Assign { name, expr },
-            span,
-        })
+        let kind = match target.kind {
+            ExprKind::Var(name) => StmtKind::Assign { name, expr },
+            ExprKind::FieldAccess { base, field } => StmtKind::FieldAssign {
+                base: *base,
+                field,
+                expr,
+            },
+            _ => {
+                return Err(ParseError::new(
+                    "assignment target must be a variable or field access",
+                    start,
+                ));
+            }
+        };
+
+        Ok(Stmt { kind, span })
     }
 
     fn parse_return_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -990,6 +1001,32 @@ func main() {
             panic!("expected method call");
         };
         assert!(matches!(callee.kind, ExprKind::FieldAccess { .. }));
+    }
+
+    #[test]
+    fn parses_field_assignment() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age = 31
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::FieldAssign { base, field, expr } =
+            &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected field assignment");
+        };
+        assert!(matches!(base.kind, ExprKind::Var(_)));
+        assert_eq!(field, "age");
+        assert!(matches!(expr.kind, ExprKind::Int(31)));
     }
 
     #[test]

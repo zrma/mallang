@@ -1,0 +1,11 @@
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut user := User{name: "kim", age: 30}
+    user.age = 31
+    print(user.name)
+    print(user.age)
+}

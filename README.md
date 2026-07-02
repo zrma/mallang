@@ -24,7 +24,7 @@ This repository is the Mallang language PoC workspace.
 - Functional features in the core language: `if` statements/expressions,
   `Option`, `Result`, and `match`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
-  field access.
+  field access/assignment.
 - Go-like receiver methods with Mallang parameter modes.
 
 ## Bootstrap
@@ -50,6 +50,8 @@ cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
 target/mallang/methods
+cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/field-assignment
+target/mallang/field-assignment
 ```
 
 Run the full local gate:
@@ -69,6 +71,7 @@ scripts/check.sh
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
+- `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.

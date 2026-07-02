@@ -59,6 +59,7 @@
 - [x] Generate native code for non-local `match` scrutinee expressions.
 - [x] Struct declarations, named literals, and field access.
 - [x] Struct receiver methods.
+- [x] Direct mutable struct field assignment.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.
