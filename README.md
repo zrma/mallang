@@ -26,6 +26,8 @@ This repository is the Mallang language PoC workspace.
 - Top-level `type` and non-method `func` declarations cannot use the same name.
 - Ownership by default for non-copy values.
 - Explicit `con` and `mut` borrow calls.
+- Borrow mode syntax is canonical in v0; there are no legacy aliases such as
+  `in`.
 - Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter
   assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
@@ -219,6 +221,8 @@ scripts/check.sh
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.
 - `src/backend/c/names.rs`: C backend identifier, type-name, and operator helpers.
+- `src/backend/c/expressions.rs`: C backend expression, literal, call,
+  borrow-lvalue, and expression-match emission.
 - `src/backend/c/statements.rs`: C backend statement, loop, match, and print emission.
 - `src/backend/c/types.rs`: C backend type layout and drop helper emission.
 - `src/token.rs`: token model shared by the frontend.

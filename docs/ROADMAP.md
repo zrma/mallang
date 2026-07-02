@@ -547,3 +547,9 @@
 - [x] `emit_stmt_with_env`와 cleanup statement emission만 parent expression/orchestration에서 호출 가능한 module-visible boundary로 유지
 - [x] `CGenerator`의 expression emission은 기존 `src/backend/c.rs`에 남겨 후속 expression emitter split 후보로 유지
 - [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P65: C Backend Expression Emitter Split
+
+- [x] expression/literal/call/borrow-lvalue/match-expression emission을 `src/backend/c/expressions.rs`로 분리
+- [x] statement emitter가 쓰는 `emit_stmt_expr_with_env` / `emit_borrow_lvalue_expr`만 module-visible boundary로 유지
+- [x] `CGenerator`의 public `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
