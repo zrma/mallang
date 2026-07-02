@@ -79,7 +79,7 @@ it as an ordinary identifier.
 Reserved built-in value names:
 
 ```text
-print len Some None Ok Err
+print len append Some None Ok Err
 ```
 
 These names cannot be used as top-level type or function declarations,
@@ -159,7 +159,8 @@ Array rules:
 - Fixed-size array element method receivers are supported for `con` and `mut`
   receiver modes.
 - Slice type syntax `[]T` is parsed but rejected by semantic analysis until
-  slice ownership and native ABI are defined. Slice values, append/growth,
+  slice ownership and native ABI are defined. `append` is reserved as a future
+  built-in value name, but slice values, append/growth,
   mutable range values, borrowed indexing as a first-class expression, and
   non-copy element extraction are reserved for later slices.
 

@@ -267,3 +267,9 @@
 - [x] statement `match` payload move가 outer binding move로 merge되지 않는 semantic test 추가
 - [x] condition-only `for` body shadowing semantic/native smoke 추가
 - [x] `examples/shadowing.mlg`로 control-flow scope isolation 회귀 고정
+
+## P30: Append Built-in Reservation
+
+- [x] `append`를 future slice growth built-in value name으로 예약
+- [x] top-level function/local binding 충돌 semantic regression 추가
+- [x] `mlg check` failure smoke 갱신

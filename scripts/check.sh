@@ -214,12 +214,12 @@ if "${CARGO[@]}" run --bin mlg -- check "$print_value_fail_source" >/dev/null 2>
 fi
 builtin_value_name_fail_source="target/mallang/check-builtin-value-name-fail.mlg"
 cat >"$builtin_value_name_fail_source" <<'MLG'
-func len(value int) int {
+func append(value int) int {
     return value
 }
 
 func main() {
-    print(len(1))
+    print(append(1))
 }
 MLG
 if "${CARGO[@]}" run --bin mlg -- check "$builtin_value_name_fail_source" >/dev/null 2>&1; then

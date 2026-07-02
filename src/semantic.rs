@@ -2969,7 +2969,10 @@ fn reject_builtin_value_name(name: &str, span: Span) -> Result<(), SemanticError
 }
 
 fn is_builtin_value_name(name: &str) -> bool {
-    matches!(name, "print" | "len" | "Some" | "None" | "Ok" | "Err")
+    matches!(
+        name,
+        "print" | "len" | "append" | "Some" | "None" | "Ok" | "Err"
+    )
 }
 
 #[cfg(test)]
@@ -3139,6 +3142,17 @@ func main() {}
 "#,
         );
         assert!(error.message.contains("`Some` is a built-in value name"));
+
+        let error = check_error(
+            r#"
+func append(value int) int {
+    return value
+}
+
+func main() {}
+"#,
+        );
+        assert!(error.message.contains("`append` is a built-in value name"));
     }
 
     #[test]
@@ -3165,6 +3179,16 @@ func main() {
 "#,
         );
         assert!(error.message.contains("`None` is a built-in value name"));
+
+        let error = check_error(
+            r#"
+func main() {
+    append := 1
+    print(append)
+}
+"#,
+        );
+        assert!(error.message.contains("`append` is a built-in value name"));
     }
 
     #[test]

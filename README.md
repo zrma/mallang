@@ -19,8 +19,8 @@ This repository is the Mallang language PoC workspace.
 - No pointer syntax.
 - No `nil`.
 - Immutable bindings by default.
-- Built-in value names such as `print`, `len`, `Some`, `None`, `Ok`, and `Err`
-  are reserved in user value bindings.
+- Built-in value names such as `print`, `len`, `append`, `Some`, `None`, `Ok`,
+  and `Err` are reserved in user value bindings.
 - Top-level `type` and non-method `func` declarations cannot use the same name.
 - Ownership by default for non-copy values.
 - Explicit `con` and `mut` borrow calls.
