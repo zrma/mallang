@@ -47,6 +47,7 @@
 - [x] `clang` 기반 native binary smoke 추가
 - [x] statement-form `if` C codegen/native smoke 추가
 - [x] `in`/`mut` parameter hidden-reference C ABI 추가
+- [x] prelude가 필요한 `if` expression branch용 C temp lowering 추가
 
 ## P5: Built-in ADTs
 

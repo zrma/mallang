@@ -53,6 +53,8 @@ cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
 target/mallang/match-temp
+cargo run --bin mlg -- build examples/if-match-expression.mlg -o target/mallang/if-match-expression
+target/mallang/if-match-expression
 cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
@@ -91,6 +93,7 @@ scripts/check.sh
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
+- `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
 - `examples/mut-receiver.mlg`: native smoke for caller-visible `mut` receiver methods.

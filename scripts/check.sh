@@ -72,6 +72,13 @@ if [[ "$match_temp_output" != "0" ]]; then
   echo "match temp native build smoke failed: expected 0, got '$match_temp_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/if-match-expression.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/if-match-expression.mlg -o target/mallang/if-match-expression >/dev/null
+if_match_expression_output="$(target/mallang/if-match-expression)"
+if [[ "$if_match_expression_output" != $'7\n0' ]]; then
+  echo "if match expression native build smoke failed: expected 7 and 0, got '$if_match_expression_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/structs.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/structs.mlg -o target/mallang/structs >/dev/null
 structs_output="$(target/mallang/structs)"

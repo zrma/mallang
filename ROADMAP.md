@@ -51,6 +51,7 @@
   command.
 - [x] Generate native C blocks for statement-form `if`.
 - [x] Lower `in`/`mut` parameters to a hidden-reference C ABI.
+- [x] Generate C temps for `if` expression branches that need prelude statements.
 
 ## Later
 

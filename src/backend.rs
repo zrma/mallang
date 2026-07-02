@@ -393,14 +393,22 @@ impl<'a> CGenerator<'a> {
                 else_branch,
             } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+                let then_expr = self.emit_stmt_expr_with_env(then_branch, env)?;
+                let else_expr = self.emit_stmt_expr_with_env(else_branch, env)?;
+                if then_expr.prelude.is_empty() && else_expr.prelude.is_empty() {
+                    return Ok(CExpr {
+                        prelude,
+                        code: format!("(({}) ? ({}) : ({}))", code, then_expr.code, else_expr.code),
+                    });
+                }
+
+                let temp = if_expr_temp_name(expr);
+                let mut prelude = prelude;
+                prelude.push(format!("{} {temp};", expr.ty.c_name()));
+                prelude.push(if_expr_temp_block(&code, &temp, then_expr, else_expr));
                 Ok(CExpr {
                     prelude,
-                    code: format!(
-                        "(({}) ? ({}) : ({}))",
-                        code,
-                        self.emit_expr_with_env(then_branch, env)?,
-                        self.emit_expr_with_env(else_branch, env)?
-                    ),
+                    code: temp,
                 })
             }
             IrExprKind::AdtConstructor {
@@ -1064,6 +1072,26 @@ fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
     output
 }
 
+fn if_expr_temp_block(condition: &str, temp: &str, then_expr: CExpr, else_expr: CExpr) -> String {
+    let mut output = String::new();
+    output.push_str(&format!("if ({condition}) {{\n"));
+    for line in then_expr.prelude {
+        push_indented_lines(&mut output, &line, 1);
+    }
+    push_indented_lines(&mut output, &format!("{temp} = {};", then_expr.code), 1);
+    output.push_str("} else {\n");
+    for line in else_expr.prelude {
+        push_indented_lines(&mut output, &line, 1);
+    }
+    push_indented_lines(&mut output, &format!("{temp} = {};", else_expr.code), 1);
+    output.push('}');
+    output
+}
+
+fn if_expr_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_if_tmp_{}", expr.span.start)
+}
+
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
     function
         .params
@@ -1256,6 +1284,45 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
+    }
+
+    #[test]
+    fn generates_c_for_if_expression_with_branch_prelude() {
+        let program = parse(
+            r#"
+func main() {
+    print(pick(true))
+}
+
+func pick(flag bool) int {
+    return if flag {
+        match maybe(true) {
+            case Some(inner) { inner }
+            case None { 0 }
+        }
+    } else {
+        match maybe(false) {
+            case Some(inner) { inner }
+            case None { 0 }
+        }
+    }
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mallang_if_tmp_"));
+        assert!(c.contains("if (mlg_flag) {"));
+        assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
+        assert!(c.contains("mallang_if_tmp_"));
+        assert!(c.contains("return mallang_if_tmp_"));
     }
 
     #[test]
