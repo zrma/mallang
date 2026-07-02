@@ -977,7 +977,7 @@ impl<'a> Checker<'a> {
         return_type: &Type,
         loop_depth: usize,
     ) -> Result<(), SemanticError> {
-        if parts.index_name == parts.value_name {
+        if parts.index_name == parts.value_name && !is_blank_identifier(parts.index_name) {
             return Err(SemanticError::new(
                 "range index and value bindings must use different names",
                 parts.span,
@@ -994,7 +994,7 @@ impl<'a> Checker<'a> {
                 parts.source.span,
             ));
         };
-        if !element.is_copy() {
+        if !is_blank_identifier(parts.value_name) && !element.is_copy() {
             return Err(SemanticError::new(
                 format!(
                     "range value binding requires a Copy element type in v0, got `{}`",
@@ -1005,24 +1005,28 @@ impl<'a> Checker<'a> {
         }
 
         let mut body_locals = locals.clone();
-        body_locals.insert(
-            parts.index_name.to_string(),
-            Local {
-                ty: Type::Int,
-                mutable: false,
-                borrowed: false,
-                moved: false,
-            },
-        );
-        body_locals.insert(
-            parts.value_name.to_string(),
-            Local {
-                ty: element.as_ref().clone(),
-                mutable: false,
-                borrowed: false,
-                moved: false,
-            },
-        );
+        if !is_blank_identifier(parts.index_name) {
+            body_locals.insert(
+                parts.index_name.to_string(),
+                Local {
+                    ty: Type::Int,
+                    mutable: false,
+                    borrowed: false,
+                    moved: false,
+                },
+            );
+        }
+        if !is_blank_identifier(parts.value_name) {
+            body_locals.insert(
+                parts.value_name.to_string(),
+                Local {
+                    ty: element.as_ref().clone(),
+                    mutable: false,
+                    borrowed: false,
+                    moved: false,
+                },
+            );
+        }
 
         self.check_block_statements(parts.body, &mut body_locals, return_type, loop_depth + 1)?;
         merge_loop_body_moves(locals, &body_locals);
@@ -2544,6 +2548,10 @@ fn is_direct_borrow_expr(expr: &Expr) -> bool {
     }
 }
 
+fn is_blank_identifier(name: &str) -> bool {
+    name == "_"
+}
+
 fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
     match &expr.kind {
         ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
@@ -3924,6 +3932,45 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_array_range_blank_identifiers() {
+        check_ok(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    values := [3]int{1, 2, 3}
+    for _, value := range values {
+        print(value)
+    }
+
+    users := [1]User{User{age: 1}}
+    for i, _ := range users {
+        print(i)
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_reading_range_blank_identifier() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [1]int{1}
+    for _, value := range values {
+        print(_)
+        print(value)
+    }
+}
+"#,
+        );
+        assert!(error.message.contains("unknown variable `_`"));
     }
 
     #[test]

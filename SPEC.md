@@ -398,21 +398,27 @@ for i, value := range values {
     print(i)
     print(value)
 }
+
+for _, value := range values {
+    print(value)
+}
 ```
 
 Range rules:
 
 - The range source must be a fixed-size array.
-- The loop introduces immutable `int` index and immutable element value
-  bindings scoped to the loop body.
-- The element binding is allowed only when the element type is `Copy` in the
-  first implementation slice.
+- The loop introduces immutable `int` index and immutable element value bindings
+  scoped to the loop body.
+- Either range binding may be `_`. A blank binding is not added to the loop body
+  scope.
+- The element binding is allowed only when the element type is `Copy`; if the
+  value binding is `_`, no element copy is created and non-copy element arrays
+  may be ranged by index.
 - The range source is read for iteration and is still usable after the loop.
 - `break` and `continue` follow the same nearest-loop rules as other `for`
   forms.
-- Mutable range variables, one-variable range, blank identifiers, range over
-  slices/maps/strings, and by-reference element iteration are reserved for later
-  slices.
+- Mutable range variables, one-variable range, range over slices/maps/strings,
+  and by-reference element iteration are reserved for later slices.
 
 Expression form:
 

@@ -333,8 +333,16 @@ impl<'a> CGenerator<'a> {
 
         let CExpr { prelude, code } = self.emit_stmt_expr_with_env(source, env)?;
         let source_temp = range_source_temp_name(source);
-        let index_ident = c_ident(index_name);
-        let value_ident = c_ident(value_name);
+        let index_ident = if is_blank_identifier(index_name) {
+            range_index_temp_name(source)
+        } else {
+            c_ident(index_name)
+        };
+        let value_ident = if is_blank_identifier(value_name) {
+            None
+        } else {
+            Some(c_ident(value_name))
+        };
         let mut output = String::new();
         for line in prelude {
             output.push_str(&line);
@@ -344,27 +352,33 @@ impl<'a> CGenerator<'a> {
         output.push_str(&format!(
             "for (int64_t {index_ident} = 0; {index_ident} < {len}; {index_ident} = ({index_ident} + 1)) {{\n"
         ));
-        if *len != 0 {
-            push_indented_lines(
-                &mut output,
-                &format!(
-                    "{} {value_ident} = ({source_temp}).{}[{index_ident}];",
-                    element_ty.c_name(),
-                    c_field("data")
-                ),
-                1,
-            );
-        } else {
-            push_indented_lines(
-                &mut output,
-                &format!("{} {value_ident};", element_ty.c_name()),
-                1,
-            );
+        if let Some(value_ident) = &value_ident {
+            if *len != 0 {
+                push_indented_lines(
+                    &mut output,
+                    &format!(
+                        "{} {value_ident} = ({source_temp}).{}[{index_ident}];",
+                        element_ty.c_name(),
+                        c_field("data")
+                    ),
+                    1,
+                );
+            } else {
+                push_indented_lines(
+                    &mut output,
+                    &format!("{} {value_ident};", element_ty.c_name()),
+                    1,
+                );
+            }
         }
 
         let mut body_env = env.clone();
-        body_env.insert(index_name.to_string(), index_ident);
-        body_env.insert(value_name.to_string(), value_ident);
+        if !is_blank_identifier(index_name) {
+            body_env.insert(index_name.to_string(), index_ident);
+        }
+        if let Some(value_ident) = value_ident {
+            body_env.insert(value_name.to_string(), value_ident);
+        }
         for stmt in body {
             let code = self.emit_stmt_with_env(stmt, &body_env)?;
             push_indented_lines(&mut output, &code, 1);
@@ -1776,6 +1790,14 @@ fn range_source_temp_name(expr: &IrExpr) -> String {
     format!("mallang_range_src_{}", expr.span.start)
 }
 
+fn range_index_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_range_index_{}", expr.span.start)
+}
+
+fn is_blank_identifier(name: &str) -> bool {
+    name == "_"
+}
+
 fn mangle_type(ty: &Type) -> String {
     match ty {
         Type::Int => "int".to_string(),
@@ -2388,6 +2410,38 @@ func main() {
         assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
         assert!(c.contains(".mlg_data[mlg_i];"));
         assert!(c.contains("mlg_total = ((mlg_total + mlg_i) + mlg_value);"));
+    }
+
+    #[test]
+    fn generates_c_for_array_range_blank_identifiers() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    values := [2]int{1, 2}
+    for _, value := range values {
+        print(value)
+    }
+
+    users := [1]User{User{age: 1}}
+    for i, _ := range users {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("for (int64_t mallang_range_index_"));
+        assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
+        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 1; mlg_i = (mlg_i + 1)) {"));
+        assert!(!c.contains("mlg__"));
     }
 
     #[test]

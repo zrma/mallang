@@ -1923,6 +1923,46 @@ func main() {
     }
 
     #[test]
+    fn parses_array_range_loop_blank_identifiers() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    for _, value := range values {
+        print(value)
+    }
+    for i, _ := range values {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::RangeFor {
+            index_name,
+            value_name,
+            ..
+        } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "_");
+        assert_eq!(value_name, "value");
+
+        let StmtKind::RangeFor {
+            index_name,
+            value_name,
+            ..
+        } = &program.functions[0].body.statements[2].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "_");
+    }
+
+    #[test]
     fn parses_array_index_and_len_call() {
         let program = parse(
             r#"

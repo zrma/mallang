@@ -179,3 +179,10 @@
 - [x] AST에서 fixed-size array `[N]T`와 slice `[]T` 구분
 - [x] semantic checker에서 `[]T` reserved diagnostic 고정
 - [x] slice values/native ABI는 후속 ownership decision으로 보류
+
+## P18: Array Range Blank Identifier
+
+- [x] `for _, value := range values` parser/semantic 지원
+- [x] `for i, _ := range values`에서 value binding 생략
+- [x] value blank range에서 non-copy element copy requirement 제거
+- [x] native smoke에서 blank index/value codegen 검증

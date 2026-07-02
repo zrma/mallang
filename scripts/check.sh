@@ -107,6 +107,13 @@ if [[ "$arrays_output" != "20" ]]; then
   echo "arrays native build smoke failed: expected 20, got '$arrays_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
+range_blank_output="$(target/mallang/range-blank)"
+if [[ "$range_blank_output" != "6" ]]; then
+  echo "range blank native build smoke failed: expected 6, got '$range_blank_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/non-copy-array-assignment.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment >/dev/null
 non_copy_array_assignment_output="$(target/mallang/non-copy-array-assignment)"

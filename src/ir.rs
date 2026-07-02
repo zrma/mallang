@@ -509,7 +509,7 @@ impl<'a> Lowerer<'a> {
                 parts.span,
             ));
         };
-        if !element.is_copy() {
+        if !is_blank_identifier(parts.value_name) && !element.is_copy() {
             return Err(IrError::new(
                 "semantic analysis accepted range over non-Copy element type",
                 parts.span,
@@ -518,8 +518,12 @@ impl<'a> Lowerer<'a> {
 
         let element_ty = element.as_ref().clone();
         let mut body_locals = locals.clone();
-        body_locals.insert(parts.index_name.to_string(), Type::Int);
-        body_locals.insert(parts.value_name.to_string(), element_ty.clone());
+        if !is_blank_identifier(parts.index_name) {
+            body_locals.insert(parts.index_name.to_string(), Type::Int);
+        }
+        if !is_blank_identifier(parts.value_name) {
+            body_locals.insert(parts.value_name.to_string(), element_ty.clone());
+        }
         let body = self.lower_block_statements(parts.body, &mut body_locals, return_type)?;
 
         Ok(IrStmtKind::RangeFor {
@@ -1887,6 +1891,10 @@ fn is_direct_borrow_expr(expr: &Expr) -> bool {
     }
 }
 
+fn is_blank_identifier(name: &str) -> bool {
+    name == "_"
+}
+
 fn method_ir_name(receiver: &Type, method: &str) -> String {
     format!("{}.{}", receiver.source_name(), method)
 }
@@ -2501,6 +2509,58 @@ func main() {
         assert!(matches!(source.ty, Type::Array { .. }));
         assert_eq!(*element_ty, Type::Int);
         assert_eq!(body.len(), 2);
+    }
+
+    #[test]
+    fn ir_lowers_array_range_blank_identifiers() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    values := [2]int{1, 2}
+    for _, value := range values {
+        print(value)
+    }
+
+    users := [1]User{User{age: 1}}
+    for i, _ := range users {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            element_ty,
+            ..
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "_");
+        assert_eq!(value_name, "value");
+        assert_eq!(*element_ty, Type::Int);
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            element_ty,
+            ..
+        } = &ir.functions[0].body[3].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "_");
+        assert_eq!(*element_ty, Type::Struct("User".to_string()));
     }
 
     #[test]
