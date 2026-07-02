@@ -201,6 +201,17 @@ if "${CARGO[@]}" run --bin mlg -- check "$struct_array_print_fail_source" >/dev/
   echo "struct array print check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+print_value_fail_source="target/mallang/check-print-value-fail.mlg"
+cat >"$print_value_fail_source" <<'MLG'
+func main() {
+    value := print(1)
+    print(value)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$print_value_fail_source" >/dev/null 2>&1; then
+  echo "print value-position check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

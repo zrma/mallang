@@ -565,10 +565,24 @@ impl<'a> Checker<'a> {
                 self.check_match_stmt(scrutinee, arms, locals, return_type, loop_depth, stmt.span)
             }
             StmtKind::Expr { expr } => {
-                self.check_expr(expr, locals, ValueUse::Owned)?;
+                self.check_stmt_expr(expr, locals)?;
                 Ok(false)
             }
         }
+    }
+
+    fn check_stmt_expr(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<Type, SemanticError> {
+        if let ExprKind::Call { callee, args } = &expr.kind {
+            if matches!(&callee.kind, ExprKind::Var(name) if name == "print") {
+                return self.check_print_builtin(args, locals, expr.span);
+            }
+        }
+
+        self.check_expr(expr, locals, ValueUse::Owned)
     }
 
     fn check_let_binding(
@@ -1831,28 +1845,47 @@ impl<'a> Checker<'a> {
         }
 
         if name == "print" {
-            if args.len() != 1 {
-                return Err(SemanticError::new(
-                    "`print` expects exactly one argument",
-                    span,
-                ));
-            }
-            let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
-            if !self.is_printable_type(&arg_ty) {
-                return Err(SemanticError::new(
-                    format!(
-                        "cannot print value of type `{}` in v0",
-                        arg_ty.source_name()
-                    ),
-                    args[0].span,
-                ));
-            }
-            return Ok(Type::Unit);
+            return Err(SemanticError::new(
+                "`print` is only supported as a statement",
+                span,
+            ));
         }
 
         let sig = self.function_sig(name, callee.span)?;
         self.check_call_args(name, args, &sig.params, locals, Vec::new(), span)?;
         Ok(sig.return_type.clone())
+    }
+
+    fn check_print_builtin(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if args.len() != 1 {
+            return Err(SemanticError::new(
+                "`print` expects exactly one argument",
+                span,
+            ));
+        }
+        if args[0].mode != ArgMode::Owned {
+            return Err(SemanticError::new(
+                "`print` arguments do not take `con` or `mut` mode markers",
+                args[0].span,
+            ));
+        }
+
+        let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
+        if !self.is_printable_type(&arg_ty) {
+            return Err(SemanticError::new(
+                format!(
+                    "cannot print value of type `{}` in v0",
+                    arg_ty.source_name()
+                ),
+                args[0].span,
+            ));
+        }
+        Ok(Type::Unit)
     }
 
     fn check_len_builtin(
@@ -3036,6 +3069,62 @@ func noop() {}
 "#,
         );
         assert!(error.message.contains("cannot print value of type `unit`"));
+    }
+
+    #[test]
+    fn rejects_print_in_value_position() {
+        let error = check_error(
+            r#"
+func main() {
+    value := print(1)
+    print(value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`print` is only supported as a statement"));
+
+        let error = check_error(
+            r#"
+func main() {
+    print(print(1))
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`print` is only supported as a statement"));
+
+        let error = check_error(
+            r#"
+func value() int {
+    return print(1)
+}
+
+func main() {
+    print(value())
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`print` is only supported as a statement"));
+    }
+
+    #[test]
+    fn rejects_print_argument_mode_marker() {
+        let error = check_error(
+            r#"
+func main() {
+    value := "mallang"
+    print(con value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`print` arguments do not take `con` or `mut` mode markers"));
     }
 
     #[test]

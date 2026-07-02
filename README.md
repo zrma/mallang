@@ -30,7 +30,8 @@ This repository is the Mallang language PoC workspace.
   pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - `mlg check` rejects `print` for non-printable values such as fixed-size
-  arrays and composites containing fixed-size arrays.
+  arrays and composites containing fixed-size arrays, and rejects `print` in
+  value positions.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.

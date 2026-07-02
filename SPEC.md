@@ -330,6 +330,20 @@ Rules:
 - Borrowed values cannot be returned in v0.
 - Non-`unit` functions must return on every path the v0 checker can prove.
 
+## Built-in Statements
+
+`print(expr)` is a statement-only built-in in v0.
+
+Rules:
+
+- `print(expr)` can appear as a direct expression statement.
+- `print` cannot be used as a value, binding initializer, call argument,
+  return expression, `if` branch value, or `match` arm value.
+- `print` arguments do not take `con` or `mut` mode markers.
+- The argument must have a printable type. v0 printable types are `int`,
+  `bool`, `string`, built-in ADTs with printable payloads, and structs whose
+  fields are printable.
+
 ## Expressions
 
 `if` is both a statement and an expression.

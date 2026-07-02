@@ -68,6 +68,8 @@
   targets.
 - [x] Reject recursive struct value type definitions.
 - [x] Reject non-printable `print` arguments before native backend lowering.
+- [x] Reject statement-only `print` in value positions before native backend
+  lowering.
 - [x] Reject reserved slice type syntax `[]T` with an explicit diagnostic.
 
 ## Milestone 3: Ownership and Borrowing

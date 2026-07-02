@@ -39,6 +39,7 @@
 - [x] initless `for ; condition; post` checking 추가
 - [x] conditionless `for` / empty-condition clause loop checking 추가
 - [x] `break` / `continue` outside-loop reject 추가
+- [x] statement-only `print` value-position reject 추가
 - [x] `mlg check` subcommand 추가
 
 ## P3: Ownership Lite
