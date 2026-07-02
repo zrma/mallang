@@ -19,6 +19,8 @@ This repository is the Mallang language PoC workspace.
 - No pointer syntax.
 - No `nil`.
 - Immutable bindings by default.
+- Built-in value names such as `print`, `len`, `Some`, `None`, `Ok`, and `Err`
+  are reserved in user value bindings.
 - Ownership by default for non-copy values.
 - Explicit `con` and `mut` borrow calls.
 - Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter

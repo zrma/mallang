@@ -212,6 +212,20 @@ if "${CARGO[@]}" run --bin mlg -- check "$print_value_fail_source" >/dev/null 2>
   echo "print value-position check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+builtin_value_name_fail_source="target/mallang/check-builtin-value-name-fail.mlg"
+cat >"$builtin_value_name_fail_source" <<'MLG'
+func len(value int) int {
+    return value
+}
+
+func main() {
+    print(len(1))
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$builtin_value_name_fail_source" >/dev/null 2>&1; then
+  echo "builtin value name check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

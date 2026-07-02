@@ -76,6 +76,17 @@ func return if else for break continue range match case mut con true false struc
 `nil` is reserved so the compiler can produce a clear error instead of treating
 it as an ordinary identifier.
 
+Reserved built-in value names:
+
+```text
+print len Some None Ok Err
+```
+
+These names cannot be used as global function names, parameter or receiver
+names, local bindings, range bindings, or match payload bindings in v0. Method
+and field names use dot-qualified namespaces and are not part of this value
+namespace rule.
+
 ## Bindings
 
 Bindings are immutable by default.

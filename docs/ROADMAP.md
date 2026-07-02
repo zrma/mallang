@@ -39,6 +39,7 @@
 - [x] initless `for ; condition; post` checking 추가
 - [x] conditionless `for` / empty-condition clause loop checking 추가
 - [x] `break` / `continue` outside-loop reject 추가
+- [x] built-in value name collision reject 추가
 - [x] statement-only `print` value-position reject 추가
 - [x] `mlg check` subcommand 추가
 
@@ -235,4 +236,11 @@
 - [x] `print` 가능 타입 집합을 semantic checker에 고정
 - [x] fixed-size array `print` semantic reject 추가
 - [x] non-printable payload/field를 가진 `Option`/`Result`/`struct` print reject 추가
+- [x] `mlg check` failure smoke 추가
+
+## P26: Built-in Value Name Reservation
+
+- [x] global function 이름이 built-in value name과 충돌하면 reject
+- [x] parameter/local/range binding 이름이 built-in value name과 충돌하면 reject
+- [x] match payload binding 이름이 built-in value name과 충돌하면 reject
 - [x] `mlg check` failure smoke 추가

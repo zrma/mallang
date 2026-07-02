@@ -251,6 +251,10 @@ impl<'a> Checker<'a> {
 
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
         for function in &self.program.functions {
+            if function.receiver.is_none() {
+                reject_builtin_value_name(&function.name, function.span)?;
+            }
+
             if function.name == "main" {
                 if function.receiver.is_some() {
                     return Err(SemanticError::new(
@@ -383,6 +387,8 @@ impl<'a> Checker<'a> {
     }
 
     fn param_sig(&self, param: &crate::ast::Param) -> Result<ParamSig, SemanticError> {
+        reject_builtin_value_name(&param.name, param.span)?;
+
         Ok(ParamSig {
             name: param.name.clone(),
             mode: param.mode,
@@ -593,6 +599,8 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         span: Span,
     ) -> Result<(), SemanticError> {
+        reject_builtin_value_name(name, span)?;
+
         let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
         if locals
             .insert(
@@ -1050,6 +1058,13 @@ impl<'a> Checker<'a> {
         return_type: &Type,
         loop_depth: usize,
     ) -> Result<(), SemanticError> {
+        if !is_blank_identifier(parts.index_name) {
+            reject_builtin_value_name(parts.index_name, parts.span)?;
+        }
+        if !is_blank_identifier(parts.value_name) {
+            reject_builtin_value_name(parts.value_name, parts.span)?;
+        }
+
         if parts.index_name == parts.value_name && !is_blank_identifier(parts.index_name) {
             return Err(SemanticError::new(
                 "range index and value bindings must use different names",
@@ -1391,6 +1406,7 @@ impl<'a> Checker<'a> {
         for arm in arms {
             match &arm.pattern {
                 MatchPattern::Some(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_some {
                         return Err(SemanticError::new(
                             "Option match must contain exactly one `Some` arm",
@@ -1448,6 +1464,7 @@ impl<'a> Checker<'a> {
         for arm in arms {
             match &arm.pattern {
                 MatchPattern::Ok(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_ok {
                         return Err(SemanticError::new(
                             "Result match must contain exactly one `Ok` arm",
@@ -1461,6 +1478,7 @@ impl<'a> Checker<'a> {
                     });
                 }
                 MatchPattern::Err(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_err {
                         return Err(SemanticError::new(
                             "Result match must contain exactly one `Err` arm",
@@ -1504,6 +1522,7 @@ impl<'a> Checker<'a> {
         for arm in arms {
             match &arm.pattern {
                 MatchPattern::Some(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_some {
                         return Err(SemanticError::new(
                             "Option match must contain exactly one `Some` arm",
@@ -1561,6 +1580,7 @@ impl<'a> Checker<'a> {
         for arm in arms {
             match &arm.pattern {
                 MatchPattern::Ok(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_ok {
                         return Err(SemanticError::new(
                             "Result match must contain exactly one `Ok` arm",
@@ -1574,6 +1594,7 @@ impl<'a> Checker<'a> {
                     });
                 }
                 MatchPattern::Err(binding) => {
+                    reject_builtin_value_name(binding, arm.span)?;
                     if seen_err {
                         return Err(SemanticError::new(
                             "Result match must contain exactly one `Err` arm",
@@ -2846,6 +2867,20 @@ fn is_builtin_type_name(name: &str) -> bool {
     )
 }
 
+fn reject_builtin_value_name(name: &str, span: Span) -> Result<(), SemanticError> {
+    if is_builtin_value_name(name) {
+        return Err(SemanticError::new(
+            format!("`{name}` is a built-in value name"),
+            span,
+        ));
+    }
+    Ok(())
+}
+
+fn is_builtin_value_name(name: &str) -> bool {
+    matches!(name, "print" | "len" | "Some" | "None" | "Ok" | "Err")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2990,6 +3025,87 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn rejects_builtin_value_function_names() {
+        let error = check_error(
+            r#"
+func print() {}
+
+func main() {}
+"#,
+        );
+        assert!(error.message.contains("`print` is a built-in value name"));
+
+        let error = check_error(
+            r#"
+func Some(value int) Option[int] {
+    return Some(value)
+}
+
+func main() {}
+"#,
+        );
+        assert!(error.message.contains("`Some` is a built-in value name"));
+    }
+
+    #[test]
+    fn rejects_builtin_value_binding_names() {
+        let error = check_error(
+            r#"
+func show(len int) {
+    print(len)
+}
+
+func main() {
+    show(1)
+}
+"#,
+        );
+        assert!(error.message.contains("`len` is a built-in value name"));
+
+        let error = check_error(
+            r#"
+func main() {
+    None := 1
+    print(None)
+}
+"#,
+        );
+        assert!(error.message.contains("`None` is a built-in value name"));
+    }
+
+    #[test]
+    fn rejects_builtin_value_range_binding_names() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [2]int{1, 2}
+    for len := range values {
+        print(len)
+    }
+}
+"#,
+        );
+        assert!(error.message.contains("`len` is a built-in value name"));
+    }
+
+    #[test]
+    fn rejects_builtin_value_match_payload_binding_names() {
+        let error = check_error(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Some(len) { len }
+        case None { 0 }
+    }
+    print(out)
+}
+"#,
+        );
+        assert!(error.message.contains("`len` is a built-in value name"));
     }
 
     #[test]
