@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, statement/expression `if`, generic type refs, `Option`/`Result` constructor type checking, exhaustive `match` expression checking, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: statement-spanning borrow lifetimes, full C backend, `else if` sugar, return-completeness analysis across branches, statement-block `match` arms
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, statement/expression `if`, `type Name struct` declarations, named struct literals, field access, generic type refs, `Option`/`Result` constructor type checking, exhaustive `match` expression checking, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: statement-spanning borrow lifetimes, full C backend, `else if` sugar, return-completeness analysis across branches, statement-block `match` arms, struct methods, field assignment, field-level borrow rules
 
 ## 빠른 시작
 
@@ -22,6 +22,8 @@ cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
 target/mallang/match-temp
+cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
+target/mallang/structs
 ```
 
 ## 주요 문서
@@ -34,8 +36,8 @@ target/mallang/match-temp
 
 ## 다음 구현 후보
 
-1. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
-2. IR debug output 포맷 안정화 여부 결정
-3. struct literals and methods surface 설계
+1. struct methods surface 설계와 receiver syntax 결정
+2. field assignment와 field-level borrow 규칙 설계
+3. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
 4. `else if` sugar와 return-completeness analysis 적용 시점 결정
 5. statement-block `match` arms 필요 시점 결정

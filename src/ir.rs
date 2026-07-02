@@ -5,7 +5,7 @@ use crate::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, MatchArm, MatchPattern, ParamMode, Stmt,
         StmtKind, UnaryOp,
     },
-    semantic::{CheckedProgram, FunctionSig, ParamSig, Type},
+    semantic::{CheckedProgram, FunctionSig, ParamSig, StructSig, Type},
     token::Span,
 };
 
@@ -15,7 +15,20 @@ pub fn lower(checked: &CheckedProgram<'_>) -> Result<IrProgram, IrError> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrProgram {
+    pub structs: Vec<IrStruct>,
     pub functions: Vec<IrFunction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrStruct {
+    pub name: String,
+    pub fields: Vec<IrStructField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrStructField {
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +103,14 @@ pub enum IrExprKind {
         scrutinee: Box<IrExpr>,
         arms: Vec<IrMatchArm>,
     },
+    StructLiteral {
+        type_name: String,
+        fields: Vec<IrFieldValue>,
+    },
+    FieldAccess {
+        base: Box<IrExpr>,
+        field: String,
+    },
     Call {
         callee: String,
         args: Vec<IrArg>,
@@ -111,6 +132,13 @@ pub enum IrAdtConstructor {
     None,
     Ok,
     Err,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrFieldValue {
+    pub name: String,
+    pub expr: IrExpr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +200,7 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_program(&self) -> Result<IrProgram, IrError> {
+        let structs = self.lower_structs()?;
         let mut functions = Vec::new();
         for function in &self.checked.program.functions {
             let sig = self.function_sig(&function.name, function.span)?;
@@ -191,7 +220,26 @@ impl<'a> Lowerer<'a> {
             });
         }
 
-        Ok(IrProgram { functions })
+        Ok(IrProgram { structs, functions })
+    }
+
+    fn lower_structs(&self) -> Result<Vec<IrStruct>, IrError> {
+        let mut structs = Vec::new();
+        for struct_decl in &self.checked.program.structs {
+            let sig = self.struct_sig(&struct_decl.name, struct_decl.span)?;
+            structs.push(IrStruct {
+                name: struct_decl.name.clone(),
+                fields: sig
+                    .fields
+                    .iter()
+                    .map(|field| IrStructField {
+                        name: field.name.clone(),
+                        ty: field.ty.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        Ok(structs)
     }
 
     fn lower_stmt(
@@ -332,6 +380,12 @@ impl<'a> Lowerer<'a> {
             )?,
             ExprKind::Match { scrutinee, arms } => {
                 self.lower_match_expr(scrutinee, arms, locals, expected, expr.span)?
+            }
+            ExprKind::StructLiteral { type_name, fields } => {
+                self.lower_struct_literal(type_name, fields, locals, expected, expr.span)?
+            }
+            ExprKind::FieldAccess { base, field } => {
+                self.lower_field_access(base, field, locals, expr.span)?
             }
             ExprKind::Call { callee, args } => {
                 self.lower_call(callee, args, locals, expected, expr.span)?
@@ -483,6 +537,81 @@ impl<'a> Lowerer<'a> {
             IrExprKind::Match {
                 scrutinee: Box::new(scrutinee),
                 arms,
+            },
+            ty,
+        ))
+    }
+
+    fn lower_struct_literal(
+        &self,
+        type_name: &str,
+        fields: &[crate::ast::FieldInit],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let ty = Type::Struct(type_name.to_string());
+        if let Some(expected) = expected {
+            if expected != &ty {
+                return Err(IrError::new(
+                    "semantic analysis accepted mismatched struct literal type",
+                    span,
+                ));
+            }
+        }
+
+        let sig = self.struct_sig(type_name, span)?;
+        let mut lowered = Vec::new();
+        for field_sig in &sig.fields {
+            let Some(field) = fields.iter().find(|field| field.name == field_sig.name) else {
+                return Err(IrError::new(
+                    "semantic analysis accepted missing struct literal field",
+                    span,
+                ));
+            };
+            lowered.push(IrFieldValue {
+                name: field.name.clone(),
+                expr: self.lower_expr_with_expected(&field.expr, locals, Some(&field_sig.ty))?,
+                span: field.span,
+            });
+        }
+
+        Ok((
+            IrExprKind::StructLiteral {
+                type_name: type_name.to_string(),
+                fields: lowered,
+            },
+            ty,
+        ))
+    }
+
+    fn lower_field_access(
+        &self,
+        base: &Expr,
+        field: &str,
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let base = self.lower_expr(base, locals)?;
+        let Type::Struct(type_name) = &base.ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted field access on non-struct value",
+                span,
+            ));
+        };
+        let sig = self.struct_sig(type_name, span)?;
+        let Some(field_sig) = sig.fields.iter().find(|candidate| candidate.name == field) else {
+            return Err(IrError::new(
+                "semantic analysis accepted unknown struct field access",
+                span,
+            ));
+        };
+        let ty = field_sig.ty.clone();
+
+        Ok((
+            IrExprKind::FieldAccess {
+                base: Box::new(base),
+                field: field.to_string(),
             },
             ty,
         ))
@@ -844,6 +973,13 @@ impl<'a> Lowerer<'a> {
             .get(name)
             .ok_or_else(|| IrError::new(format!("unknown function `{name}`"), span))
     }
+
+    fn struct_sig(&self, name: &str, span: Span) -> Result<&StructSig, IrError> {
+        self.checked
+            .structs
+            .get(name)
+            .ok_or_else(|| IrError::new(format!("unknown struct `{name}`"), span))
+    }
 }
 
 fn lower_param(param: &ParamSig) -> IrParam {
@@ -1021,5 +1157,42 @@ func main() {}
         };
         assert_eq!(expr.ty, Type::Int);
         assert_eq!(arms.len(), 2);
+    }
+
+    #[test]
+    fn ir_lowers_struct_literal_and_field_access() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert_eq!(ir.structs.len(), 1);
+        assert_eq!(ir.structs[0].name, "User");
+        let IrStmtKind::Let { ty, expr, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected typed let");
+        };
+        assert_eq!(*ty, Type::Struct("User".to_string()));
+        assert!(matches!(expr.kind, IrExprKind::StructLiteral { .. }));
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected print expression");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected print call");
+        };
+        assert_eq!(args[0].expr.ty, Type::Int);
+        assert!(matches!(args[0].expr.kind, IrExprKind::FieldAccess { .. }));
     }
 }

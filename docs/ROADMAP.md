@@ -52,3 +52,11 @@
 - [x] `Option` / `Result` exhaustive `match` 추가
 - [x] tagged typed IR와 C backend layout 추가
 - [x] non-local `match` scrutinee temp codegen 추가
+
+## P6: Structs
+
+- [x] `type Name struct { ... }` parser/semantic 추가
+- [x] named struct literal과 field access 추가
+- [x] struct typed IR와 C backend typedef/literal/access 추가
+- [ ] struct methods 설계/구현
+- [ ] field assignment와 field-level borrow 규칙 설계

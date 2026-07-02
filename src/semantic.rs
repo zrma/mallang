@@ -16,6 +16,7 @@ pub fn check(program: &Program) -> Result<CheckedProgram<'_>, SemanticError> {
 pub struct CheckedProgram<'a> {
     pub program: &'a Program,
     pub signatures: HashMap<&'a str, FunctionSig>,
+    pub structs: HashMap<&'a str, StructSig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,17 @@ pub struct ParamSig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructSig {
+    pub fields: Vec<FieldSig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldSig {
+    pub name: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
     Bool,
@@ -39,6 +51,7 @@ pub enum Type {
     Unit,
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
+    Struct(String),
 }
 
 impl Type {
@@ -50,6 +63,7 @@ impl Type {
             Self::Unit => "unit".to_string(),
             Self::Option(inner) => format!("Option[{}]", inner.source_name()),
             Self::Result(ok, err) => format!("Result[{}, {}]", ok.source_name(), err.source_name()),
+            Self::Struct(name) => name.clone(),
         }
     }
 
@@ -59,6 +73,7 @@ impl Type {
             Self::String => false,
             Self::Option(inner) => inner.is_copy(),
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
+            Self::Struct(_) => false,
         }
     }
 }
@@ -93,6 +108,7 @@ impl std::error::Error for SemanticError {}
 struct Checker<'a> {
     program: &'a Program,
     signatures: HashMap<&'a str, FunctionSig>,
+    structs: HashMap<&'a str, StructSig>,
 }
 
 impl<'a> Checker<'a> {
@@ -100,10 +116,12 @@ impl<'a> Checker<'a> {
         Self {
             program,
             signatures: HashMap::new(),
+            structs: HashMap::new(),
         }
     }
 
     fn check(mut self) -> Result<CheckedProgram<'a>, SemanticError> {
+        self.collect_structs()?;
         self.collect_signatures()?;
         for function in &self.program.functions {
             self.check_function(function)?;
@@ -112,7 +130,52 @@ impl<'a> Checker<'a> {
         Ok(CheckedProgram {
             program: self.program,
             signatures: self.signatures,
+            structs: self.structs,
         })
+    }
+
+    fn collect_structs(&mut self) -> Result<(), SemanticError> {
+        for struct_decl in &self.program.structs {
+            if is_builtin_type_name(&struct_decl.name) {
+                return Err(SemanticError::new(
+                    format!("`{}` is a built-in type name", struct_decl.name),
+                    struct_decl.span,
+                ));
+            }
+            if self.structs.contains_key(struct_decl.name.as_str()) {
+                return Err(SemanticError::new(
+                    format!("duplicate struct `{}`", struct_decl.name),
+                    struct_decl.span,
+                ));
+            }
+            self.structs
+                .insert(struct_decl.name.as_str(), StructSig { fields: Vec::new() });
+        }
+
+        for struct_decl in &self.program.structs {
+            let mut seen_fields = HashMap::new();
+            let mut fields = Vec::new();
+            for field in &struct_decl.fields {
+                if seen_fields
+                    .insert(field.name.as_str(), field.span)
+                    .is_some()
+                {
+                    return Err(SemanticError::new(
+                        format!("duplicate field `{}` in `{}`", field.name, struct_decl.name),
+                        field.span,
+                    ));
+                }
+                fields.push(FieldSig {
+                    name: field.name.clone(),
+                    ty: self.type_from_ref(&field.ty)?,
+                });
+            }
+
+            self.structs
+                .insert(struct_decl.name.as_str(), StructSig { fields });
+        }
+
+        Ok(())
     }
 
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
@@ -139,13 +202,13 @@ impl<'a> Checker<'a> {
                 }
             }
 
-            let return_type = type_from_optional_ref(function.return_type.as_ref())?;
+            let return_type = self.type_from_optional_ref(function.return_type.as_ref())?;
             let mut params = Vec::new();
             for param in &function.params {
                 params.push(ParamSig {
                     name: param.name.clone(),
                     mode: param.mode,
-                    ty: type_from_ref(&param.ty)?,
+                    ty: self.type_from_ref(&param.ty)?,
                 });
             }
 
@@ -377,6 +440,12 @@ impl<'a> Checker<'a> {
             ExprKind::Match { scrutinee, arms } => {
                 self.check_match_expr(scrutinee, arms, locals, value_use, expected, expr.span)
             }
+            ExprKind::StructLiteral { type_name, fields } => {
+                self.check_struct_literal(type_name, fields, locals, expected, expr.span)
+            }
+            ExprKind::FieldAccess { base, field } => {
+                self.check_field_access(base, field, locals, value_use, expr.span)
+            }
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
             }
@@ -482,6 +551,120 @@ impl<'a> Checker<'a> {
 
         merge_many_branch_moves(locals, arm_checks.iter().map(|check| &check.locals));
         Ok(first_ty)
+    }
+
+    fn check_struct_literal(
+        &self,
+        type_name: &str,
+        fields: &[crate::ast::FieldInit],
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if let Some(expected) = expected {
+            let expected_ty = Type::Struct(type_name.to_string());
+            if expected != &expected_ty {
+                return Err(SemanticError::new(
+                    format!(
+                        "struct literal type mismatch: expected `{}`, got `{}`",
+                        expected.source_name(),
+                        expected_ty.source_name()
+                    ),
+                    span,
+                ));
+            }
+        }
+
+        let struct_sig = self.struct_sig(type_name, span)?;
+        let mut seen = HashMap::new();
+        for field in fields {
+            if seen.insert(field.name.as_str(), field.span).is_some() {
+                return Err(SemanticError::new(
+                    format!("duplicate field `{}` in `{type_name}` literal", field.name),
+                    field.span,
+                ));
+            }
+
+            let Some(field_sig) = struct_sig
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == field.name)
+            else {
+                return Err(SemanticError::new(
+                    format!("unknown field `{}` in `{type_name}` literal", field.name),
+                    field.span,
+                ));
+            };
+
+            let value_ty = self.check_expr_with_expected(
+                &field.expr,
+                locals,
+                ValueUse::Owned,
+                Some(&field_sig.ty),
+            )?;
+            if value_ty != field_sig.ty {
+                return Err(SemanticError::new(
+                    format!(
+                        "field `{}` type mismatch: expected `{}`, got `{}`",
+                        field.name,
+                        field_sig.ty.source_name(),
+                        value_ty.source_name()
+                    ),
+                    field.span,
+                ));
+            }
+        }
+
+        for field_sig in &struct_sig.fields {
+            if !seen.contains_key(field_sig.name.as_str()) {
+                return Err(SemanticError::new(
+                    format!(
+                        "missing field `{}` in `{type_name}` literal",
+                        field_sig.name
+                    ),
+                    span,
+                ));
+            }
+        }
+
+        Ok(Type::Struct(type_name.to_string()))
+    }
+
+    fn check_field_access(
+        &self,
+        base: &Expr,
+        field: &str,
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
+        let Type::Struct(type_name) = base_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "field access requires a struct value, got `{}`",
+                    base_ty.source_name()
+                ),
+                base.span,
+            ));
+        };
+        let struct_sig = self.struct_sig(&type_name, span)?;
+        let Some(field_sig) = struct_sig
+            .fields
+            .iter()
+            .find(|candidate| candidate.name == field)
+        else {
+            return Err(SemanticError::new(
+                format!("unknown field `{field}` on `{type_name}`"),
+                span,
+            ));
+        };
+
+        if matches!(value_use, ValueUse::Owned) && !field_sig.ty.is_copy() {
+            self.mark_field_base_moved(base)?;
+        }
+
+        Ok(field_sig.ty.clone())
     }
 
     fn prepare_match_arms<'b>(
@@ -777,6 +960,19 @@ impl<'a> Checker<'a> {
         }
 
         Ok(ty)
+    }
+
+    fn mark_field_base_moved(&self, base: &Expr) -> Result<(), SemanticError> {
+        if let ExprKind::Var(name) = &base.kind {
+            return Err(SemanticError::new(
+                format!(
+                    "moving non-copy field out of `{name}` is not supported without destructuring"
+                ),
+                base.span,
+            ));
+        }
+
+        Ok(())
     }
 
     fn check_call(
@@ -1077,6 +1273,61 @@ impl<'a> Checker<'a> {
             .get(name)
             .ok_or_else(|| SemanticError::new(format!("unknown function `{name}`"), span))
     }
+
+    fn struct_sig(&self, name: &str, span: Span) -> Result<&StructSig, SemanticError> {
+        self.structs
+            .get(name)
+            .ok_or_else(|| SemanticError::new(format!("unknown struct `{name}`"), span))
+    }
+
+    fn type_from_optional_ref(&self, ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
+        ty.map_or(Ok(Type::Unit), |ty| self.type_from_ref(ty))
+    }
+
+    fn type_from_ref(&self, ty: &TypeRef) -> Result<Type, SemanticError> {
+        match ty.name.as_str() {
+            "int" if ty.args.is_empty() => Ok(Type::Int),
+            "bool" if ty.args.is_empty() => Ok(Type::Bool),
+            "string" if ty.args.is_empty() => Ok(Type::String),
+            "unit" if ty.args.is_empty() => Ok(Type::Unit),
+            "int" | "bool" | "string" | "unit" => Err(SemanticError::new(
+                format!("primitive type `{}` does not take type arguments", ty.name),
+                ty.span,
+            )),
+            "Option" => {
+                if ty.args.len() != 1 {
+                    return Err(SemanticError::new(
+                        "`Option` expects exactly 1 type argument",
+                        ty.span,
+                    ));
+                }
+                Ok(Type::Option(Box::new(self.type_from_ref(&ty.args[0])?)))
+            }
+            "Result" => {
+                if ty.args.len() != 2 {
+                    return Err(SemanticError::new(
+                        "`Result` expects exactly 2 type arguments",
+                        ty.span,
+                    ));
+                }
+                Ok(Type::Result(
+                    Box::new(self.type_from_ref(&ty.args[0])?),
+                    Box::new(self.type_from_ref(&ty.args[1])?),
+                ))
+            }
+            name if ty.args.is_empty() && self.structs.contains_key(name) => {
+                Ok(Type::Struct(name.to_string()))
+            }
+            name if self.structs.contains_key(name) => Err(SemanticError::new(
+                format!("struct type `{}` does not take type arguments", ty.name),
+                ty.span,
+            )),
+            _ => Err(SemanticError::new(
+                format!("unknown type `{}`", ty.name),
+                ty.span,
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1179,46 +1430,11 @@ fn merge_many_branch_moves<'a>(
     }
 }
 
-fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
-    ty.map_or(Ok(Type::Unit), type_from_ref)
-}
-
-fn type_from_ref(ty: &TypeRef) -> Result<Type, SemanticError> {
-    match ty.name.as_str() {
-        "int" if ty.args.is_empty() => Ok(Type::Int),
-        "bool" if ty.args.is_empty() => Ok(Type::Bool),
-        "string" if ty.args.is_empty() => Ok(Type::String),
-        "unit" if ty.args.is_empty() => Ok(Type::Unit),
-        "int" | "bool" | "string" | "unit" => Err(SemanticError::new(
-            format!("primitive type `{}` does not take type arguments", ty.name),
-            ty.span,
-        )),
-        "Option" => {
-            if ty.args.len() != 1 {
-                return Err(SemanticError::new(
-                    "`Option` expects exactly 1 type argument",
-                    ty.span,
-                ));
-            }
-            Ok(Type::Option(Box::new(type_from_ref(&ty.args[0])?)))
-        }
-        "Result" => {
-            if ty.args.len() != 2 {
-                return Err(SemanticError::new(
-                    "`Result` expects exactly 2 type arguments",
-                    ty.span,
-                ));
-            }
-            Ok(Type::Result(
-                Box::new(type_from_ref(&ty.args[0])?),
-                Box::new(type_from_ref(&ty.args[1])?),
-            ))
-        }
-        _ => Err(SemanticError::new(
-            format!("unknown type `{}`", ty.name),
-            ty.span,
-        )),
-    }
+fn is_builtin_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "bool" | "string" | "unit" | "Option" | "Result"
+    )
 }
 
 #[cfg(test)]
@@ -1263,6 +1479,79 @@ func add(a int, b int) int {
     fn rejects_nil() {
         let error = check_error("func main() { print(nil) }");
         assert!(error.message.contains("`nil` is reserved"));
+    }
+
+    #[test]
+    fn allows_struct_literal_and_field_access() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.name)
+    print(user.age)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_missing_struct_literal_field() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim"}
+    print(user.age)
+}
+"#,
+        );
+        assert!(error.message.contains("missing field `age`"));
+    }
+
+    #[test]
+    fn rejects_unknown_struct_field_access() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    print(user.age)
+}
+"#,
+        );
+        assert!(error.message.contains("unknown field `age`"));
+    }
+
+    #[test]
+    fn rejects_moving_non_copy_field_without_destructuring() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    name := user.name
+    print(name)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("moving non-copy field out of `user` is not supported"));
     }
 
     #[test]

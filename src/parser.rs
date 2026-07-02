@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchPattern, Param,
-        ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, Function, MatchArm,
+        MatchPattern, Param, ParamMode, Program, Stmt, StmtKind, StructDecl, TypeRef, UnaryOp,
     },
     lexer::{lex, LexError},
     token::{Keyword, Span, Token, TokenKind},
@@ -51,26 +51,70 @@ impl std::error::Error for ParseError {}
 pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
+    allow_struct_literals: bool,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, cursor: 0 }
+        Self {
+            tokens,
+            cursor: 0,
+            allow_struct_literals: true,
+        }
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let start = self.peek().span;
+        let mut structs = Vec::new();
         let mut functions = Vec::new();
 
         while !self.at(TokenTag::Eof) {
-            functions.push(self.parse_function()?);
+            if self.at_keyword(Keyword::Type) {
+                structs.push(self.parse_type_decl()?);
+            } else if self.at_keyword(Keyword::Func) {
+                functions.push(self.parse_function()?);
+            } else {
+                return Err(ParseError::new(
+                    "expected `type` or `func` declaration",
+                    self.peek().span,
+                ));
+            }
         }
 
         let end = self.peek().span;
         Ok(Program {
+            structs,
             functions,
             span: start.join(end),
         })
+    }
+
+    fn parse_type_decl(&mut self) -> Result<StructDecl, ParseError> {
+        let start = self.expect_keyword(Keyword::Type, "expected `type` declaration")?;
+        let (name, _) = self.expect_ident("expected type name")?;
+        self.expect_keyword(Keyword::Struct, "expected `struct` after type name")?;
+        self.expect(TokenTag::LeftBrace, "expected `{` before struct fields")?;
+
+        let mut fields = Vec::new();
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            fields.push(self.parse_field_decl()?);
+            while self.eat(TokenTag::Comma).is_some() || self.eat(TokenTag::Semicolon).is_some() {}
+        }
+
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after struct fields")?;
+        Ok(StructDecl {
+            name,
+            fields,
+            span: start.join(end),
+        })
+    }
+
+    fn parse_field_decl(&mut self) -> Result<FieldDecl, ParseError> {
+        let (name, start) = self.expect_ident("expected struct field name")?;
+        let ty = self.parse_type_ref()?;
+        let span = start.join(ty.span);
+
+        Ok(FieldDecl { name, ty, span })
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
@@ -244,7 +288,7 @@ impl Parser {
 
     fn parse_if_statement(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_keyword(Keyword::If, "expected `if`")?;
-        let condition = self.parse_expression()?;
+        let condition = self.parse_expression_without_struct_literals()?;
         let then_block = self.parse_block()?;
         let mut span = start.join(then_block.span);
         let else_block = if self.eat_keyword(Keyword::Else).is_some() {
@@ -269,12 +313,25 @@ impl Parser {
         self.parse_precedence(0)
     }
 
+    fn parse_expression_without_struct_literals(&mut self) -> Result<Expr, ParseError> {
+        let previous = self.allow_struct_literals;
+        self.allow_struct_literals = false;
+        let result = self.parse_expression();
+        self.allow_struct_literals = previous;
+        result
+    }
+
     fn parse_precedence(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
         let mut left = self.parse_prefix()?;
 
         loop {
             if self.at(TokenTag::LeftParen) {
                 left = self.finish_call(left)?;
+                continue;
+            }
+
+            if self.at(TokenTag::Dot) {
+                left = self.finish_field_access(left)?;
                 continue;
             }
 
@@ -317,10 +374,16 @@ impl Parser {
                 kind: ExprKind::String(value),
                 span: token.span,
             }),
-            TokenKind::Ident(name) => Ok(Expr {
-                kind: ExprKind::Var(name),
-                span: token.span,
-            }),
+            TokenKind::Ident(name) => {
+                if self.allow_struct_literals && self.at(TokenTag::LeftBrace) {
+                    self.finish_struct_literal(name, token.span)
+                } else {
+                    Ok(Expr {
+                        kind: ExprKind::Var(name),
+                        span: token.span,
+                    })
+                }
+            }
             TokenKind::Keyword(Keyword::True) => Ok(Expr {
                 kind: ExprKind::Bool(true),
                 span: token.span,
@@ -367,7 +430,7 @@ impl Parser {
     }
 
     fn finish_if_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
-        let condition = self.parse_expression()?;
+        let condition = self.parse_expression_without_struct_literals()?;
         let (then_branch, _) = self.parse_if_branch_expr()?;
         self.expect_keyword(Keyword::Else, "expected `else` in if expression")?;
         let (else_branch, end) = self.parse_if_branch_expr()?;
@@ -400,7 +463,7 @@ impl Parser {
     }
 
     fn finish_match_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
-        let scrutinee = self.parse_expression()?;
+        let scrutinee = self.parse_expression_without_struct_literals()?;
         self.expect(TokenTag::LeftBrace, "expected `{` before match arms")?;
         let mut arms = Vec::new();
 
@@ -416,6 +479,46 @@ impl Parser {
             },
             span: start.join(end),
         })
+    }
+
+    fn finish_struct_literal(
+        &mut self,
+        type_name: String,
+        start: Span,
+    ) -> Result<Expr, ParseError> {
+        self.expect(
+            TokenTag::LeftBrace,
+            "expected `{` before struct literal fields",
+        )?;
+        let mut fields = Vec::new();
+
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            fields.push(self.parse_field_init()?);
+            if self.eat(TokenTag::Comma).is_none() {
+                break;
+            }
+        }
+
+        let end = self.expect(
+            TokenTag::RightBrace,
+            "expected `}` after struct literal fields",
+        )?;
+        Ok(Expr {
+            kind: ExprKind::StructLiteral { type_name, fields },
+            span: start.join(end),
+        })
+    }
+
+    fn parse_field_init(&mut self) -> Result<FieldInit, ParseError> {
+        let (name, start) = self.expect_ident("expected struct literal field name")?;
+        self.expect(
+            TokenTag::Colon,
+            "expected `:` after struct literal field name",
+        )?;
+        let expr = self.parse_expression()?;
+        let span = start.join(expr.span);
+
+        Ok(FieldInit { name, expr, span })
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
@@ -501,6 +604,20 @@ impl Parser {
             kind: ExprKind::Call {
                 callee: Box::new(callee),
                 args,
+            },
+            span,
+        })
+    }
+
+    fn finish_field_access(&mut self, base: Expr) -> Result<Expr, ParseError> {
+        self.expect(TokenTag::Dot, "expected `.` in field access")?;
+        let (field, end) = self.expect_ident("expected field name after `.`")?;
+        let span = base.span.join(end);
+
+        Ok(Expr {
+            kind: ExprKind::FieldAccess {
+                base: Box::new(base),
+                field,
             },
             span,
         })
@@ -630,6 +747,8 @@ enum TokenTag {
     LeftBracket,
     RightBracket,
     Comma,
+    Dot,
+    Colon,
     Semicolon,
     ColonEqual,
     Equal,
@@ -648,6 +767,8 @@ impl TokenTag {
                 | (Self::LeftBracket, TokenKind::LeftBracket)
                 | (Self::RightBracket, TokenKind::RightBracket)
                 | (Self::Comma, TokenKind::Comma)
+                | (Self::Dot, TokenKind::Dot)
+                | (Self::Colon, TokenKind::Colon)
                 | (Self::Semicolon, TokenKind::Semicolon)
                 | (Self::ColonEqual, TokenKind::ColonEqual)
                 | (Self::Equal, TokenKind::Equal)
@@ -778,6 +899,45 @@ func main() {
         assert!(matches!(condition.kind, ExprKind::Binary { .. }));
         assert_eq!(then_block.statements.len(), 1);
         assert_eq!(else_block.as_ref().unwrap().statements.len(), 1);
+    }
+
+    #[test]
+    fn parses_struct_declaration_literal_and_field_access() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age)
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.structs.len(), 1);
+        assert_eq!(program.structs[0].name, "User");
+        assert_eq!(program.structs[0].fields.len(), 2);
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::StructLiteral { type_name, fields } = &expr.kind else {
+            panic!("expected struct literal");
+        };
+        assert_eq!(type_name, "User");
+        assert_eq!(fields.len(), 2);
+
+        let StmtKind::Expr { expr } = &program.functions[0].body.statements[1].kind else {
+            panic!("expected expression statement");
+        };
+        let ExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected print call");
+        };
+        assert!(matches!(args[0].expr.kind, ExprKind::FieldAccess { .. }));
     }
 
     #[test]

@@ -23,6 +23,8 @@ This repository is the Mallang language PoC workspace.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
   `Option`, `Result`, and `match`.
+- Go-like data modeling with `type Name struct`, named struct literals, and
+  field access.
 
 ## Bootstrap
 
@@ -43,6 +45,8 @@ cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
 target/mallang/match-temp
+cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
+target/mallang/structs
 ```
 
 Run the full local gate:
@@ -60,6 +64,7 @@ scripts/check.sh
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
+- `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -84,5 +89,5 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`,
-statement/expression `if`, and built-in ADT subset via C source generation and
-`clang`.
+statement/expression `if`, struct, and built-in ADT subset via C source
+generation and `clang`.

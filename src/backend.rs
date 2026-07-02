@@ -69,12 +69,12 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdint.h>\n");
         output.push_str("#include <stdio.h>\n\n");
 
-        let adt_types = self.collect_adt_types();
-        for ty in &adt_types {
-            output.push_str(&self.typedef_for_adt(ty)?);
-            output.push('\n');
+        let defined_types = self.collect_defined_types();
+        let mut emitted_types = Vec::new();
+        for ty in &defined_types {
+            self.emit_type_def(ty, &mut emitted_types, &mut Vec::new(), &mut output)?;
         }
-        if !adt_types.is_empty() {
+        if !emitted_types.is_empty() {
             output.push('\n');
         }
 
@@ -228,10 +228,12 @@ impl<'a> CGenerator<'a> {
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),
-            Type::Option(_) | Type::Result(_, _) => Err(CompileError::new(format!(
-                "printing `{}` values is not implemented yet",
-                arg.ty.source_name()
-            ))),
+            Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
+                Err(CompileError::new(format!(
+                    "printing `{}` values is not implemented yet",
+                    arg.ty.source_name()
+                )))
+            }
         }
     }
 
@@ -277,6 +279,16 @@ impl<'a> CGenerator<'a> {
             }
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(scrutinee, arms, env)
+            }
+            IrExprKind::StructLiteral { type_name, fields } => {
+                self.emit_struct_literal_stmt_expr(type_name, fields, env)
+            }
+            IrExprKind::FieldAccess { base, field } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(base, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}).{}", code, c_field(field)),
+                })
             }
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
@@ -342,6 +354,14 @@ impl<'a> CGenerator<'a> {
                 payload,
             } => self.emit_adt_constructor(&expr.ty, *constructor, payload.as_deref(), env),
             IrExprKind::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, env),
+            IrExprKind::StructLiteral { type_name, fields } => {
+                self.emit_struct_literal(type_name, fields, env)
+            }
+            IrExprKind::FieldAccess { base, field } => Ok(format!(
+                "({}).{}",
+                self.emit_expr_with_env(base, env)?,
+                c_field(field)
+            )),
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
                     return Err(CompileError::new(
@@ -463,6 +483,54 @@ impl<'a> CGenerator<'a> {
         }
     }
 
+    fn emit_struct_literal_stmt_expr(
+        &self,
+        type_name: &str,
+        fields: &[crate::ir::IrFieldValue],
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let mut prelude = Vec::new();
+        let mut field_codes = Vec::new();
+        for field in fields {
+            let emitted = self.emit_stmt_expr_with_env(&field.expr, env)?;
+            prelude.extend(emitted.prelude);
+            field_codes.push(format!(".{} = {}", c_field(&field.name), emitted.code));
+        }
+
+        Ok(CExpr {
+            prelude,
+            code: format!(
+                "({}){{ {} }}",
+                Type::Struct(type_name.to_string()).c_name(),
+                field_codes.join(", ")
+            ),
+        })
+    }
+
+    fn emit_struct_literal(
+        &self,
+        type_name: &str,
+        fields: &[crate::ir::IrFieldValue],
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let field_codes = fields
+            .iter()
+            .map(|field| {
+                Ok(format!(
+                    ".{} = {}",
+                    c_field(&field.name),
+                    self.emit_expr_with_env(&field.expr, env)?
+                ))
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+
+        Ok(format!(
+            "({}){{ {} }}",
+            Type::Struct(type_name.to_string()).c_name(),
+            field_codes.join(", ")
+        ))
+    }
+
     fn emit_match(
         &self,
         scrutinee: &IrExpr,
@@ -574,8 +642,14 @@ impl<'a> CGenerator<'a> {
         ))
     }
 
-    fn collect_adt_types(&self) -> Vec<Type> {
+    fn collect_defined_types(&self) -> Vec<Type> {
         let mut types = Vec::new();
+        for struct_def in &self.program.structs {
+            collect_type(&Type::Struct(struct_def.name.clone()), &mut types);
+            for field in &struct_def.fields {
+                collect_type(&field.ty, &mut types);
+            }
+        }
         for function in &self.program.functions {
             collect_type(&function.return_type, &mut types);
             for param in &function.params {
@@ -586,6 +660,62 @@ impl<'a> CGenerator<'a> {
             }
         }
         types
+    }
+
+    fn emit_type_def(
+        &self,
+        ty: &Type,
+        emitted: &mut Vec<Type>,
+        visiting: &mut Vec<Type>,
+        output: &mut String,
+    ) -> Result<(), CompileError> {
+        if emitted.contains(ty) || matches!(ty, Type::Int | Type::Bool | Type::String | Type::Unit)
+        {
+            return Ok(());
+        }
+        if visiting.contains(ty) {
+            return Err(CompileError::new(format!(
+                "recursive type definition involving `{}` is not supported in v0",
+                ty.source_name()
+            )));
+        }
+
+        visiting.push(ty.clone());
+        match ty {
+            Type::Option(inner) => {
+                self.emit_type_def(inner, emitted, visiting, output)?;
+                output.push_str(&self.typedef_for_adt(ty)?);
+                output.push('\n');
+            }
+            Type::Result(ok, err) => {
+                self.emit_type_def(ok, emitted, visiting, output)?;
+                self.emit_type_def(err, emitted, visiting, output)?;
+                output.push_str(&self.typedef_for_adt(ty)?);
+                output.push('\n');
+            }
+            Type::Struct(name) => {
+                let struct_def = self.struct_def(name)?;
+                for field in &struct_def.fields {
+                    self.emit_type_def(&field.ty, emitted, visiting, output)?;
+                }
+                output.push_str(&self.typedef_for_struct(struct_def));
+                output.push('\n');
+            }
+            Type::Int | Type::Bool | Type::String | Type::Unit => {}
+        }
+        visiting.pop();
+        emitted.push(ty.clone());
+        Ok(())
+    }
+
+    fn struct_def(&self, name: &str) -> Result<&crate::ir::IrStruct, CompileError> {
+        self.program
+            .structs
+            .iter()
+            .find(|struct_def| struct_def.name == name)
+            .ok_or_else(|| {
+                CompileError::new(format!("IR invariant violation: unknown struct `{name}`"))
+            })
     }
 
     fn collect_stmt_types(&self, stmt: &IrStmt, types: &mut Vec<Type>) {
@@ -636,6 +766,12 @@ impl<'a> CGenerator<'a> {
                     self.collect_expr_types(&arm.expr, types);
                 }
             }
+            IrExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.collect_expr_types(&field.expr, types);
+                }
+            }
+            IrExprKind::FieldAccess { base, .. } => self.collect_expr_types(base, types),
             IrExprKind::Call { args, .. } => {
                 for arg in args {
                     self.collect_expr_types(&arg.expr, types);
@@ -669,6 +805,22 @@ impl<'a> CGenerator<'a> {
             _ => Err(CompileError::new("internal error: expected ADT type")),
         }
     }
+
+    fn typedef_for_struct(&self, struct_def: &crate::ir::IrStruct) -> String {
+        let mut output = String::new();
+        output.push_str("typedef struct {\n");
+        for field in &struct_def.fields {
+            output.push_str("    ");
+            output.push_str(&field.ty.c_name());
+            output.push(' ');
+            output.push_str(&c_field(&field.name));
+            output.push_str(";\n");
+        }
+        output.push_str("} ");
+        output.push_str(&Type::Struct(struct_def.name.clone()).c_name());
+        output.push_str(";\n");
+        output
+    }
 }
 
 impl Type {
@@ -679,6 +831,7 @@ impl Type {
             Self::String => "const char *".to_string(),
             Self::Unit => "void".to_string(),
             Self::Option(_) | Self::Result(_, _) => format!("mlg_{}", mangle_type(self)),
+            Self::Struct(name) => format!("mlg_struct_{}", c_type_ident(name)),
         }
     }
 }
@@ -705,6 +858,11 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
         Type::Result(ok, err) => {
             collect_type(ok, types);
             collect_type(err, types);
+            if !types.contains(ty) {
+                types.push(ty.clone());
+            }
+        }
+        Type::Struct(_) => {
             if !types.contains(ty) {
                 types.push(ty.clone());
             }
@@ -748,6 +906,7 @@ fn mangle_type(ty: &Type) -> String {
         Type::Unit => "unit".to_string(),
         Type::Option(inner) => format!("Option_{}", mangle_type(inner)),
         Type::Result(ok, err) => format!("Result_{}_{}", mangle_type(ok), mangle_type(err)),
+        Type::Struct(name) => format!("Struct_{}", c_type_ident(name)),
     }
 }
 
@@ -787,6 +946,22 @@ fn c_ident(name: &str) -> String {
         return name.to_string();
     }
     format!("mlg_{name}")
+}
+
+fn c_field(name: &str) -> String {
+    format!("mlg_{name}")
+}
+
+fn c_type_ident(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn c_string(value: &str) -> String {
@@ -931,5 +1106,34 @@ func maybe(flag bool) Option[int] {
         assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
         assert!(c.contains("= mlg_maybe(false);"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((("));
+    }
+
+    #[test]
+    fn generates_c_for_struct_literals_and_field_access() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    print(user.age)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("typedef struct"));
+        assert!(c.contains("const char * mlg_name;"));
+        assert!(c.contains("int64_t mlg_age;"));
+        assert!(c.contains(
+            "mlg_struct_User mlg_user = (mlg_struct_User){ .mlg_name = \"kim\", .mlg_age = 30 };"
+        ));
+        assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
     }
 }

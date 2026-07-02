@@ -108,6 +108,37 @@ string array struct
 
 `unit` is the implicit return type of functions that do not return a value.
 
+## Structs
+
+Struct declarations use a Go-like `type Name struct` form.
+
+```go
+type User struct {
+    name string
+    age int
+}
+```
+
+Struct literals use named fields.
+
+```go
+user := User{name: "kim", age: 30}
+print(user.name)
+print(user.age)
+```
+
+Rules:
+
+- Struct values are move-only in v0.
+- Literal fields must name every declared field exactly once.
+- Field access reads a field by name.
+- Copy fields such as `int` and `bool` can be read as values.
+- Non-copy fields such as `string` can be borrowed for calls like `print`, but
+  moving a non-copy field out of a named struct is rejected until destructuring
+  or partial-move semantics is designed.
+- v0 does not include methods, field assignment, recursive by-value structs, or
+  struct pattern matching.
+
 ## Functions
 
 Function declarations use Go-like syntax.

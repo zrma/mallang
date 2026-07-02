@@ -2,7 +2,22 @@ use crate::token::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
+    pub structs: Vec<StructDecl>,
     pub functions: Vec<Function>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructDecl {
+    pub name: String,
+    pub fields: Vec<FieldDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDecl {
+    pub name: String,
+    pub ty: TypeRef,
     pub span: Span,
 }
 
@@ -95,6 +110,14 @@ pub enum ExprKind {
         scrutinee: Box<Expr>,
         arms: Vec<MatchArm>,
     },
+    StructLiteral {
+        type_name: String,
+        fields: Vec<FieldInit>,
+    },
+    FieldAccess {
+        base: Box<Expr>,
+        field: String,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Arg>,
@@ -108,6 +131,13 @@ pub enum ExprKind {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldInit {
+    pub name: String,
+    pub expr: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
