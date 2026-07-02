@@ -430,6 +430,10 @@ renameField(mut user.profile.name)
 consume(user)
 ```
 
+`con expr` and `mut expr` are call argument mode prefixes only. They are not
+general expressions and cannot be bound to locals, returned, stored in fields,
+or used to create first-class reference values in v0.
+
 Rules:
 
 - Passing a non-copy value as `T` moves ownership into the callee.

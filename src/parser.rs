@@ -1516,6 +1516,40 @@ func rename(mut name string) {
     }
 
     #[test]
+    fn rejects_con_borrow_marker_in_let_value_position() {
+        let error = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    borrowed := con user.name
+    print(borrowed)
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("expected expression"));
+    }
+
+    #[test]
+    fn rejects_mut_borrow_marker_in_return_value_position() {
+        let error = parse(
+            r#"
+func identity(mut name string) string {
+    return mut name
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("expected expression"));
+    }
+
+    #[test]
     fn parses_if_expression() {
         let program = parse(
             r#"

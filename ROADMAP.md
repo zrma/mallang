@@ -143,6 +143,7 @@
 - [x] Keep mutable range value syntax deferred with parser/semantic regressions.
 - [x] Keep by-reference range iteration syntax deferred with parser regression coverage.
 - [x] Keep general non-slice field partial moves deferred with semantic regression coverage.
+- [x] Keep statement-spanning borrow syntax deferred with parser regression coverage.
 
 ## Later
 
@@ -194,9 +195,10 @@
 - [x] Mutable range values deferred with explicit regression coverage.
 - [x] By-reference range iteration deferred with explicit regression coverage.
 - [x] General non-slice field partial moves deferred with explicit regression coverage.
+- [x] Statement-spanning borrow syntax deferred with explicit regression coverage.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Statement-spanning borrow lifetimes for future borrowed iteration.
+- Statement-spanning borrow lifetimes for future first-class reference values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

@@ -586,3 +586,9 @@
 - [x] owned slice field take만 v0 field-take 예외로 유지
 - [x] non-slice cleanup field move, 예: `profile := user.profile`, reject semantic regression 추가
 - [x] partial-move/destructuring 설계 전까지 parent struct를 부분 초기화 상태로 만들지 않는다고 SPEC에 명시
+
+## P71: Statement-Spanning Borrows Deferred
+
+- [x] `borrowed := con user.name` 같은 borrow marker value-position syntax reject parser regression 추가
+- [x] `return mut name` 같은 first-class mutable borrow return 후보 syntax reject parser regression 추가
+- [x] `con expr` / `mut expr`가 call argument mode prefix일 뿐 general expression이 아니라고 SPEC에 명시
