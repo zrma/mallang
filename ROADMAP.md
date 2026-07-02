@@ -30,6 +30,7 @@
 - [x] Parse fixed-size array element assignment statements.
 - [x] Parse fixed-size array element assignment in `for` clause post targets.
 - [x] Parse `con`/`mut` prefix parameter and call modes.
+- [x] Parse reserved slice type syntax `[]T`.
 
 ## Milestone 2: Static Semantics
 
@@ -57,6 +58,7 @@
   non-copy element arrays.
 - [x] Type-check fixed-size array element assignment in `for` clause post
   targets.
+- [x] Reject reserved slice type syntax `[]T` with an explicit diagnostic.
 
 ## Milestone 3: Ownership and Borrowing
 
@@ -124,7 +126,8 @@
 - [x] Fixed-size array element borrow arguments for copy and non-copy elements.
 - [x] Fixed-size array non-copy element assignment.
 - [x] Fixed-size array element method receivers.
-- Slice `[]T`, append/growth, and mutable range values.
+- [x] Parse slice type syntax `[]T` and reserve it at semantic checking.
+- Slice values, append/growth, and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

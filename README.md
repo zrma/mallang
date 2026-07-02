@@ -36,6 +36,8 @@ This repository is the Mallang language PoC workspace.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
 - Fixed-size array element borrow arguments and `con`/`mut` method receivers.
+- Slice type syntax `[]T` is parsed but reserved by `mlg check` until slice
+  ownership and native ABI are defined.
 
 ## Bootstrap
 
@@ -153,7 +155,8 @@ scripts/check.sh
 - `examples/match-statement.mlg`: native smoke for statement-form `match` block arms.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
-- `src/semantic.rs`: semantic checker for name/type/function diagnostics.
+- `src/semantic.rs`: semantic checker for name/type/function diagnostics and
+  reserved-feature boundaries.
 - `src/ir.rs`: typed IR lowering after semantic analysis.
 - `src/backend.rs`: C backend for typed IR in the first native subset.
 - `src/token.rs`: token model shared by the frontend.

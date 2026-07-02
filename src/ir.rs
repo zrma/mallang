@@ -1811,6 +1811,13 @@ impl<'a> Lowerer<'a> {
     }
 
     fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
+        if ty.slice {
+            return Err(IrError::new(
+                "semantic analysis accepted reserved slice type reference",
+                ty.span,
+            ));
+        }
+
         if let Some(len) = ty.array_len {
             if ty.name != "Array" || ty.args.len() != 1 {
                 return Err(IrError::new(

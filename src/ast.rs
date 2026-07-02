@@ -51,6 +51,7 @@ pub struct TypeRef {
     pub name: String,
     pub args: Vec<TypeRef>,
     pub array_len: Option<usize>,
+    pub slice: bool,
     pub span: Span,
 }
 

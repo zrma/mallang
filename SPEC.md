@@ -134,9 +134,10 @@ Array rules:
   non-copy elements.
 - Fixed-size array element method receivers are supported for `con` and `mut`
   receiver modes.
-- Slices `[]T`, append/growth, mutable range values, borrowed indexing as a
-  first-class expression, and non-copy element extraction are reserved for later
-  slices.
+- Slice type syntax `[]T` is parsed but rejected by semantic analysis until
+  slice ownership and native ABI are defined. Slice values, append/growth,
+  mutable range values, borrowed indexing as a first-class expression, and
+  non-copy element extraction are reserved for later slices.
 
 Fixed-size array indexing and length are intentionally smaller than full slices.
 
@@ -185,8 +186,9 @@ Indexing and length rules:
   conditions and indexed post expressions.
 - In a three-clause `for`, `continue` skips the remaining body and then executes
   the post assignment before the next condition check.
-- Slice type syntax `[]T` is still deferred because owned slices, borrowed
-  views, append/growth, and mutation require a larger ownership decision.
+- Slice type syntax `[]T` is reserved at semantic checking because owned slices,
+  borrowed views, append/growth, and mutation require a larger ownership
+  decision.
 
 `unit` is the implicit return type of functions that do not return a value.
 

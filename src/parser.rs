@@ -226,15 +226,31 @@ impl Parser {
             name,
             args,
             array_len: None,
+            slice: false,
             span,
         })
     }
 
     fn parse_array_type_ref(&mut self) -> Result<TypeRef, ParseError> {
         let start = self.expect(TokenTag::LeftBracket, "expected `[` before array length")?;
+        if self.eat(TokenTag::RightBracket).is_some() {
+            let element = self.parse_type_ref()?;
+            let span = start.join(element.span);
+            return Ok(TypeRef {
+                name: "Slice".to_string(),
+                args: vec![element],
+                array_len: None,
+                slice: true,
+                span,
+            });
+        }
+
         let token = self.advance().clone();
         let TokenKind::Int(length) = token.kind else {
-            return Err(ParseError::new("expected array length", token.span));
+            return Err(ParseError::new(
+                "expected array length or `]` for slice type",
+                token.span,
+            ));
         };
         let length = length
             .parse::<usize>()
@@ -247,6 +263,7 @@ impl Parser {
             name: "Array".to_string(),
             args: vec![element],
             array_len: Some(length),
+            slice: false,
             span,
         })
     }
@@ -1793,6 +1810,51 @@ func wrap(values Option[[2]string]) {
         assert_eq!(array_ty.name, "Array");
         assert_eq!(array_ty.array_len, Some(2));
         assert_eq!(array_ty.args[0].name, "string");
+    }
+
+    #[test]
+    fn parses_slice_type_refs() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+    nested []Option[[2]string]
+}
+
+func take(values []string) []int {
+    return values
+}
+"#,
+        )
+        .unwrap();
+
+        let values_ty = &program.structs[0].fields[0].ty;
+        assert_eq!(values_ty.name, "Slice");
+        assert!(values_ty.slice);
+        assert_eq!(values_ty.array_len, None);
+        assert_eq!(values_ty.args.len(), 1);
+        assert_eq!(values_ty.args[0].name, "int");
+
+        let nested_ty = &program.structs[0].fields[1].ty;
+        assert_eq!(nested_ty.name, "Slice");
+        assert!(nested_ty.slice);
+        let option_ty = &nested_ty.args[0];
+        assert_eq!(option_ty.name, "Option");
+        let array_ty = &option_ty.args[0];
+        assert_eq!(array_ty.name, "Array");
+        assert_eq!(array_ty.array_len, Some(2));
+        assert!(!array_ty.slice);
+        assert_eq!(array_ty.args[0].name, "string");
+
+        let param_ty = &program.functions[0].params[0].ty;
+        assert_eq!(param_ty.name, "Slice");
+        assert!(param_ty.slice);
+        assert_eq!(param_ty.args[0].name, "string");
+
+        let return_ty = program.functions[0].return_type.as_ref().unwrap();
+        assert_eq!(return_ty.name, "Slice");
+        assert!(return_ty.slice);
+        assert_eq!(return_ty.args[0].name, "int");
     }
 
     #[test]

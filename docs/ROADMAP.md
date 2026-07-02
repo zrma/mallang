@@ -172,3 +172,10 @@
 - [x] `con`/`mut` receiver borrow와 explicit argument overlap check 공유
 - [x] IR에서 array element receiver를 borrow argument lowering으로 처리
 - [x] native smoke에서 `counters[i].inc()` caller-visible mutation 검증
+
+## P17: Slice Type Surface
+
+- [x] `[]T` type reference parser 추가
+- [x] AST에서 fixed-size array `[N]T`와 slice `[]T` 구분
+- [x] semantic checker에서 `[]T` reserved diagnostic 고정
+- [x] slice values/native ABI는 후속 ownership decision으로 보류

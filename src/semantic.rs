@@ -2335,6 +2335,19 @@ impl<'a> Checker<'a> {
     }
 
     fn type_from_ref(&self, ty: &TypeRef) -> Result<Type, SemanticError> {
+        if ty.slice {
+            if ty.name != "Slice" || ty.args.len() != 1 || ty.array_len.is_some() {
+                return Err(SemanticError::new(
+                    "malformed slice type reference",
+                    ty.span,
+                ));
+            }
+            return Err(SemanticError::new(
+                "slice type syntax `[]T` is reserved until slice ownership and native ABI are defined",
+                ty.span,
+            ));
+        }
+
         if let Some(len) = ty.array_len {
             if ty.name != "Array" || ty.args.len() != 1 {
                 return Err(SemanticError::new(
@@ -3816,6 +3829,20 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn rejects_slice_type_refs_as_reserved() {
+        let error = check_error(
+            r#"
+func read(values []int) {
+    print(1)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice type syntax `[]T` is reserved"));
     }
 
     #[test]
