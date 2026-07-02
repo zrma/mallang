@@ -30,7 +30,7 @@
 - [x] use-after-move reject
 - [x] `in` read borrow call rule 추가
 - [x] `mut` exclusive borrow call rule 추가
-- [ ] overlapping borrow tracking 추가
+- [x] same-call overlapping borrow tracking 추가
 - [ ] borrow return/storage 금지 규칙을 reference 타입 도입 시 검증
 
 ## P4: Native Backend

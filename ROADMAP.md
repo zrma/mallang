@@ -33,7 +33,7 @@
 - [x] Support explicit read borrow calls with `in expr`.
 - [x] Support explicit mutable borrow calls with `mut expr`.
 - [x] Reject use-after-move.
-- Reject overlapping mutable/read borrows.
+- [x] Reject overlapping mutable/read borrows within one call.
 - For v0, disallow storing or returning borrowed values.
 
 ## Milestone 4: Native Backend

@@ -381,13 +381,20 @@ impl<'a> Checker<'a> {
             ));
         }
 
+        let mut call_borrows = HashMap::new();
         for (arg, param) in args.iter().zip(sig.params.iter()) {
             let arg_ty = match (param.mode, arg.mode) {
                 (ParamMode::Owned, ArgMode::Owned) => {
                     self.check_expr(&arg.expr, locals, ValueUse::Owned)?
                 }
-                (ParamMode::In, ArgMode::In) => self.check_borrow_arg(arg, locals, false)?,
-                (ParamMode::Mut, ArgMode::Mut) => self.check_borrow_arg(arg, locals, true)?,
+                (ParamMode::In, ArgMode::In) => {
+                    self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Shared)?;
+                    self.check_borrow_arg(arg, locals, false)?
+                }
+                (ParamMode::Mut, ArgMode::Mut) => {
+                    self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Exclusive)?;
+                    self.check_borrow_arg(arg, locals, true)?
+                }
                 (ParamMode::Owned, _) => {
                     return Err(SemanticError::new(
                         format!("parameter `{}` expects an owned argument", param.name),
@@ -422,18 +429,35 @@ impl<'a> Checker<'a> {
         Ok(sig.return_type)
     }
 
+    fn register_call_borrow(
+        &self,
+        arg: &Arg,
+        call_borrows: &mut HashMap<String, BorrowKind>,
+        kind: BorrowKind,
+    ) -> Result<(), SemanticError> {
+        let name = borrow_arg_name(arg)?.to_string();
+        match (call_borrows.get(&name).copied(), kind) {
+            (None, kind) => {
+                call_borrows.insert(name, kind);
+                Ok(())
+            }
+            (Some(BorrowKind::Shared), BorrowKind::Shared) => Ok(()),
+            (Some(BorrowKind::Shared), BorrowKind::Exclusive)
+            | (Some(BorrowKind::Exclusive), BorrowKind::Shared)
+            | (Some(BorrowKind::Exclusive), BorrowKind::Exclusive) => Err(SemanticError::new(
+                format!("borrow of `{name}` overlaps with an active borrow in this call"),
+                arg.span,
+            )),
+        }
+    }
+
     fn check_borrow_arg(
         &self,
         arg: &Arg,
         locals: &mut HashMap<String, Local>,
         mutable: bool,
     ) -> Result<Type, SemanticError> {
-        let ExprKind::Var(name) = &arg.expr.kind else {
-            return Err(SemanticError::new(
-                "borrow arguments must be direct local variables in v0",
-                arg.span,
-            ));
-        };
+        let name = borrow_arg_name(arg)?;
         let Some(local) = locals.get(name) else {
             return Err(SemanticError::new(
                 format!("unknown variable `{name}`"),
@@ -528,6 +552,22 @@ struct Local {
 enum ValueUse {
     Owned,
     Borrow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BorrowKind {
+    Shared,
+    Exclusive,
+}
+
+fn borrow_arg_name(arg: &Arg) -> Result<&str, SemanticError> {
+    let ExprKind::Var(name) = &arg.expr.kind else {
+        return Err(SemanticError::new(
+            "borrow arguments must be direct local variables in v0",
+            arg.span,
+        ));
+    };
+    Ok(name)
 }
 
 fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
@@ -723,5 +763,58 @@ func touch(s mut string) {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn borrow_conflict_allows_multiple_shared_borrows_in_one_call() {
+        check_ok(
+            r#"
+func main() {
+    s := "hello"
+    compare(in s, in s)
+}
+
+func compare(left in string, right in string) {
+    print(left)
+    print(right)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn borrow_conflict_rejects_shared_then_mut_borrow_in_one_call() {
+        let error = check_error(
+            r#"
+func main() {
+    mut s := "hello"
+    compare(in s, mut s)
+}
+
+func compare(left in string, right mut string) {
+    print(left)
+    print(right)
+}
+"#,
+        );
+        assert!(error.message.contains("overlaps with an active borrow"));
+    }
+
+    #[test]
+    fn borrow_conflict_rejects_two_mut_borrows_in_one_call() {
+        let error = check_error(
+            r#"
+func main() {
+    mut s := "hello"
+    compare(mut s, mut s)
+}
+
+func compare(left mut string, right mut string) {
+    print(left)
+    print(right)
+}
+"#,
+        );
+        assert!(error.message.contains("overlaps with an active borrow"));
     }
 }

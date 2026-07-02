@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, first native subset C backend, `mlg check`, `mlg build`
-- 아직 없음: overlapping borrow tracking, typed IR, full C backend, `if`/`match`
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, first native subset C backend, `mlg check`, `mlg build`
+- 아직 없음: statement-spanning borrow lifetimes, typed IR, full C backend, `if`/`match`
 
 ## 빠른 시작
 
@@ -27,8 +27,8 @@ target/mallang/first
 
 ## 다음 구현 후보
 
-1. overlapping borrow tracking 설계
-2. typed IR 도입 여부 결정
-3. `if` expression parser/type checker 추가
-4. `Option[T]` / `Result[T, E]` surface 설계
-5. backend를 checked representation 기반으로 더 강하게 분리
+1. typed IR 도입 여부 결정
+2. `if` expression parser/type checker 추가
+3. `Option[T]` / `Result[T, E]` surface 설계
+4. backend를 checked representation 기반으로 더 강하게 분리
+5. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
