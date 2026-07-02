@@ -114,6 +114,13 @@ if [[ "$range_blank_output" != "6" ]]; then
   echo "range blank native build smoke failed: expected 6, got '$range_blank_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/range-index.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/range-index.mlg -o target/mallang/range-index >/dev/null
+range_index_output="$(target/mallang/range-index)"
+if [[ "$range_index_output" != "6" ]]; then
+  echo "range index native build smoke failed: expected 6, got '$range_index_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/non-copy-array-assignment.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment >/dev/null
 non_copy_array_assignment_output="$(target/mallang/non-copy-array-assignment)"

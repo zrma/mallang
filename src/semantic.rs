@@ -3958,6 +3958,27 @@ func main() {
     }
 
     #[test]
+    fn allows_one_variable_array_range() {
+        check_ok(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := [2]User{User{age: 1}, User{age: 2}}
+    for i := range users {
+        print(i)
+    }
+    for _ := range users {
+        print(1)
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_reading_range_blank_identifier() {
         let error = check_error(
             r#"

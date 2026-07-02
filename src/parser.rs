@@ -445,8 +445,12 @@ impl Parser {
 
         if self.starts_range_header() {
             let (index_name, _) = self.expect_ident("expected range index binding name")?;
-            self.expect(TokenTag::Comma, "expected `,` after range index binding")?;
-            let (value_name, _) = self.expect_ident("expected range value binding name")?;
+            let value_name = if self.eat(TokenTag::Comma).is_some() {
+                let (value_name, _) = self.expect_ident("expected range value binding name")?;
+                value_name
+            } else {
+                "_".to_string()
+            };
             self.expect(TokenTag::ColonEqual, "expected `:=` in range loop")?;
             self.expect_keyword(Keyword::Range, "expected `range` in range loop")?;
             let source = self.parse_expression_without_struct_literals()?;
@@ -513,7 +517,10 @@ impl Parser {
     }
 
     fn starts_range_header(&self) -> bool {
-        self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::Comma)
+        self.at(TokenTag::Ident)
+            && (self.peek_next_is(TokenTag::Comma)
+                || (self.peek_next_is(TokenTag::ColonEqual)
+                    && self.peek_second_is_keyword(Keyword::Range)))
     }
 
     fn starts_for_clause_header(&self) -> bool {
@@ -1118,6 +1125,13 @@ impl Parser {
         self.tokens
             .get(self.cursor + 1)
             .is_some_and(|token| tag.matches(&token.kind))
+    }
+
+    fn peek_second_is_keyword(&self, keyword: Keyword) -> bool {
+        matches!(
+            self.tokens.get(self.cursor + 2).map(|token| &token.kind),
+            Some(TokenKind::Keyword(found)) if *found == keyword
+        )
     }
 
     fn peek(&self) -> &Token {
@@ -1959,6 +1973,46 @@ func main() {
             panic!("expected range loop");
         };
         assert_eq!(index_name, "i");
+        assert_eq!(value_name, "_");
+    }
+
+    #[test]
+    fn parses_one_variable_array_range_loop() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    for i := range values {
+        print(i)
+    }
+    for _ := range values {
+        print(1)
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::RangeFor {
+            index_name,
+            value_name,
+            ..
+        } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "_");
+
+        let StmtKind::RangeFor {
+            index_name,
+            value_name,
+            ..
+        } = &program.functions[0].body.statements[2].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "_");
         assert_eq!(value_name, "_");
     }
 

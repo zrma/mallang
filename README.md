@@ -35,7 +35,8 @@ This repository is the Mallang language PoC workspace.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
-- Fixed-size array element borrow arguments and `con`/`mut` method receivers.
+- Fixed-size arrays with array-only range loops, element borrow arguments, and
+  `con`/`mut` method receivers.
 - Slice type syntax `[]T` is parsed but reserved by `mlg check` until slice
   ownership and native ABI are defined.
 
@@ -66,6 +67,8 @@ cargo run --bin mlg -- build examples/for-empty-condition.mlg -o target/mallang/
 target/mallang/for-empty-condition
 cargo run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank
 target/mallang/range-blank
+cargo run --bin mlg -- build examples/range-index.mlg -o target/mallang/range-index
+target/mallang/range-index
 cargo run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment
 target/mallang/non-copy-array-assignment
 cargo run --bin mlg -- build examples/for-clause-prelude.mlg -o target/mallang/for-clause-prelude
@@ -133,6 +136,7 @@ scripts/check.sh
 - `examples/for-clause-initless.mlg`: native smoke for initless `for ; condition; post`.
 - `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
 - `examples/range-blank.mlg`: native smoke for blank identifiers in array range loops.
+- `examples/range-index.mlg`: native smoke for one-variable array range over non-copy elements.
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.

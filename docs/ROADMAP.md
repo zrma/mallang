@@ -186,3 +186,10 @@
 - [x] `for i, _ := range values`에서 value binding 생략
 - [x] value blank range에서 non-copy element copy requirement 제거
 - [x] native smoke에서 blank index/value codegen 검증
+
+## P19: Array Range One Variable
+
+- [x] `for i := range values` parser/semantic 지원
+- [x] one-variable range를 value blank range로 lowering
+- [x] non-copy element array를 index-only range로 순회
+- [x] native smoke에서 value copy 없는 codegen 검증

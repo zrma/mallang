@@ -27,6 +27,7 @@
 - [x] Parse fixed-size array literals.
 - [x] Parse array-only `range` loops.
 - [x] Parse blank identifiers in array-only `range` loops.
+- [x] Parse one-variable array-only `range` loops.
 - [x] Parse fixed-size array indexing expressions.
 - [x] Parse fixed-size array element assignment statements.
 - [x] Parse fixed-size array element assignment in `for` clause post targets.
@@ -55,6 +56,7 @@
   element bindings.
 - [x] Type-check blank identifiers in array-only `range` loops, including
   index-only range over non-copy element arrays.
+- [x] Type-check one-variable array-only `range` loops as index-only iteration.
 - [x] Type-check fixed-size array indexing for copy elements.
 - [x] Type-check `len([N]T)` as a read-only built-in returning `int`.
 - [x] Type-check fixed-size array element assignment for mutable copy and
@@ -97,6 +99,7 @@
 - [x] Generate native C loops for conditionless `for` forms.
 - [x] Generate native C layout for fixed-size arrays.
 - [x] Generate native C loops for array-only `range`.
+- [x] Generate native C loops for one-variable array-only `range`.
 - [x] Generate native C for fixed-size array indexing.
 - [x] Generate native C for fixed-size array `len`.
 - [x] Generate native C bounds checks for fixed-size array indexing.
@@ -131,6 +134,7 @@
 - [x] Fixed-size array element method receivers.
 - [x] Parse slice type syntax `[]T` and reserve it at semantic checking.
 - [x] Blank identifiers in array-only `range` loops.
+- [x] One-variable array-only `range` loops.
 - Slice values, append/growth, and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.

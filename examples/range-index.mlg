@@ -1,0 +1,18 @@
+type User struct {
+    age int
+}
+
+func main() {
+    users := [3]User{User{age: 1}, User{age: 2}, User{age: 3}}
+    mut total := 0
+
+    for i := range users {
+        total = total + i
+    }
+
+    for _ := range users {
+        total = total + 1
+    }
+
+    print(total)
+}

@@ -2564,6 +2564,56 @@ func main() {
     }
 
     #[test]
+    fn ir_lowers_one_variable_array_range() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := [2]User{User{age: 1}, User{age: 2}}
+    for i := range users {
+        print(i)
+    }
+    for _ := range users {
+        print(1)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            element_ty,
+            ..
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "_");
+        assert_eq!(*element_ty, Type::Struct("User".to_string()));
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            element_ty,
+            ..
+        } = &ir.functions[0].body[2].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "_");
+        assert_eq!(value_name, "_");
+        assert_eq!(*element_ty, Type::Struct("User".to_string()));
+    }
+
+    #[test]
     fn ir_lowers_fixed_size_array_indexing_and_len() {
         let program = parse(
             r#"

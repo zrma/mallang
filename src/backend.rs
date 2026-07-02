@@ -2445,6 +2445,36 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_one_variable_array_range() {
+        let program = parse(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := [2]User{User{age: 1}, User{age: 2}}
+    for i := range users {
+        print(i)
+    }
+    for _ := range users {
+        print(1)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 2; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("for (int64_t mallang_range_index_"));
+        assert!(!c.contains("mlg__"));
+        assert!(!c.contains("mlg_value"));
+    }
+
+    #[test]
     fn generates_c_for_fixed_size_array_indexing_and_len() {
         let program = parse(
             r#"
