@@ -10,6 +10,7 @@ This repository is the Mallang language PoC workspace.
 - File extension: `.mlg`
 - User-facing CLI: `mlg`
 - Compiler command shape: `mlg build`, not a separate long `mallangc` command
+- Run command shape: `mlg run`
 - Internal compiler crate or binary name, if needed later: `mlgc`
 
 ## Current Scope
@@ -42,7 +43,7 @@ This repository is the Mallang language PoC workspace.
 
 ## Bootstrap
 
-The current executable can lex, parse, check, and build the first native subset.
+The current executable can lex, parse, check, build, and run the first native subset.
 
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
@@ -69,6 +70,7 @@ cargo run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-bl
 target/mallang/range-blank
 cargo run --bin mlg -- build examples/range-index.mlg -o target/mallang/range-index
 target/mallang/range-index
+cargo run --bin mlg -- run examples/range-index.mlg
 cargo run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment
 target/mallang/non-copy-array-assignment
 cargo run --bin mlg -- build examples/for-clause-prelude.mlg -o target/mallang/for-clause-prelude
@@ -136,7 +138,7 @@ scripts/check.sh
 - `examples/for-clause-initless.mlg`: native smoke for initless `for ; condition; post`.
 - `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
 - `examples/range-blank.mlg`: native smoke for blank identifiers in array range loops.
-- `examples/range-index.mlg`: native smoke for one-variable array range over non-copy elements.
+- `examples/range-index.mlg`: native build/run smoke for one-variable array range over non-copy elements.
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.

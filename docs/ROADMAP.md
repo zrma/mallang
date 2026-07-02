@@ -193,3 +193,10 @@
 - [x] one-variable range를 value blank range로 lowering
 - [x] non-copy element array를 index-only range로 순회
 - [x] native smoke에서 value copy 없는 codegen 검증
+
+## P20: mlg Run Command
+
+- [x] `mlg run <source-file>` CLI 추가
+- [x] `build`와 `run`의 native compile path 공유
+- [x] `target/mallang/run/<source-stem>` binary 실행
+- [x] native smoke에서 program stdout 검증

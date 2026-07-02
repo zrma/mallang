@@ -86,6 +86,7 @@
 - [x] Produce a native executable for the first target program.
 - [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
+- [x] Expose compile-and-execute through `mlg run`.
 - [x] Generate native C blocks for statement-form `if`.
 - [x] Lower `con`/`mut` parameters to a hidden-reference C ABI.
 - [x] Generate C temps for `if` expression branches that need prelude statements.

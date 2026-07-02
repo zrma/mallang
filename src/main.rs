@@ -36,6 +36,10 @@ fn main() {
             args.remove(0);
             run_build(&program, &args)
         }
+        "run" => {
+            args.remove(0);
+            run_run(&program, &args)
+        }
         "-h" | "--help" => {
             usage(&program);
             Ok(())
@@ -58,6 +62,7 @@ fn usage(program: &str) {
     eprintln!("  {program} check <source-file>");
     eprintln!("  {program} ir <source-file>");
     eprintln!("  {program} build <source-file> [-o <output>]");
+    eprintln!("  {program} run <source-file>");
 }
 
 fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
@@ -128,15 +133,37 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
         }
     }
 
+    let output_path = compile_source(source_path, output_path)?;
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+fn run_run(program: &str, args: &[String]) -> Result<(), String> {
+    let source_path = single_source_arg(program, "run", args)?;
+    let source_stem = source_stem(source_path);
+    let output_path = PathBuf::from("target")
+        .join("mallang")
+        .join("run")
+        .join(source_stem);
+    let binary_path = compile_source(source_path, Some(output_path))?;
+
+    let status = Command::new(&binary_path)
+        .status()
+        .map_err(|error| format!("failed to execute {}: {error}", binary_path.display()))?;
+    if !status.success() {
+        return Err(format!("program exited with status {status}"));
+    }
+
+    Ok(())
+}
+
+fn compile_source(source_path: &str, output_path: Option<PathBuf>) -> Result<PathBuf, String> {
     let source = read_source(source_path)?;
     let program_ast = parse(&source).map_err(|error| format!("{source_path}: {error}"))?;
     check(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
     let c_source = generate_c(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
 
-    let source_stem = Path::new(source_path)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("mallang");
+    let source_stem = source_stem(source_path);
     let build_dir = PathBuf::from("target/mallang");
     fs::create_dir_all(&build_dir)
         .map_err(|error| format!("failed to create {}: {error}", build_dir.display()))?;
@@ -145,6 +172,13 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
         .map_err(|error| format!("failed to write {}: {error}", c_path.display()))?;
 
     let output_path = output_path.unwrap_or_else(|| build_dir.join(source_stem));
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
     let status = Command::new("clang")
         .arg(&c_path)
         .arg("-o")
@@ -155,8 +189,14 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
         return Err(format!("clang failed with status {status}"));
     }
 
-    println!("{}", output_path.display());
-    Ok(())
+    Ok(output_path)
+}
+
+fn source_stem(source_path: &str) -> &str {
+    Path::new(source_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("mallang")
 }
 
 fn single_source_arg<'a>(

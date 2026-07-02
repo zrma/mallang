@@ -121,6 +121,23 @@ if [[ "$range_index_output" != "6" ]]; then
   echo "range index native build smoke failed: expected 6, got '$range_index_output'" >&2
   exit 1
 fi
+range_index_run_output="$("${CARGO[@]}" run --bin mlg -- run examples/range-index.mlg)"
+if [[ "$range_index_run_output" != "6" ]]; then
+  echo "range index native run smoke failed: expected 6, got '$range_index_run_output'" >&2
+  exit 1
+fi
+runtime_fail_source="target/mallang/run-bounds-fail.mlg"
+cat >"$runtime_fail_source" <<'MLG'
+func main() {
+    values := [1]int{1}
+    i := 1
+    print(values[i])
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$runtime_fail_source" >/dev/null 2>&1; then
+  echo "native run failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/non-copy-array-assignment.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment >/dev/null
 non_copy_array_assignment_output="$(target/mallang/non-copy-array-assignment)"
