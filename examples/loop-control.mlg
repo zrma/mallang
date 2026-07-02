@@ -1,0 +1,14 @@
+func main() {
+    mut count := 0
+    for count < 6 {
+        count = count + 1
+        if count == 2 {
+            continue
+        }
+        if count == 5 {
+            break
+        }
+        print(count)
+    }
+    print(count)
+}

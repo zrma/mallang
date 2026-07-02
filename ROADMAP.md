@@ -19,6 +19,7 @@
 - [x] Parse `else if` as nested `if` sugar.
 - [x] Parse `|>` pipeline call sugar.
 - [x] Parse condition-only `for` statements.
+- [x] Parse `break` and `continue` loop control statements.
 
 ## Milestone 2: Static Semantics
 
@@ -33,6 +34,7 @@
 - [x] Support statement-form `if` with branch-local bindings.
 - [x] Support return-completeness analysis across statement-form `if` branches.
 - [x] Support condition-only `for` statement checking with loop-local bindings.
+- [x] Reject `break` and `continue` outside loops.
 
 ## Milestone 3: Ownership and Borrowing
 
@@ -60,6 +62,7 @@
 - [x] Lower `bool` logical operators to native short-circuit code.
 - [x] Compile `|>` pipeline call sugar through the existing call backend.
 - [x] Generate native C `while` loops for condition-only `for` statements.
+- [x] Generate native C `break` and `continue` statements.
 
 ## Later
 

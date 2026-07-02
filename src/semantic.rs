@@ -311,7 +311,7 @@ impl<'a> Checker<'a> {
         }
 
         let returned =
-            self.check_block_statements(&function.body, &mut locals, &sig.return_type)?;
+            self.check_block_statements(&function.body, &mut locals, &sig.return_type, 0)?;
 
         if sig.return_type != Type::Unit && !returned {
             return Err(SemanticError::new(
@@ -357,6 +357,7 @@ impl<'a> Checker<'a> {
         stmt: &Stmt,
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
+        loop_depth: usize,
     ) -> Result<bool, SemanticError> {
         match &stmt.kind {
             StmtKind::Let {
@@ -451,11 +452,20 @@ impl<'a> Checker<'a> {
                 }
 
                 let mut then_locals = locals.clone();
-                let then_returns =
-                    self.check_block_statements(then_block, &mut then_locals, return_type)?;
+                let then_returns = self.check_block_statements(
+                    then_block,
+                    &mut then_locals,
+                    return_type,
+                    loop_depth,
+                )?;
                 let mut else_locals = locals.clone();
                 let else_returns = if let Some(else_block) = else_block {
-                    self.check_block_statements(else_block, &mut else_locals, return_type)?
+                    self.check_block_statements(
+                        else_block,
+                        &mut else_locals,
+                        return_type,
+                        loop_depth,
+                    )?
                 } else {
                     false
                 };
@@ -473,12 +483,30 @@ impl<'a> Checker<'a> {
                 }
 
                 let mut body_locals = locals.clone();
-                self.check_block_statements(body, &mut body_locals, return_type)?;
+                self.check_block_statements(body, &mut body_locals, return_type, loop_depth + 1)?;
                 merge_loop_body_moves(locals, &body_locals);
                 Ok(false)
             }
+            StmtKind::Break => {
+                if loop_depth == 0 {
+                    return Err(SemanticError::new(
+                        "`break` can only be used inside a loop",
+                        stmt.span,
+                    ));
+                }
+                Ok(false)
+            }
+            StmtKind::Continue => {
+                if loop_depth == 0 {
+                    return Err(SemanticError::new(
+                        "`continue` can only be used inside a loop",
+                        stmt.span,
+                    ));
+                }
+                Ok(false)
+            }
             StmtKind::Match { scrutinee, arms } => {
-                self.check_match_stmt(scrutinee, arms, locals, return_type, stmt.span)
+                self.check_match_stmt(scrutinee, arms, locals, return_type, loop_depth, stmt.span)
             }
             StmtKind::Expr { expr } => {
                 self.check_expr(expr, locals, ValueUse::Owned)?;
@@ -492,10 +520,11 @@ impl<'a> Checker<'a> {
         block: &Block,
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
+        loop_depth: usize,
     ) -> Result<bool, SemanticError> {
         let mut returns = false;
         for stmt in &block.statements {
-            returns |= self.check_stmt(stmt, locals, return_type)?;
+            returns |= self.check_stmt(stmt, locals, return_type, loop_depth)?;
         }
         Ok(returns)
     }
@@ -665,6 +694,7 @@ impl<'a> Checker<'a> {
         arms: &[MatchBlockArm],
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
+        loop_depth: usize,
         span: Span,
     ) -> Result<bool, SemanticError> {
         if arms.is_empty() {
@@ -675,7 +705,12 @@ impl<'a> Checker<'a> {
         let prepared_arms = self.prepare_match_block_arms(&scrutinee_ty, arms, span)?;
         let mut checks = Vec::new();
         for arm in &prepared_arms {
-            checks.push(self.check_prepared_match_block_arm(arm, locals, return_type)?);
+            checks.push(self.check_prepared_match_block_arm(
+                arm,
+                locals,
+                return_type,
+                loop_depth,
+            )?);
         }
 
         let all_return = checks.iter().all(|check| check.returns);
@@ -1184,6 +1219,7 @@ impl<'a> Checker<'a> {
         arm: &PreparedMatchBlockArm<'_>,
         locals: &HashMap<String, Local>,
         return_type: &Type,
+        loop_depth: usize,
     ) -> Result<MatchBlockArmCheck, SemanticError> {
         let mut arm_locals = locals.clone();
         if let Some((name, ty)) = &arm.binding {
@@ -1197,7 +1233,8 @@ impl<'a> Checker<'a> {
                 },
             );
         }
-        let returns = self.check_block_statements(arm.block, &mut arm_locals, return_type)?;
+        let returns =
+            self.check_block_statements(arm.block, &mut arm_locals, return_type, loop_depth)?;
         Ok(MatchBlockArmCheck {
             returns,
             locals: arm_locals,
@@ -2552,6 +2589,42 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_break_and_continue_inside_for_statement() {
+        check_ok(
+            r#"
+func main() {
+    mut count := 0
+    for count < 5 {
+        count = count + 1
+        if count == 2 {
+            continue
+        }
+        if count == 4 {
+            break
+        }
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_break_outside_loop() {
+        let error = check_error("func main() { break }");
+        assert!(error
+            .message
+            .contains("`break` can only be used inside a loop"));
+    }
+
+    #[test]
+    fn rejects_continue_outside_loop() {
+        let error = check_error("func main() { continue }");
+        assert!(error
+            .message
+            .contains("`continue` can only be used inside a loop"));
     }
 
     #[test]

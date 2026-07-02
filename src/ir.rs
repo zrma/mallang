@@ -81,6 +81,8 @@ pub enum IrStmtKind {
         condition: IrExpr,
         body: Vec<IrStmt>,
     },
+    Break,
+    Continue,
     Match {
         scrutinee: IrExpr,
         arms: Vec<IrMatchBlockArm>,
@@ -374,6 +376,8 @@ impl<'a> Lowerer<'a> {
 
                 IrStmtKind::For { condition, body }
             }
+            StmtKind::Break => IrStmtKind::Break,
+            StmtKind::Continue => IrStmtKind::Continue,
             StmtKind::Match { scrutinee, arms } => {
                 let scrutinee = self.lower_expr(scrutinee, locals)?;
                 let prepared_arms =
@@ -1483,6 +1487,29 @@ func main() {
         };
         assert_eq!(condition.ty, Type::Bool);
         assert_eq!(body.len(), 1);
+    }
+
+    #[test]
+    fn ir_lowers_loop_control_statements() {
+        let program = parse(
+            r#"
+func main() {
+    for true {
+        continue
+        break
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For { body, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert!(matches!(body[0].kind, IrStmtKind::Continue));
+        assert!(matches!(body[1].kind, IrStmtKind::Break));
     }
 
     #[test]

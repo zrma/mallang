@@ -240,6 +240,14 @@ impl Parser {
             return self.parse_for_statement();
         }
 
+        if self.at_keyword(Keyword::Break) {
+            return self.parse_break_statement();
+        }
+
+        if self.at_keyword(Keyword::Continue) {
+            return self.parse_continue_statement();
+        }
+
         if self.at_keyword(Keyword::Match) {
             return self.parse_match_statement();
         }
@@ -359,6 +367,22 @@ impl Parser {
 
         Ok(Stmt {
             kind: StmtKind::For { condition, body },
+            span,
+        })
+    }
+
+    fn parse_break_statement(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.expect_keyword(Keyword::Break, "expected `break`")?;
+        Ok(Stmt {
+            kind: StmtKind::Break,
+            span,
+        })
+    }
+
+    fn parse_continue_statement(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.expect_keyword(Keyword::Continue, "expected `continue`")?;
+        Ok(Stmt {
+            kind: StmtKind::Continue,
             span,
         })
     }
@@ -1045,6 +1069,16 @@ func add(a int, b int) int {
         assert!(matches!(&condition.kind, ExprKind::Var(name) if name == "keepGoing"));
         assert_eq!(body.statements.len(), 1);
         assert!(matches!(body.statements[0].kind, StmtKind::Expr { .. }));
+    }
+
+    #[test]
+    fn parses_loop_control_statements() {
+        let program = parse("func main() { for true { continue break } }").unwrap();
+        let StmtKind::For { body, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected for statement");
+        };
+        assert!(matches!(body.statements[0].kind, StmtKind::Continue));
+        assert!(matches!(body.statements[1].kind, StmtKind::Break));
     }
 
     #[test]

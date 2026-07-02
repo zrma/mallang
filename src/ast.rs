@@ -93,6 +93,8 @@ pub enum StmtKind {
         condition: Expr,
         body: Block,
     },
+    Break,
+    Continue,
     Match {
         scrutinee: Expr,
         arms: Vec<MatchBlockArm>,

@@ -178,6 +178,8 @@ impl<'a> CGenerator<'a> {
                 else_body,
             } => self.emit_if_stmt(condition, then_body, else_body, env),
             IrStmtKind::For { condition, body } => self.emit_for_stmt(condition, body, env),
+            IrStmtKind::Break => Ok("break;".to_string()),
+            IrStmtKind::Continue => Ok("continue;".to_string()),
             IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
             IrStmtKind::Expr { expr } => {
                 if let IrExprKind::Call { callee, args } = &expr.kind {
@@ -910,6 +912,7 @@ impl<'a> CGenerator<'a> {
             IrStmtKind::Assign { expr, .. }
             | IrStmtKind::Return { expr }
             | IrStmtKind::Expr { expr } => self.collect_expr_types(expr, types),
+            IrStmtKind::Break | IrStmtKind::Continue => {}
             IrStmtKind::FieldAssign { base, expr, .. } => {
                 self.collect_expr_types(base, types);
                 self.collect_expr_types(expr, types);
@@ -1404,6 +1407,27 @@ func main() {
 
         assert!(c.contains("while (mlg_count < 3) {"));
         assert!(c.contains("mlg_count = (mlg_count + 1);"));
+    }
+
+    #[test]
+    fn generates_c_for_loop_control_statements() {
+        let program = parse(
+            r#"
+func main() {
+    for true {
+        continue
+        break
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("continue;"));
+        assert!(c.contains("break;"));
     }
 
     #[test]

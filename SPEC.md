@@ -65,7 +65,7 @@ func greet(name in string) string {
 Reserved words:
 
 ```text
-func return if else for match case mut in true false struct type nil
+func return if else for break continue match case mut in true false struct type nil
 ```
 
 `nil` is reserved so the compiler can produce a clear error instead of treating
@@ -279,10 +279,13 @@ Rules:
 - Bindings introduced inside the body do not leak outside the body.
 - Moving an outer value inside the body makes the value unavailable after the
   loop in v0.
+- `break` exits the nearest enclosing loop.
+- `continue` skips to the next iteration of the nearest enclosing loop.
+- `break` and `continue` are only valid inside loops.
 - A `for` statement is not considered return-complete in v0, even when its
   condition is statically `true`.
-- v0 does not yet include `break`, `continue`, `range`, or Go's three-clause
-  `for init; condition; post` form.
+- v0 does not yet include `range` or Go's three-clause `for init; condition;
+  post` form.
 
 Expression form:
 
