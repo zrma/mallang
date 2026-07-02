@@ -1,0 +1,12 @@
+func main() {
+    mut total := 0
+
+    for mut i := 0; i < 5; i = i + 1 {
+        if i == 2 {
+            continue
+        }
+        total = total + i
+    }
+
+    print(total)
+}

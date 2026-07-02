@@ -2,8 +2,8 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchBlockArm,
-        MatchPattern, ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, MatchArm,
+        MatchBlockArm, MatchPattern, ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
     },
     token::Span,
 };
@@ -365,54 +365,11 @@ impl<'a> Checker<'a> {
                 name,
                 expr,
             } => {
-                let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
-                if locals
-                    .insert(
-                        name.clone(),
-                        Local {
-                            ty: ty.clone(),
-                            mutable: *mutable,
-                            borrowed: false,
-                            moved: false,
-                        },
-                    )
-                    .is_some()
-                {
-                    return Err(SemanticError::new(
-                        format!("binding `{name}` already exists in this block"),
-                        stmt.span,
-                    ));
-                }
+                self.check_let_binding(*mutable, name, expr, locals, stmt.span)?;
                 Ok(false)
             }
             StmtKind::Assign { name, expr } => {
-                let (local_ty, local_mutable) = {
-                    let Some(local) = locals.get(name) else {
-                        return Err(SemanticError::new(
-                            format!("unknown variable `{name}`"),
-                            stmt.span,
-                        ));
-                    };
-                    (local.ty.clone(), local.mutable)
-                };
-                if !local_mutable {
-                    return Err(SemanticError::new(
-                        format!("cannot assign to immutable binding `{name}`"),
-                        stmt.span,
-                    ));
-                }
-                let value_ty =
-                    self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&local_ty))?;
-                if value_ty != local_ty {
-                    return Err(SemanticError::new(
-                        format!(
-                            "assignment type mismatch for `{name}`: expected `{}`, got `{}`",
-                            local_ty.source_name(),
-                            value_ty.source_name()
-                        ),
-                        stmt.span,
-                    ));
-                }
+                self.check_assign_binding(name, expr, locals, stmt.span)?;
                 Ok(false)
             }
             StmtKind::FieldAssign { base, field, expr } => {
@@ -473,8 +430,18 @@ impl<'a> Checker<'a> {
                 merge_branch_moves(locals, &then_locals, &else_locals);
                 Ok(then_returns && else_returns)
             }
-            StmtKind::For { condition, body } => {
-                let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+            StmtKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                let mut loop_locals = locals.clone();
+                if let Some(init) = init {
+                    self.check_for_init(init, &mut loop_locals, stmt.span)?;
+                }
+
+                let condition_ty = self.check_expr(condition, &mut loop_locals, ValueUse::Owned)?;
                 if condition_ty != Type::Bool {
                     return Err(SemanticError::new(
                         "for condition must have type `bool`",
@@ -482,9 +449,16 @@ impl<'a> Checker<'a> {
                     ));
                 }
 
-                let mut body_locals = locals.clone();
+                let mut body_locals = loop_locals.clone();
                 self.check_block_statements(body, &mut body_locals, return_type, loop_depth + 1)?;
+                let mut post_locals = loop_locals.clone();
+                merge_loop_body_moves(&mut post_locals, &body_locals);
+                if let Some(post) = post {
+                    self.check_for_post(post, &mut post_locals, stmt.span)?;
+                }
+                merge_loop_body_moves(locals, &loop_locals);
                 merge_loop_body_moves(locals, &body_locals);
+                merge_loop_body_moves(locals, &post_locals);
                 Ok(false)
             }
             StmtKind::Break => {
@@ -512,6 +486,107 @@ impl<'a> Checker<'a> {
                 self.check_expr(expr, locals, ValueUse::Owned)?;
                 Ok(false)
             }
+        }
+    }
+
+    fn check_let_binding(
+        &self,
+        mutable: bool,
+        name: &str,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
+        if locals
+            .insert(
+                name.to_string(),
+                Local {
+                    ty: ty.clone(),
+                    mutable,
+                    borrowed: false,
+                    moved: false,
+                },
+            )
+            .is_some()
+        {
+            return Err(SemanticError::new(
+                format!("binding `{name}` already exists in this block"),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_assign_binding(
+        &self,
+        name: &str,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let (local_ty, local_mutable) = {
+            let Some(local) = locals.get(name) else {
+                return Err(SemanticError::new(
+                    format!("unknown variable `{name}`"),
+                    span,
+                ));
+            };
+            (local.ty.clone(), local.mutable)
+        };
+        if !local_mutable {
+            return Err(SemanticError::new(
+                format!("cannot assign to immutable binding `{name}`"),
+                span,
+            ));
+        }
+        let value_ty =
+            self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&local_ty))?;
+        if value_ty != local_ty {
+            return Err(SemanticError::new(
+                format!(
+                    "assignment type mismatch for `{name}`: expected `{}`, got `{}`",
+                    local_ty.source_name(),
+                    value_ty.source_name()
+                ),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_for_init(
+        &self,
+        init: &ForInit,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        match init {
+            ForInit::Let {
+                mutable,
+                name,
+                expr,
+            } => self.check_let_binding(*mutable, name, expr, locals, span),
+        }
+    }
+
+    fn check_for_post(
+        &self,
+        post: &ForPost,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        match post {
+            ForPost::Assign { target, expr } => match &target.kind {
+                ExprKind::Var(name) => self.check_assign_binding(name, expr, locals, span),
+                ExprKind::FieldAccess { base, field } => {
+                    self.check_field_assign(base, field, expr, locals)
+                }
+                _ => Err(SemanticError::new(
+                    "for post target must be a variable or field access",
+                    target.span,
+                )),
+            },
         }
     }
 
@@ -2592,6 +2667,21 @@ func main() {
     }
 
     #[test]
+    fn allows_for_clause_statement() {
+        check_ok(
+            r#"
+func main() {
+    mut total := 0
+    for mut i := 0; i < 3; i = i + 1 {
+        total = total + i
+    }
+    print(total)
+}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_break_and_continue_inside_for_statement() {
         check_ok(
             r#"
@@ -2641,6 +2731,37 @@ func main() {
         assert!(error
             .message
             .contains("for condition must have type `bool`"));
+    }
+
+    #[test]
+    fn for_clause_init_binding_does_not_leak() {
+        let error = check_error(
+            r#"
+func main() {
+    for mut i := 0; i < 3; i = i + 1 {
+        print(i)
+    }
+    print(i)
+}
+"#,
+        );
+        assert!(error.message.contains("unknown variable `i`"));
+    }
+
+    #[test]
+    fn rejects_immutable_for_clause_post_assignment() {
+        let error = check_error(
+            r#"
+func main() {
+    for i := 0; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign to immutable binding `i`"));
     }
 
     #[test]

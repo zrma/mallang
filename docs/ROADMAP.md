@@ -18,6 +18,7 @@
 - [x] `|>` pipeline call sugar parser/native smoke 추가
 - [x] condition-only `for` statement parser/native smoke 추가
 - [x] `break` / `continue` loop control parser/native smoke 추가
+- [x] `for init; condition; post` clause loop parser/native smoke 추가
 - [x] `examples/first.mlg`를 AST로 파싱하는 test 추가
 
 ## P2: Static Semantics
@@ -32,6 +33,7 @@
 - [x] statement-form `if` type checking 추가
 - [x] statement-form `if` return-completeness analysis 추가
 - [x] condition-only `for` statement checking 추가
+- [x] `for init; condition; post` header-local checking 추가
 - [x] `break` / `continue` outside-loop reject 추가
 - [x] `mlg check` subcommand 추가
 
@@ -59,6 +61,7 @@
 - [x] `|>` pipeline call sugar native smoke 추가
 - [x] condition-only `for` statement C backend/native smoke 추가
 - [x] `break` / `continue` C backend/native smoke 추가
+- [x] `for init; condition; post` C backend/native smoke 추가
 
 ## P5: Built-in ADTs
 

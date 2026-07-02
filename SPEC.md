@@ -107,8 +107,11 @@ int bool
 Move types:
 
 ```text
-string array struct
+string struct
 ```
+
+Arrays and slices are reserved for a later v0 slice and are expected to be
+move-only unless explicitly designed otherwise.
 
 `unit` is the implicit return type of functions that do not return a value.
 
@@ -264,18 +267,25 @@ Statement rules:
   are return-complete.
 - `else if` is sugar for a nested statement-form `if` inside the `else` branch.
 
-`for` is a statement. The first v0 form is condition-only, matching Go's
-`while`-like loop shape.
+`for` is a statement. v0 supports a condition-only form, matching Go's
+`while`-like loop shape, and a small Go-like three-clause form.
 
 ```go
 for enabled {
     tick()
+}
+
+for mut i := 0; i < 3; i = i + 1 {
+    print(i)
 }
 ```
 
 Rules:
 
 - The condition must have type `bool`.
+- In the three-clause form, init is `name := expr` or `mut name := expr`.
+- In the three-clause form, post is a single variable or field assignment.
+- Bindings introduced by the init clause are scoped to the loop header and body.
 - Bindings introduced inside the body do not leak outside the body.
 - Moving an outer value inside the body makes the value unavailable after the
   loop in v0.
@@ -284,8 +294,8 @@ Rules:
 - `break` and `continue` are only valid inside loops.
 - A `for` statement is not considered return-complete in v0, even when its
   condition is statically `true`.
-- v0 does not yet include `range` or Go's three-clause `for init; condition;
-  post` form.
+- v0 does not yet include `range`, initless clause loops, empty conditions, or
+  post declarations.
 
 Expression form:
 

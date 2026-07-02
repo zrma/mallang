@@ -2,9 +2,9 @@ use std::fmt;
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, Function, MatchArm,
-        MatchBlockArm, MatchPattern, Param, ParamMode, Program, Stmt, StmtKind, StructDecl,
-        TypeRef, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, ForInit, ForPost,
+        Function, MatchArm, MatchBlockArm, MatchPattern, Param, ParamMode, Program, Stmt, StmtKind,
+        StructDecl, TypeRef, UnaryOp,
     },
     lexer::{lex, LexError},
     token::{Keyword, Span, Token, TokenKind},
@@ -361,14 +361,73 @@ impl Parser {
 
     fn parse_for_statement(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_keyword(Keyword::For, "expected `for`")?;
+
+        if self.starts_for_clause_header() {
+            let init = self.parse_for_init()?;
+            self.expect(TokenTag::Semicolon, "expected `;` after for init")?;
+            let condition = self.parse_expression_without_struct_literals()?;
+            self.expect(TokenTag::Semicolon, "expected `;` after for condition")?;
+            let post = self.parse_for_post()?;
+            let body = self.parse_block()?;
+            let span = start.join(body.span);
+
+            return Ok(Stmt {
+                kind: StmtKind::For {
+                    init: Some(init),
+                    condition,
+                    post: Some(post),
+                    body,
+                },
+                span,
+            });
+        }
+
         let condition = self.parse_expression_without_struct_literals()?;
         let body = self.parse_block()?;
         let span = start.join(body.span);
 
         Ok(Stmt {
-            kind: StmtKind::For { condition, body },
+            kind: StmtKind::For {
+                init: None,
+                condition,
+                post: None,
+                body,
+            },
             span,
         })
+    }
+
+    fn starts_for_clause_header(&self) -> bool {
+        self.at_keyword(Keyword::Mut)
+            || (self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::ColonEqual))
+    }
+
+    fn parse_for_init(&mut self) -> Result<ForInit, ParseError> {
+        let mutable = self.eat_keyword(Keyword::Mut).is_some();
+        let (name, _) = self.expect_ident("expected for init binding name")?;
+        self.expect(TokenTag::ColonEqual, "expected `:=` in for init")?;
+        let expr = self.parse_expression()?;
+
+        Ok(ForInit::Let {
+            mutable,
+            name,
+            expr,
+        })
+    }
+
+    fn parse_for_post(&mut self) -> Result<ForPost, ParseError> {
+        let target = self.parse_expression()?;
+        let target_span = target.span;
+        self.expect(TokenTag::Equal, "expected `=` in for post")?;
+        let expr = self.parse_expression()?;
+
+        match target.kind {
+            ExprKind::Var(_) | ExprKind::FieldAccess { .. } => Ok(ForPost::Assign { target, expr }),
+            _ => Err(ParseError::new(
+                "for post target must be a variable or field access",
+                target_span,
+            )),
+        }
     }
 
     fn parse_break_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -1062,13 +1121,58 @@ func add(a int, b int) int {
     #[test]
     fn parses_for_statement() {
         let program = parse("func main() { for keepGoing { tick() } }").unwrap();
-        let StmtKind::For { condition, body } = &program.functions[0].body.statements[0].kind
+        let StmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &program.functions[0].body.statements[0].kind
         else {
             panic!("expected for statement");
         };
+        assert!(init.is_none());
+        assert!(post.is_none());
         assert!(matches!(&condition.kind, ExprKind::Var(name) if name == "keepGoing"));
         assert_eq!(body.statements.len(), 1);
         assert!(matches!(body.statements[0].kind, StmtKind::Expr { .. }));
+    }
+
+    #[test]
+    fn parses_for_clause_statement() {
+        let program =
+            parse("func main() { for mut i := 0; i < 3; i = i + 1 { print(i) } }").unwrap();
+        let StmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &program.functions[0].body.statements[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(matches!(
+            init,
+            Some(ForInit::Let {
+                mutable: true,
+                name,
+                ..
+            }) if name == "i"
+        ));
+        assert!(matches!(
+            condition.kind,
+            ExprKind::Binary {
+                op: BinaryOp::Less,
+                ..
+            }
+        ));
+        assert!(matches!(
+            post,
+            Some(ForPost::Assign {
+                target,
+                ..
+            }) if matches!(&target.kind, ExprKind::Var(name) if name == "i")
+        ));
+        assert_eq!(body.statements.len(), 1);
     }
 
     #[test]

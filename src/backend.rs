@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt};
 use crate::{
     ast::{ArgMode, BinaryOp, ParamMode, Program},
     ir::{
-        lower, IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrFunction, IrMatchArm,
-        IrMatchBlockArm, IrMatchPattern, IrProgram, IrStmt, IrStmtKind,
+        lower, IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrFunction,
+        IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrProgram, IrStmt, IrStmtKind,
     },
     semantic::{check, Type},
 };
@@ -177,7 +177,12 @@ impl<'a> CGenerator<'a> {
                 then_body,
                 else_body,
             } => self.emit_if_stmt(condition, then_body, else_body, env),
-            IrStmtKind::For { condition, body } => self.emit_for_stmt(condition, body, env),
+            IrStmtKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => self.emit_for_stmt(init.as_deref(), condition, post.as_deref(), body, env),
             IrStmtKind::Break => Ok("break;".to_string()),
             IrStmtKind::Continue => Ok("continue;".to_string()),
             IrStmtKind::Match { scrutinee, arms } => self.emit_match_stmt(scrutinee, arms, env),
@@ -228,10 +233,16 @@ impl<'a> CGenerator<'a> {
 
     fn emit_for_stmt(
         &self,
+        init: Option<&IrForInit>,
         condition: &IrExpr,
+        post: Option<&IrForPost>,
         body: &[IrStmt],
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
+        if init.is_some() || post.is_some() {
+            return self.emit_for_clause_stmt(init, condition, post, body, env);
+        }
+
         let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
         let mut output = String::new();
 
@@ -262,6 +273,106 @@ impl<'a> CGenerator<'a> {
         }
         output.push('}');
         Ok(output)
+    }
+
+    fn emit_for_clause_stmt(
+        &self,
+        init: Option<&IrForInit>,
+        condition: &IrExpr,
+        post: Option<&IrForPost>,
+        body: &[IrStmt],
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let mut output = String::new();
+        let init_code = if let Some(init) = init {
+            let (prelude, code) = self.emit_for_init(init, env)?;
+            for line in prelude {
+                output.push_str(&line);
+                output.push('\n');
+            }
+            code
+        } else {
+            String::new()
+        };
+
+        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+        if !prelude.is_empty() {
+            return Err(CompileError::new(
+                "for-clause conditions with temporary preludes are not supported in the native backend yet",
+            ));
+        }
+        let condition_code = c_condition(&code);
+
+        let post_code = post
+            .map(|post| self.emit_for_post(post, env))
+            .transpose()?
+            .unwrap_or_default();
+
+        output.push_str(&format!(
+            "for ({}; {}; {}) {{\n",
+            init_code, condition_code, post_code
+        ));
+        for stmt in body {
+            let code = self.emit_stmt_with_env(stmt, env)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
+        output.push('}');
+        Ok(output)
+    }
+
+    fn emit_for_init(
+        &self,
+        init: &IrForInit,
+        env: &HashMap<String, String>,
+    ) -> Result<(Vec<String>, String), CompileError> {
+        match init {
+            IrForInit::Let { name, ty, expr, .. } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
+                Ok((
+                    prelude,
+                    format!("{} {} = {}", ty.c_name(), c_ident(name), code),
+                ))
+            }
+        }
+    }
+
+    fn emit_for_post(
+        &self,
+        post: &IrForPost,
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        match post {
+            IrForPost::Assign { target, expr } => {
+                let target = self.emit_assignment_target_expr(target, env)?;
+                let expr = self.emit_stmt_expr_with_env(expr, env)?;
+                if !target.prelude.is_empty() || !expr.prelude.is_empty() {
+                    return Err(CompileError::new(
+                        "for-clause post assignments with temporary preludes are not supported in the native backend yet",
+                    ));
+                }
+                Ok(format!("{} = {}", target.code, expr.code))
+            }
+        }
+    }
+
+    fn emit_assignment_target_expr(
+        &self,
+        target: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        match &target.kind {
+            IrExprKind::Var(name) => Ok(CExpr::simple(c_assignment_target(name, env))),
+            IrExprKind::FieldAccess { base, field } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(base, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}).{}", code, c_field(field)),
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: invalid assignment target",
+            )),
+        }
     }
 
     fn emit_match_stmt(
@@ -930,8 +1041,19 @@ impl<'a> CGenerator<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
-            IrStmtKind::For { condition, body } => {
+            IrStmtKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                if let Some(init) = init.as_deref() {
+                    self.collect_for_init_types(init, types);
+                }
                 self.collect_expr_types(condition, types);
+                if let Some(post) = post.as_deref() {
+                    self.collect_for_post_types(post, types);
+                }
                 for stmt in body {
                     self.collect_stmt_types(stmt, types);
                 }
@@ -943,6 +1065,24 @@ impl<'a> CGenerator<'a> {
                         self.collect_stmt_types(stmt, types);
                     }
                 }
+            }
+        }
+    }
+
+    fn collect_for_init_types(&self, init: &IrForInit, types: &mut Vec<Type>) {
+        match init {
+            IrForInit::Let { ty, expr, .. } => {
+                collect_type(ty, types);
+                self.collect_expr_types(expr, types);
+            }
+        }
+    }
+
+    fn collect_for_post_types(&self, post: &IrForPost, types: &mut Vec<Type>) {
+        match post {
+            IrForPost::Assign { target, expr } => {
+                self.collect_expr_types(target, types);
+                self.collect_expr_types(expr, types);
             }
         }
     }
@@ -1407,6 +1547,25 @@ func main() {
 
         assert!(c.contains("while (mlg_count < 3) {"));
         assert!(c.contains("mlg_count = (mlg_count + 1);"));
+    }
+
+    #[test]
+    fn generates_c_for_for_clause_statement() {
+        let program = parse(
+            r#"
+func main() {
+    for mut i := 0; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
     }
 
     #[test]

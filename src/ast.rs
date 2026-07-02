@@ -90,7 +90,9 @@ pub enum StmtKind {
         else_block: Option<Block>,
     },
     For {
+        init: Option<ForInit>,
         condition: Expr,
+        post: Option<ForPost>,
         body: Block,
     },
     Break,
@@ -102,6 +104,20 @@ pub enum StmtKind {
     Expr {
         expr: Expr,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForInit {
+    Let {
+        mutable: bool,
+        name: String,
+        expr: Expr,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForPost {
+    Assign { target: Expr, expr: Expr },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

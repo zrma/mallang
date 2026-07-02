@@ -78,6 +78,13 @@ if [[ "$loop_control_output" != $'1\n3\n4\n5' ]]; then
   echo "loop control native build smoke failed: expected 1, 3, 4, 5 got '$loop_control_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/for-clause.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/for-clause.mlg -o target/mallang/for-clause >/dev/null
+for_clause_output="$(target/mallang/for-clause)"
+if [[ "$for_clause_output" != "8" ]]; then
+  echo "for-clause native build smoke failed: expected 8 got '$for_clause_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"

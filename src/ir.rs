@@ -2,8 +2,8 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchBlockArm,
-        MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, MatchArm,
+        MatchBlockArm, MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
     },
     semantic::{CheckedProgram, FunctionSig, MethodKey, MethodSig, ParamSig, StructSig, Type},
     token::Span,
@@ -78,7 +78,9 @@ pub enum IrStmtKind {
         else_body: Vec<IrStmt>,
     },
     For {
+        init: Option<Box<IrForInit>>,
         condition: IrExpr,
+        post: Option<Box<IrForPost>>,
         body: Vec<IrStmt>,
     },
     Break,
@@ -90,6 +92,21 @@ pub enum IrStmtKind {
     Expr {
         expr: IrExpr,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IrForInit {
+    Let {
+        mutable: bool,
+        name: String,
+        ty: Type,
+        expr: IrExpr,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IrForPost {
+    Assign { target: IrExpr, expr: IrExpr },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -362,8 +379,19 @@ impl<'a> Lowerer<'a> {
                     else_body,
                 }
             }
-            StmtKind::For { condition, body } => {
-                let condition = self.lower_expr(condition, locals)?;
+            StmtKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                let mut loop_locals = locals.clone();
+                let init = init
+                    .as_ref()
+                    .map(|init| self.lower_for_init(init, &mut loop_locals))
+                    .map(|result| result.map(Box::new))
+                    .transpose()?;
+                let condition = self.lower_expr(condition, &loop_locals)?;
                 if condition.ty != Type::Bool {
                     return Err(IrError::new(
                         "semantic analysis accepted a non-bool for condition",
@@ -371,10 +399,20 @@ impl<'a> Lowerer<'a> {
                     ));
                 }
 
-                let mut body_locals = locals.clone();
+                let mut body_locals = loop_locals.clone();
                 let body = self.lower_block_statements(body, &mut body_locals, return_type)?;
+                let post = post
+                    .as_ref()
+                    .map(|post| self.lower_for_post(post, &mut loop_locals))
+                    .map(|result| result.map(Box::new))
+                    .transpose()?;
 
-                IrStmtKind::For { condition, body }
+                IrStmtKind::For {
+                    init,
+                    condition,
+                    post,
+                    body,
+                }
             }
             StmtKind::Break => IrStmtKind::Break,
             StmtKind::Continue => IrStmtKind::Continue,
@@ -394,6 +432,53 @@ impl<'a> Lowerer<'a> {
             kind,
             span: stmt.span,
         })
+    }
+
+    fn lower_for_init(
+        &self,
+        init: &ForInit,
+        locals: &mut HashMap<String, Type>,
+    ) -> Result<IrForInit, IrError> {
+        match init {
+            ForInit::Let {
+                mutable,
+                name,
+                expr,
+            } => {
+                let expr = self.lower_expr(expr, locals)?;
+                let ty = expr.ty.clone();
+                locals.insert(name.clone(), ty.clone());
+                Ok(IrForInit::Let {
+                    mutable: *mutable,
+                    name: name.clone(),
+                    ty,
+                    expr,
+                })
+            }
+        }
+    }
+
+    fn lower_for_post(
+        &self,
+        post: &ForPost,
+        locals: &mut HashMap<String, Type>,
+    ) -> Result<IrForPost, IrError> {
+        match post {
+            ForPost::Assign { target, expr } => {
+                let target = self.lower_expr(target, locals)?;
+                match &target.kind {
+                    IrExprKind::Var(_) | IrExprKind::FieldAccess { .. } => {}
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted invalid for post target",
+                            target.span,
+                        ));
+                    }
+                }
+                let expr = self.lower_expr_with_expected(expr, locals, Some(&target.ty))?;
+                Ok(IrForPost::Assign { target, expr })
+            }
+        }
     }
 
     fn lower_block_statements(
@@ -1482,10 +1567,56 @@ func main() {
         let checked = check(&program).unwrap();
         let ir = lower(&checked).unwrap();
 
-        let IrStmtKind::For { condition, body } = &ir.functions[0].body[1].kind else {
+        let IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &ir.functions[0].body[1].kind
+        else {
             panic!("expected for statement");
         };
+        assert!(init.is_none());
+        assert!(post.is_none());
         assert_eq!(condition.ty, Type::Bool);
+        assert_eq!(body.len(), 1);
+    }
+
+    #[test]
+    fn ir_lowers_for_clause_statement() {
+        let program = parse(
+            r#"
+func main() {
+    for mut i := 0; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &ir.functions[0].body[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(matches!(
+            init.as_deref(),
+            Some(IrForInit::Let {
+                mutable: true,
+                name,
+                ty: Type::Int,
+                ..
+            }) if name == "i"
+        ));
+        assert_eq!(condition.ty, Type::Bool);
+        assert!(matches!(post.as_deref(), Some(IrForPost::Assign { .. })));
         assert_eq!(body.len(), 1);
     }
 
