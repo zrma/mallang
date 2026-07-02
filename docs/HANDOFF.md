@@ -101,8 +101,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. slice values, append/growth, mutable range value의 ownership/native ABI 결정
-2. borrowed indexing expression의 ownership boundary 결정
-3. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
-4. full C backend 범위를 native subset별로 쪼개기
-5. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정
+1. owned heap resource cleanup/drop lowering을 IR/backend에 추가
+2. owned move-only slice `[]T` Type/IR/backend shell 추가
+3. `[]T{...}`, `len(slice)`, Copy-only `slice[i]` value access 구현
+4. consuming built-in `append(values, item) -> []T` 구현
+5. borrowed indexing expression의 ownership boundary 결정
+6. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+7. full C backend 범위를 native subset별로 쪼개기
+8. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정

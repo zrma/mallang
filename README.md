@@ -48,7 +48,9 @@ This repository is the Mallang language PoC workspace.
 - Fixed-size arrays with array-only range loops, element borrow arguments, and
   `con`/`mut` method receivers.
 - Slice type syntax `[]T` is parsed but reserved by `mlg check` until slice
-  ownership and native ABI are defined.
+  ownership and native ABI are implemented. The accepted direction is owned,
+  move-only growable slices with compiler-managed cleanup rather than Go-style
+  aliasing slice headers.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed

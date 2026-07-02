@@ -286,3 +286,10 @@
 - [x] return type, struct field, generic payload, fixed-array element 안의 `[]T`
       reserved diagnostic 회귀 테스트 추가
 - [x] `mlg check` failure smoke로 nested slice reserved boundary 고정
+
+## P33: Slice Ownership And Append Decision
+
+- [x] `[]T`를 Go-style aliasing header가 아닌 owned move-only growable buffer로 결정
+- [x] slice native ABI를 `{ data, len, cap }` 형태의 compiler-owned heap resource로 결정
+- [x] `append(values, item)`을 첫 slice 인자를 소비하고 새 owned slice를 반환하는 built-in으로 결정
+- [x] slice implementation 선행 조건을 cleanup/drop lowering으로 고정

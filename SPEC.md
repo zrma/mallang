@@ -163,10 +163,12 @@ Array rules:
 - Fixed-size array element method receivers are supported for `con` and `mut`
   receiver modes.
 - Slice type syntax `[]T` is parsed but rejected by semantic analysis until
-  slice ownership and native ABI are defined. `append` is reserved as a future
-  built-in value name, but slice values, append/growth,
-  mutable range values, borrowed indexing as a first-class expression, and
-  non-copy element extraction are reserved for later slices.
+  compiler-managed cleanup for owned heap resources is implemented. The accepted
+  v0 direction is owned, move-only slices rather than Go-style aliasing slice
+  headers. `append` is reserved as a future built-in value name, but slice
+  values, append/growth, mutable range values, borrowed indexing as a
+  first-class expression, and non-copy element extraction are reserved for later
+  slices.
 
 Fixed-size array indexing and length are intentionally smaller than full slices.
 
@@ -215,9 +217,29 @@ Indexing and length rules:
   conditions and indexed post expressions.
 - In a three-clause `for`, `continue` skips the remaining body and then executes
   the post assignment before the next condition check.
-- Slice type syntax `[]T` is reserved at semantic checking because owned slices,
-  borrowed views, append/growth, and mutation require a larger ownership
-  decision.
+- Slice type syntax `[]T` is reserved at semantic checking because enabling
+  owned slices requires compiler-managed cleanup/drop lowering first.
+
+Future v0 slice rules:
+
+- `[]T` will denote an owned, move-only growable buffer, not a borrowed view.
+- The native ABI will use an internal header equivalent to `{ data, len, cap }`
+  with compiler-owned allocation and cleanup. Empty slices may use a null data
+  pointer with zero length and capacity.
+- Copying a slice header is not a language operation. Assigning or passing an
+  owned slice moves it, following the existing non-copy value rules.
+- `append(values, item)` will be a built-in that consumes the owned slice and
+  the owned item, then returns a new owned slice. Updating a local therefore
+  uses normal mutable reassignment, such as `values = append(values, item)`.
+- `len(values)` will extend from fixed-size arrays to owned slices without
+  moving `values`.
+- `values[i]` as a value will remain Copy-only. `con values[i]` and
+  `mut values[i]` can extend the existing element-borrow surface after slice
+  bounds checks and alias checks are defined for slice roots.
+- Range over slices starts with index-only and Copy value iteration. Mutable
+  range values and by-reference iteration remain deferred.
+- Borrowed slice views, first-class references, and sharing a backing buffer
+  across multiple owned slice values are deferred beyond this v0 direction.
 
 `unit` is the implicit return type of functions that do not return a value.
 
