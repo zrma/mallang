@@ -344,3 +344,11 @@
 - [x] statement-form `match` scrutinee/arm move도 같은 merge-drop 규칙 적용
 - [x] branch-local `return` 전에 outer cleanup root drop 삽입
 - [x] loop cleanup insertion은 다음 단계로 유지
+
+## P41: Loop Body-Local Cleanup Drop Insertion
+
+- [x] `for` body-local cleanup roots를 loop body tail에서 drop
+- [x] `range` body-local cleanup roots를 loop body tail에서 drop
+- [x] `break`/`continue` 전에 loop body-local cleanup roots drop
+- [x] loop body 안의 `return` 전에 outer cleanup roots와 body-local roots drop
+- [x] outer cleanup root loop moves와 for-init cleanup은 다음 단계로 유지

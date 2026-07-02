@@ -1909,7 +1909,14 @@ fn insert_straight_line_cleanup_drops(
         })
         .collect::<Vec<_>>();
 
-    insert_cleanup_drops(body, active, fallback_span, &HashSet::new()).body
+    insert_cleanup_drops(
+        body,
+        active,
+        fallback_span,
+        &HashSet::new(),
+        &HashSet::new(),
+    )
+    .body
 }
 
 fn insert_cleanup_drops(
@@ -1917,18 +1924,31 @@ fn insert_cleanup_drops(
     initial_active: Vec<CleanupBinding>,
     fallback_span: Span,
     tail_excluded_roots: &HashSet<String>,
+    loop_exit_excluded_roots: &HashSet<String>,
 ) -> CleanupInsertion {
     let mut output = Vec::new();
     let mut active = initial_active;
     let mut moved_in_body = HashSet::new();
 
-    for stmt in body {
-        let (stmt, branch_moved_roots) = insert_branch_cleanup_drops(stmt, &active);
+    let mut statements = body.into_iter();
+    while let Some(stmt) = statements.next() {
+        let (stmt, branch_moved_roots) =
+            insert_branch_cleanup_drops(stmt, &active, loop_exit_excluded_roots);
         if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = cleanup_moved_roots_in_expr(expr);
             moved_in_body.extend(returned_roots.iter().cloned());
             push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
             output.push(stmt);
+            return CleanupInsertion {
+                body: output,
+                moved_roots: moved_in_body,
+                continues: false,
+            };
+        }
+        if matches!(stmt.kind, IrStmtKind::Break | IrStmtKind::Continue) {
+            push_cleanup_drops(&mut output, &active, loop_exit_excluded_roots, stmt.span);
+            output.push(stmt);
+            output.extend(statements);
             return CleanupInsertion {
                 body: output,
                 moved_roots: moved_in_body,
@@ -1964,6 +1984,7 @@ fn insert_cleanup_drops(
 fn insert_branch_cleanup_drops(
     mut stmt: IrStmt,
     active: &[CleanupBinding],
+    loop_exit_excluded_roots: &HashSet<String>,
 ) -> (IrStmt, HashSet<String>) {
     let mut moved_roots = HashSet::new();
     let span = stmt.span;
@@ -1978,10 +1999,20 @@ fn insert_branch_cleanup_drops(
             let branch_active = cleanup_bindings_after_moved_roots(active, &condition_moved_roots);
             let tail_excluded_roots = cleanup_binding_names(&branch_active);
 
-            let mut then_insertion =
-                insert_cleanup_drops(then_body, branch_active.clone(), span, &tail_excluded_roots);
-            let mut else_insertion =
-                insert_cleanup_drops(else_body, branch_active.clone(), span, &tail_excluded_roots);
+            let mut then_insertion = insert_cleanup_drops(
+                then_body,
+                branch_active.clone(),
+                span,
+                &tail_excluded_roots,
+                loop_exit_excluded_roots,
+            );
+            let mut else_insertion = insert_cleanup_drops(
+                else_body,
+                branch_active.clone(),
+                span,
+                &tail_excluded_roots,
+                loop_exit_excluded_roots,
+            );
             let branch_moved_roots =
                 merged_cleanup_roots(&branch_active, [&then_insertion, &else_insertion]);
 
@@ -2011,6 +2042,54 @@ fn insert_branch_cleanup_drops(
                 else_body: else_insertion.body,
             }
         }
+        IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } => {
+            let loop_active = active.to_vec();
+            let loop_excluded_roots = cleanup_binding_names(&loop_active);
+            let insertion = insert_cleanup_drops(
+                body,
+                loop_active,
+                span,
+                &loop_excluded_roots,
+                &loop_excluded_roots,
+            );
+
+            IrStmtKind::For {
+                init,
+                condition,
+                post,
+                body: insertion.body,
+            }
+        }
+        IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            element_ty,
+            body,
+        } => {
+            let loop_active = active.to_vec();
+            let loop_excluded_roots = cleanup_binding_names(&loop_active);
+            let insertion = insert_cleanup_drops(
+                body,
+                loop_active,
+                span,
+                &loop_excluded_roots,
+                &loop_excluded_roots,
+            );
+
+            IrStmtKind::RangeFor {
+                index_name,
+                value_name,
+                source,
+                element_ty,
+                body: insertion.body,
+            }
+        }
         IrStmtKind::Match { scrutinee, arms } => {
             let scrutinee_moved_roots = cleanup_moved_roots_in_expr(&scrutinee);
             let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee_moved_roots);
@@ -2023,6 +2102,7 @@ fn insert_branch_cleanup_drops(
                         arm_active.clone(),
                         arm.span,
                         &tail_excluded_roots,
+                        loop_exit_excluded_roots,
                     );
                     (arm.pattern, insertion, arm.span)
                 })
@@ -2774,6 +2854,229 @@ func add(a int, b int) int {
         assert!(matches!(then_body[0].kind, IrStmtKind::Return { .. }));
         assert_eq!(else_body.len(), 1);
         assert_drop_of(&else_body[0], "values");
+    }
+
+    #[test]
+    fn inserts_loop_body_local_cleanup_drop_at_tail() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: None,
+                condition: None,
+                post: None,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Let {
+                        mutable: false,
+                        name: "values".to_string(),
+                        ty: slice_ty.clone(),
+                        expr: test_var("seed", slice_ty),
+                    },
+                    span: test_span(),
+                }],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(body.len(), 2);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn inserts_loop_body_local_cleanup_drop_before_continue() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: None,
+                condition: None,
+                post: None,
+                body: vec![
+                    IrStmt {
+                        kind: IrStmtKind::Let {
+                            mutable: false,
+                            name: "values".to_string(),
+                            ty: slice_ty.clone(),
+                            expr: test_var("seed", slice_ty),
+                        },
+                        span: test_span(),
+                    },
+                    IrStmt {
+                        kind: IrStmtKind::Continue,
+                        span: test_span(),
+                    },
+                ],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(body.len(), 3);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
+        assert!(matches!(body[2].kind, IrStmtKind::Continue));
+    }
+
+    #[test]
+    fn inserts_loop_body_local_cleanup_drop_before_break() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: None,
+                condition: None,
+                post: None,
+                body: vec![
+                    IrStmt {
+                        kind: IrStmtKind::Let {
+                            mutable: false,
+                            name: "values".to_string(),
+                            ty: slice_ty.clone(),
+                            expr: test_var("seed", slice_ty),
+                        },
+                        span: test_span(),
+                    },
+                    IrStmt {
+                        kind: IrStmtKind::Break,
+                        span: test_span(),
+                    },
+                ],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::For { body, .. } = &body[0].kind else {
+            panic!("expected for statement");
+        };
+        assert_eq!(body.len(), 3);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
+        assert!(matches!(body[2].kind, IrStmtKind::Break));
+    }
+
+    #[test]
+    fn inserts_outer_cleanup_drop_before_return_inside_loop() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty,
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: None,
+                condition: None,
+                post: None,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Return {
+                        expr: IrExpr {
+                            kind: IrExprKind::Int(1),
+                            ty: Type::Int,
+                            span: test_span(),
+                        },
+                    },
+                    span: test_span(),
+                }],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        let IrStmtKind::For {
+            body: loop_body, ..
+        } = &body[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert_eq!(loop_body.len(), 2);
+        assert_drop_of(&loop_body[0], "values");
+        assert!(matches!(loop_body[1].kind, IrStmtKind::Return { .. }));
+        assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn does_not_drop_outer_cleanup_root_before_loop_continue() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty,
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::For {
+                init: None,
+                condition: None,
+                post: None,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Continue,
+                    span: test_span(),
+                }],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        let IrStmtKind::For {
+            body: loop_body, ..
+        } = &body[0].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert_eq!(loop_body.len(), 1);
+        assert!(matches!(loop_body[0].kind, IrStmtKind::Continue));
+        assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn inserts_range_loop_body_local_cleanup_drop_at_tail() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::RangeFor {
+                index_name: "i".to_string(),
+                value_name: "_".to_string(),
+                source: IrExpr {
+                    kind: IrExprKind::Var("items".to_string()),
+                    ty: Type::Array {
+                        len: 2,
+                        element: Box::new(Type::Int),
+                    },
+                    span: test_span(),
+                },
+                element_ty: Type::Int,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Let {
+                        mutable: false,
+                        name: "values".to_string(),
+                        ty: slice_ty.clone(),
+                        expr: test_var("seed", slice_ty),
+                    },
+                    span: test_span(),
+                }],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        let IrStmtKind::RangeFor { body, .. } = &body[0].kind else {
+            panic!("expected range loop");
+        };
+        assert_eq!(body.len(), 2);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
     }
 
     #[test]
