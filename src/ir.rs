@@ -551,6 +551,12 @@ impl<'a> Lowerer<'a> {
             ExprKind::StructLiteral { type_name, fields } => {
                 self.lower_struct_literal(type_name, fields, locals, expected, expr.span)?
             }
+            ExprKind::ArrayLiteral { .. } => {
+                return Err(IrError::new(
+                    "semantic analysis accepted fixed-size array literal before array lowering",
+                    expr.span,
+                ));
+            }
             ExprKind::FieldAccess { base, field } => {
                 self.lower_field_access(base, field, locals, expr.span)?
             }

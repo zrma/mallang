@@ -656,6 +656,10 @@ impl<'a> Checker<'a> {
             ExprKind::StructLiteral { type_name, fields } => {
                 self.check_struct_literal(type_name, fields, locals, expected, expr.span)
             }
+            ExprKind::ArrayLiteral { .. } => Err(SemanticError::new(
+                "fixed-size array literals are parsed but not type-checked yet",
+                expr.span,
+            )),
             ExprKind::FieldAccess { base, field } => {
                 self.check_field_access(base, field, locals, value_use, expr.span)
             }
@@ -3291,6 +3295,20 @@ func main() {}
         assert!(error
             .message
             .contains("fixed-size array types are parsed but not type-checked yet"));
+    }
+
+    #[test]
+    fn rejects_fixed_size_array_literals_until_type_checking_slice() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("fixed-size array literals are parsed but not type-checked yet"));
     }
 
     #[test]

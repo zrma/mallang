@@ -147,6 +147,10 @@ pub enum ExprKind {
         type_name: String,
         fields: Vec<FieldInit>,
     },
+    ArrayLiteral {
+        ty: Box<TypeRef>,
+        elements: Vec<Expr>,
+    },
     FieldAccess {
         base: Box<Expr>,
         field: String,

@@ -584,6 +584,10 @@ impl Parser {
     }
 
     fn parse_prefix(&mut self) -> Result<Expr, ParseError> {
+        if self.at(TokenTag::LeftBracket) {
+            return self.parse_array_literal();
+        }
+
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Int(value) => {
@@ -652,6 +656,36 @@ impl Parser {
             }
             _ => Err(ParseError::new("expected expression", token.span)),
         }
+    }
+
+    fn parse_array_literal(&mut self) -> Result<Expr, ParseError> {
+        let ty = self.parse_type_ref()?;
+        let start = ty.span;
+        self.expect(
+            TokenTag::LeftBrace,
+            "expected `{` before array literal elements",
+        )?;
+        let mut elements = Vec::new();
+
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            elements.push(self.parse_expression()?);
+            if self.eat(TokenTag::Comma).is_none() {
+                break;
+            }
+        }
+
+        let end = self.expect(
+            TokenTag::RightBrace,
+            "expected `}` after array literal elements",
+        )?;
+
+        Ok(Expr {
+            kind: ExprKind::ArrayLiteral {
+                ty: Box::new(ty),
+                elements,
+            },
+            span: start.join(end),
+        })
     }
 
     fn finish_if_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
@@ -1636,6 +1670,41 @@ func wrap(values Option[[2]string]) {
         assert_eq!(array_ty.name, "Array");
         assert_eq!(array_ty.array_len, Some(2));
         assert_eq!(array_ty.args[0].name, "string");
+    }
+
+    #[test]
+    fn parses_fixed_size_array_literals() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    empty := [0]string{}
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::ArrayLiteral { ty, elements } = &expr.kind else {
+            panic!("expected array literal");
+        };
+        assert_eq!(ty.name, "Array");
+        assert_eq!(ty.array_len, Some(3));
+        assert_eq!(ty.args[0].name, "int");
+        assert_eq!(elements.len(), 3);
+        assert!(matches!(elements[0].kind, ExprKind::Int(1)));
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[1].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::ArrayLiteral { ty, elements } = &expr.kind else {
+            panic!("expected array literal");
+        };
+        assert_eq!(ty.array_len, Some(0));
+        assert_eq!(ty.args[0].name, "string");
+        assert!(elements.is_empty());
     }
 
     #[test]
