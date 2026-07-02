@@ -181,7 +181,50 @@ func readConfig(path string) Result[Config, Error] {
 }
 ```
 
-`Option` and `Result` are planned as built-in algebraic data types.
+`Option` and `Result` are built-in algebraic data types in the v0 language
+model. The implementation may specialize them internally, but user code treats
+them as ordinary value types.
+
+Type syntax:
+
+```text
+Option[T]
+Result[T, E]
+```
+
+Constructors:
+
+```go
+Some(value)
+None
+Ok(value)
+Err(error)
+```
+
+Rules:
+
+- `Some(value)` has type `Option[T]` when `value` has type `T`.
+- `Ok(value)` has type `Result[T, E]` when `value` has type `T` and `E` is
+  known from context.
+- `Err(error)` has type `Result[T, E]` when `error` has type `E` and `T` is
+  known from context.
+- `None` requires an expected type from return type, binding annotation, or
+  surrounding expression context.
+- `Option[T]` is `Copy` only when `T` is `Copy`; otherwise it is move-only.
+- `Result[T, E]` is `Copy` only when both `T` and `E` are `Copy`; otherwise it
+  is move-only.
+- Matching a move-only payload moves it into the matched binding unless a future
+  borrowed pattern form is introduced.
+- v0 does not include `unwrap`, `?`, nested patterns, or user-defined enum
+  declarations.
+
+Implementation staging:
+
+1. Parse generic type references (`Option[T]`, `Result[T, E]`).
+2. Add type-directed constructors for `Some`, `None`, `Ok`, and `Err`.
+3. Add exhaustive `match` checking for `Option` and `Result`.
+4. Lower ADTs into typed IR as tagged values.
+5. Specialize C backend layouts per concrete instantiation.
 
 ## Match
 
@@ -201,6 +244,8 @@ Rules:
 - v0 `match` must be exhaustive for `Option` and `Result`.
 - Pattern guards are deferred.
 - Nested patterns are deferred.
+- Matching `Option[T]` requires exactly `Some(name)` and `None` arms.
+- Matching `Result[T, E]` requires exactly `Ok(name)` and `Err(name)` arms.
 
 ## Ownership Rules
 

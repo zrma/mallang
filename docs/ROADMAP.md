@@ -41,3 +41,11 @@
 - [x] first native subset용 C codegen 추가
 - [x] `mlg build` subcommand 추가
 - [x] `clang` 기반 native binary smoke 추가
+
+## P5: Built-in ADTs
+
+- [x] `Option[T]` / `Result[T, E]` surface 설계
+- [ ] generic type reference parser 추가
+- [ ] `Some` / `None` / `Ok` / `Err` constructor type checking 추가
+- [ ] `Option` / `Result` exhaustive `match` 추가
+- [ ] tagged typed IR와 C backend layout 추가

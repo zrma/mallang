@@ -48,7 +48,10 @@
 ## Later
 
 - Struct literals and methods.
-- `Option[T]`, `Result[T, E]`, and `match`.
+- [x] `Option[T]`, `Result[T, E]`, and `match` surface design.
+- [ ] Parse generic type references for `Option[T]` and `Result[T, E]`.
+- [ ] Type-check `Some`, `None`, `Ok`, and `Err` constructors.
+- [ ] Add exhaustive `match` for built-in ADTs.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

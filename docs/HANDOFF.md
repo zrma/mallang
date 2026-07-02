@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, `if` expression, typed IR, first native subset C backend, `mlg check`, `mlg build`
-- 아직 없음: statement-form `if`, statement-spanning borrow lifetimes, full C backend, `match`
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, same-call borrow conflict checks, `if` expression, typed IR, first native subset C backend, `mlg check`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: generic type refs, ADT constructors, statement-form `if`, statement-spanning borrow lifetimes, full C backend, `match`
 
 ## 빠른 시작
 
@@ -27,8 +27,8 @@ target/mallang/first
 
 ## 다음 구현 후보
 
-1. `Option[T]` / `Result[T, E]` surface 설계
-2. statement-form `if`와 block expression 범위 결정
-3. backend를 typed IR coverage 기준으로 확장
-4. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+1. generic type reference parser 추가: `Option[T]`, `Result[T, E]`
+2. `Some` / `None` / `Ok` / `Err` constructor type checking 추가
+3. statement-form `if`와 block expression 범위 결정
+4. backend를 typed IR coverage 기준으로 확장
 5. `mlg ir` debug subcommand 도입 여부 결정
