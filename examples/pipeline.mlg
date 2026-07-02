@@ -1,0 +1,16 @@
+func main() {
+    7 |> double() |> add(1) |> print()
+    "mallang" |> echo() |> print()
+}
+
+func double(value int) int {
+    return value * 2
+}
+
+func add(value int, amount int) int {
+    return value + amount
+}
+
+func echo(value string) string {
+    return value
+}

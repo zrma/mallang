@@ -390,6 +390,15 @@ impl Parser {
                 continue;
             }
 
+            if self.at(TokenTag::PipeGreater) {
+                const PIPELINE_PRECEDENCE: u8 = 0;
+                if PIPELINE_PRECEDENCE < min_precedence {
+                    break;
+                }
+                left = self.finish_pipeline(left)?;
+                continue;
+            }
+
             let Some((op, precedence)) = self.peek_binary_op() else {
                 break;
             };
@@ -683,6 +692,38 @@ impl Parser {
         })
     }
 
+    fn finish_pipeline(&mut self, input: Expr) -> Result<Expr, ParseError> {
+        self.expect(
+            TokenTag::PipeGreater,
+            "expected `|>` in pipeline expression",
+        )?;
+        let input_span = input.span;
+        let callee = self.parse_prefix()?;
+        if !self.at(TokenTag::LeftParen) {
+            return Err(ParseError::new(
+                "pipeline target must be a call like `value |> f(args...)`",
+                callee.span,
+            ));
+        }
+
+        let mut call = self.finish_call(callee)?;
+        let span = input_span.join(call.span);
+        let ExprKind::Call { args, .. } = &mut call.kind else {
+            unreachable!("finish_call always returns a call expression");
+        };
+        args.insert(
+            0,
+            Arg {
+                mode: ArgMode::Owned,
+                span: input_span,
+                expr: input,
+            },
+        );
+        call.span = span;
+
+        Ok(call)
+    }
+
     fn finish_field_access(&mut self, base: Expr) -> Result<Expr, ParseError> {
         self.expect(TokenTag::Dot, "expected `.` in field access")?;
         let (field, end) = self.expect_ident("expected field name after `.`")?;
@@ -830,6 +871,7 @@ enum TokenTag {
     Semicolon,
     ColonEqual,
     Equal,
+    PipeGreater,
     Eof,
 }
 
@@ -850,6 +892,7 @@ impl TokenTag {
                 | (Self::Semicolon, TokenKind::Semicolon)
                 | (Self::ColonEqual, TokenKind::ColonEqual)
                 | (Self::Equal, TokenKind::Equal)
+                | (Self::PipeGreater, TokenKind::PipeGreater)
                 | (Self::Eof, TokenKind::Eof)
         )
     }
@@ -937,6 +980,43 @@ func add(a int, b int) int {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_pipeline_expression_as_call_sugar() {
+        let program = parse("func main() { x := 1 + 2 |> double() |> add(3) }").unwrap();
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Call { callee, args } = &expr.kind else {
+            panic!("expected outer call");
+        };
+        assert!(matches!(&callee.kind, ExprKind::Var(name) if name == "add"));
+        assert_eq!(args.len(), 2);
+        assert!(matches!(args[1].expr.kind, ExprKind::Int(3)));
+
+        let ExprKind::Call {
+            callee: inner_callee,
+            args: inner_args,
+        } = &args[0].expr.kind
+        else {
+            panic!("expected piped inner call");
+        };
+        assert!(matches!(&inner_callee.kind, ExprKind::Var(name) if name == "double"));
+        assert_eq!(inner_args.len(), 1);
+        assert!(matches!(
+            inner_args[0].expr.kind,
+            ExprKind::Binary {
+                op: BinaryOp::Add,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_pipeline_target_without_call() {
+        let error = parse("func main() { x := 1 |> double }").unwrap_err();
+        assert!(error.message.contains("pipeline target must be a call"));
     }
 
     #[test]

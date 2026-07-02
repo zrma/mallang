@@ -17,6 +17,7 @@
 - [x] Produce an AST with precise source spans.
 - [x] Parse the first target program.
 - [x] Parse `else if` as nested `if` sugar.
+- [x] Parse `|>` pipeline call sugar.
 
 ## Milestone 2: Static Semantics
 
@@ -55,6 +56,7 @@
 - [x] Generate C temps for `if` expression branches that need prelude statements.
 - [x] Generate C temps for `match` expression arms that need prelude statements.
 - [x] Lower `bool` logical operators to native short-circuit code.
+- [x] Compile `|>` pipeline call sugar through the existing call backend.
 
 ## Later
 

@@ -2546,6 +2546,25 @@ func check(left bool, right bool, score int) bool {
     }
 
     #[test]
+    fn allows_pipeline_expression_call_sugar() {
+        check_ok(
+            r#"
+func main() {
+    print(7 |> double() |> add(1))
+}
+
+func double(value int) int {
+    return value * 2
+}
+
+func add(value int, amount int) int {
+    return value + amount
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_logical_operators_on_non_bool_values() {
         let error = check_error("func main() { print(1 && 2) }");
         assert!(error

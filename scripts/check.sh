@@ -50,6 +50,13 @@ if [[ "$logical_operators_output" != $'false\n0\ntrue\n0\ntrue\n1\ntrue\n2\ntrue
   echo "logical operators native build smoke failed: expected short-circuit bool output, got '$logical_operators_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/pipeline.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline >/dev/null
+pipeline_output="$(target/mallang/pipeline)"
+if [[ "$pipeline_output" != $'15\nmallang' ]]; then
+  echo "pipeline native build smoke failed: expected 15 and mallang, got '$pipeline_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/if-statement.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement >/dev/null
 if_statement_output="$(target/mallang/if-statement)"

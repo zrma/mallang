@@ -279,6 +279,19 @@ Rules:
 - Expression branches must produce a value.
 - `else if` is sugar for a nested `if` expression in the else branch.
 
+Pipeline expressions use a functional value-first style.
+
+```go
+7 |> double() |> add(1) |> print()
+```
+
+Rules:
+
+- `value |> f(args...)` is call sugar for `f(value, args...)`.
+- The pipeline target must currently be a direct call.
+- The piped value is passed as an owned first argument in v0. Borrow-mode
+  pipeline syntax is deferred.
+
 ## Option and Result
 
 The language has no `nil`. Optional values use `Option[T]`.

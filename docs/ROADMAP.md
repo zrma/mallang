@@ -15,6 +15,7 @@
 - [x] block/statement parser 추가
 - [x] Pratt expression parser 추가
 - [x] `else if` sugar parser 추가
+- [x] `|>` pipeline call sugar parser/native smoke 추가
 - [x] `examples/first.mlg`를 AST로 파싱하는 test 추가
 
 ## P2: Static Semantics
@@ -51,6 +52,7 @@
 - [x] prelude가 필요한 `if` expression branch용 C temp lowering 추가
 - [x] prelude가 필요한 `match` expression arm용 C temp lowering 추가
 - [x] `&&` / `||` short-circuit native smoke 추가
+- [x] `|>` pipeline call sugar native smoke 추가
 
 ## P5: Built-in ADTs
 
