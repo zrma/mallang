@@ -300,3 +300,10 @@
 - [x] slice type을 non-copy cleanup resource로 분류
 - [x] C backend에서 internal `{ data, len, cap }` slice typedef emission 추가
 - [x] user-facing `[]T` semantic reserved diagnostic 유지
+
+## P35: Cleanup Drop Helper Shell
+
+- [x] cleanup type별 C backend `mlg_drop_*` helper emission 추가
+- [x] internal slice drop helper에서 owned buffer free와 header reset 수행
+- [x] `Option`/`Result`/array wrapper cleanup helper가 active payload/element drop helper를 호출
+- [x] actual scope exit, early return, reassignment drop insertion은 다음 단계로 유지

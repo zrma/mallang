@@ -89,6 +89,14 @@ impl<'a> CGenerator<'a> {
             output.push('\n');
         }
 
+        let mut emitted_drop_helpers = Vec::new();
+        for ty in &defined_types {
+            self.emit_drop_helper(ty, &mut emitted_drop_helpers, &mut Vec::new(), &mut output)?;
+        }
+        if !emitted_drop_helpers.is_empty() {
+            output.push('\n');
+        }
+
         for function in &self.program.functions {
             output.push_str(&self.prototype(function)?);
             output.push_str(";\n");
@@ -1653,6 +1661,139 @@ impl<'a> CGenerator<'a> {
             ty.c_name()
         ))
     }
+
+    fn emit_drop_helper(
+        &self,
+        ty: &Type,
+        emitted: &mut Vec<Type>,
+        visiting: &mut Vec<Type>,
+        output: &mut String,
+    ) -> Result<(), CompileError> {
+        if emitted.contains(ty) || !ty.needs_cleanup() {
+            return Ok(());
+        }
+        if visiting.contains(ty) {
+            return Err(CompileError::new(format!(
+                "recursive cleanup helper involving `{}` is not supported in v0",
+                ty.source_name()
+            )));
+        }
+
+        visiting.push(ty.clone());
+        match ty {
+            Type::Option(inner) | Type::Array { element: inner, .. } | Type::Slice(inner) => {
+                self.emit_drop_helper(inner, emitted, visiting, output)?;
+            }
+            Type::Result(ok, err) => {
+                self.emit_drop_helper(ok, emitted, visiting, output)?;
+                self.emit_drop_helper(err, emitted, visiting, output)?;
+            }
+            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => {}
+        }
+        visiting.pop();
+
+        output.push_str(&self.drop_helper_for_type(ty)?);
+        output.push('\n');
+        emitted.push(ty.clone());
+        Ok(())
+    }
+
+    fn drop_helper_for_type(&self, ty: &Type) -> Result<String, CompileError> {
+        let mut output = format!(
+            "static void {}({} *mlg_value) {{\n",
+            drop_fn_name(ty),
+            ty.c_name()
+        );
+        let body = self.drop_helper_body(ty)?;
+        if body.is_empty() {
+            push_indented_lines(&mut output, "(void)mlg_value;", 1);
+        } else {
+            push_indented_lines(&mut output, &body, 1);
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn drop_helper_body(&self, ty: &Type) -> Result<String, CompileError> {
+        match ty {
+            Type::Slice(element) => {
+                let mut output = String::new();
+                if element.needs_cleanup() {
+                    output.push_str(&format!(
+                        "for (int64_t mlg_i = 0; mlg_i < mlg_value->{}; mlg_i = mlg_i + 1) {{\n",
+                        c_field("len")
+                    ));
+                    push_indented_lines(
+                        &mut output,
+                        &format!(
+                            "{}(&(mlg_value->{}[mlg_i]));",
+                            drop_fn_name(element),
+                            c_field("data")
+                        ),
+                        1,
+                    );
+                    output.push_str("}\n");
+                }
+                output.push_str(&format!("free(mlg_value->{});\n", c_field("data")));
+                output.push_str(&format!("mlg_value->{} = NULL;\n", c_field("data")));
+                output.push_str(&format!("mlg_value->{} = 0;\n", c_field("len")));
+                output.push_str(&format!("mlg_value->{} = 0;", c_field("cap")));
+                Ok(output)
+            }
+            Type::Option(inner) => {
+                if !inner.needs_cleanup() {
+                    return Ok(String::new());
+                }
+                Ok(format!(
+                    "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->some));\n}}",
+                    drop_fn_name(inner)
+                ))
+            }
+            Type::Result(ok, err) => {
+                let mut output = String::new();
+                if ok.needs_cleanup() {
+                    output.push_str(&format!(
+                        "if (mlg_value->tag == 0) {{\n    {}(&(mlg_value->ok));\n}}\n",
+                        drop_fn_name(ok)
+                    ));
+                }
+                if err.needs_cleanup() {
+                    if !output.is_empty() {
+                        output.push_str("else ");
+                    }
+                    output.push_str(&format!(
+                        "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->err));\n}}",
+                        drop_fn_name(err)
+                    ));
+                }
+                Ok(output)
+            }
+            Type::Array { len, element } => {
+                if *len == 0 || !element.needs_cleanup() {
+                    return Ok(String::new());
+                }
+                let mut output =
+                    format!("for (int64_t mlg_i = 0; mlg_i < {len}; mlg_i = mlg_i + 1) {{\n");
+                push_indented_lines(
+                    &mut output,
+                    &format!(
+                        "{}(&(mlg_value->{}[mlg_i]));",
+                        drop_fn_name(element),
+                        c_field("data")
+                    ),
+                    1,
+                );
+                output.push('}');
+                Ok(output)
+            }
+            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Struct(_) => {
+                Err(CompileError::new(format!(
+                    "IR invariant violation: drop helper requested for non-cleanup type `{}`",
+                    ty.source_name()
+                )))
+            }
+        }
+    }
 }
 
 impl Type {
@@ -1962,6 +2103,10 @@ fn mangle_type(ty: &Type) -> String {
     }
 }
 
+fn drop_fn_name(ty: &Type) -> String {
+    format!("mlg_drop_{}", mangle_type(ty))
+}
+
 trait COperator {
     fn c_operator(self) -> &'static str;
 }
@@ -2093,6 +2238,40 @@ func add(a int, b int) int {
             "typedef struct {\n    int64_t *mlg_data;\n    int64_t mlg_len;\n    int64_t mlg_cap;\n} mlg_Slice_int;"
         ));
         assert!(c.contains("void mlg_consume(mlg_Slice_int mlg_values);"));
+    }
+
+    #[test]
+    fn generates_c_drop_helpers_for_internal_cleanup_types() {
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![
+                IrFunction {
+                    name: "consume".to_string(),
+                    params: vec![crate::ir::IrParam {
+                        name: "values".to_string(),
+                        mode: ParamMode::Owned,
+                        ty: Type::Option(Box::new(Type::Slice(Box::new(Type::Int)))),
+                    }],
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+                IrFunction {
+                    name: "main".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+            ],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains(
+            "static void mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    free(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
+        ));
+        assert!(c.contains(
+            "static void mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
+        ));
     }
 
     #[test]

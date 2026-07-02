@@ -243,6 +243,8 @@ Future v0 slice rules:
 - The compiler may carry an internal slice type shell before `[]T` is accepted
   by semantic analysis, but user programs still receive the reserved-feature
   diagnostic until cleanup/drop lowering and value construction are implemented.
+- The backend may also emit internal drop helper shells for cleanup types before
+  automatic scope-exit drop insertion is implemented.
 
 `unit` is the implicit return type of functions that do not return a value.
 
