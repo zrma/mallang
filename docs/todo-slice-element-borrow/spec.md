@@ -9,6 +9,7 @@
 ## 범위
 
 - `con values[i]`와 `mut values[i]`를 direct local slice source에 허용한다.
+  P55에서 이 source 제약은 local-rooted slice place로 확장됐다.
 - Indexed slice element에서 이어지는 field path도 허용한다. 예:
   `con users[i].name`, `mut users[i].age`.
 - Mutable slice element borrow는 root slice binding이 `mut`일 때만 허용한다.

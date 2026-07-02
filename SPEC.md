@@ -218,11 +218,12 @@ Indexing and length rules:
 - Non-literal indexes are checked by generated native code before element access.
   An out-of-bounds runtime index terminates the program with a Mallang runtime
   error instead of performing unchecked C memory access.
-- In this slice, `len(slice)` and `slice[i]` require a direct local slice source.
-  Inline cleanup temporaries such as `len([]int{1})` are deferred until borrowed
-  temporary cleanup is implemented.
-- Slice element borrow arguments also require a direct local slice source in
-  v0, such as `con values[i]` or `mut values[i].field`.
+- In this slice, `len(slice)` and `slice[i]` require a local-rooted slice
+  source, such as `values`, `bag.values`, or `matrix[i]`. Inline cleanup
+  temporaries such as `len([]int{1})` are deferred until borrowed temporary
+  cleanup is implemented.
+- Slice element borrow arguments also require a local-rooted slice source in
+  v0, such as `con values[i]`, `mut bag.values[i]`, or `con users[i].tags[j]`.
 - Indexed field assignment such as `users[i].name = expr` is valid for
   local-rooted fixed-size arrays and direct local slices when the root binding is
   mutable. Slice indexed field assignment uses the same negative literal and
@@ -527,7 +528,7 @@ for i := range values {
 Range rules:
 
 - The range source must be a fixed-size array or owned slice.
-- Range over slices requires a direct local slice source in this slice.
+- Range over slices requires a local-rooted slice source in this slice.
   Inline cleanup temporaries such as `range []int{1, 2}` are deferred until
   borrowed temporary cleanup is implemented.
 - The two-variable range form introduces immutable `int` index and immutable

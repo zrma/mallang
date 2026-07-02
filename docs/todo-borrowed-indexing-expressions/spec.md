@@ -4,6 +4,7 @@
 
 - Local-rooted fixed-size array and direct local slice indexing can be used in
   read-only borrow expression contexts even when the element type is non-copy.
+  P55 expands the slice source side to local-rooted slice places.
 - `print(users[i])`, `print(users[i].name)`, and `age := users[i].age` are valid
   without moving `users[i]` out of the array/slice.
 - Owned extraction such as `user := users[i]` or `consume(users[i])` still

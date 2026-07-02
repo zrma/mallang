@@ -1183,9 +1183,9 @@ impl<'a> Checker<'a> {
         let element = match &source_ty {
             Type::Array { element, .. } => element,
             Type::Slice(element) => {
-                if !matches!(parts.source.kind, ExprKind::Var(_)) {
+                if !is_direct_borrow_expr(parts.source) {
                     return Err(SemanticError::new(
-                        "range over slices requires a direct local slice in v0",
+                        "range over slices requires a local-rooted slice source in v0",
                         parts.source.span,
                     ));
                 }
@@ -1322,9 +1322,9 @@ impl<'a> Checker<'a> {
                 Ok(*element)
             }
             Type::Slice(element) => {
-                if !matches!(base.kind, ExprKind::Var(_)) {
+                if !is_direct_borrow_expr(base) {
                     return Err(SemanticError::new(
-                        "slice indexing requires a direct local slice in v0",
+                        "slice indexing requires a local-rooted slice source in v0",
                         base.span,
                     ));
                 }
@@ -2201,9 +2201,9 @@ impl<'a> Checker<'a> {
         match &arg_ty {
             Type::Array { .. } => {}
             Type::Slice(_) => {
-                if !matches!(args[0].expr.kind, ExprKind::Var(_)) {
+                if !is_direct_borrow_expr(&args[0].expr) {
                     return Err(SemanticError::new(
-                        "`len` on slices requires a direct local slice in v0",
+                        "`len` on slices requires a local-rooted slice source in v0",
                         args[0].span,
                     ));
                 }
@@ -2601,9 +2601,9 @@ impl<'a> Checker<'a> {
                         Ok(*element)
                     }
                     Type::Slice(element) => {
-                        if !matches!(base.kind, ExprKind::Var(_)) {
+                        if !is_direct_borrow_expr(base) {
                             return Err(SemanticError::new(
-                                "slice element borrow requires a direct local slice in v0",
+                                "slice element borrow requires a local-rooted slice source in v0",
                                 base.span,
                             ));
                         }
@@ -5312,6 +5312,39 @@ func main() {
     }
 
     #[test]
+    fn allows_local_rooted_slice_field_read_sources() {
+        check_ok(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2, 3}}
+    count := len(bag.values)
+    first := bag.values[0]
+    show(con bag.values[1])
+    bump(mut bag.values[2])
+
+    mut total := 0
+    for _, value := range bag.values {
+        total = total + value
+    }
+    print(count + first + total)
+}
+
+func show(con value int) {
+    print(value)
+}
+
+func bump(mut value int) {
+    value = value + 10
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_slice_index_for_non_copy_elements() {
         let error = check_error(
             r#"
@@ -5359,7 +5392,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("`len` on slices requires a direct local slice"));
+            .contains("`len` on slices requires a local-rooted slice source"));
     }
 
     #[test]
@@ -5374,7 +5407,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("slice indexing requires a direct local slice"));
+            .contains("slice indexing requires a local-rooted slice source"));
     }
 
     #[test]
@@ -5846,7 +5879,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("range over slices requires a direct local slice"));
+            .contains("range over slices requires a local-rooted slice source"));
     }
 
     #[test]

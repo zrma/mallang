@@ -22,8 +22,9 @@
 - Borrowed slice views.
 - First-class references.
 - Statement-spanning borrow lifetimes.
-- `len(bag.values)` or direct built-in operations on slice fields; current slice
-  built-ins still require direct local slice sources.
+- Consuming `append(bag.values, item)` and direct element assignment
+  `bag.values[i] = item`; current consuming/assignment paths still require
+  direct mutable slice sources.
 
 ## C-체크리스트
 

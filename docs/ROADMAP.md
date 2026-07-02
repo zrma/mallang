@@ -419,7 +419,7 @@
 
 ## P50: Slice Element Borrow
 
-- [x] direct local slice source의 `con values[i]` / `mut values[i]` 허용
+- [x] direct local slice source의 `con values[i]` / `mut values[i]` 허용, P55에서 local-rooted source로 확장
 - [x] slice element field path borrow, 예: `con users[i].name`, 지원
 - [x] same-root indexed borrow overlap을 array와 같은 conservative rule로 검증
 - [x] native C backend에서 `mlg_len` bounds guard 뒤 hidden-reference argument lowering
@@ -461,3 +461,12 @@
 - [x] struct local/reassignment/owned parameter cleanup insertion에 기존 cleanup pipeline 재사용
 - [x] `examples/struct-slice-field.mlg` native smoke 추가
 - [x] first-class references, statement-spanning borrow lifetimes, mutable range values는 후속 work로 유지
+
+## P55: Local-Rooted Slice Field Reads
+
+- [x] slice source 제약을 direct local에서 local-rooted place로 완화
+- [x] `len(bag.values)`, Copy `bag.values[i]`, `range bag.values` 허용
+- [x] `con bag.values[i]` / `mut bag.values[i]` borrow argument 허용
+- [x] inline slice temporary reject는 유지
+- [x] `examples/slice-field-read.mlg` native smoke 추가
+- [x] consuming `append(bag.values, item)`와 `bag.values[i] = item`은 후속 work로 유지

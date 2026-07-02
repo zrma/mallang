@@ -3621,6 +3621,50 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_local_rooted_slice_field_reads() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2, 3}}
+    print(len(bag.values))
+    print(bag.values[1])
+    show(con bag.values[0])
+    bump(mut bag.values[2])
+    mut total := 0
+    for _, value := range bag.values {
+        total = total + value
+    }
+    print(total)
+}
+
+func show(con value int) {
+    print(value)
+}
+
+func bump(mut value int) {
+    value = value + 10
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("((mlg_bag).mlg_values).mlg_len"));
+        assert!(c.contains("((mlg_bag).mlg_values).mlg_data"));
+        assert!(c.contains("mlg_show(&(((mlg_bag).mlg_values"));
+        assert!(c.contains("mlg_bump"));
+        assert!(c.contains("&(((mlg_bag).mlg_values).mlg_data[mallang_index_value_"));
+        assert!(c.contains("mlg_Slice_int mallang_range_src_"));
+        assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
+    }
+
+    #[test]
     fn generates_c_for_slice_append_reassignment_and_cleanup() {
         let program = parse(
             r#"

@@ -378,6 +378,13 @@ if [[ "$struct_slice_field_output" != $'2\n1' ]]; then
   echo "struct slice field native build smoke failed: expected 2 and 1, got '$struct_slice_field_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/slice-field-read.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/slice-field-read.mlg -o target/mallang/slice-field-read >/dev/null
+slice_field_read_output="$(target/mallang/slice-field-read)"
+if [[ "$slice_field_read_output" != $'3\n2\n1\n13\n16' ]]; then
+  echo "slice field read native build smoke failed: expected 3, 2, 1, 13, 16 got '$slice_field_read_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
 range_blank_output="$(target/mallang/range-blank)"

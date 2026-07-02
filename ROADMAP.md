@@ -118,6 +118,7 @@
 - [x] Generate native C loops for conditionless `for` forms.
 - [x] Generate native C layout for fixed-size arrays.
 - [x] Generate native C loops for array-only `range`.
+- [x] Support local-rooted slice field len/index/range/borrow reads.
 - [x] Generate native C loops for one-variable array-only `range`.
 - [x] Generate native C loops for slice `range`.
 - [x] Preserve nested block shadowing in generated C `for` and `range` bodies.
@@ -166,6 +167,7 @@
 - [x] Indexed field assignment for array/slice element fields.
 - [x] Borrowed indexing expressions for read-only non-copy element inspection.
 - [x] Struct cleanup for owned slice fields.
+- [x] Local-rooted slice field len/index/range/borrow reads.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Mutable range values.

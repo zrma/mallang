@@ -1,0 +1,26 @@
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2, 3}}
+    print(len(bag.values))
+    print(bag.values[1])
+    show(con bag.values[0])
+    addTen(mut bag.values[2])
+    print(bag.values[2])
+
+    mut total := 0
+    for _, value := range bag.values {
+        total = total + value
+    }
+    print(total)
+}
+
+func show(con value int) {
+    print(value)
+}
+
+func addTen(mut value int) {
+    value = value + 10
+}
