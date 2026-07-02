@@ -128,25 +128,40 @@ print(user.name)
 print(user.age)
 ```
 
+Nested field paths are allowed when each step is a struct field.
+
+```go
+type Profile struct {
+    displayName string
+}
+
+type Account struct {
+    profile Profile
+}
+
+account := Account{profile: Profile{displayName: "kim"}}
+account.profile.displayName = "lee"
+print(account.profile.displayName)
+```
+
 Rules:
 
 - Struct values are move-only in v0.
 - Literal fields must name every declared field exactly once.
 - Field access reads a field by name.
-- Field assignment updates a direct field of a mutable local struct binding.
+- Field assignment updates a field path rooted in a mutable local struct binding.
 - Copy fields such as `int` and `bool` can be read as values.
 - Non-copy fields such as `string` can be borrowed for calls like `print`, but
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed.
-- Direct local fields can be used as borrow arguments, such as
-  `show(in user.name)` or `rename(mut user.name)`.
-- Mutable field borrow arguments require the root struct binding to be `mut`.
+- Field paths rooted in local bindings can be used as borrow arguments, such as
+  `show(in user.name)` or `rename(mut user.profile.name)`.
+- Mutable field borrow arguments require the root binding to be `mut`.
 - Borrow conflict checks are field-aware within a single call: overlapping
   whole-struct/field borrows and same-field exclusive borrows are rejected,
-  while disjoint mutable field borrows such as `mut pair.left` and
-  `mut pair.right` are allowed.
-- v0 does not include nested field assignment, nested field borrow arguments,
-  recursive by-value structs, or struct pattern matching.
+  while disjoint mutable field borrows such as `mut pair.left`,
+  `mut pair.right`, `mut user.name.first`, and `mut user.name.last` are allowed.
+- v0 does not include recursive by-value structs or struct pattern matching.
 
 Methods use Go-like receiver declarations with Mallang's existing parameter
 mode syntax.
@@ -194,7 +209,7 @@ Call sites must make borrow mode explicit.
 readName(in user)
 rename(mut user, "lee")
 readField(in user.name)
-renameField(mut user.name)
+renameField(mut user.profile.name)
 consume(user)
 ```
 
@@ -203,7 +218,7 @@ Rules:
 - Passing a non-copy value as `T` moves ownership into the callee.
 - Passing `in T` creates a read-only borrow for the duration of the call.
 - Passing `mut T` creates an exclusive mutable borrow for the duration of the call.
-- Borrow arguments may be direct local variables or direct local fields.
+- Borrow arguments may be local variables or field paths rooted in local variables.
 - Borrowed values cannot be stored in variables in v0.
 - Borrowed values cannot be returned in v0.
 

@@ -1,0 +1,25 @@
+type Name struct {
+    first string
+    last string
+}
+
+type User struct {
+    name Name
+    age int
+}
+
+func main() {
+    mut user := User{name: Name{first: "kim", last: "min"}, age: 30}
+    printName(in user.name.first)
+    user.name.last = "lee"
+    printName(in user.name.last)
+    printAge(in user.age)
+}
+
+func printName(name in string) {
+    print(name)
+}
+
+func printAge(age in int) {
+    print(age)
+}

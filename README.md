@@ -24,10 +24,10 @@ This repository is the Mallang language PoC workspace.
 - Functional features in the core language: `if` statements/expressions,
   `Option`, `Result`, and `match`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
-  field access/assignment.
+  nested field access/assignment.
 - Go-like receiver methods with Mallang parameter modes.
-- Field-level borrow arguments for direct local fields such as `in user.name`
-  and `mut user.name`.
+- Field-level borrow arguments for local-rooted field paths such as
+  `in user.name` and `mut user.profile.name`.
 
 ## Bootstrap
 
@@ -56,6 +56,8 @@ cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/fie
 target/mallang/field-assignment
 cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow
 target/mallang/field-borrow
+cargo run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields
+target/mallang/nested-fields
 ```
 
 Run the full local gate:
@@ -77,6 +79,7 @@ scripts/check.sh
 - `examples/methods.mlg`: native smoke for struct receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
+- `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -101,5 +104,5 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`,
-statement/expression `if`, struct/method, and built-in ADT subset via C source
-generation and `clang`.
+statement/expression `if`, struct/method/nested-field, and built-in ADT subset
+via C source generation and `clang`.

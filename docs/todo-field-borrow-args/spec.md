@@ -15,8 +15,9 @@
   (`mut pair.left`, `mut pair.right`).
 - 거부: same field 또는 whole-root와 겹치는 exclusive borrow.
 - 거부: immutable root binding의 mutable field borrow.
-- 거부: nested field borrow argument (`in user.name.value`).
-- 제외: nested field assignment.
+- 이 work unit에서는 제외: nested field borrow argument (`in user.name.value`).
+- 이 work unit에서는 제외: nested field assignment.
+- 후속 `docs/todo-nested-field-places/spec.md`에서 nested field place 지원으로 확장한다.
 - 제외: caller-visible mutation을 위한 native by-reference ABI 변경.
 
 ## C-체크리스트

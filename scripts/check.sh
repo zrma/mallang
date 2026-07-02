@@ -85,3 +85,10 @@ if [[ "$field_borrow_output" != $'kim\n30' ]]; then
   echo "field borrow native build smoke failed: expected kim and 30, got '$field_borrow_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/nested-fields.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields >/dev/null
+nested_fields_output="$(target/mallang/nested-fields)"
+if [[ "$nested_fields_output" != $'kim\nlee\n30' ]]; then
+  echo "nested fields native build smoke failed: expected kim, lee, and 30, got '$nested_fields_output'" >&2
+  exit 1
+fi

@@ -758,22 +758,21 @@ impl<'a> Checker<'a> {
         expr: &Expr,
         locals: &mut HashMap<String, Local>,
     ) -> Result<(), SemanticError> {
-        let ExprKind::Var(name) = &base.kind else {
-            return Err(SemanticError::new(
-                "field assignment target must start from a direct local variable in v0",
-                base.span,
-            ));
-        };
+        let mut place = direct_local_place(
+            base,
+            "field assignment target must start from a direct local variable in v0",
+        )?;
+        place.fields.push(field.to_string());
         let (base_ty, base_mutable) = {
-            let Some(local) = locals.get(name) else {
+            let Some(local) = locals.get(&place.root) else {
                 return Err(SemanticError::new(
-                    format!("unknown variable `{name}`"),
+                    format!("unknown variable `{}`", place.root),
                     base.span,
                 ));
             };
             if local.moved {
                 return Err(SemanticError::new(
-                    format!("assignment to field of moved value `{name}`"),
+                    format!("assignment to field of moved value `{}`", place.root),
                     base.span,
                 ));
             }
@@ -781,38 +780,20 @@ impl<'a> Checker<'a> {
         };
         if !base_mutable {
             return Err(SemanticError::new(
-                format!("cannot assign field of immutable binding `{name}`"),
+                format!("cannot assign field of immutable binding `{}`", place.root),
                 base.span,
             ));
         }
 
-        let Type::Struct(type_name) = base_ty else {
-            return Err(SemanticError::new(
-                format!(
-                    "field assignment requires a struct value, got `{}`",
-                    base_ty.source_name()
-                ),
-                base.span,
-            ));
-        };
-        let struct_sig = self.struct_sig(&type_name, base.span)?;
-        let Some(field_sig) = struct_sig
-            .fields
-            .iter()
-            .find(|candidate| candidate.name == field)
-        else {
-            return Err(SemanticError::new(
-                format!("unknown field `{field}` on `{type_name}`"),
-                base.span,
-            ));
-        };
+        let field_ty =
+            self.resolve_field_path_type(&base_ty, &place.fields, base.span, "field assignment")?;
         let value_ty =
-            self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&field_sig.ty))?;
-        if value_ty != field_sig.ty {
+            self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&field_ty))?;
+        if value_ty != field_ty {
             return Err(SemanticError::new(
                 format!(
                     "field `{field}` assignment type mismatch: expected `{}`, got `{}`",
-                    field_sig.ty.source_name(),
+                    field_ty.source_name(),
                     value_ty.source_name()
                 ),
                 expr.span,
@@ -1440,10 +1421,7 @@ impl<'a> Checker<'a> {
         mutable: bool,
     ) -> Result<Type, SemanticError> {
         match borrow_arg_place(arg)? {
-            BorrowPlace {
-                root: name,
-                field: None,
-            } => {
+            BorrowPlace { root: name, fields } if fields.is_empty() => {
                 let Some(local) = locals.get(&name) else {
                     return Err(SemanticError::new(
                         format!("unknown variable `{name}`"),
@@ -1465,10 +1443,7 @@ impl<'a> Checker<'a> {
 
                 Ok(local.ty.clone())
             }
-            BorrowPlace {
-                root: name,
-                field: Some(field),
-            } => {
+            BorrowPlace { root: name, fields } => {
                 let Some(local) = locals.get(&name) else {
                     return Err(SemanticError::new(
                         format!("unknown variable `{name}`"),
@@ -1488,28 +1463,7 @@ impl<'a> Checker<'a> {
                     ));
                 }
 
-                let Type::Struct(type_name) = &local.ty else {
-                    return Err(SemanticError::new(
-                        format!(
-                            "field borrow requires a struct value, got `{}`",
-                            local.ty.source_name()
-                        ),
-                        arg.expr.span,
-                    ));
-                };
-                let struct_sig = self.struct_sig(type_name, arg.expr.span)?;
-                let Some(field_sig) = struct_sig
-                    .fields
-                    .iter()
-                    .find(|candidate| candidate.name == field)
-                else {
-                    return Err(SemanticError::new(
-                        format!("unknown field `{field}` on `{type_name}`"),
-                        arg.expr.span,
-                    ));
-                };
-
-                Ok(field_sig.ty.clone())
+                self.resolve_field_path_type(&local.ty, &fields, arg.expr.span, "field borrow")
             }
         }
     }
@@ -1627,6 +1581,41 @@ impl<'a> Checker<'a> {
             .ok_or_else(|| SemanticError::new(format!("unknown struct `{name}`"), span))
     }
 
+    fn resolve_field_path_type(
+        &self,
+        root_ty: &Type,
+        fields: &[String],
+        span: Span,
+        context: &str,
+    ) -> Result<Type, SemanticError> {
+        let mut current_ty = root_ty.clone();
+        for field in fields {
+            let Type::Struct(type_name) = &current_ty else {
+                return Err(SemanticError::new(
+                    format!(
+                        "{context} requires a struct value, got `{}`",
+                        current_ty.source_name()
+                    ),
+                    span,
+                ));
+            };
+            let struct_sig = self.struct_sig(type_name, span)?;
+            let Some(field_sig) = struct_sig
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == *field)
+            else {
+                return Err(SemanticError::new(
+                    format!("unknown field `{field}` on `{type_name}`"),
+                    span,
+                ));
+            };
+            current_ty = field_sig.ty.clone();
+        }
+
+        Ok(current_ty)
+    }
+
     fn type_from_optional_ref(&self, ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
         ty.map_or(Ok(Type::Unit), |ty| self.type_from_ref(ty))
     }
@@ -1723,50 +1712,50 @@ enum BorrowKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BorrowPlace {
     root: String,
-    field: Option<String>,
+    fields: Vec<String>,
 }
 
 impl BorrowPlace {
     fn root(root: String) -> Self {
-        Self { root, field: None }
-    }
-
-    fn field(root: String, field: String) -> Self {
         Self {
             root,
-            field: Some(field),
+            fields: Vec::new(),
         }
     }
 
     fn display(&self) -> String {
-        match &self.field {
-            Some(field) => format!("{}.{}", self.root, field),
-            None => self.root.clone(),
+        if self.fields.is_empty() {
+            self.root.clone()
+        } else {
+            format!("{}.{}", self.root, self.fields.join("."))
         }
     }
 
     fn overlaps(&self, other: &Self) -> bool {
-        self.root == other.root
-            && (self.field.is_none() || other.field.is_none() || self.field == other.field)
+        if self.root != other.root {
+            return false;
+        }
+        let common_len = self.fields.len().min(other.fields.len());
+        self.fields[..common_len] == other.fields[..common_len]
     }
 }
 
 fn borrow_arg_place(arg: &Arg) -> Result<BorrowPlace, SemanticError> {
-    match &arg.expr.kind {
+    direct_local_place(
+        &arg.expr,
+        "borrow arguments must be direct local variables or direct local fields in v0",
+    )
+}
+
+fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
+    match &expr.kind {
         ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
         ExprKind::FieldAccess { base, field } => {
-            let ExprKind::Var(root) = &base.kind else {
-                return Err(SemanticError::new(
-                    "borrow arguments must be direct local variables or direct local fields in v0",
-                    arg.span,
-                ));
-            };
-            Ok(BorrowPlace::field(root.clone(), field.clone()))
+            let mut place = direct_local_place(base, message)?;
+            place.fields.push(field.clone());
+            Ok(place)
         }
-        _ => Err(SemanticError::new(
-            "borrow arguments must be direct local variables or direct local fields in v0",
-            arg.span,
-        )),
+        _ => Err(SemanticError::new(message, expr.span)),
     }
 }
 
@@ -2005,6 +1994,69 @@ func main() {
         assert!(error
             .message
             .contains("field `age` assignment type mismatch"));
+    }
+
+    #[test]
+    fn allows_nested_field_assignment_on_mutable_struct_binding() {
+        check_ok(
+            r#"
+type Name struct {
+    value string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    mut user := User{name: Name{value: "kim"}}
+    user.name.value = "lee"
+    print(user.name.value)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_nested_field_assignment_on_immutable_root_binding() {
+        let error = check_error(
+            r#"
+type Name struct {
+    value string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    user := User{name: Name{value: "kim"}}
+    user.name.value = "lee"
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign field of immutable binding `user`"));
+    }
+
+    #[test]
+    fn rejects_nested_field_assignment_through_non_struct_field() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut user := User{age: 30}
+    user.age.value = 31
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("field assignment requires a struct value"));
     }
 
     #[test]
@@ -2686,8 +2738,8 @@ func touchBoth(left mut int, whole in Pair) {
     }
 
     #[test]
-    fn ownership_rejects_nested_field_borrow_argument_in_v0() {
-        let error = check_error(
+    fn ownership_allows_nested_field_borrow_argument() {
+        check_ok(
             r#"
 type Name struct {
     value string
@@ -2707,9 +2759,83 @@ func show(value in string) {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("borrow arguments must be direct local variables or direct local fields"));
+    }
+
+    #[test]
+    fn ownership_allows_nested_field_mut_borrow_argument_on_mutable_binding() {
+        check_ok(
+            r#"
+type Name struct {
+    value string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    mut user := User{name: Name{value: "kim"}}
+    touch(mut user.name.value)
+}
+
+func touch(value mut string) {
+    print(value)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn borrow_conflict_allows_disjoint_nested_field_mut_borrows_in_one_call() {
+        check_ok(
+            r#"
+type Name struct {
+    first string
+    last string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    mut user := User{name: Name{first: "kim", last: "lee"}}
+    touchBoth(mut user.name.first, mut user.name.last)
+}
+
+func touchBoth(first mut string, last mut string) {
+    print(first)
+    print(last)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn borrow_conflict_rejects_nested_field_mut_borrow_overlapping_parent_field_borrow() {
+        let error = check_error(
+            r#"
+type Name struct {
+    first string
+    last string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    mut user := User{name: Name{first: "kim", last: "lee"}}
+    touchBoth(mut user.name.first, in user.name)
+}
+
+func touchBoth(first mut string, name in Name) {
+    print(first)
+    print(name.last)
+}
+"#,
+        );
+        assert!(error.message.contains("overlaps with an active borrow"));
     }
 
     #[test]

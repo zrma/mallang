@@ -61,4 +61,4 @@
 - [x] struct receiver methods 설계/구현
 - [x] direct mutable field assignment 추가
 - [x] field-level borrow arguments 추가
-- [ ] nested field assignment와 nested field borrow argument 규칙 설계
+- [x] nested field assignment와 nested field borrow argument 추가
