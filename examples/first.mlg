@@ -1,0 +1,9 @@
+func main() {
+    x := 10
+    y := add(x, 20)
+    print(y)
+}
+
+func add(a int, b int) int {
+    return a + b
+}

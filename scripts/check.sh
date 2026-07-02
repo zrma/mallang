@@ -20,3 +20,10 @@ fi
 "$CARGO" test --workspace
 "$CARGO" clippy --workspace --all-targets -- -D warnings
 "$CARGO" run --bin mlg -- examples/hello.mlg >/dev/null
+"$CARGO" run --bin mlg -- parse examples/first.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/first.mlg -o target/mallang/first >/dev/null
+first_output="$(target/mallang/first)"
+if [[ "$first_output" != "30" ]]; then
+  echo "first native build smoke failed: expected 30, got '$first_output'" >&2
+  exit 1
+fi

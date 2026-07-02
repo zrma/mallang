@@ -26,16 +26,19 @@ This repository is the Mallang language PoC workspace.
 
 ## Bootstrap
 
-The current executable only lexes a source file and prints tokens.
+The current executable can lex, parse, and build the first native subset.
 
 ```sh
-cargo run --bin mlg -- examples/hello.mlg
+cargo run --bin mlg -- lex examples/hello.mlg
+cargo run --bin mlg -- parse examples/first.mlg
+cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
+target/mallang/first
 ```
 
-Run tests:
+Run the full local gate:
 
 ```sh
-cargo test
+scripts/check.sh
 ```
 
 ## Layout
@@ -61,3 +64,6 @@ func add(a int, b int) int {
     return a + b
 }
 ```
+
+Current status: implemented for the first `int` subset via C source generation
+and `clang`.

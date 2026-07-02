@@ -11,17 +11,17 @@
 
 ## Milestone 1: Syntax Frontend
 
-- Expand the lexer as syntax settles.
-- Implement a recursive descent parser for declarations, statements, and blocks.
-- Implement a Pratt parser for expressions.
-- Produce an AST with precise source spans.
-- Parse the first target program.
+- [x] Expand the lexer as syntax settles.
+- [x] Implement a recursive descent parser for declarations, statements, and blocks.
+- [x] Implement a Pratt parser for expressions.
+- [x] Produce an AST with precise source spans.
+- [x] Parse the first target program.
 
 ## Milestone 2: Static Semantics
 
-- Add name resolution.
-- Add primitive type checking.
-- Add function signature checking.
+- [x] Add first-subset name resolution for local variables and direct function calls.
+- [x] Add first-subset primitive type checking for `int`, `bool`, `string`, and `unit`.
+- [x] Add first-subset function signature checking.
 - Reject `nil`, pointer-like syntax, and unresolved identifiers.
 - Support `if` expressions with compatible branch types.
 
@@ -37,11 +37,11 @@
 
 ## Milestone 4: Native Backend
 
-- Lower typed AST to a small typed IR.
-- Generate C source from IR.
-- Use `clang` as the first native backend.
-- Produce a native executable for the first target program.
-- Expose compilation through `mlg build` rather than a separate long compiler
+- [ ] Lower typed AST to a small typed IR.
+- [x] Generate C source for the first `int` subset.
+- [x] Use `clang` as the first native backend.
+- [x] Produce a native executable for the first target program.
+- [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
 
 ## Later
