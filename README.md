@@ -226,6 +226,7 @@ scripts/check.sh
 - `src/backend/c/statements.rs`: C backend statement, loop, match, and print emission.
 - `src/backend/c/types.rs`: C backend type layout and drop helper emission.
 - `src/backend/c/utils.rs`: C backend formatting, temp-name, and parameter-env helpers.
+- `src/backend/c/tests.rs`: C backend unit tests.
 - `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone

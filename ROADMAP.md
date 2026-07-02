@@ -139,6 +139,7 @@
 - [x] Split C backend statement emission into a dedicated module.
 - [x] Split C backend expression emission into a dedicated module.
 - [x] Split C backend shared utility and temp-name helpers into a dedicated module.
+- [x] Split C backend unit tests into a dedicated test module.
 
 ## Later
 
@@ -186,6 +187,7 @@
 - [x] C backend statement emitter module split.
 - [x] C backend expression emitter module split.
 - [x] C backend utility/temp-name helper module split.
+- [x] C backend unit test module split.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Mutable range values.

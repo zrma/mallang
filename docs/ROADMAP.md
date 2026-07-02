@@ -560,3 +560,10 @@
 - [x] `c.rs`는 C output orchestration과 `CGenerator` boundary 중심으로 축소
 - [x] statement/type/expression emitters가 utility helpers를 `utils` module 경유로 사용하게 정리
 - [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P67: C Backend Unit Test Module Split
+
+- [x] `src/backend/c.rs`의 C backend unit tests를 `src/backend/c/tests.rs`로 분리
+- [x] `c.rs` production module을 C output orchestration과 module boundary 중심으로 유지
+- [x] C backend test names와 `backend::c::tests::*` path 유지
+- [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
