@@ -136,6 +136,7 @@
 - [x] Split backend public API from C backend implementation module.
 - [x] Split C backend name/type helper utilities into a dedicated module.
 - [x] Split C backend type layout and drop helper emission into a dedicated module.
+- [x] Split C backend statement emission into a dedicated module.
 
 ## Later
 
@@ -180,6 +181,7 @@
 - [x] Local-rooted array/slice element assignment.
 - [x] C backend name/type helper module split.
 - [x] C backend type emitter module split.
+- [x] C backend statement emitter module split.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Mutable range values.

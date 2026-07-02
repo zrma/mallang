@@ -540,3 +540,10 @@
 - [x] cleanup-capable type의 `mlg_drop_*` helper emission을 type emitter module로 이동
 - [x] `CGenerator`는 C output orchestration, function/statement/expression emission 책임 유지
 - [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P64: C Backend Statement Emitter Split
+
+- [x] statement/loop/match statement/print emission을 `src/backend/c/statements.rs`로 분리
+- [x] `emit_stmt_with_env`와 cleanup statement emission만 parent expression/orchestration에서 호출 가능한 module-visible boundary로 유지
+- [x] `CGenerator`의 expression emission은 기존 `src/backend/c.rs`에 남겨 후속 expression emitter split 후보로 유지
+- [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
