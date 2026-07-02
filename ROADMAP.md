@@ -28,11 +28,11 @@
 
 ## Milestone 3: Ownership and Borrowing
 
-- Treat `int` and `bool` as `Copy`.
-- Treat `string`, arrays, and structs as move-only by default.
-- Support explicit read borrow calls with `in expr`.
-- Support explicit mutable borrow calls with `mut expr`.
-- Reject use-after-move.
+- [x] Treat `int` and `bool` as `Copy`.
+- [x] Treat `string`, arrays, and structs as move-only by default.
+- [x] Support explicit read borrow calls with `in expr`.
+- [x] Support explicit mutable borrow calls with `mut expr`.
+- [x] Reject use-after-move.
 - Reject overlapping mutable/read borrows.
 - For v0, disallow storing or returning borrowed values.
 

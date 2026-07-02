@@ -21,7 +21,14 @@ pub struct CheckedProgram<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionSig {
     pub return_type: Type,
-    pub params: Vec<(String, Type)>,
+    pub params: Vec<ParamSig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParamSig {
+    pub name: String,
+    pub mode: ParamMode,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +47,10 @@ impl Type {
             Self::String => "string",
             Self::Unit => "unit",
         }
+    }
+
+    pub fn is_copy(self) -> bool {
+        matches!(self, Self::Int | Self::Bool | Self::Unit)
     }
 }
 
@@ -122,16 +133,11 @@ impl<'a> Checker<'a> {
             let return_type = type_from_optional_ref(function.return_type.as_ref())?;
             let mut params = Vec::new();
             for param in &function.params {
-                if !matches!(param.mode, ParamMode::Owned) {
-                    return Err(SemanticError::new(
-                        format!(
-                            "borrowed parameter `{}` is planned but not supported yet",
-                            param.name
-                        ),
-                        param.span,
-                    ));
-                }
-                params.push((param.name.clone(), type_from_ref(&param.ty)?));
+                params.push(ParamSig {
+                    name: param.name.clone(),
+                    mode: param.mode,
+                    ty: type_from_ref(&param.ty)?,
+                });
             }
 
             self.signatures.insert(
@@ -156,19 +162,20 @@ impl<'a> Checker<'a> {
     fn check_function(&self, function: &Function) -> Result<(), SemanticError> {
         let sig = self.function_sig(&function.name, function.span)?;
         let mut locals = HashMap::new();
-        for (name, ty) in &sig.params {
+        for param in &sig.params {
             if locals
                 .insert(
-                    name.clone(),
+                    param.name.clone(),
                     Local {
-                        ty: *ty,
-                        mutable: false,
+                        ty: param.ty,
+                        mutable: matches!(param.mode, ParamMode::Mut),
+                        moved: false,
                     },
                 )
                 .is_some()
             {
                 return Err(SemanticError::new(
-                    format!("duplicate parameter `{name}`"),
+                    format!("duplicate parameter `{}`", param.name),
                     function.span,
                 ));
             }
@@ -208,13 +215,14 @@ impl<'a> Checker<'a> {
                 name,
                 expr,
             } => {
-                let ty = self.check_expr(expr, locals)?;
+                let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
                 if locals
                     .insert(
                         name.clone(),
                         Local {
                             ty,
                             mutable: *mutable,
+                            moved: false,
                         },
                     )
                     .is_some()
@@ -227,7 +235,7 @@ impl<'a> Checker<'a> {
                 Ok(Type::Unit)
             }
             StmtKind::Assign { name, expr } => {
-                let value_ty = self.check_expr(expr, locals)?;
+                let value_ty = self.check_expr(expr, locals, ValueUse::Owned)?;
                 let Some(local) = locals.get(name) else {
                     return Err(SemanticError::new(
                         format!("unknown variable `{name}`"),
@@ -253,7 +261,7 @@ impl<'a> Checker<'a> {
                 Ok(Type::Unit)
             }
             StmtKind::Return { expr } => {
-                let value_ty = self.check_expr(expr, locals)?;
+                let value_ty = self.check_expr(expr, locals, ValueUse::Owned)?;
                 if value_ty != return_type {
                     return Err(SemanticError::new(
                         format!(
@@ -266,14 +274,15 @@ impl<'a> Checker<'a> {
                 }
                 Ok(Type::Unit)
             }
-            StmtKind::Expr { expr } => self.check_expr(expr, locals),
+            StmtKind::Expr { expr } => self.check_expr(expr, locals, ValueUse::Owned),
         }
     }
 
     fn check_expr(
         &self,
         expr: &Expr,
-        locals: &HashMap<String, Local>,
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
     ) -> Result<Type, SemanticError> {
         match &expr.kind {
             ExprKind::Int(_) => Ok(Type::Int),
@@ -283,13 +292,10 @@ impl<'a> Checker<'a> {
                 "`nil` is reserved; use Option[T] when optional values are implemented",
                 expr.span,
             )),
-            ExprKind::Var(name) => locals
-                .get(name)
-                .map(|local| local.ty)
-                .ok_or_else(|| SemanticError::new(format!("unknown variable `{name}`"), expr.span)),
+            ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
             ExprKind::Call { callee, args } => self.check_call(callee, args, locals, expr.span),
             ExprKind::Unary { op, expr } => {
-                let ty = self.check_expr(expr, locals)?;
+                let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
                 match (op, ty) {
                     (UnaryOp::Negate, Type::Int) => Ok(Type::Int),
                     (UnaryOp::Not, Type::Bool) => Ok(Type::Bool),
@@ -307,11 +313,39 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn check_var(
+        &self,
+        name: &str,
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let Some(local) = locals.get_mut(name) else {
+            return Err(SemanticError::new(
+                format!("unknown variable `{name}`"),
+                span,
+            ));
+        };
+        if local.moved {
+            return Err(SemanticError::new(
+                format!("use of moved value `{name}`"),
+                span,
+            ));
+        }
+
+        let ty = local.ty;
+        if matches!(value_use, ValueUse::Owned) && !ty.is_copy() {
+            local.moved = true;
+        }
+
+        Ok(ty)
+    }
+
     fn check_call(
         &self,
         callee: &Expr,
         args: &[Arg],
-        locals: &HashMap<String, Local>,
+        locals: &mut HashMap<String, Local>,
         span: Span,
     ) -> Result<Type, SemanticError> {
         let ExprKind::Var(name) = &callee.kind else {
@@ -328,7 +362,7 @@ impl<'a> Checker<'a> {
                     span,
                 ));
             }
-            let arg_ty = self.check_expr(&args[0].expr, locals)?;
+            let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
             if matches!(arg_ty, Type::Unit) {
                 return Err(SemanticError::new("cannot print unit value", args[0].span));
             }
@@ -347,19 +381,37 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        for (arg, (_, expected_ty)) in args.iter().zip(sig.params.iter()) {
-            if !matches!(arg.mode, ArgMode::Owned) {
-                return Err(SemanticError::new(
-                    "borrowed call arguments are planned but not supported yet",
-                    arg.span,
-                ));
-            }
-            let arg_ty = self.check_expr(&arg.expr, locals)?;
-            if arg_ty != *expected_ty {
+        for (arg, param) in args.iter().zip(sig.params.iter()) {
+            let arg_ty = match (param.mode, arg.mode) {
+                (ParamMode::Owned, ArgMode::Owned) => {
+                    self.check_expr(&arg.expr, locals, ValueUse::Owned)?
+                }
+                (ParamMode::In, ArgMode::In) => self.check_borrow_arg(arg, locals, false)?,
+                (ParamMode::Mut, ArgMode::Mut) => self.check_borrow_arg(arg, locals, true)?,
+                (ParamMode::Owned, _) => {
+                    return Err(SemanticError::new(
+                        format!("parameter `{}` expects an owned argument", param.name),
+                        arg.span,
+                    ));
+                }
+                (ParamMode::In, _) => {
+                    return Err(SemanticError::new(
+                        format!("parameter `{}` expects `in` argument", param.name),
+                        arg.span,
+                    ));
+                }
+                (ParamMode::Mut, _) => {
+                    return Err(SemanticError::new(
+                        format!("parameter `{}` expects `mut` argument", param.name),
+                        arg.span,
+                    ));
+                }
+            };
+            if arg_ty != param.ty {
                 return Err(SemanticError::new(
                     format!(
                         "argument type mismatch for `{name}`: expected `{}`, got `{}`",
-                        expected_ty.source_name(),
+                        param.ty.source_name(),
                         arg_ty.source_name()
                     ),
                     arg.span,
@@ -370,15 +422,49 @@ impl<'a> Checker<'a> {
         Ok(sig.return_type)
     }
 
+    fn check_borrow_arg(
+        &self,
+        arg: &Arg,
+        locals: &mut HashMap<String, Local>,
+        mutable: bool,
+    ) -> Result<Type, SemanticError> {
+        let ExprKind::Var(name) = &arg.expr.kind else {
+            return Err(SemanticError::new(
+                "borrow arguments must be direct local variables in v0",
+                arg.span,
+            ));
+        };
+        let Some(local) = locals.get(name) else {
+            return Err(SemanticError::new(
+                format!("unknown variable `{name}`"),
+                arg.expr.span,
+            ));
+        };
+        if local.moved {
+            return Err(SemanticError::new(
+                format!("borrow of moved value `{name}`"),
+                arg.expr.span,
+            ));
+        }
+        if mutable && !local.mutable {
+            return Err(SemanticError::new(
+                format!("cannot mutably borrow immutable binding `{name}`"),
+                arg.span,
+            ));
+        }
+
+        Ok(local.ty)
+    }
+
     fn check_binary(
         &self,
         op: BinaryOp,
         left: &Expr,
         right: &Expr,
-        locals: &HashMap<String, Local>,
+        locals: &mut HashMap<String, Local>,
     ) -> Result<Type, SemanticError> {
-        let left_ty = self.check_expr(left, locals)?;
-        let right_ty = self.check_expr(right, locals)?;
+        let left_ty = self.check_expr(left, locals, ValueUse::Owned)?;
+        let right_ty = self.check_expr(right, locals, ValueUse::Owned)?;
         if left_ty != right_ty {
             return Err(SemanticError::new(
                 "binary operands must have the same type",
@@ -435,6 +521,13 @@ impl<'a> Checker<'a> {
 struct Local {
     ty: Type,
     mutable: bool,
+    moved: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ValueUse {
+    Owned,
+    Borrow,
 }
 
 fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
@@ -525,5 +618,110 @@ func add(a int, b int) int {
     #[test]
     fn allows_mutable_assignment() {
         check_ok("func main() { mut x := 1 x = 2 print(x) }");
+    }
+
+    #[test]
+    fn ownership_rejects_use_after_move_for_string() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    consume(s)
+    print(s)
+}
+
+func consume(s string) {
+    print(s)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `s`"));
+    }
+
+    #[test]
+    fn ownership_allows_copy_reuse_for_int() {
+        check_ok(
+            r#"
+func main() {
+    x := 1
+    printInt(x)
+    print(x)
+}
+
+func printInt(x int) {
+    print(x)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_allows_in_borrow_without_move() {
+        check_ok(
+            r#"
+func main() {
+    s := "hello"
+    show(in s)
+    show(in s)
+}
+
+func show(s in string) {
+    print(s)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_missing_in_call_mode() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    show(s)
+}
+
+func show(s in string) {
+    print(s)
+}
+"#,
+        );
+        assert!(error.message.contains("expects `in` argument"));
+    }
+
+    #[test]
+    fn ownership_rejects_mut_borrow_of_immutable_binding() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    touch(mut s)
+}
+
+func touch(s mut string) {
+    print(s)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow immutable binding `s`"));
+    }
+
+    #[test]
+    fn ownership_allows_mut_borrow_of_mutable_binding() {
+        check_ok(
+            r#"
+func main() {
+    mut s := "hello"
+    touch(mut s)
+    print(s)
+}
+
+func touch(s mut string) {
+    print(s)
+}
+"#,
+        );
     }
 }

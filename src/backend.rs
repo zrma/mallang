@@ -70,7 +70,7 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
         } else {
             sig.params
                 .iter()
-                .map(|(name, ty)| format!("{} {}", ty.c_name(), c_ident(name)))
+                .map(|param| format!("{} {}", param.ty.c_name(), c_ident(&param.name)))
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -92,8 +92,8 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
     fn emit_function(&self, function: &Function) -> Result<String, CompileError> {
         let mut locals = HashMap::new();
         let sig = self.function_sig(&function.name)?;
-        for (name, ty) in &sig.params {
-            locals.insert(name.clone(), *ty);
+        for param in &sig.params {
+            locals.insert(param.name.clone(), param.ty);
         }
 
         let mut output = String::new();
@@ -274,12 +274,12 @@ impl<'program, 'checked> CGenerator<'program, 'checked> {
         }
 
         let mut emitted_args = Vec::new();
-        for (arg, (_, expected_ty)) in args.iter().zip(sig.params.iter()) {
+        for (arg, param) in args.iter().zip(sig.params.iter()) {
             let typed = self.emit_expr(&arg.expr, locals)?;
-            if typed.ty != *expected_ty {
+            if typed.ty != param.ty {
                 return Err(CompileError::new(format!(
                     "argument type mismatch for `{name}`: expected `{}`, got `{}`",
-                    expected_ty.source_name(),
+                    param.ty.source_name(),
                     typed.ty.source_name()
                 )));
             }

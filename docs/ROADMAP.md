@@ -26,10 +26,12 @@
 
 ## P3: Ownership Lite
 
-- [ ] Copy/move type classification 추가
-- [ ] use-after-move reject
-- [ ] `in` read borrow call rule 추가
-- [ ] `mut` exclusive borrow call rule 추가
+- [x] Copy/move type classification 추가
+- [x] use-after-move reject
+- [x] `in` read borrow call rule 추가
+- [x] `mut` exclusive borrow call rule 추가
+- [ ] overlapping borrow tracking 추가
+- [ ] borrow return/storage 금지 규칙을 reference 타입 도입 시 검증
 
 ## P4: Native Backend
 
