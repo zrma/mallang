@@ -49,7 +49,7 @@ This repository is the Mallang language PoC workspace.
   method receivers.
 - Owned move-only slices with `[]T` literals, `len(slice)`, Copy-only
   `slice[i]`, consuming `append(slice, item)`, and range loops with Copy value
-  iteration.
+  iteration plus element borrow arguments.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -123,6 +123,8 @@ cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-b
 target/mallang/field-borrow
 cargo run --bin mlg -- build examples/array-element-borrow.mlg -o target/mallang/array-element-borrow
 target/mallang/array-element-borrow
+cargo run --bin mlg -- build examples/slice-element-borrow.mlg -o target/mallang/slice-element-borrow
+target/mallang/slice-element-borrow
 cargo run --bin mlg -- build examples/array-element-methods.mlg -o target/mallang/array-element-methods
 target/mallang/array-element-methods
 cargo run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi
@@ -177,6 +179,7 @@ scripts/check.sh
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
 - `examples/array-element-borrow.mlg`: native smoke for fixed array element borrow arguments.
+- `examples/slice-element-borrow.mlg`: native smoke for owned slice element borrow arguments.
 - `examples/array-element-methods.mlg`: native smoke for fixed array element method receivers.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.

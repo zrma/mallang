@@ -1,0 +1,24 @@
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut users := []User{User{name: "kim", age: 30}, User{name: "lee", age: 20}}
+    printName(con users[0].name)
+    bump(mut users[1].age)
+    printUser(con users[1])
+}
+
+func printName(con name string) {
+    print(name)
+}
+
+func bump(mut age int) {
+    age = age + 1
+}
+
+func printUser(con user User) {
+    print(user.name)
+    print(user.age)
+}

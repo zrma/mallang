@@ -166,8 +166,9 @@ Array rules:
   a Go-style aliasing slice header. The first source-level slice surface supports
   slice literals, `len(slice)`, Copy-only `slice[i]` value access, and consuming
   `append(slice, item)` growth. Slice range supports the same Copy value
-  iteration surface as arrays. Mutable range values, slice element borrow
-  arguments, and non-copy element extraction remain reserved for later slices.
+  iteration surface as arrays. Slice element borrow arguments extend the same
+  local-rooted borrow surface as fixed-size arrays. Mutable range values and
+  non-copy element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -193,12 +194,12 @@ Indexing and length rules:
   type `[]T` and `i` has type `int`.
 - `values[i]` yields a value only when `T` is `Copy`.
 - `con values[i]` and `mut values[i]` are valid as direct function call
-  arguments even when `T` is non-copy. Field paths rooted in an array element,
-  such as `con users[i].name`, are also valid borrow arguments.
-- Mutable array element borrow arguments require the root array binding to be
-  `mut`.
+  arguments even when `T` is non-copy. Field paths rooted in an indexed array or
+  slice element, such as `con users[i].name`, are also valid borrow arguments.
+- Mutable indexed element borrow arguments require the root binding to be `mut`.
 - Borrow overlap checks treat indexed borrows from the same array root
-  conservatively in v0. Distinct runtime indexes are not yet proven disjoint.
+  or slice root conservatively in v0. Distinct runtime indexes are not yet
+  proven disjoint.
 - `len(values)` returns `int` for fixed-size arrays and owned slices and does
   not move `values`.
 - Integer literal indexes outside `0 <= i < N` are rejected by `mlg check`.
@@ -211,6 +212,8 @@ Indexing and length rules:
 - In this slice, `len(slice)` and `slice[i]` require a direct local slice source.
   Inline cleanup temporaries such as `len([]int{1})` are deferred until borrowed
   temporary cleanup is implemented.
+- Slice element borrow arguments also require a direct local slice source in
+  v0, such as `con values[i]` or `mut values[i].field`.
 - `values[i] = expr` requires `values` to be a direct `mut` local array binding
   or `mut` array parameter in v0.
 - `values[i] = expr` can also be used as a Go-like `for` clause post target
@@ -244,10 +247,7 @@ Indexing and length rules:
 
 Future v0 slice rules:
 
-- `con values[i]` and `mut values[i]` can extend the existing element-borrow
-  surface after slice root alias/overlap rules are defined.
-- Range over slices starts with index-only and Copy value iteration. Mutable
-  range values and by-reference iteration remain deferred.
+- Mutable range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.
 - The backend may also emit internal drop helper shells for cleanup types before

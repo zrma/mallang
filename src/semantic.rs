@@ -2523,20 +2523,35 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Index { base, index } => {
                 let base_ty = self.resolve_borrow_expr_type(base, locals)?;
-                let Type::Array { len, element } = base_ty else {
-                    return Err(SemanticError::new(
+                match base_ty {
+                    Type::Array { len, element } => {
+                        self.check_index_expr(index, locals, len)?;
+                        Ok(*element)
+                    }
+                    Type::Slice(element) => {
+                        if !matches!(base.kind, ExprKind::Var(_)) {
+                            return Err(SemanticError::new(
+                                "slice element borrow requires a direct local slice in v0",
+                                base.span,
+                            ));
+                        }
+                        let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+                        self.validate_index_type_and_non_negative_literal(
+                            index, &index_ty, "slice",
+                        )?;
+                        Ok(*element)
+                    }
+                    _ => Err(SemanticError::new(
                         format!(
-                            "array element borrow target must be a fixed-size array, got `{}`",
+                            "element borrow target must be a fixed-size array or slice, got `{}`",
                             base_ty.source_name()
                         ),
                         base.span,
-                    ));
-                };
-                self.check_index_expr(index, locals, len)?;
-                Ok(*element)
+                    )),
+                }
             }
             _ => Err(SemanticError::new(
-                "borrow arguments must be direct local variables, direct local fields, or direct local array elements in v0",
+                "borrow arguments must be direct local variables, direct local fields, or direct local array/slice elements in v0",
                 expr.span,
             )),
         }
@@ -2550,7 +2565,7 @@ impl<'a> Checker<'a> {
     ) -> Result<Type, SemanticError> {
         let place = direct_borrow_place(
             receiver,
-            "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array elements in v0",
+            "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array/slice elements in v0",
         )?;
         let name = place.root.clone();
         let fields = place.fields.clone();
@@ -2914,7 +2929,7 @@ const INDEX_BORROW_SEGMENT: &str = "[]";
 fn borrow_arg_place(arg: &Arg) -> Result<BorrowPlace, SemanticError> {
     direct_borrow_place(
         &arg.expr,
-        "borrow arguments must be direct local variables, direct local fields, or direct local array elements in v0",
+        "borrow arguments must be direct local variables, direct local fields, or direct local array/slice elements in v0",
     )
 }
 
@@ -3061,7 +3076,7 @@ fn register_receiver_borrow(
 ) -> Result<(), SemanticError> {
     let place = direct_borrow_place(
         receiver,
-        "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array elements in v0",
+        "method receivers with `con` or `mut` must be direct local variables, direct local fields, or direct local array/slice elements in v0",
     )?;
     register_borrow_place(place, kind, receiver.span, call_borrows)
 }
@@ -5956,6 +5971,96 @@ func touch(mut left string, mut right string) {
         assert!(error
             .message
             .contains("borrow of `users[?].name` overlaps with an active borrow"));
+    }
+
+    #[test]
+    fn ownership_allows_slice_element_borrow_arguments() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut users := []User{User{name: "kim", age: 30}, User{name: "lee", age: 20}}
+    show(con users[0])
+    rename(mut users[1].name)
+}
+
+func show(con user User) {
+    print(user.age)
+}
+
+func rename(mut name string) {
+    name = "park"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_mut_slice_element_borrow_of_immutable_binding() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    users := []User{User{name: "kim"}}
+    rename(mut users[0].name)
+}
+
+func rename(mut name string) {
+    name = "lee"
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow place of immutable binding `users`"));
+    }
+
+    #[test]
+    fn ownership_rejects_overlapping_slice_element_borrows_in_one_call() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := []User{User{name: "kim"}, User{name: "lee"}}
+    touch(mut users[0].name, mut users[1].name)
+}
+
+func touch(mut left string, mut right string) {
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("borrow of `users[?].name` overlaps with an active borrow"));
+    }
+
+    #[test]
+    fn ownership_rejects_negative_slice_element_borrow_index() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1}
+    show(con values[-1])
+}
+
+func show(con value int) {
+    print(value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice index -1 must be non-negative"));
     }
 
     #[test]

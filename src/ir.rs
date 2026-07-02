@@ -797,15 +797,18 @@ impl<'a> Lowerer<'a> {
                 let index = self.lower_expr(index, locals)?;
                 if index.ty != Type::Int {
                     return Err(IrError::new(
-                        "semantic analysis accepted array element borrow with non-int index",
+                        "semantic analysis accepted element borrow with non-int index",
                         index.span,
                     ));
                 }
-                let Type::Array { element, .. } = &base.ty else {
-                    return Err(IrError::new(
-                        "semantic analysis accepted array element borrow on non-array value",
-                        expr.span,
-                    ));
+                let element = match &base.ty {
+                    Type::Array { element, .. } | Type::Slice(element) => element,
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted element borrow on non-array non-slice value",
+                            expr.span,
+                        ));
+                    }
                 };
                 let element_ty = element.as_ref().clone();
                 (
@@ -4582,6 +4585,49 @@ func main() {
         assert_eq!(args[0].mode, ArgMode::Mut);
         assert_eq!(args[0].expr.ty, Type::Struct("Counter".to_string()));
         assert!(matches!(args[0].expr.kind, IrExprKind::Index { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_slice_element_borrow_arguments() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func show(con user User) {
+    print(user.age)
+}
+
+func main() {
+    users := []User{User{name: "kim", age: 30}}
+    show(con users[0])
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let IrStmtKind::Expr { expr } = &main.body[1].kind else {
+            panic!("expected call expression");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected call");
+        };
+        assert_eq!(args[0].mode, ArgMode::Con);
+        assert_eq!(args[0].expr.ty, Type::Struct("User".to_string()));
+        let IrExprKind::Index { base, index } = &args[0].expr.kind else {
+            panic!("expected slice element borrow expression");
+        };
+        assert!(matches!(base.ty, Type::Slice(_)));
+        assert_eq!(index.ty, Type::Int);
     }
 
     #[test]

@@ -355,6 +355,13 @@ if [[ "$slice_range_output" != "9" ]]; then
   echo "slice range native build smoke failed: expected 9, got '$slice_range_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/slice-element-borrow.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/slice-element-borrow.mlg -o target/mallang/slice-element-borrow >/dev/null
+slice_element_borrow_output="$(target/mallang/slice-element-borrow)"
+if [[ "$slice_element_borrow_output" != $'kim\nlee\n21' ]]; then
+  echo "slice element borrow native build smoke failed: expected kim, lee, 21 got '$slice_element_borrow_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
 range_blank_output="$(target/mallang/range-blank)"

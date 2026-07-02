@@ -416,3 +416,12 @@
 - [x] native C backend에서 slice header `mlg_len` 기반 loop lowering 추가
 - [x] `examples/slice-range.mlg` native smoke 추가
 - [x] slice element borrow는 후속 work로 유지
+
+## P50: Slice Element Borrow
+
+- [x] direct local slice source의 `con values[i]` / `mut values[i]` 허용
+- [x] slice element field path borrow, 예: `con users[i].name`, 지원
+- [x] same-root indexed borrow overlap을 array와 같은 conservative rule로 검증
+- [x] native C backend에서 `mlg_len` bounds guard 뒤 hidden-reference argument lowering
+- [x] `examples/slice-element-borrow.mlg` native smoke 추가
+- [x] borrowed indexing expression, slice element assignment, mutable range values는 후속 work로 유지

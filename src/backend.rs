@@ -1207,24 +1207,41 @@ impl<'a> CGenerator<'a> {
                     code: format!("({}).{}", code, c_field(field)),
                 })
             }
-            IrExprKind::Index { base, index } => {
-                let Type::Array { len, .. } = &base.ty else {
-                    return Err(CompileError::new(
-                        "IR invariant violation: borrow index base must be an array",
-                    ));
-                };
-                let base = self.emit_borrow_lvalue_expr(base, env)?;
-                let index = self.emit_stmt_expr_with_env(index, env)?;
-                let mut prelude = base.prelude;
-                prelude.extend(index.prelude);
-                Ok(CExpr {
-                    prelude,
-                    code: format!(
-                        "({}).mlg_data[mallang_check_index({}, {len})]",
-                        base.code, index.code
-                    ),
-                })
-            }
+            IrExprKind::Index { base, index } => match &base.ty {
+                Type::Array { len, .. } => {
+                    let base = self.emit_borrow_lvalue_expr(base, env)?;
+                    let index = self.emit_stmt_expr_with_env(index, env)?;
+                    let mut prelude = base.prelude;
+                    prelude.extend(index.prelude);
+                    Ok(CExpr {
+                        prelude,
+                        code: format!(
+                            "({}).mlg_data[mallang_check_index({}, {len})]",
+                            base.code, index.code
+                        ),
+                    })
+                }
+                Type::Slice(_) => {
+                    let base = self.emit_borrow_lvalue_expr(base, env)?;
+                    let index = self.emit_stmt_expr_with_env(index, env)?;
+                    let index_temp = index_value_temp_name(expr);
+                    let mut prelude = base.prelude;
+                    prelude.extend(index.prelude);
+                    prelude.push(format!("int64_t {index_temp} = {};", index.code));
+                    prelude.push(format!(
+                            "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                            base.code,
+                            c_field("len")
+                        ));
+                    Ok(CExpr {
+                        prelude,
+                        code: format!("({}).{}[{index_temp}]", base.code, c_field("data")),
+                    })
+                }
+                _ => Err(CompileError::new(
+                    "IR invariant violation: borrow index base must be an array or slice",
+                )),
+            },
             _ => Err(CompileError::new(
                 "IR invariant violation: invalid borrow argument expression",
             )),
@@ -3900,5 +3917,45 @@ func rename(mut name string) {
             "mlg_rename(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));"
         ));
         assert!(c.contains("(*mlg_name) = \"park\";"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_element_borrow_arguments() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := []User{User{name: "kim"}, User{name: "lee"}}
+    show(con users[0].name)
+    rename(mut users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "park"
+    print(name)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("void mlg_show(const char * const * mlg_name);"));
+        assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+        assert!(c.contains("int64_t mallang_index_value_"));
+        assert!(c.contains("mallang runtime error: slice index out of bounds"));
+        assert!(c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_index_value_"));
+        assert!(c.contains("mlg_rename(&(((mlg_users).mlg_data[mallang_index_value_"));
+        assert!(c.contains("]).mlg_name));"));
+        assert!(c.contains("(*mlg_name) = \"park\";"));
+        assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
     }
 }
