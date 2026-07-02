@@ -279,3 +279,10 @@
 - [x] `func main()`을 v0 entrypoint signature로 고정
 - [x] `main` method receiver, parameter, return type reject 회귀 테스트 추가
 - [x] `mlg check` failure smoke로 invalid entrypoint signature 고정
+
+## P32: Slice Reserved Boundary Regression
+
+- [x] `[]T` direct parameter reserved diagnostic 유지
+- [x] return type, struct field, generic payload, fixed-array element 안의 `[]T`
+      reserved diagnostic 회귀 테스트 추가
+- [x] `mlg check` failure smoke로 nested slice reserved boundary 고정

@@ -185,6 +185,18 @@ if "${CARGO[@]}" run --bin mlg -- check "$main_param_fail_source" >/dev/null 2>&
   echo "main parameter check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+slice_reserved_fail_source="target/mallang/check-slice-reserved-fail.mlg"
+cat >"$slice_reserved_fail_source" <<'MLG'
+type Bag struct {
+    values Option[[]int]
+}
+
+func main() {}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$slice_reserved_fail_source" >/dev/null 2>&1; then
+  echo "slice reserved check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 array_print_fail_source="target/mallang/check-array-print-fail.mlg"
 cat >"$array_print_fail_source" <<'MLG'
 func main() {

@@ -4740,6 +4740,61 @@ func read(values []int) {
     }
 
     #[test]
+    fn rejects_slice_type_refs_in_nested_type_positions() {
+        let error = check_error(
+            r#"
+func read() []int {
+    return [0]int{}
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice type syntax `[]T` is reserved"));
+
+        let error = check_error(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice type syntax `[]T` is reserved"));
+
+        let error = check_error(
+            r#"
+func read(values Option[[]int]) {
+    print(1)
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice type syntax `[]T` is reserved"));
+
+        let error = check_error(
+            r#"
+func read(values [2][]int) {
+    print(1)
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("slice type syntax `[]T` is reserved"));
+    }
+
+    #[test]
     fn rejects_fixed_size_array_literal_length_mismatch() {
         let error = check_error(
             r#"
