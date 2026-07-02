@@ -20,6 +20,8 @@ This repository is the Mallang language PoC workspace.
 - Immutable bindings by default.
 - Ownership by default for non-copy values.
 - Explicit `in` and `mut` borrow calls.
+- Native `in`/`mut` parameter ABI uses hidden references, so `mut` parameter
+  assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
   `else if` sugar, `Option`, `Result`, and expression/statement `match`.
@@ -57,6 +59,8 @@ cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/fie
 target/mallang/field-assignment
 cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow
 target/mallang/field-borrow
+cargo run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi
+target/mallang/mut-parameter-abi
 cargo run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields
 target/mallang/nested-fields
 cargo run --bin mlg -- build examples/return-completeness.mlg -o target/mallang/return-completeness
@@ -86,6 +90,7 @@ scripts/check.sh
 - `examples/methods.mlg`: native smoke for struct receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
+- `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
 - `examples/return-completeness.mlg`: native smoke for branch-aware return analysis.
 - `examples/else-if.mlg`: native smoke for statement-form `else if` sugar.

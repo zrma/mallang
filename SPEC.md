@@ -218,6 +218,9 @@ Rules:
 - Passing a non-copy value as `T` moves ownership into the callee.
 - Passing `in T` creates a read-only borrow for the duration of the call.
 - Passing `mut T` creates an exclusive mutable borrow for the duration of the call.
+- Native code passes `in T` and `mut T` as hidden references. Inside the callee,
+  reads use normal value syntax, and assignment through a `mut T` parameter
+  updates the caller's local variable or field path.
 - Borrow arguments may be local variables or field paths rooted in local variables.
 - Borrowed values cannot be stored in variables in v0.
 - Borrowed values cannot be returned in v0.

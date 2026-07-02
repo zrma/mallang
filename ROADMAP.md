@@ -48,6 +48,7 @@
 - [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
 - [x] Generate native C blocks for statement-form `if`.
+- [x] Lower `in`/`mut` parameters to a hidden-reference C ABI.
 
 ## Later
 

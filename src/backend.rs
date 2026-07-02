@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use crate::{
-    ast::Program,
+    ast::{ArgMode, ParamMode, Program},
     ir::{
         lower, IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrFunction, IrMatchArm,
         IrMatchBlockArm, IrMatchPattern, IrProgram, IrStmt, IrStmtKind,
@@ -99,7 +99,7 @@ impl<'a> CGenerator<'a> {
             function
                 .params
                 .iter()
-                .map(|param| format!("{} {}", param.ty.c_name(), c_ident(&param.name)))
+                .map(c_param_decl)
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -122,9 +122,10 @@ impl<'a> CGenerator<'a> {
         let mut output = String::new();
         output.push_str(&self.prototype(function)?);
         output.push_str(" {\n");
+        let env = param_env(function);
 
         for stmt in &function.body {
-            let line = self.emit_stmt(stmt)?;
+            let line = self.emit_stmt_with_env(stmt, &env)?;
             push_indented_lines(&mut output, &line, 1);
         }
 
@@ -134,10 +135,6 @@ impl<'a> CGenerator<'a> {
 
         output.push_str("}\n");
         Ok(output)
-    }
-
-    fn emit_stmt(&self, stmt: &IrStmt) -> Result<String, CompileError> {
-        self.emit_stmt_with_env(stmt, &HashMap::new())
     }
 
     fn emit_stmt_with_env(
@@ -157,7 +154,7 @@ impl<'a> CGenerator<'a> {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
                 Ok(finish_with_prelude(
                     prelude,
-                    format!("{} = {};", c_ident(name), code),
+                    format!("{} = {};", c_assignment_target(name, env), code),
                 ))
             }
             IrStmtKind::FieldAssign { base, field, expr } => {
@@ -434,7 +431,7 @@ impl<'a> CGenerator<'a> {
                 let mut prelude = Vec::new();
                 let mut arg_codes = Vec::new();
                 for arg in args {
-                    let emitted = self.emit_stmt_expr_with_env(&arg.expr, env)?;
+                    let emitted = self.emit_call_arg_stmt_expr(arg, env)?;
                     prelude.extend(emitted.prelude);
                     arg_codes.push(emitted.code);
                 }
@@ -504,7 +501,7 @@ impl<'a> CGenerator<'a> {
                 }
                 let args = args
                     .iter()
-                    .map(|arg| self.emit_expr_with_env(&arg.expr, env))
+                    .map(|arg| self.emit_call_arg(arg, env))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(format!("{}({})", c_ident(callee), args.join(", ")))
             }
@@ -520,6 +517,27 @@ impl<'a> CGenerator<'a> {
                 self.emit_expr_with_env(right, env)?
             )),
         }
+    }
+
+    fn emit_call_arg_stmt_expr(
+        &self,
+        arg: &IrArg,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(&arg.expr, env)?;
+        Ok(CExpr {
+            prelude,
+            code: c_arg_code(arg.mode, code),
+        })
+    }
+
+    fn emit_call_arg(
+        &self,
+        arg: &IrArg,
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let code = self.emit_expr_with_env(&arg.expr, env)?;
+        Ok(c_arg_code(arg.mode, code))
     }
 
     fn emit_adt_constructor_stmt_expr(
@@ -980,6 +998,22 @@ impl Type {
             Self::Struct(name) => format!("mlg_struct_{}", c_type_ident(name)),
         }
     }
+
+    fn c_param_type(&self, mode: ParamMode) -> String {
+        match mode {
+            ParamMode::Owned => self.c_name(),
+            ParamMode::In => match self {
+                Self::String => "const char * const *".to_string(),
+                Self::Unit => "const void *".to_string(),
+                _ => format!("const {} *", self.c_name()),
+            },
+            ParamMode::Mut => match self {
+                Self::String => "const char **".to_string(),
+                Self::Unit => "void *".to_string(),
+                _ => format!("{} *", self.c_name()),
+            },
+        }
+    }
 }
 
 impl IrAdtConstructor {
@@ -1025,6 +1059,34 @@ fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
     }
     output.push_str(&body);
     output
+}
+
+fn param_env(function: &IrFunction) -> HashMap<String, String> {
+    function
+        .params
+        .iter()
+        .filter(|param| !matches!(param.mode, ParamMode::Owned))
+        .map(|param| (param.name.clone(), format!("(*{})", c_ident(&param.name))))
+        .collect()
+}
+
+fn c_param_decl(param: &crate::ir::IrParam) -> String {
+    format!(
+        "{} {}",
+        param.ty.c_param_type(param.mode),
+        c_ident(&param.name)
+    )
+}
+
+fn c_assignment_target(name: &str, env: &HashMap<String, String>) -> String {
+    env.get(name).cloned().unwrap_or_else(|| c_ident(name))
+}
+
+fn c_arg_code(mode: ArgMode, code: String) -> String {
+    match mode {
+        ArgMode::Owned => code,
+        ArgMode::In | ArgMode::Mut => format!("&({code})"),
+    }
 }
 
 fn push_indented_lines(output: &mut String, code: &str, level: usize) {
@@ -1339,9 +1401,9 @@ func main() {
         let ir = lower(&checked).unwrap();
         let c = generate_c_from_ir(&ir).unwrap();
 
-        assert!(c.contains("int64_t mlg_User_age(mlg_struct_User mlg_self);"));
-        assert!(c.contains("return (mlg_self).mlg_age;"));
-        assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_User_age(mlg_user)));"));
+        assert!(c.contains("int64_t mlg_User_age(const mlg_struct_User * mlg_self);"));
+        assert!(c.contains("return ((*mlg_self)).mlg_age;"));
+        assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_User_age(&(mlg_user))));"));
     }
 
     #[test]
@@ -1366,5 +1428,44 @@ func main() {
 
         assert!(c.contains("(mlg_user).mlg_age = 31;"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
+    }
+
+    #[test]
+    fn generates_c_pointer_abi_for_mut_borrow_params() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut user := User{name: "kim", age: 30}
+    rename(mut user.name)
+    bump(mut user.age)
+    print(user.name)
+    print(user.age)
+}
+
+func rename(name mut string) {
+    name = "lee"
+}
+
+func bump(age mut int) {
+    age = age + 1
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+        assert!(c.contains("void mlg_bump(int64_t * mlg_age);"));
+        assert!(c.contains("mlg_rename(&((mlg_user).mlg_name));"));
+        assert!(c.contains("mlg_bump(&((mlg_user).mlg_age));"));
+        assert!(c.contains("(*mlg_name) = \"lee\";"));
+        assert!(c.contains("(*mlg_age) = ((*mlg_age) + 1);"));
     }
 }

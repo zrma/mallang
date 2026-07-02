@@ -1,0 +1,20 @@
+type Counter struct {
+    name string
+    value int
+}
+
+func main() {
+    mut counter := Counter{name: "kim", value: 1}
+    rename(mut counter.name)
+    increment(mut counter)
+    print(counter.name)
+    print(counter.value)
+}
+
+func rename(name mut string) {
+    name = "lee"
+}
+
+func increment(counter mut Counter) {
+    counter.value = counter.value + 1
+}
