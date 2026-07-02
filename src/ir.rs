@@ -174,6 +174,10 @@ pub enum IrExprKind {
     ArrayLen {
         array: Box<IrExpr>,
     },
+    SliceAppend {
+        slice: Box<IrExpr>,
+        item: Box<IrExpr>,
+    },
     Call {
         callee: String,
         args: Vec<IrArg>,
@@ -1655,6 +1659,9 @@ impl<'a> Lowerer<'a> {
         if name == "len" {
             return self.lower_len_builtin(args, locals, span);
         }
+        if name == "append" {
+            return self.lower_append_builtin(args, locals, span);
+        }
 
         if name == "print" {
             let mut lowered_args = Vec::new();
@@ -1717,6 +1724,43 @@ impl<'a> Lowerer<'a> {
                 array: Box::new(array),
             },
             Type::Int,
+        ))
+    }
+
+    fn lower_append_builtin(
+        &self,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        if args.len() != 2 || args[0].mode != ArgMode::Owned || args[1].mode != ArgMode::Owned {
+            return Err(IrError::new(
+                "semantic analysis accepted invalid `append` arguments",
+                span,
+            ));
+        }
+        let slice = self.lower_expr(&args[0].expr, locals)?;
+        let Type::Slice(element_ty) = &slice.ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted `append` on non-slice value",
+                args[0].span,
+            ));
+        };
+        let item = self.lower_expr_with_expected(&args[1].expr, locals, Some(element_ty))?;
+        if item.ty != **element_ty {
+            return Err(IrError::new(
+                "semantic analysis accepted `append` item type mismatch",
+                args[1].span,
+            ));
+        }
+        let ty = slice.ty.clone();
+
+        Ok((
+            IrExprKind::SliceAppend {
+                slice: Box::new(slice),
+                item: Box::new(item),
+            },
+            ty,
         ))
     }
 
@@ -2002,6 +2046,7 @@ fn insert_cleanup_drops(
             .chain(branch_moved_roots)
             .collect::<HashSet<_>>();
         let new_binding = cleanup_binding_from_stmt(&stmt);
+        let assigned_binding = cleanup_assigned_binding_from_stmt(&stmt);
         let reassigned_binding =
             cleanup_reassigned_active_binding(&stmt, &active, &moved_roots).cloned();
         let overwritten_place = cleanup_overwritten_place_from_stmt(&stmt);
@@ -2025,6 +2070,11 @@ fn insert_cleanup_drops(
         active.retain(|binding| !moved_roots.contains(&binding.name));
         if let Some(binding) = new_binding {
             active.push(binding);
+        }
+        if let Some(binding) = assigned_binding {
+            if !active.iter().any(|active| active.name == binding.name) {
+                active.push(binding);
+            }
         }
     }
 
@@ -2553,6 +2603,17 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 array: Box::new(array.expr),
             }
         }
+        IrExprKind::SliceAppend { slice, item } => {
+            let slice = insert_expr_cleanup_drops(*slice, active);
+            let active_after_slice = cleanup_bindings_after_moved_roots(active, &slice.moved_roots);
+            let item = insert_expr_cleanup_drops(*item, &active_after_slice);
+            moved_roots.extend(slice.moved_roots);
+            moved_roots.extend(item.moved_roots);
+            IrExprKind::SliceAppend {
+                slice: Box::new(slice.expr),
+                item: Box::new(item.expr),
+            }
+        }
         IrExprKind::Call { callee, args } => {
             let mut active = active.to_vec();
             let args = args
@@ -2651,6 +2712,17 @@ fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
         IrStmtKind::Let { name, ty, .. } if ty.needs_cleanup() => Some(CleanupBinding {
             name: name.clone(),
             ty: ty.clone(),
+            span: stmt.span,
+        }),
+        _ => None,
+    }
+}
+
+fn cleanup_assigned_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
+    match &stmt.kind {
+        IrStmtKind::Assign { name, expr } if expr.ty.needs_cleanup() => Some(CleanupBinding {
+            name: name.clone(),
+            ty: expr.ty.clone(),
             span: stmt.span,
         }),
         _ => None,
@@ -2835,6 +2907,10 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
             for element in elements {
                 collect_cleanup_moved_roots(element, roots);
             }
+        }
+        IrExprKind::SliceAppend { slice, item } => {
+            collect_cleanup_moved_roots(slice, roots);
+            collect_cleanup_moved_roots(item, roots);
         }
         IrExprKind::Call { args, .. } => {
             for arg in args {
@@ -4776,6 +4852,36 @@ func main() {
         assert!(matches!(array.ty, Type::Slice(_)));
 
         assert_drop_of(&ir.functions[0].body[3], "values");
+    }
+
+    #[test]
+    fn ir_lowers_slice_append_and_reactivates_assignment_cleanup() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := []int{1}
+    values = append(values, 2)
+    total := values[1] + len(values)
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Assign { name, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected slice assignment");
+        };
+        assert_eq!(name, "values");
+        assert_eq!(expr.ty, Type::Slice(Box::new(Type::Int)));
+        let IrExprKind::SliceAppend { slice, item } = &expr.kind else {
+            panic!("expected slice append expression");
+        };
+        assert!(matches!(slice.ty, Type::Slice(_)));
+        assert_eq!(item.ty, Type::Int);
+
+        assert_drop_of(&ir.functions[0].body[4], "values");
     }
 
     #[test]

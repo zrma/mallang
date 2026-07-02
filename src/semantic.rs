@@ -666,7 +666,17 @@ impl<'a> Checker<'a> {
             }
         }
 
-        self.check_expr(expr, locals, ValueUse::Owned)
+        let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
+        if ty.needs_cleanup() {
+            return Err(SemanticError::new(
+                format!(
+                    "expression statements cannot discard cleanup value of type `{}` in v0",
+                    ty.source_name()
+                ),
+                expr.span,
+            ));
+        }
+        Ok(ty)
     }
 
     fn check_let_binding(
@@ -737,6 +747,9 @@ impl<'a> Checker<'a> {
                 ),
                 span,
             ));
+        }
+        if let Some(local) = locals.get_mut(name) {
+            local.moved = false;
         }
         Ok(())
     }
@@ -2015,6 +2028,9 @@ impl<'a> Checker<'a> {
         if name == "len" {
             return self.check_len_builtin(args, locals, span);
         }
+        if name == "append" {
+            return self.check_append_builtin(args, locals, span);
+        }
 
         if name == "print" {
             return Err(SemanticError::new(
@@ -2102,6 +2118,55 @@ impl<'a> Checker<'a> {
         }
 
         Ok(Type::Int)
+    }
+
+    fn check_append_builtin(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if args.len() != 2 {
+            return Err(SemanticError::new(
+                "`append` expects exactly two arguments",
+                span,
+            ));
+        }
+        if args[0].mode != ArgMode::Owned || args[1].mode != ArgMode::Owned {
+            return Err(SemanticError::new(
+                "`append` arguments do not take `con` or `mut` mode markers",
+                span,
+            ));
+        }
+
+        let slice_ty = self.check_expr(&args[0].expr, locals, ValueUse::Owned)?;
+        let Type::Slice(element_ty) = &slice_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "`append` first argument must be a slice, got `{}`",
+                    slice_ty.source_name()
+                ),
+                args[0].span,
+            ));
+        };
+        let item_ty = self.check_expr_with_expected(
+            &args[1].expr,
+            locals,
+            ValueUse::Owned,
+            Some(element_ty),
+        )?;
+        if item_ty != **element_ty {
+            return Err(SemanticError::new(
+                format!(
+                    "`append` item type mismatch: expected `{}`, got `{}`",
+                    element_ty.source_name(),
+                    item_ty.source_name()
+                ),
+                args[1].span,
+            ));
+        }
+
+        Ok(slice_ty)
     }
 
     fn check_method_call(
@@ -4963,6 +5028,81 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_append_to_reassign_owned_slice() {
+        check_ok(
+            r#"
+func main() {
+    mut values := []int{1, 2}
+    values = append(values, 3)
+    print(values[2] + len(values))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn append_consumes_source_slice() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1}
+    grown := append(values, 2)
+    print(len(grown))
+    print(len(values))
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `values`"));
+    }
+
+    #[test]
+    fn rejects_discarded_cleanup_expression_statement() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1}
+    append(values, 2)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("expression statements cannot discard cleanup value of type `[]int`"));
+    }
+
+    #[test]
+    fn rejects_append_with_mode_markers() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1}
+    grown := append(con values, 2)
+    print(len(grown))
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`append` arguments do not take `con` or `mut` mode markers"));
+    }
+
+    #[test]
+    fn rejects_append_item_type_mismatch() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []int{1}
+    grown := append(values, "kim")
+    print(len(grown))
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`append` item type mismatch: expected `int`, got `string`"));
     }
 
     #[test]

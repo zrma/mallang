@@ -164,10 +164,10 @@ Array rules:
   receiver modes.
 - Slice type syntax `[]T` denotes an owned, move-only growable buffer. It is not
   a Go-style aliasing slice header. The first source-level slice surface supports
-  slice literals, `len(slice)`, and Copy-only `slice[i]` value access. `append`
-  is reserved as a future built-in value name, while append/growth, slice range,
-  mutable range values, slice element borrow arguments, and non-copy element
-  extraction remain reserved for later slices.
+  slice literals, `len(slice)`, Copy-only `slice[i]` value access, and consuming
+  `append(slice, item)` growth. Slice range, mutable range values, slice element
+  borrow arguments, and non-copy element extraction remain reserved for later
+  slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -229,6 +229,13 @@ Indexing and length rules:
   the post assignment before the next condition check.
 - Slice literals use `[]T{...}` and produce owned heap-backed slices. Empty
   slices use a null data pointer with zero length and capacity.
+- `append(values, item)` consumes the owned slice and the owned item, then
+  returns a new owned slice. Updating a local therefore uses normal mutable
+  reassignment, such as `values = append(values, item)`.
+- `append` arguments do not take `con` or `mut` mode markers.
+- Native `append` grows capacity with compiler-owned allocation. Allocation
+  failure, length overflow, and allocation-size overflow terminate the program
+  with a Mallang runtime error instead of unchecked C behavior.
 - The native ABI uses an internal header equivalent to `{ data, len, cap }` with
   compiler-owned allocation and cleanup.
 - Copying a slice header is not a language operation. Assigning, passing, or
@@ -237,9 +244,6 @@ Indexing and length rules:
 
 Future v0 slice rules:
 
-- `append(values, item)` will be a built-in that consumes the owned slice and
-  the owned item, then returns a new owned slice. Updating a local therefore
-  uses normal mutable reassignment, such as `values = append(values, item)`.
 - `con values[i]` and `mut values[i]` can extend the existing element-borrow
   surface after slice root alias/overlap rules are defined.
 - Range over slices starts with index-only and Copy value iteration. Mutable
@@ -404,6 +408,10 @@ Rules:
 - The argument must have a printable type. v0 printable types are `int`,
   `bool`, `string`, built-in ADTs with printable payloads, and structs whose
   fields are printable.
+- General expression statements cannot discard owned cleanup values in v0. A
+  cleanup value such as `[]T` must be bound, assigned, returned, or otherwise
+  consumed by a checked value path until temporary-result cleanup lowering is
+  implemented.
 
 ## Expressions
 

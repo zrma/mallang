@@ -397,4 +397,12 @@
 - [x] `[]T{...}` slice literal semantic/IR/backend lowering 추가
 - [x] `len(slice)` read-only builtin surface 추가
 - [x] Copy-only `slice[i]` value access와 native bounds check 추가
-- [x] `append`, slice range, slice element borrow는 후속 work로 유지
+- [x] slice range, slice element borrow는 후속 work로 유지
+
+## P48: Slice Append Built-in
+
+- [x] `append(slice, item)` semantic을 consuming owned slice builtin으로 추가
+- [x] `values = append(values, item)` 재할당 후 cleanup root 재활성화
+- [x] typed IR `SliceAppend`와 native C realloc growth lowering 추가
+- [x] `examples/slice-append.mlg` native smoke 추가
+- [x] slice range와 slice element borrow는 후속 work로 유지

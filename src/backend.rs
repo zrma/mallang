@@ -912,6 +912,9 @@ impl<'a> CGenerator<'a> {
             }
             IrExprKind::Index { base, index } => self.emit_index_stmt_expr(expr, base, index, env),
             IrExprKind::ArrayLen { array } => self.emit_array_len_stmt_expr(array, env),
+            IrExprKind::SliceAppend { slice, item } => {
+                self.emit_slice_append_stmt_expr(expr, slice, item, env)
+            }
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
                     return Err(CompileError::new(
@@ -1115,6 +1118,57 @@ impl<'a> CGenerator<'a> {
                 "IR invariant violation: len source must be an array or slice",
             )),
         }
+    }
+
+    fn emit_slice_append_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        slice: &IrExpr,
+        item: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Slice(element) = &expr.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: append result must be a slice",
+            ));
+        };
+        if slice.ty != expr.ty || item.ty != **element {
+            return Err(CompileError::new(
+                "IR invariant violation: append operand type mismatch",
+            ));
+        }
+
+        let slice = self.emit_stmt_expr_with_env(slice, env)?;
+        let item = self.emit_stmt_expr_with_env(item, env)?;
+        let temp = slice_append_temp_name(expr);
+        let new_len = format!("{temp}_new_len");
+        let new_cap = format!("{temp}_new_cap");
+        let data_temp = format!("{temp}_data");
+        let data_field = c_field("data");
+        let len_field = c_field("len");
+        let cap_field = c_field("cap");
+
+        let mut prelude = slice.prelude;
+        prelude.push(format!("{} {temp} = {};", expr.ty.c_name(), slice.code));
+        prelude.extend(item.prelude);
+        prelude.push(format!(
+            "if ({temp}.{len_field} == INT64_MAX) {{\n    fprintf(stderr, \"mallang runtime error: slice length overflow\\n\");\n    exit(1);\n}}"
+        ));
+        prelude.push(format!("int64_t {new_len} = {temp}.{len_field} + 1;"));
+        prelude.push(format!(
+            "if ({temp}.{cap_field} < {new_len}) {{\n    int64_t {new_cap} = ({temp}.{cap_field} == 0) ? 1 : {temp}.{cap_field};\n    while ({new_cap} < {new_len}) {{\n        if ({new_cap} > INT64_MAX / 2) {{\n            {new_cap} = {new_len};\n            break;\n        }}\n        {new_cap} = {new_cap} * 2;\n    }}\n    if ((uint64_t){new_cap} > UINT64_MAX / sizeof({element_ty})) {{\n        fprintf(stderr, \"mallang runtime error: slice allocation size overflow\\n\");\n        exit(1);\n    }}\n    void *{data_temp} = realloc({temp}.{data_field}, sizeof({element_ty}) * (uint64_t){new_cap});\n    if ({data_temp} == NULL) {{\n        fprintf(stderr, \"mallang runtime error: slice allocation failed\\n\");\n        exit(1);\n    }}\n    {temp}.{data_field} = {data_temp};\n    {temp}.{cap_field} = {new_cap};\n}}",
+            element_ty = element.c_name()
+        ));
+        prelude.push(format!(
+            "{temp}.{data_field}[{temp}.{len_field}] = {};",
+            item.code
+        ));
+        prelude.push(format!("{temp}.{len_field} = {new_len};"));
+
+        Ok(CExpr {
+            prelude,
+            code: temp,
+        })
     }
 
     fn emit_call_arg_stmt_expr(
@@ -1729,6 +1783,10 @@ impl<'a> CGenerator<'a> {
                 self.collect_expr_types(index, types);
             }
             IrExprKind::ArrayLen { array } => self.collect_expr_types(array, types),
+            IrExprKind::SliceAppend { slice, item } => {
+                self.collect_expr_types(slice, types);
+                self.collect_expr_types(item, types);
+            }
             IrExprKind::Call { args, .. } => {
                 for arg in args {
                     self.collect_expr_types(&arg.expr, types);
@@ -2249,6 +2307,10 @@ fn range_source_temp_name(expr: &IrExpr) -> String {
 
 fn range_index_temp_name(expr: &IrExpr) -> String {
     format!("mallang_range_index_{}", expr.span.start)
+}
+
+fn slice_append_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_slice_append_tmp_{}", expr.span.start)
 }
 
 fn is_blank_identifier(name: &str) -> bool {
@@ -3438,6 +3500,35 @@ func main() {
         assert!(c.contains("mallang runtime error: slice index out of bounds"));
         assert!(c.contains(".mlg_data[mallang_index_value_"));
         assert!(c.contains(".mlg_len"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_append_reassignment_and_cleanup() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := []int{1, 2}
+    values = append(values, 3)
+    total := values[2] + len(values)
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
+        assert!(c.contains("int64_t mallang_slice_append_tmp_"));
+        assert!(c.contains("_new_len = mallang_slice_append_tmp_"));
+        assert!(c.contains("void *mallang_slice_append_tmp_"));
+        assert!(c.contains("realloc(mallang_slice_append_tmp_"));
+        assert!(c.contains("mallang runtime error: slice allocation failed"));
+        assert!(c.contains(".mlg_data[mallang_slice_append_tmp_"));
+        assert!(c.contains(" = 3;"));
+        assert!(c.contains("mlg_values = mallang_slice_append_tmp_"));
         assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
     }
 

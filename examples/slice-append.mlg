@@ -1,0 +1,6 @@
+func main() {
+    mut values := []int{4, 5}
+    values = append(values, 6)
+    total := values[2] + len(values)
+    print(total)
+}

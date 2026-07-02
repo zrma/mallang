@@ -66,6 +66,7 @@
   non-copy element arrays.
 - [x] Type-check fixed-size array element assignment in `for` clause post
   targets.
+- [x] Type-check consuming `append(slice, item)` for owned slices.
 - [x] Reject recursive struct value type definitions.
 - [x] Reject top-level type/function declaration name conflicts.
 - [x] Reject user value bindings that collide with built-in value names.
@@ -125,6 +126,7 @@
   post targets.
 - [x] Generate native C for owned slice literals, `len(slice)`, and Copy-only
   `slice[i]` value access.
+- [x] Generate native C for consuming slice `append(slice, item)` growth.
 
 ## Later
 
@@ -154,9 +156,10 @@
 - [x] Parse slice type syntax `[]T` and reserve it at semantic checking.
 - [x] Open source-level owned slice literals, `len(slice)`, and Copy-only
   `slice[i]` value access.
+- [x] Slice append/growth.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Slice append/growth, slice range, and mutable range values.
+- Slice range and mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.
