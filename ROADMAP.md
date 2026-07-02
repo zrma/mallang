@@ -56,6 +56,7 @@
 - [x] Add exhaustive `match` for built-in ADTs.
 - [x] Lower built-in ADTs into tagged typed IR.
 - [x] Add C backend layout for built-in ADTs.
+- [x] Generate native code for non-local `match` scrutinee expressions.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

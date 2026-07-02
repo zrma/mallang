@@ -237,6 +237,8 @@ Rules:
   is move-only.
 - Matching a move-only payload moves it into the matched binding unless a future
   borrowed pattern form is introduced.
+- `match` scrutinees are evaluated once, including expression scrutinees such as
+  direct function calls.
 - v0 does not include `unwrap`, `?`, nested patterns, or user-defined enum
   declarations.
 

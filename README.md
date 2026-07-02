@@ -41,6 +41,8 @@ cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-stat
 target/mallang/if-statement
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
+cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
+target/mallang/match-temp
 ```
 
 Run the full local gate:
@@ -57,6 +59,7 @@ scripts/check.sh
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
+- `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.

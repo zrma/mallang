@@ -50,3 +50,10 @@ if [[ "$adt_output" != $'0\n0' ]]; then
   echo "adt native build smoke failed: expected two zero lines, got '$adt_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/match-temp.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp >/dev/null
+match_temp_output="$(target/mallang/match-temp)"
+if [[ "$match_temp_output" != "0" ]]; then
+  echo "match temp native build smoke failed: expected 0, got '$match_temp_output'" >&2
+  exit 1
+fi

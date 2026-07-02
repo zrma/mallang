@@ -44,6 +44,20 @@ struct CGenerator<'a> {
     program: &'a IrProgram,
 }
 
+struct CExpr {
+    prelude: Vec<String>,
+    code: String,
+}
+
+impl CExpr {
+    fn simple(code: String) -> Self {
+        Self {
+            prelude: Vec::new(),
+            code,
+        }
+    }
+}
+
 impl<'a> CGenerator<'a> {
     fn new(program: &'a IrProgram) -> Self {
         Self { program }
@@ -124,16 +138,24 @@ impl<'a> CGenerator<'a> {
 
     fn emit_stmt(&self, stmt: &IrStmt) -> Result<String, CompileError> {
         match &stmt.kind {
-            IrStmtKind::Let { name, ty, expr, .. } => Ok(format!(
-                "{} {} = {};",
-                ty.c_name(),
-                c_ident(name),
-                self.emit_expr(expr)?
-            )),
-            IrStmtKind::Assign { name, expr } => {
-                Ok(format!("{} = {};", c_ident(name), self.emit_expr(expr)?))
+            IrStmtKind::Let { name, ty, expr, .. } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr(expr)?;
+                Ok(finish_with_prelude(
+                    prelude,
+                    format!("{} {} = {};", ty.c_name(), c_ident(name), code),
+                ))
             }
-            IrStmtKind::Return { expr } => Ok(format!("return {};", self.emit_expr(expr)?)),
+            IrStmtKind::Assign { name, expr } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr(expr)?;
+                Ok(finish_with_prelude(
+                    prelude,
+                    format!("{} = {};", c_ident(name), code),
+                ))
+            }
+            IrStmtKind::Return { expr } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr(expr)?;
+                Ok(finish_with_prelude(prelude, format!("return {};", code)))
+            }
             IrStmtKind::If {
                 condition,
                 then_body,
@@ -146,7 +168,8 @@ impl<'a> CGenerator<'a> {
                     }
                 }
 
-                Ok(format!("{};", self.emit_expr(expr)?))
+                let CExpr { prelude, code } = self.emit_stmt_expr(expr)?;
+                Ok(finish_with_prelude(prelude, format!("{code};")))
             }
         }
     }
@@ -158,7 +181,12 @@ impl<'a> CGenerator<'a> {
         else_body: &[IrStmt],
     ) -> Result<String, CompileError> {
         let mut output = String::new();
-        output.push_str(&format!("if ({}) {{\n", self.emit_expr(condition)?));
+        let CExpr { prelude, code } = self.emit_stmt_expr(condition)?;
+        for line in prelude {
+            output.push_str(&line);
+            output.push('\n');
+        }
+        output.push_str(&format!("if ({code}) {{\n"));
         for stmt in then_body {
             let code = self.emit_stmt(stmt)?;
             push_indented_lines(&mut output, &code, 1);
@@ -183,13 +211,20 @@ impl<'a> CGenerator<'a> {
         }
 
         let arg = &args[0].expr;
-        let code = self.emit_expr(arg)?;
+        let CExpr { prelude, code } = self.emit_stmt_expr(arg)?;
         match &arg.ty {
-            Type::Int => Ok(format!("printf(\"%lld\\n\", (long long)({code}));")),
-            Type::Bool => Ok(format!(
-                "printf(\"%s\\n\", ({code}) ? \"true\" : \"false\");"
+            Type::Int => Ok(finish_with_prelude(
+                prelude,
+                format!("printf(\"%lld\\n\", (long long)({code}));"),
             )),
-            Type::String => Ok(format!("printf(\"%s\\n\", {code});")),
+            Type::Bool => Ok(finish_with_prelude(
+                prelude,
+                format!("printf(\"%s\\n\", ({code}) ? \"true\" : \"false\");"),
+            )),
+            Type::String => Ok(finish_with_prelude(
+                prelude,
+                format!("printf(\"%s\\n\", {code});"),
+            )),
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),
@@ -200,8 +235,86 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_expr(&self, expr: &IrExpr) -> Result<String, CompileError> {
-        self.emit_expr_with_env(expr, &HashMap::new())
+    fn emit_stmt_expr(&self, expr: &IrExpr) -> Result<CExpr, CompileError> {
+        self.emit_stmt_expr_with_env(expr, &HashMap::new())
+    }
+
+    fn emit_stmt_expr_with_env(
+        &self,
+        expr: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        match &expr.kind {
+            IrExprKind::Int(value) => Ok(CExpr::simple(value.to_string())),
+            IrExprKind::String(value) => Ok(CExpr::simple(c_string(value))),
+            IrExprKind::Bool(value) => Ok(CExpr::simple(
+                if *value { "true" } else { "false" }.to_string(),
+            )),
+            IrExprKind::Var(name) => Ok(CExpr::simple(
+                env.get(name).cloned().unwrap_or_else(|| c_ident(name)),
+            )),
+            IrExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!(
+                        "(({}) ? ({}) : ({}))",
+                        code,
+                        self.emit_expr_with_env(then_branch, env)?,
+                        self.emit_expr_with_env(else_branch, env)?
+                    ),
+                })
+            }
+            IrExprKind::AdtConstructor {
+                constructor,
+                payload,
+            } => {
+                self.emit_adt_constructor_stmt_expr(&expr.ty, *constructor, payload.as_deref(), env)
+            }
+            IrExprKind::Match { scrutinee, arms } => {
+                self.emit_match_stmt_expr(scrutinee, arms, env)
+            }
+            IrExprKind::Call { callee, args } => {
+                if callee == "print" {
+                    return Err(CompileError::new(
+                        "`print` is only supported as a statement",
+                    ));
+                }
+
+                let mut prelude = Vec::new();
+                let mut arg_codes = Vec::new();
+                for arg in args {
+                    let emitted = self.emit_stmt_expr_with_env(&arg.expr, env)?;
+                    prelude.extend(emitted.prelude);
+                    arg_codes.push(emitted.code);
+                }
+                Ok(CExpr {
+                    prelude,
+                    code: format!("{}({})", c_ident(callee), arg_codes.join(", ")),
+                })
+            }
+            IrExprKind::Unary { op, expr } => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}{})", op.c_operator(), code),
+                })
+            }
+            IrExprKind::Binary { op, left, right } => {
+                let left = self.emit_stmt_expr_with_env(left, env)?;
+                let right = self.emit_stmt_expr_with_env(right, env)?;
+                let mut prelude = left.prelude;
+                prelude.extend(right.prelude);
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({} {} {})", left.code, op.c_operator(), right.code),
+                })
+            }
+        }
     }
 
     fn emit_expr_with_env(
@@ -252,6 +365,56 @@ impl<'a> CGenerator<'a> {
                 op.c_operator(),
                 self.emit_expr_with_env(right, env)?
             )),
+        }
+    }
+
+    fn emit_adt_constructor_stmt_expr(
+        &self,
+        ty: &Type,
+        constructor: IrAdtConstructor,
+        payload: Option<&IrExpr>,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let c_type = ty.c_name();
+        match (ty, constructor) {
+            (Type::Option(_), IrAdtConstructor::Some) => {
+                let payload = payload.ok_or_else(|| {
+                    CompileError::new("IR invariant violation: Some payload missing")
+                })?;
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({c_type}){{ .tag = 1, .some = {code} }}"),
+                })
+            }
+            (Type::Option(_), IrAdtConstructor::None) => {
+                Ok(CExpr::simple(format!("({c_type}){{ .tag = 0 }}")))
+            }
+            (Type::Result(_, _), IrAdtConstructor::Ok) => {
+                let payload = payload.ok_or_else(|| {
+                    CompileError::new("IR invariant violation: Ok payload missing")
+                })?;
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({c_type}){{ .tag = 0, .ok = {code} }}"),
+                })
+            }
+            (Type::Result(_, _), IrAdtConstructor::Err) => {
+                let payload = payload.ok_or_else(|| {
+                    CompileError::new("IR invariant violation: Err payload missing")
+                })?;
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({c_type}){{ .tag = 1, .err = {code} }}"),
+                })
+            }
+            _ => Err(CompileError::new(format!(
+                "IR invariant violation: `{}` constructor does not match `{}`",
+                constructor.c_name(),
+                ty.source_name()
+            ))),
         }
     }
 
@@ -313,9 +476,36 @@ impl<'a> CGenerator<'a> {
         };
         let scrutinee_code = env.get(name).cloned().unwrap_or_else(|| c_ident(name));
 
-        match &scrutinee.ty {
-            Type::Option(_) => self.emit_option_match(&scrutinee_code, arms, env),
-            Type::Result(_, _) => self.emit_result_match(&scrutinee_code, arms, env),
+        self.emit_match_with_scrutinee(&scrutinee_code, &scrutinee.ty, arms, env)
+    }
+
+    fn emit_match_stmt_expr(
+        &self,
+        scrutinee: &IrExpr,
+        arms: &[IrMatchArm],
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        if matches!(scrutinee.kind, IrExprKind::Var(_)) {
+            return Ok(CExpr::simple(self.emit_match(scrutinee, arms, env)?));
+        }
+
+        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(scrutinee, env)?;
+        let temp = match_scrutinee_temp_name(scrutinee);
+        prelude.push(format!("{} {temp} = {code};", scrutinee.ty.c_name()));
+        let code = self.emit_match_with_scrutinee(&temp, &scrutinee.ty, arms, env)?;
+        Ok(CExpr { prelude, code })
+    }
+
+    fn emit_match_with_scrutinee(
+        &self,
+        scrutinee: &str,
+        scrutinee_ty: &Type,
+        arms: &[IrMatchArm],
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        match scrutinee_ty {
+            Type::Option(_) => self.emit_option_match(scrutinee, arms, env),
+            Type::Result(_, _) => self.emit_result_match(scrutinee, arms, env),
             _ => Err(CompileError::new(
                 "IR invariant violation: match on non-ADT value",
             )),
@@ -523,6 +713,16 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
     }
 }
 
+fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
+    let mut output = String::new();
+    for line in prelude {
+        output.push_str(&line);
+        output.push('\n');
+    }
+    output.push_str(&body);
+    output
+}
+
 fn push_indented_lines(output: &mut String, code: &str, level: usize) {
     let indent = "    ".repeat(level);
     for line in code.lines() {
@@ -534,6 +734,10 @@ fn push_indented_lines(output: &mut String, code: &str, level: usize) {
             output.push('\n');
         }
     }
+}
+
+fn match_scrutinee_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_match_tmp_{}", expr.span.start)
 }
 
 fn mangle_type(ty: &Type) -> String {
@@ -701,5 +905,31 @@ func unwrap(value Option[int]) int {
         assert!(c.contains(".tag = 1"));
         assert!(c.contains(".tag = 0"));
         assert!(c.contains(".some"));
+    }
+
+    #[test]
+    fn generates_temp_for_non_local_match_scrutinee() {
+        let program = parse(
+            r#"
+func main() {
+    print(match maybe(false) {
+        case Some(inner) { inner }
+        case None { 0 }
+    })
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
+        assert!(c.contains("= mlg_maybe(false);"));
+        assert!(c.contains("printf(\"%lld\\n\", (long long)((("));
     }
 }
