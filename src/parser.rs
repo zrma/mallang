@@ -3,7 +3,8 @@ use std::fmt;
 use crate::{
     ast::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, Function, MatchArm,
-        MatchPattern, Param, ParamMode, Program, Stmt, StmtKind, StructDecl, TypeRef, UnaryOp,
+        MatchBlockArm, MatchPattern, Param, ParamMode, Program, Stmt, StmtKind, StructDecl,
+        TypeRef, UnaryOp,
     },
     lexer::{lex, LexError},
     token::{Keyword, Span, Token, TokenKind},
@@ -235,6 +236,10 @@ impl Parser {
             return self.parse_if_statement();
         }
 
+        if self.at_keyword(Keyword::Match) {
+            return self.parse_match_statement();
+        }
+
         if self.at_keyword(Keyword::Mut)
             || (self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::ColonEqual))
         {
@@ -339,6 +344,23 @@ impl Parser {
                 else_block,
             },
             span,
+        })
+    }
+
+    fn parse_match_statement(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_keyword(Keyword::Match, "expected `match`")?;
+        let scrutinee = self.parse_expression_without_struct_literals()?;
+        self.expect(TokenTag::LeftBrace, "expected `{` before match arms")?;
+        let mut arms = Vec::new();
+
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            arms.push(self.parse_match_block_arm()?);
+        }
+
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after match arms")?;
+        Ok(Stmt {
+            kind: StmtKind::Match { scrutinee, arms },
+            span: start.join(end),
         })
     }
 
@@ -570,6 +592,18 @@ impl Parser {
             pattern,
             expr,
             span: start.join(end),
+        })
+    }
+
+    fn parse_match_block_arm(&mut self) -> Result<MatchBlockArm, ParseError> {
+        let start = self.expect_keyword(Keyword::Case, "expected `case` in match")?;
+        let pattern = self.parse_match_pattern()?;
+        let block = self.parse_block()?;
+
+        Ok(MatchBlockArm {
+            pattern,
+            span: start.join(block.span),
+            block,
         })
     }
 
@@ -1002,6 +1036,34 @@ func main() {
         };
         assert_eq!(then_block.statements.len(), 1);
         assert_eq!(else_block.as_ref().unwrap().statements.len(), 1);
+    }
+
+    #[test]
+    fn parses_match_statement_with_block_arms() {
+        let program = parse(
+            r#"
+func main() {
+    value := Some(1)
+    match value {
+        case Some(inner) {
+            print(inner)
+        }
+        case None {
+            print(0)
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Match { arms, .. } = &program.functions[0].body.statements[1].kind else {
+            panic!("expected match statement");
+        };
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].block.statements.len(), 1);
+        assert!(matches!(arms[0].pattern, MatchPattern::Some(_)));
+        assert!(matches!(arms[1].pattern, MatchPattern::None));
     }
 
     #[test]

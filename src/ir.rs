@@ -2,8 +2,8 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchPattern, ParamMode,
-        Stmt, StmtKind, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchBlockArm,
+        MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
     },
     semantic::{CheckedProgram, FunctionSig, MethodKey, MethodSig, ParamSig, StructSig, Type},
     token::Span,
@@ -76,6 +76,10 @@ pub enum IrStmtKind {
         condition: IrExpr,
         then_body: Vec<IrStmt>,
         else_body: Vec<IrStmt>,
+    },
+    Match {
+        scrutinee: IrExpr,
+        arms: Vec<IrMatchBlockArm>,
     },
     Expr {
         expr: IrExpr,
@@ -150,6 +154,13 @@ pub struct IrFieldValue {
 pub struct IrMatchArm {
     pub pattern: IrMatchPattern,
     pub expr: IrExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrMatchBlockArm {
+    pub pattern: IrMatchPattern,
+    pub body: Vec<IrStmt>,
     pub span: Span,
 }
 
@@ -344,6 +355,13 @@ impl<'a> Lowerer<'a> {
                     then_body,
                     else_body,
                 }
+            }
+            StmtKind::Match { scrutinee, arms } => {
+                let scrutinee = self.lower_expr(scrutinee, locals)?;
+                let prepared_arms =
+                    self.prepare_match_block_arms(&scrutinee.ty, arms, stmt.span)?;
+                let arms = self.lower_match_block_arms(&prepared_arms, locals, return_type)?;
+                IrStmtKind::Match { scrutinee, arms }
             }
             StmtKind::Expr { expr } => IrStmtKind::Expr {
                 expr: self.lower_expr(expr, locals)?,
@@ -669,6 +687,22 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn prepare_match_block_arms<'b>(
+        &self,
+        scrutinee_ty: &Type,
+        arms: &'b [MatchBlockArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
+        match scrutinee_ty {
+            Type::Option(inner) => self.prepare_option_match_block_arms(inner, arms, span),
+            Type::Result(ok, err) => self.prepare_result_match_block_arms(ok, err, arms, span),
+            _ => Err(IrError::new(
+                "semantic analysis accepted match on non-ADT value",
+                span,
+            )),
+        }
+    }
+
     fn prepare_option_match_arms<'b>(
         &self,
         inner: &Type,
@@ -788,6 +822,125 @@ impl<'a> Lowerer<'a> {
         Ok(prepared)
     }
 
+    fn prepare_option_match_block_arms<'b>(
+        &self,
+        inner: &Type,
+        arms: &'b [MatchBlockArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
+        let mut prepared = Vec::new();
+        let mut seen_some = false;
+        let mut seen_none = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Some(binding) => {
+                    if seen_some {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Some arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_some = true;
+                    prepared.push(PreparedMatchBlockArm {
+                        pattern: IrMatchPattern::Some(binding.clone()),
+                        block: &arm.block,
+                        binding: Some((binding.clone(), inner.clone())),
+                    });
+                }
+                MatchPattern::None => {
+                    if seen_none {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate None arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_none = true;
+                    prepared.push(PreparedMatchBlockArm {
+                        pattern: IrMatchPattern::None,
+                        block: &arm.block,
+                        binding: None,
+                    });
+                }
+                MatchPattern::Ok(_) | MatchPattern::Err(_) => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted invalid Option match pattern",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_some || !seen_none {
+            return Err(IrError::new(
+                "semantic analysis accepted non-exhaustive Option match",
+                span,
+            ));
+        }
+
+        Ok(prepared)
+    }
+
+    fn prepare_result_match_block_arms<'b>(
+        &self,
+        ok: &Type,
+        err: &Type,
+        arms: &'b [MatchBlockArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
+        let mut prepared = Vec::new();
+        let mut seen_ok = false;
+        let mut seen_err = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Ok(binding) => {
+                    if seen_ok {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Ok arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_ok = true;
+                    prepared.push(PreparedMatchBlockArm {
+                        pattern: IrMatchPattern::Ok(binding.clone()),
+                        block: &arm.block,
+                        binding: Some((binding.clone(), ok.clone())),
+                    });
+                }
+                MatchPattern::Err(binding) => {
+                    if seen_err {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Err arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_err = true;
+                    prepared.push(PreparedMatchBlockArm {
+                        pattern: IrMatchPattern::Err(binding.clone()),
+                        block: &arm.block,
+                        binding: Some((binding.clone(), err.clone())),
+                    });
+                }
+                MatchPattern::Some(_) | MatchPattern::None => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted invalid Result match pattern",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_ok || !seen_err {
+            return Err(IrError::new(
+                "semantic analysis accepted non-exhaustive Result match",
+                span,
+            ));
+        }
+
+        Ok(prepared)
+    }
+
     fn lower_match_arms(
         &self,
         arms: &[PreparedMatchArm<'_>],
@@ -839,6 +992,35 @@ impl<'a> Lowerer<'a> {
             pattern: arm.pattern.clone(),
             expr: self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?,
             span: arm.expr.span,
+        })
+    }
+
+    fn lower_match_block_arms(
+        &self,
+        arms: &[PreparedMatchBlockArm<'_>],
+        locals: &HashMap<String, Type>,
+        return_type: &Type,
+    ) -> Result<Vec<IrMatchBlockArm>, IrError> {
+        arms.iter()
+            .map(|arm| self.lower_prepared_match_block_arm(arm, locals, return_type))
+            .collect()
+    }
+
+    fn lower_prepared_match_block_arm(
+        &self,
+        arm: &PreparedMatchBlockArm<'_>,
+        locals: &HashMap<String, Type>,
+        return_type: &Type,
+    ) -> Result<IrMatchBlockArm, IrError> {
+        let mut arm_locals = locals.clone();
+        if let Some((name, ty)) = &arm.binding {
+            arm_locals.insert(name.clone(), ty.clone());
+        }
+
+        Ok(IrMatchBlockArm {
+            pattern: arm.pattern.clone(),
+            body: self.lower_block_statements(arm.block, &mut arm_locals, return_type)?,
+            span: arm.block.span,
         })
     }
 
@@ -1147,6 +1329,12 @@ struct PreparedMatchArm<'a> {
     binding: Option<(String, Type)>,
 }
 
+struct PreparedMatchBlockArm<'a> {
+    pattern: IrMatchPattern,
+    block: &'a Block,
+    binding: Option<(String, Type)>,
+}
+
 fn expect_constructor_arg<'a>(
     constructor: &str,
     args: &'a [Arg],
@@ -1308,6 +1496,38 @@ func main() {}
         };
         assert_eq!(expr.ty, Type::Int);
         assert_eq!(arms.len(), 2);
+    }
+
+    #[test]
+    fn ir_lowers_match_statement() {
+        let program = parse(
+            r#"
+func main() {
+    match maybe(true) {
+        case Some(inner) {
+            print(inner)
+        }
+        case None {
+            print(0)
+        }
+    }
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(1) } else { None }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Match { scrutinee, arms } = &ir.functions[0].body[0].kind else {
+            panic!("expected match statement");
+        };
+        assert_eq!(scrutinee.ty, Type::Option(Box::new(Type::Int)));
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].body.len(), 1);
     }
 
     #[test]

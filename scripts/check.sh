@@ -106,3 +106,10 @@ if [[ "$else_if_output" != $'1\n2\n3' ]]; then
   echo "else-if native build smoke failed: expected 1, 2, and 3, got '$else_if_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/match-statement.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/match-statement.mlg -o target/mallang/match-statement >/dev/null
+match_statement_output="$(target/mallang/match-statement)"
+if [[ "$match_statement_output" != $'7\n0' ]]; then
+  echo "match statement native build smoke failed: expected 7 and 0, got '$match_statement_output'" >&2
+  exit 1
+fi

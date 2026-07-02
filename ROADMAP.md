@@ -59,6 +59,7 @@
 - [x] Lower built-in ADTs into tagged typed IR.
 - [x] Add C backend layout for built-in ADTs.
 - [x] Generate native code for non-local `match` scrutinee expressions.
+- [x] Add statement-form `match` with block arms.
 - [x] Struct declarations, named literals, and field access.
 - [x] Struct receiver methods.
 - [x] Direct mutable struct field assignment.

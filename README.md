@@ -22,7 +22,7 @@ This repository is the Mallang language PoC workspace.
 - Explicit `in` and `mut` borrow calls.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
-  `else if` sugar, `Option`, `Result`, and `match`.
+  `else if` sugar, `Option`, `Result`, and expression/statement `match`.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
@@ -63,6 +63,8 @@ cargo run --bin mlg -- build examples/return-completeness.mlg -o target/mallang/
 target/mallang/return-completeness
 cargo run --bin mlg -- build examples/else-if.mlg -o target/mallang/else-if
 target/mallang/else-if
+cargo run --bin mlg -- build examples/match-statement.mlg -o target/mallang/match-statement
+target/mallang/match-statement
 ```
 
 Run the full local gate:
@@ -87,6 +89,7 @@ scripts/check.sh
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
 - `examples/return-completeness.mlg`: native smoke for branch-aware return analysis.
 - `examples/else-if.mlg`: native smoke for statement-form `else if` sugar.
+- `examples/match-statement.mlg`: native smoke for statement-form `match` block arms.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -112,5 +115,5 @@ func add(a int, b int) int {
 
 Current status: implemented for the first `int`, `bool`, `string`,
 statement/expression `if`, `else if` sugar, branch-aware returns,
-struct/method/nested-field, and built-in ADT subset via C source generation and
-`clang`.
+struct/method/nested-field, and built-in ADT expression/statement `match`
+subset via C source generation and `clang`.

@@ -89,6 +89,10 @@ pub enum StmtKind {
         then_block: Block,
         else_block: Option<Block>,
     },
+    Match {
+        scrutinee: Expr,
+        arms: Vec<MatchBlockArm>,
+    },
     Expr {
         expr: Expr,
     },
@@ -150,6 +154,13 @@ pub struct FieldInit {
 pub struct MatchArm {
     pub pattern: MatchPattern,
     pub expr: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchBlockArm {
+    pub pattern: MatchPattern,
+    pub block: Block,
     pub span: Span,
 }
 

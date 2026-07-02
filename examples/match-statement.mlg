@@ -1,0 +1,23 @@
+func main() {
+    match maybe(true) {
+        case Some(inner) {
+            print(inner)
+        }
+        case None {
+            print(0)
+        }
+    }
+
+    match maybe(false) {
+        case Some(inner) {
+            print(inner)
+        }
+        case None {
+            print(0)
+        }
+    }
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}

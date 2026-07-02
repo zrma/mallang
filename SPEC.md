@@ -343,6 +343,15 @@ label := match user {
     case Some(u) { u.name }
     case None { "not found" }
 }
+
+match user {
+    case Some(u) {
+        print(u.name)
+    }
+    case None {
+        print("not found")
+    }
+}
 ```
 
 Rules:
@@ -353,6 +362,9 @@ Rules:
 - Matching `Option[T]` requires exactly `Some(name)` and `None` arms.
 - Matching `Result[T, E]` requires exactly `Ok(name)` and `Err(name)` arms.
 - All arms of a `match` expression must produce the same non-`unit` type.
+- Statement-form `match` arms are blocks and may contain multiple statements.
+- A statement-form `match` is return-complete when every arm block is
+  return-complete.
 - Matching a move-only scrutinee consumes it.
 
 ## Ownership Rules
