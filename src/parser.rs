@@ -168,14 +168,15 @@ impl Parser {
     }
 
     fn parse_param(&mut self) -> Result<Param, ParseError> {
-        let (name, start) = self.expect_ident("expected parameter name")?;
-        let mode = if self.eat_keyword(Keyword::In).is_some() {
-            ParamMode::In
-        } else if self.eat_keyword(Keyword::Mut).is_some() {
-            ParamMode::Mut
-        } else {
-            ParamMode::Owned
-        };
+        let prefix_mode = self.eat_param_mode();
+        let (name, name_span) = self.expect_ident("expected parameter name")?;
+        if let Some((_, span)) = self.eat_param_mode() {
+            return Err(ParseError::new(
+                "parameter mode must be written before the parameter name",
+                span,
+            ));
+        }
+        let (mode, start) = prefix_mode.unwrap_or((ParamMode::Owned, name_span));
         let ty = self.parse_type_ref()?;
         let span = start.join(ty.span);
 
@@ -185,6 +186,15 @@ impl Parser {
             ty,
             span,
         })
+    }
+
+    fn eat_param_mode(&mut self) -> Option<(ParamMode, Span)> {
+        if let Some(span) = self.eat_keyword(Keyword::Con) {
+            Some((ParamMode::In, span))
+        } else {
+            self.eat_keyword(Keyword::Mut)
+                .map(|span| (ParamMode::Mut, span))
+        }
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, ParseError> {
@@ -989,7 +999,7 @@ impl Parser {
     }
 
     fn parse_arg(&mut self) -> Result<Arg, ParseError> {
-        let (mode, start) = if let Some(span) = self.eat_keyword(Keyword::In) {
+        let (mode, start) = if let Some(span) = self.eat_keyword(Keyword::Con) {
             (ArgMode::In, span)
         } else if let Some(span) = self.eat_keyword(Keyword::Mut) {
             (ArgMode::Mut, span)
@@ -1441,6 +1451,35 @@ func main() {
     }
 
     #[test]
+    fn parses_prefix_parameter_modes() {
+        let program = parse(
+            r#"
+func read(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "lee"
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.functions[0].params[0].name, "name");
+        assert_eq!(program.functions[0].params[0].mode, ParamMode::In);
+        assert_eq!(program.functions[1].params[0].name, "name");
+        assert_eq!(program.functions[1].params[0].mode, ParamMode::Mut);
+    }
+
+    #[test]
+    fn rejects_suffix_parameter_modes() {
+        let error = parse("func read(name con string) { print(name) }").unwrap_err();
+        assert!(error
+            .message
+            .contains("parameter mode must be written before the parameter name"));
+    }
+
+    #[test]
     fn parses_if_expression() {
         let program = parse(
             r#"
@@ -1634,7 +1673,7 @@ type User struct {
     age int
 }
 
-func (self in User) age() int {
+func (con self User) age() int {
     return self.age
 }
 

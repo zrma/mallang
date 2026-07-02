@@ -8,8 +8,8 @@
 ## 범위
 
 - 같은 함수 호출의 argument list 안에서 동일 local에 대한 `mut` borrow가 다른
-  `in`/`mut` borrow와 겹치면 reject한다.
-- 같은 함수 호출에서 동일 local을 여러 번 `in` borrow하는 것은 허용한다.
+  `con`/`mut` borrow와 겹치면 reject한다.
+- 같은 함수 호출에서 동일 local을 여러 번 `con` borrow하는 것은 허용한다.
 - borrow argument는 기존 ownership-lite 규칙처럼 direct local variable만 허용한다.
 - call duration 밖으로 borrow가 저장되는 모델은 아직 없으므로 statement 간 borrow
   lifetime tracking은 범위 밖이다.

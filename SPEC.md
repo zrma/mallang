@@ -41,11 +41,11 @@ day-to-day command is intentionally short.
 ```go
 func main() {
     name := "kim"
-    msg := greet(in name)
+    msg := greet(con name)
     print(msg)
 }
 
-func greet(name in string) string {
+func greet(con name string) string {
     return "hello " + name
 }
 ```
@@ -65,7 +65,7 @@ func greet(name in string) string {
 Reserved words:
 
 ```text
-func return if else for break continue range match case mut in true false struct type nil
+func return if else for break continue range match case mut con true false struct type nil
 ```
 
 `nil` is reserved so the compiler can produce a clear error instead of treating
@@ -220,7 +220,7 @@ Rules:
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed.
 - Field paths rooted in local bindings can be used as borrow arguments, such as
-  `show(in user.name)` or `rename(mut user.profile.name)`.
+  `show(con user.name)` or `rename(mut user.profile.name)`.
 - Mutable field borrow arguments require the root binding to be `mut`.
 - Borrow conflict checks are field-aware within a single call: overlapping
   whole-struct/field borrows and same-field exclusive borrows are rejected,
@@ -230,15 +230,14 @@ Rules:
   type is printable in the native backend.
 - v0 does not include recursive by-value structs or struct pattern matching.
 
-Methods use Go-like receiver declarations with Mallang's existing parameter
-mode syntax.
+Methods use Go-like receiver declarations with Mallang's parameter mode syntax.
 
 ```go
-func (self in User) age() int {
+func (con self User) age() int {
     return self.age
 }
 
-func (self mut Counter) inc() {
+func (mut self Counter) inc() {
     self.value = self.value + 1
 }
 
@@ -248,11 +247,11 @@ print(user.age())
 Rules:
 
 - The receiver must be a struct type in v0.
-- Receiver modes are the same as parameter modes: owned, `in`, and `mut`.
+- Receiver modes are the same as parameter modes: owned, `con`, and `mut`.
 - A method call implicitly passes the receiver according to the method
   declaration.
 - Returning or storing borrowed values is still unsupported, so methods with
-  `in` receivers cannot return non-copy fields such as `string` by value.
+  `con` receivers cannot return non-copy fields such as `string` by value.
 - v0 does not include method values, interfaces, dynamic dispatch, or receiver
   overloading outside concrete struct receivers.
 
@@ -270,16 +269,16 @@ Parameter modes:
 
 ```text
 name T      // owned value
-name in T   // read borrow
-name mut T  // mutable borrow
+con name T  // const/read-only borrow
+mut name T  // mutable borrow
 ```
 
 Call sites must make borrow mode explicit.
 
 ```go
-readName(in user)
+readName(con user)
 rename(mut user, "lee")
-readField(in user.name)
+readField(con user.name)
 renameField(mut user.profile.name)
 consume(user)
 ```
@@ -287,9 +286,9 @@ consume(user)
 Rules:
 
 - Passing a non-copy value as `T` moves ownership into the callee.
-- Passing `in T` creates a read-only borrow for the duration of the call.
+- Passing `con T` creates a const/read-only borrow for the duration of the call.
 - Passing `mut T` creates an exclusive mutable borrow for the duration of the call.
-- Native code passes `in T` and `mut T` as hidden references. Inside the callee,
+- Native code passes `con T` and `mut T` as hidden references. Inside the callee,
   reads use normal value syntax, and assignment through a `mut T` parameter
   updates the caller's local variable or field path.
 - Borrow arguments may be local variables or field paths rooted in local variables.

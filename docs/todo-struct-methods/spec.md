@@ -7,10 +7,10 @@
 
 ## 범위
 
-- Declaration syntax: `func (self in User) age() int { ... }`
+- Declaration syntax: `func (con self User) age() int { ... }`
 - Call syntax: `user.age()`
-- Receiver는 기존 param mode를 재사용한다: owned, `in`, `mut`.
-- 이번 native smoke는 read receiver `self in User`와 copy field 반환을 검증한다.
+- Receiver는 기존 param mode를 재사용한다: owned, `con`, `mut`.
+- 이번 native smoke는 read receiver `con self User`와 copy field 반환을 검증한다.
 - Method lowering은 내부적으로 receiver를 첫 번째 인자로 받는 static function으로
   변환한다.
 - non-copy field return, field assignment, receiver-specific overload beyond struct

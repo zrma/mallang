@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn lexes_function_and_borrow_call() {
-        let tokens = lex(r#"func main() { msg := greet(in "kim") }"#).unwrap();
+        let tokens = lex(r#"func main() { msg := greet(con "kim") }"#).unwrap();
         let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();
 
         assert_eq!(
@@ -250,7 +250,7 @@ mod tests {
                 TokenKind::ColonEqual,
                 TokenKind::Ident("greet".to_string()),
                 TokenKind::LeftParen,
-                TokenKind::Keyword(Keyword::In),
+                TokenKind::Keyword(Keyword::Con),
                 TokenKind::String("kim".to_string()),
                 TokenKind::RightParen,
                 TokenKind::RightBrace,

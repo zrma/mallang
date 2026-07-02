@@ -29,6 +29,7 @@
 - [x] Parse fixed-size array indexing expressions.
 - [x] Parse fixed-size array element assignment statements.
 - [x] Parse fixed-size array element assignment in `for` clause post targets.
+- [x] Parse `con`/`mut` prefix parameter and call modes.
 
 ## Milestone 2: Static Semantics
 
@@ -63,7 +64,7 @@
 - [x] Treat `string` and structs as move-only by default.
 - [x] Decide fixed-size array ownership and defer slices.
 - [x] Treat fixed-size arrays as move-only values.
-- [x] Support explicit read borrow calls with `in expr`.
+- [x] Support explicit read borrow calls with `con expr`.
 - [x] Support explicit mutable borrow calls with `mut expr`.
 - [x] Reject use-after-move.
 - [x] Reject overlapping mutable/read borrows within one call.
@@ -79,7 +80,7 @@
 - [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
 - [x] Generate native C blocks for statement-form `if`.
-- [x] Lower `in`/`mut` parameters to a hidden-reference C ABI.
+- [x] Lower `con`/`mut` parameters to a hidden-reference C ABI.
 - [x] Generate C temps for `if` expression branches that need prelude statements.
 - [x] Generate C temps for `match` expression arms that need prelude statements.
 - [x] Lower `bool` logical operators to native short-circuit code.
@@ -117,6 +118,7 @@
 - [x] Field-level borrow arguments for direct local fields.
 - [x] Nested field assignment and nested field borrow arguments.
 - [x] Print struct values with printable fields in the C backend.
+- [x] Canonical `con name T` / `mut name T` prefix parameter modes.
 - Slice `[]T`, append/growth, mutable range values, and non-copy array element
   mutation.
 - Broader native lowering for `for` clause header expressions that need

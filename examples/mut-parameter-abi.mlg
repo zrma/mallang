@@ -11,10 +11,10 @@ func main() {
     print(counter.value)
 }
 
-func rename(name mut string) {
+func rename(mut name string) {
     name = "lee"
 }
 
-func increment(counter mut Counter) {
+func increment(mut counter Counter) {
     counter.value = counter.value + 1
 }

@@ -1809,7 +1809,7 @@ impl<'a> Checker<'a> {
         }
         if args[0].mode != ArgMode::Owned {
             return Err(SemanticError::new(
-                "`len` arguments do not take `in` or `mut` mode markers",
+                "`len` arguments do not take `con` or `mut` mode markers",
                 args[0].span,
             ));
         }
@@ -1961,7 +1961,7 @@ impl<'a> Checker<'a> {
                 }
                 (ParamMode::In, _) => {
                     return Err(SemanticError::new(
-                        format!("parameter `{}` expects `in` argument", param.name),
+                        format!("parameter `{}` expects `con` argument", param.name),
                         arg.span,
                     ));
                 }
@@ -2751,7 +2751,7 @@ type User struct {
     age int
 }
 
-func (self in User) age() int {
+func (con self User) age() int {
     return self.age
 }
 
@@ -2771,7 +2771,7 @@ type Counter struct {
     value int
 }
 
-func (self mut Counter) inc() {
+func (mut self Counter) inc() {
     self.value = self.value + 1
 }
 
@@ -2792,7 +2792,7 @@ type Counter struct {
     value int
 }
 
-func (self mut Counter) inc() {
+func (mut self Counter) inc() {
     self.value = self.value + 1
 }
 
@@ -4088,16 +4088,16 @@ func printInt(x int) {
     }
 
     #[test]
-    fn ownership_allows_in_borrow_without_move() {
+    fn ownership_allows_con_borrow_without_move() {
         check_ok(
             r#"
 func main() {
     s := "hello"
-    show(in s)
-    show(in s)
+    show(con s)
+    show(con s)
 }
 
-func show(s in string) {
+func show(con s string) {
     print(s)
 }
 "#,
@@ -4105,7 +4105,7 @@ func show(s in string) {
     }
 
     #[test]
-    fn ownership_rejects_missing_in_call_mode() {
+    fn ownership_rejects_missing_con_call_mode() {
         let error = check_error(
             r#"
 func main() {
@@ -4113,12 +4113,12 @@ func main() {
     show(s)
 }
 
-func show(s in string) {
+func show(con s string) {
     print(s)
 }
 "#,
         );
-        assert!(error.message.contains("expects `in` argument"));
+        assert!(error.message.contains("expects `con` argument"));
     }
 
     #[test]
@@ -4130,7 +4130,7 @@ func main() {
     touch(mut s)
 }
 
-func touch(s mut string) {
+func touch(mut s string) {
     print(s)
 }
 "#,
@@ -4150,7 +4150,7 @@ func main() {
     print(s)
 }
 
-func touch(s mut string) {
+func touch(mut s string) {
     print(s)
 }
 "#,
@@ -4163,10 +4163,10 @@ func touch(s mut string) {
             r#"
 func main() {
     s := "hello"
-    print(leak(in s))
+    print(leak(con s))
 }
 
-func leak(s in string) string {
+func leak(con s string) string {
     return s
 }
 "#,
@@ -4183,7 +4183,7 @@ func main() {
     leak(mut s)
 }
 
-func leak(s mut string) {
+func leak(mut s string) {
     alias := s
     print(alias)
 }
@@ -4201,7 +4201,7 @@ func main() {
     leak(mut s)
 }
 
-func leak(s mut string) {
+func leak(mut s string) {
     consume(s)
 }
 
@@ -4219,10 +4219,10 @@ func consume(s string) {
             r#"
 func main() {
     x := 1
-    print(id(in x))
+    print(id(con x))
 }
 
-func id(x in int) int {
+func id(con x int) int {
     return x
 }
 "#,
@@ -4240,11 +4240,11 @@ type User struct {
 
 func main() {
     user := User{name: "kim", age: 30}
-    showName(in user.name)
+    showName(con user.name)
     print(user.age)
 }
 
-func showName(name in string) {
+func showName(con name string) {
     print(name)
 }
 "#,
@@ -4264,7 +4264,7 @@ func main() {
     touchName(mut user.name)
 }
 
-func touchName(name mut string) {
+func touchName(mut name string) {
     print(name)
 }
 "#,
@@ -4284,7 +4284,7 @@ func main() {
     touchName(mut user.name)
 }
 
-func touchName(name mut string) {
+func touchName(mut name string) {
     print(name)
 }
 "#,
@@ -4304,10 +4304,10 @@ type User struct {
 
 func main() {
     mut user := User{name: "kim"}
-    compare(in user.name, mut user.name)
+    compare(con user.name, mut user.name)
 }
 
-func compare(left in string, right mut string) {
+func compare(con left string, mut right string) {
     print(left)
     print(right)
 }
@@ -4330,7 +4330,7 @@ func main() {
     touchBoth(mut pair.left, mut pair.right)
 }
 
-func touchBoth(left mut int, right mut int) {
+func touchBoth(mut left int, mut right int) {
     print(left)
     print(right)
 }
@@ -4349,10 +4349,10 @@ type Pair struct {
 
 func main() {
     mut pair := Pair{left: 1, right: 2}
-    touchBoth(mut pair.left, in pair)
+    touchBoth(mut pair.left, con pair)
 }
 
-func touchBoth(left mut int, whole in Pair) {
+func touchBoth(mut left int, con whole Pair) {
     print(left)
     print(whole.right)
 }
@@ -4375,10 +4375,10 @@ type User struct {
 
 func main() {
     user := User{name: Name{value: "kim"}}
-    show(in user.name.value)
+    show(con user.name.value)
 }
 
-func show(value in string) {
+func show(con value string) {
     print(value)
 }
 "#,
@@ -4402,7 +4402,7 @@ func main() {
     touch(mut user.name.value)
 }
 
-func touch(value mut string) {
+func touch(mut value string) {
     print(value)
 }
 "#,
@@ -4427,7 +4427,7 @@ func main() {
     touchBoth(mut user.name.first, mut user.name.last)
 }
 
-func touchBoth(first mut string, last mut string) {
+func touchBoth(mut first string, mut last string) {
     print(first)
     print(last)
 }
@@ -4450,10 +4450,10 @@ type User struct {
 
 func main() {
     mut user := User{name: Name{first: "kim", last: "lee"}}
-    touchBoth(mut user.name.first, in user.name)
+    touchBoth(mut user.name.first, con user.name)
 }
 
-func touchBoth(first mut string, name in Name) {
+func touchBoth(mut first string, con name Name) {
     print(first)
     print(name.last)
 }
@@ -4468,10 +4468,10 @@ func touchBoth(first mut string, name in Name) {
             r#"
 func main() {
     s := "hello"
-    compare(in s, in s)
+    compare(con s, con s)
 }
 
-func compare(left in string, right in string) {
+func compare(con left string, con right string) {
     print(left)
     print(right)
 }
@@ -4485,10 +4485,10 @@ func compare(left in string, right in string) {
             r#"
 func main() {
     mut s := "hello"
-    compare(in s, mut s)
+    compare(con s, mut s)
 }
 
-func compare(left in string, right mut string) {
+func compare(con left string, mut right string) {
     print(left)
     print(right)
 }
@@ -4506,7 +4506,7 @@ func main() {
     compare(mut s, mut s)
 }
 
-func compare(left mut string, right mut string) {
+func compare(mut left string, mut right string) {
     print(left)
     print(right)
 }

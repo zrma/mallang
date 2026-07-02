@@ -2,7 +2,7 @@
 
 ## 목표
 
-- `in`/`mut` parameter로 들어온 non-copy borrowed value가 owned position으로 escape하지 못하게 한다.
+- `con`/`mut` parameter로 들어온 non-copy borrowed value가 owned position으로 escape하지 못하게 한다.
 - SPEC의 “borrowed values cannot be stored/returned” 규칙을 현재 parameter modes 기준으로 검증 가능한 checker rule로 고정한다.
 
 ## 범위

@@ -18,7 +18,7 @@ func main() {
     print(check(7, false))
 }
 
-func bump(value mut int) bool {
+func bump(mut value int) bool {
     value = value + 1
     return true
 }

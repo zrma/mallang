@@ -45,7 +45,7 @@
 
 - [x] Copy/move type classification 추가
 - [x] use-after-move reject
-- [x] `in` read borrow call rule 추가
+- [x] `con` read borrow call rule 추가
 - [x] `mut` exclusive borrow call rule 추가
 - [x] same-call overlapping borrow tracking 추가
 - [x] non-copy borrowed parameter return/storage/owned-arg escape reject 추가
@@ -58,7 +58,7 @@
 - [x] `mlg build` subcommand 추가
 - [x] `clang` 기반 native binary smoke 추가
 - [x] statement-form `if` C codegen/native smoke 추가
-- [x] `in`/`mut` parameter hidden-reference C ABI 추가
+- [x] `con`/`mut` parameter hidden-reference C ABI 추가
 - [x] prelude가 필요한 `if` expression branch용 C temp lowering 추가
 - [x] prelude가 필요한 `match` expression arm용 C temp lowering 추가
 - [x] `&&` / `||` short-circuit native smoke 추가
@@ -136,3 +136,11 @@
 - [x] typed IR에서 index assignment target을 for post로 lowering
 - [x] C `for` header에서 사용할 수 있는 runtime bounds helper 추가
 - [x] native smoke에서 for post array assignment 실행 결과 검증
+
+## P12: Prefix Parameter Modes
+
+- [x] read borrow keyword를 `in`에서 `con`으로 교체
+- [x] parameter/receiver mode를 `con name T` / `mut name T` prefix로 고정
+- [x] call argument mode를 `con expr` / `mut expr`로 고정
+- [x] suffix mode `name con T` / `name mut T` reject 추가
+- [x] examples/docs/tests를 canonical borrow syntax로 갱신

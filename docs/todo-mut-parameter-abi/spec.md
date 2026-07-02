@@ -2,13 +2,13 @@
 
 ## 목표
 
-- `in`/`mut` parameter를 native backend에서 hidden-reference ABI로 낮춘다.
+- `con`/`mut` parameter를 native backend에서 hidden-reference ABI로 낮춘다.
 - `mut` parameter에 대한 assignment와 field assignment가 caller의 local/field path에 반영되도록 한다.
 
 ## 범위
 
-- C backend function prototype에서 `in T`는 read-only pointer, `mut T`는 mutable pointer로 선언한다.
-- C backend call site에서 `in`/`mut` argument는 local 또는 field place의 주소를 넘긴다.
+- C backend function prototype에서 `con T`는 read-only pointer, `mut T`는 mutable pointer로 선언한다.
+- C backend call site에서 `con`/`mut` argument는 local 또는 field place의 주소를 넘긴다.
 - 함수 body에서는 borrowed parameter를 일반 Mallang value syntax로 읽되, `mut` assignment는 pointer dereference write로 생성한다.
 - parser, semantic checker, typed IR shape는 기존 `ParamMode` / `ArgMode` 보존 구조를 그대로 사용한다.
 

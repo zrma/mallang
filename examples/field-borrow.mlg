@@ -5,14 +5,14 @@ type User struct {
 
 func main() {
     user := User{name: "kim", age: 30}
-    printName(in user.name)
-    printAge(in user.age)
+    printName(con user.name)
+    printAge(con user.age)
 }
 
-func printName(name in string) {
+func printName(con name string) {
     print(name)
 }
 
-func printAge(age in int) {
+func printAge(con age int) {
     print(age)
 }

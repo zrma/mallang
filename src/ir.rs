@@ -2123,7 +2123,7 @@ type User struct {
     age int
 }
 
-func (self in User) age() int {
+func (con self User) age() int {
     return self.age
 }
 

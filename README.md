@@ -19,8 +19,8 @@ This repository is the Mallang language PoC workspace.
 - No `nil`.
 - Immutable bindings by default.
 - Ownership by default for non-copy values.
-- Explicit `in` and `mut` borrow calls.
-- Native `in`/`mut` parameter ABI uses hidden references, so `mut` parameter
+- Explicit `con` and `mut` borrow calls.
+- Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter
   assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
@@ -34,7 +34,7 @@ This repository is the Mallang language PoC workspace.
 - Struct values with printable fields can be printed natively.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
-  `in user.name` and `mut user.profile.name`.
+  `con user.name` and `mut user.profile.name`.
 
 ## Bootstrap
 

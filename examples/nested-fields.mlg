@@ -10,16 +10,16 @@ type User struct {
 
 func main() {
     mut user := User{name: Name{first: "kim", last: "min"}, age: 30}
-    printName(in user.name.first)
+    printName(con user.name.first)
     user.name.last = "lee"
-    printName(in user.name.last)
-    printAge(in user.age)
+    printName(con user.name.last)
+    printAge(con user.age)
 }
 
-func printName(name in string) {
+func printName(con name string) {
     print(name)
 }
 
-func printAge(age in int) {
+func printAge(con age int) {
     print(age)
 }

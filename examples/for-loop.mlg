@@ -6,7 +6,7 @@ func main() {
     print(count)
 }
 
-func next(value mut int) bool {
+func next(mut value int) bool {
     value = value + 1
     return value < 4
 }

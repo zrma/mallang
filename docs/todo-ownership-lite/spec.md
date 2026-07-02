@@ -10,7 +10,7 @@
 - `string`은 move-only로 취급한다.
 - non-copy local을 owned value position에서 사용하면 moved 상태로 표시한다.
 - moved local 재사용을 reject한다.
-- `in` parameter와 `in` call argument를 읽기 borrow로 검증한다.
+- `con` parameter와 `con` call argument를 읽기 borrow로 검증한다.
 - `mut` parameter와 `mut` call argument를 mutable borrow로 검증한다.
 - borrow argument는 v0에서 direct local variable만 허용한다.
 - borrow value 저장/return은 별도 first-class reference가 없으므로 이번 범위에서는 생기지 않게 유지한다.

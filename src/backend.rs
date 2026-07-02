@@ -2390,7 +2390,7 @@ type User struct {
     age int
 }
 
-func (self in User) age() int {
+func (con self User) age() int {
     return self.age
 }
 
@@ -2418,7 +2418,7 @@ type Counter struct {
     value int
 }
 
-func (self mut Counter) inc() {
+func (mut self Counter) inc() {
     self.value = self.value + 1
 }
 
@@ -2501,11 +2501,11 @@ func main() {
     print(user.age)
 }
 
-func rename(name mut string) {
+func rename(mut name string) {
     name = "lee"
 }
 
-func bump(age mut int) {
+func bump(mut age int) {
     age = age + 1
 }
 "#,

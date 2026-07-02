@@ -6,7 +6,7 @@
 
 ## 범위
 
-- `func (self mut T) method()` semantic 허용/거부 테스트를 추가한다.
+- `func (mut self T) method()` semantic 허용/거부 테스트를 추가한다.
 - C backend가 `mut` receiver를 hidden mutable pointer로 선언하고 method call에서 receiver 주소를 넘기는지 unit test로 고정한다.
 - `examples/mut-receiver.mlg` native smoke를 추가한다.
 - 새 receiver syntax나 method values/dynamic dispatch는 도입하지 않는다.

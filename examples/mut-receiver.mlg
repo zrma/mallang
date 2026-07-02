@@ -9,10 +9,10 @@ func main() {
     print(counter.value())
 }
 
-func (self mut Counter) inc() {
+func (mut self Counter) inc() {
     self.value = self.value + 1
 }
 
-func (self in Counter) value() int {
+func (con self Counter) value() int {
     return self.value
 }

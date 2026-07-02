@@ -9,7 +9,7 @@
 ## 범위
 
 - 허용: nested field assignment (`user.name.value = "lee"`).
-- 허용: nested field read borrow (`in user.name.value`).
+- 허용: nested field read borrow (`con user.name.value`).
 - 허용: nested field mutable borrow (`mut user.name.value`) when the root
   binding is `mut`.
 - 허용: 서로 prefix 관계가 아닌 disjoint nested field mutable borrows.
