@@ -2092,51 +2092,76 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         mutable: bool,
     ) -> Result<Type, SemanticError> {
-        match borrow_arg_place(arg)? {
-            BorrowPlace { root: name, fields } if fields.is_empty() => {
-                let Some(local) = locals.get(&name) else {
+        let BorrowPlace { root: name, fields } = borrow_arg_place(arg)?;
+        let Some(local) = locals.get(&name) else {
+            return Err(SemanticError::new(
+                format!("unknown variable `{name}`"),
+                arg.expr.span,
+            ));
+        };
+        if local.moved {
+            return Err(SemanticError::new(
+                format!("borrow of moved value `{name}`"),
+                arg.expr.span,
+            ));
+        }
+        if mutable && !local.mutable {
+            let message = if fields.is_empty() {
+                format!("cannot mutably borrow immutable binding `{name}`")
+            } else if fields.iter().any(|field| field == INDEX_BORROW_SEGMENT) {
+                format!("cannot mutably borrow place of immutable binding `{name}`")
+            } else {
+                format!("cannot mutably borrow field of immutable binding `{name}`")
+            };
+            return Err(SemanticError::new(message, arg.span));
+        }
+
+        self.resolve_borrow_expr_type(&arg.expr, locals)
+    }
+
+    fn resolve_borrow_expr_type(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<Type, SemanticError> {
+        match &expr.kind {
+            ExprKind::Var(name) => {
+                let Some(local) = locals.get(name) else {
                     return Err(SemanticError::new(
                         format!("unknown variable `{name}`"),
-                        arg.expr.span,
+                        expr.span,
                     ));
                 };
                 if local.moved {
                     return Err(SemanticError::new(
                         format!("borrow of moved value `{name}`"),
-                        arg.expr.span,
+                        expr.span,
                     ));
                 }
-                if mutable && !local.mutable {
-                    return Err(SemanticError::new(
-                        format!("cannot mutably borrow immutable binding `{name}`"),
-                        arg.span,
-                    ));
-                }
-
                 Ok(local.ty.clone())
             }
-            BorrowPlace { root: name, fields } => {
-                let Some(local) = locals.get(&name) else {
+            ExprKind::FieldAccess { base, field } => {
+                let base_ty = self.resolve_borrow_expr_type(base, locals)?;
+                self.resolve_field_path_type(&base_ty, std::slice::from_ref(field), expr.span, "field borrow")
+            }
+            ExprKind::Index { base, index } => {
+                let base_ty = self.resolve_borrow_expr_type(base, locals)?;
+                let Type::Array { len, element } = base_ty else {
                     return Err(SemanticError::new(
-                        format!("unknown variable `{name}`"),
-                        arg.expr.span,
+                        format!(
+                            "array element borrow target must be a fixed-size array, got `{}`",
+                            base_ty.source_name()
+                        ),
+                        base.span,
                     ));
                 };
-                if local.moved {
-                    return Err(SemanticError::new(
-                        format!("borrow of moved value `{name}`"),
-                        arg.expr.span,
-                    ));
-                }
-                if mutable && !local.mutable {
-                    return Err(SemanticError::new(
-                        format!("cannot mutably borrow field of immutable binding `{name}`"),
-                        arg.span,
-                    ));
-                }
-
-                self.resolve_field_path_type(&local.ty, &fields, arg.expr.span, "field borrow")
+                self.check_index_expr(index, locals, len)?;
+                Ok(*element)
             }
+            _ => Err(SemanticError::new(
+                "borrow arguments must be direct local variables, direct local fields, or direct local array elements in v0",
+                expr.span,
+            )),
         }
     }
 
@@ -2443,10 +2468,19 @@ impl BorrowPlace {
 
     fn display(&self) -> String {
         if self.fields.is_empty() {
-            self.root.clone()
-        } else {
-            format!("{}.{}", self.root, self.fields.join("."))
+            return self.root.clone();
         }
+
+        let mut display = self.root.clone();
+        for field in &self.fields {
+            if field == INDEX_BORROW_SEGMENT {
+                display.push_str("[?]");
+            } else {
+                display.push('.');
+                display.push_str(field);
+            }
+        }
+        display
     }
 
     fn overlaps(&self, other: &Self) -> bool {
@@ -2458,11 +2492,30 @@ impl BorrowPlace {
     }
 }
 
+const INDEX_BORROW_SEGMENT: &str = "[]";
+
 fn borrow_arg_place(arg: &Arg) -> Result<BorrowPlace, SemanticError> {
-    direct_local_place(
+    direct_borrow_place(
         &arg.expr,
-        "borrow arguments must be direct local variables or direct local fields in v0",
+        "borrow arguments must be direct local variables, direct local fields, or direct local array elements in v0",
     )
+}
+
+fn direct_borrow_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
+    match &expr.kind {
+        ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
+        ExprKind::FieldAccess { base, field } => {
+            let mut place = direct_borrow_place(base, message)?;
+            place.fields.push(field.clone());
+            Ok(place)
+        }
+        ExprKind::Index { base, .. } => {
+            let mut place = direct_borrow_place(base, message)?;
+            place.fields.push(INDEX_BORROW_SEGMENT.to_string());
+            Ok(place)
+        }
+        _ => Err(SemanticError::new(message, expr.span)),
+    }
 }
 
 fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace, SemanticError> {
@@ -4155,6 +4208,77 @@ func touch(mut s string) {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn ownership_allows_array_element_borrow_arguments() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim", age: 30}, User{name: "lee", age: 20}}
+    printName(con users[0].name)
+    rename(mut users[1].name)
+}
+
+func printName(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "park"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_mut_array_element_borrow_of_immutable_binding() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    users := [1]User{User{name: "kim"}}
+    rename(mut users[0].name)
+}
+
+func rename(mut name string) {
+    name = "lee"
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow place of immutable binding `users`"));
+    }
+
+    #[test]
+    fn ownership_rejects_overlapping_array_element_borrows_in_one_call() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim"}, User{name: "lee"}}
+    touch(mut users[0].name, mut users[1].name)
+}
+
+func touch(mut left string, mut right string) {
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("borrow of `users[?].name` overlaps with an active borrow"));
     }
 
     #[test]

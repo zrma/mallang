@@ -121,6 +121,7 @@
 - [x] Canonical `con name T` / `mut name T` prefix parameter modes.
 - [x] Native lowering for `for` clause condition/post expressions that need
   temporary prelude statements.
+- [x] Fixed-size array element borrow arguments for copy and non-copy elements.
 - Slice `[]T`, append/growth, mutable range values, and non-copy array element
   mutation.
 - Modules/packages.

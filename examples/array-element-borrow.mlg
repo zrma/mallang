@@ -1,0 +1,19 @@
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim"}, User{name: "lee"}}
+
+    show(con users[0].name)
+    rename(mut users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "park"
+    print(name)
+}

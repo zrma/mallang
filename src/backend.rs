@@ -953,11 +953,52 @@ impl<'a> CGenerator<'a> {
         arg: &IrArg,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(&arg.expr, env)?;
+        let CExpr { prelude, code } = match arg.mode {
+            ArgMode::Owned => self.emit_stmt_expr_with_env(&arg.expr, env)?,
+            ArgMode::Con | ArgMode::Mut => self.emit_borrow_lvalue_expr(&arg.expr, env)?,
+        };
         Ok(CExpr {
             prelude,
             code: c_arg_code(arg.mode, code),
         })
+    }
+
+    fn emit_borrow_lvalue_expr(
+        &self,
+        expr: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        match &expr.kind {
+            IrExprKind::Var(name) => Ok(CExpr::simple(c_assignment_target(name, env))),
+            IrExprKind::FieldAccess { base, field } => {
+                let CExpr { prelude, code } = self.emit_borrow_lvalue_expr(base, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}).{}", code, c_field(field)),
+                })
+            }
+            IrExprKind::Index { base, index } => {
+                let Type::Array { len, .. } = &base.ty else {
+                    return Err(CompileError::new(
+                        "IR invariant violation: borrow index base must be an array",
+                    ));
+                };
+                let base = self.emit_borrow_lvalue_expr(base, env)?;
+                let index = self.emit_stmt_expr_with_env(index, env)?;
+                let mut prelude = base.prelude;
+                prelude.extend(index.prelude);
+                Ok(CExpr {
+                    prelude,
+                    code: format!(
+                        "({}).mlg_data[mallang_check_index({}, {len})]",
+                        base.code, index.code
+                    ),
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: invalid borrow argument expression",
+            )),
+        }
     }
 
     fn emit_adt_constructor_stmt_expr(
@@ -2595,5 +2636,45 @@ func bump(mut age int) {
         assert!(c.contains("mlg_bump(&((mlg_user).mlg_age));"));
         assert!(c.contains("(*mlg_name) = \"lee\";"));
         assert!(c.contains("(*mlg_age) = ((*mlg_age) + 1);"));
+    }
+
+    #[test]
+    fn generates_c_for_array_element_borrow_arguments() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim"}, User{name: "lee"}}
+    show(con users[0].name)
+    rename(mut users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "park"
+    print(name)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("void mlg_show(const char * const * mlg_name);"));
+        assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+        assert!(
+            c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_check_index(0, 2)]).mlg_name));")
+        );
+        assert!(c.contains(
+            "mlg_rename(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));"
+        ));
+        assert!(c.contains("(*mlg_name) = \"park\";"));
     }
 }

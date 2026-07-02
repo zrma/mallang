@@ -718,6 +718,102 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    fn lower_borrow_expr_with_expected(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<IrExpr, IrError> {
+        let lowered = self.lower_borrow_expr(expr, locals)?;
+        if let Some(expected) = expected {
+            if &lowered.ty != expected {
+                return Err(IrError::new(
+                    "semantic analysis accepted mismatched borrow argument type",
+                    expr.span,
+                ));
+            }
+        }
+        Ok(lowered)
+    }
+
+    fn lower_borrow_expr(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+    ) -> Result<IrExpr, IrError> {
+        let (kind, ty) = match &expr.kind {
+            ExprKind::Var(name) => {
+                let Some(ty) = locals.get(name).cloned() else {
+                    return Err(IrError::new(
+                        format!("unknown variable `{name}` during IR lowering"),
+                        expr.span,
+                    ));
+                };
+                (IrExprKind::Var(name.clone()), ty)
+            }
+            ExprKind::FieldAccess { base, field } => {
+                let base = self.lower_borrow_expr(base, locals)?;
+                let Type::Struct(type_name) = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted field borrow on non-struct value",
+                        expr.span,
+                    ));
+                };
+                let sig = self.struct_sig(type_name, expr.span)?;
+                let Some(field_sig) = sig.fields.iter().find(|candidate| candidate.name == *field)
+                else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unknown struct field borrow",
+                        expr.span,
+                    ));
+                };
+                (
+                    IrExprKind::FieldAccess {
+                        base: Box::new(base),
+                        field: field.clone(),
+                    },
+                    field_sig.ty.clone(),
+                )
+            }
+            ExprKind::Index { base, index } => {
+                let base = self.lower_borrow_expr(base, locals)?;
+                let index = self.lower_expr(index, locals)?;
+                if index.ty != Type::Int {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array element borrow with non-int index",
+                        index.span,
+                    ));
+                }
+                let Type::Array { element, .. } = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array element borrow on non-array value",
+                        expr.span,
+                    ));
+                };
+                let element_ty = element.as_ref().clone();
+                (
+                    IrExprKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                    element_ty,
+                )
+            }
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted invalid borrow argument expression",
+                    expr.span,
+                ));
+            }
+        };
+
+        Ok(IrExpr {
+            kind,
+            ty,
+            span: expr.span,
+        })
+    }
+
     fn lower_if_expr(
         &self,
         condition: &Expr,
@@ -1485,7 +1581,7 @@ impl<'a> Lowerer<'a> {
         for (arg, param) in args.iter().zip(sig.params.iter()) {
             lowered_args.push(IrArg {
                 mode: arg.mode,
-                expr: self.lower_expr_with_expected(&arg.expr, locals, Some(&param.ty))?,
+                expr: self.lower_call_arg_expr(arg, locals, Some(&param.ty))?,
                 span: arg.span,
             });
         }
@@ -1550,7 +1646,7 @@ impl<'a> Lowerer<'a> {
         for (arg, param) in args.iter().zip(sig.function.params.iter()) {
             lowered_args.push(IrArg {
                 mode: arg.mode,
-                expr: self.lower_expr_with_expected(&arg.expr, locals, Some(&param.ty))?,
+                expr: self.lower_call_arg_expr(arg, locals, Some(&param.ty))?,
                 span: arg.span,
             });
         }
@@ -1562,6 +1658,20 @@ impl<'a> Lowerer<'a> {
             },
             sig.function.return_type.clone(),
         ))
+    }
+
+    fn lower_call_arg_expr(
+        &self,
+        arg: &Arg,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<IrExpr, IrError> {
+        match arg.mode {
+            ArgMode::Owned => self.lower_expr_with_expected(&arg.expr, locals, expected),
+            ArgMode::Con | ArgMode::Mut => {
+                self.lower_borrow_expr_with_expected(&arg.expr, locals, expected)
+            }
+        }
     }
 
     fn function_sig(&self, name: &str, span: Span) -> Result<&FunctionSig, IrError> {
@@ -2278,6 +2388,54 @@ func main() {
             panic!("expected array len expression");
         };
         assert!(matches!(array.ty, Type::Array { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_array_element_borrow_arguments() {
+        let program = parse(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut users := [2]User{User{name: "kim"}, User{name: "lee"}}
+    show(con users[0].name)
+    rename(mut users[1].name)
+}
+
+func show(con name string) {
+    print(name)
+}
+
+func rename(mut name string) {
+    name = "park"
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected call statement");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected call expression");
+        };
+        assert_eq!(args[0].mode, ArgMode::Con);
+        assert_eq!(args[0].expr.ty, Type::String);
+        assert!(matches!(args[0].expr.kind, IrExprKind::FieldAccess { .. }));
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected call statement");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected call expression");
+        };
+        assert_eq!(args[0].mode, ArgMode::Mut);
+        assert_eq!(args[0].expr.ty, Type::String);
+        assert!(matches!(args[0].expr.kind, IrExprKind::FieldAccess { .. }));
     }
 
     #[test]

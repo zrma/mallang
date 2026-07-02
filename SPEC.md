@@ -129,9 +129,11 @@ Array rules:
   the existing value pipeline.
 - Fixed-size array indexing, `len`, and mutable element assignment are supported
   for `Copy` elements.
-- Slices `[]T`, append/growth, mutable range values, borrowed indexing,
-  non-copy element indexing, and non-copy element assignment are reserved for
-  later slices.
+- Fixed-size array element borrow arguments are supported for `Copy` and
+  non-copy elements.
+- Slices `[]T`, append/growth, mutable range values, borrowed indexing as a
+  first-class expression, and non-copy element assignment are reserved for later
+  slices.
 
 Fixed-size array indexing and length are intentionally smaller than full slices.
 
@@ -139,6 +141,8 @@ Fixed-size array indexing and length are intentionally smaller than full slices.
 value := values[i]
 count := len(values)
 values[i] = 5
+show(con users[i])
+rename(mut users[i].name)
 for ; i < 3; values[slot] = i {
     slot = i
     i = i + 1
@@ -150,7 +154,13 @@ Indexing and length rules:
 - `values[i]` is valid only when `values` has fixed-size array type `[N]T` and
   `i` has type `int`.
 - `values[i]` yields a value only when `T` is `Copy`.
-- Non-copy element access waits for borrowed indexing or destructuring semantics.
+- `con values[i]` and `mut values[i]` are valid as direct function call
+  arguments even when `T` is non-copy. Field paths rooted in an array element,
+  such as `con users[i].name`, are also valid borrow arguments.
+- Mutable array element borrow arguments require the root array binding to be
+  `mut`.
+- Borrow overlap checks treat indexed borrows from the same array root
+  conservatively in v0. Distinct runtime indexes are not yet proven disjoint.
 - `len(values)` returns `int` for fixed-size arrays and does not move `values`.
 - Integer literal indexes outside `0 <= i < N` are rejected by `mlg check`.
 - Non-literal indexes are checked by generated native code before element

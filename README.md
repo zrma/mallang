@@ -91,6 +91,8 @@ cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/fie
 target/mallang/field-assignment
 cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow
 target/mallang/field-borrow
+cargo run --bin mlg -- build examples/array-element-borrow.mlg -o target/mallang/array-element-borrow
+target/mallang/array-element-borrow
 cargo run --bin mlg -- build examples/mut-parameter-abi.mlg -o target/mallang/mut-parameter-abi
 target/mallang/mut-parameter-abi
 cargo run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields
@@ -136,6 +138,7 @@ scripts/check.sh
 - `examples/mut-receiver.mlg`: native smoke for caller-visible `mut` receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
+- `examples/array-element-borrow.mlg`: native smoke for fixed array element borrow arguments.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
 - `examples/return-completeness.mlg`: native smoke for branch-aware return analysis.

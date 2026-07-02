@@ -151,3 +151,10 @@
 - [x] `for` clause post assignment target/RHS에서 prelude가 필요한 lowering 지원
 - [x] post가 있는 `for` clause body의 `continue`를 post label로 lowering
 - [x] native smoke에서 condition/post prelude와 `continue` post 실행 검증
+
+## P14: Array Element Borrow Arguments
+
+- [x] borrow argument place에 direct fixed array element path 추가
+- [x] non-copy array element를 `con`/`mut` function argument로 lowering
+- [x] backend에서 array element borrow를 checked lvalue address로 lowering
+- [x] native smoke에서 `con users[i].field`와 `mut users[i].field` 검증
