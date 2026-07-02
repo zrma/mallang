@@ -133,6 +133,7 @@
 - [x] Generate native C for consuming slice `append(slice, item)` growth.
 - [x] Generate native C for direct slice field append reassignment.
 - [x] Generate native C for owned slice field take expressions.
+- [x] Split backend public API from C backend implementation module.
 
 ## Later
 

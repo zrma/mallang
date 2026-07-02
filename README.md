@@ -216,7 +216,8 @@ scripts/check.sh
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics and
   reserved-feature boundaries.
 - `src/ir.rs`: typed IR lowering after semantic analysis.
-- `src/backend.rs`: C backend for typed IR in the first native subset.
+- `src/backend/mod.rs`: backend public API boundary.
+- `src/backend/c.rs`: C backend for typed IR in the first native subset.
 - `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone

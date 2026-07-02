@@ -520,3 +520,10 @@
 - [x] typed IR에 explicit slice field take node를 추가해 read와 move를 분리
 - [x] native backend에서 take source lvalue를 temp slice header로 copy한 뒤 empty slice header를 write
 - [x] `examples/slice-field-take.mlg` native smoke 추가
+
+## P61: Backend C Module Split
+
+- [x] backend public API를 `src/backend/mod.rs`로 고정
+- [x] C backend implementation을 `src/backend/c.rs`로 분리
+- [x] existing `generate_c` / `generate_c_from_ir` public re-export 유지
+- [x] CLI와 tests가 backend module split 뒤에도 같은 API를 사용하게 유지
