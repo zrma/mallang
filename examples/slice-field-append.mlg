@@ -1,0 +1,19 @@
+type Bag struct {
+    values []int
+}
+
+type Shelf struct {
+    bag Bag
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values = append(bag.values, 7)
+    print(len(bag.values))
+    print(bag.values[2])
+
+    mut shelf := Shelf{bag: Bag{values: []int{4}}}
+    shelf.bag.values = append(shelf.bag.values, 9)
+    print(len(shelf.bag.values))
+    print(shelf.bag.values[1])
+}

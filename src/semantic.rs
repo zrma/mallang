@@ -1452,6 +1452,10 @@ impl<'a> Checker<'a> {
         let field_path = [field.to_string()];
         let field_ty =
             self.resolve_field_path_type(&base_ty, &field_path, base.span, "field assignment")?;
+        if self.is_same_field_append_assignment(base, field, expr) {
+            self.check_same_field_append_assignment(expr, &field_ty, locals)?;
+            return Ok(());
+        }
         let value_ty =
             self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&field_ty))?;
         if value_ty != field_ty {
@@ -1462,6 +1466,69 @@ impl<'a> Checker<'a> {
                     value_ty.source_name()
                 ),
                 expr.span,
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn is_same_field_append_assignment(&self, base: &Expr, field: &str, expr: &Expr) -> bool {
+        let ExprKind::Call { callee, args } = &expr.kind else {
+            return false;
+        };
+        if !matches!(&callee.kind, ExprKind::Var(name) if name == "append") || args.len() != 2 {
+            return false;
+        }
+        is_same_field_target_expr(base, field, &args[0].expr)
+    }
+
+    fn check_same_field_append_assignment(
+        &self,
+        expr: &Expr,
+        field_ty: &Type,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<(), SemanticError> {
+        let ExprKind::Call { args, .. } = &expr.kind else {
+            return Err(SemanticError::new(
+                "internal semantic error: expected append call",
+                expr.span,
+            ));
+        };
+        if args.len() != 2 {
+            return Err(SemanticError::new(
+                "`append` expects exactly two arguments",
+                expr.span,
+            ));
+        }
+        if args[0].mode != ArgMode::Owned || args[1].mode != ArgMode::Owned {
+            return Err(SemanticError::new(
+                "`append` arguments do not take `con` or `mut` mode markers",
+                expr.span,
+            ));
+        }
+        let Type::Slice(element_ty) = field_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "`append` first argument must be a slice, got `{}`",
+                    field_ty.source_name()
+                ),
+                args[0].span,
+            ));
+        };
+        let item_ty = self.check_expr_with_expected(
+            &args[1].expr,
+            locals,
+            ValueUse::Owned,
+            Some(element_ty),
+        )?;
+        if item_ty != **element_ty {
+            return Err(SemanticError::new(
+                format!(
+                    "`append` item type mismatch: expected `{}`, got `{}`",
+                    element_ty.source_name(),
+                    item_ty.source_name()
+                ),
+                args[1].span,
             ));
         }
 
@@ -3034,6 +3101,34 @@ fn is_direct_borrow_expr(expr: &Expr) -> bool {
         ExprKind::FieldAccess { base, .. } | ExprKind::Index { base, .. } => {
             is_direct_borrow_expr(base)
         }
+        _ => false,
+    }
+}
+
+fn is_same_field_target_expr(base: &Expr, field: &str, expr: &Expr) -> bool {
+    let ExprKind::FieldAccess {
+        base: expr_base,
+        field: expr_field,
+    } = &expr.kind
+    else {
+        return false;
+    };
+    expr_field == field && is_same_direct_field_path(base, expr_base)
+}
+
+fn is_same_direct_field_path(left: &Expr, right: &Expr) -> bool {
+    match (&left.kind, &right.kind) {
+        (ExprKind::Var(left), ExprKind::Var(right)) => left == right,
+        (
+            ExprKind::FieldAccess {
+                base: left_base,
+                field: left_field,
+            },
+            ExprKind::FieldAccess {
+                base: right_base,
+                field: right_field,
+            },
+        ) => left_field == right_field && is_same_direct_field_path(left_base, right_base),
         _ => false,
     }
 }
@@ -5221,6 +5316,31 @@ func main() {
     }
 
     #[test]
+    fn allows_append_to_reassign_same_slice_field() {
+        check_ok(
+            r#"
+type Bag struct {
+    values []int
+}
+
+type Shelf struct {
+    bag Bag
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values = append(bag.values, 3)
+    print(bag.values[2] + len(bag.values))
+
+    mut shelf := Shelf{bag: Bag{values: []int{4}}}
+    shelf.bag.values = append(shelf.bag.values, 5)
+    print(shelf.bag.values[1] + len(shelf.bag.values))
+}
+"#,
+        );
+    }
+
+    #[test]
     fn append_consumes_source_slice() {
         let error = check_error(
             r#"
@@ -5233,6 +5353,24 @@ func main() {
 "#,
         );
         assert!(error.message.contains("use of moved value `values`"));
+    }
+
+    #[test]
+    fn rejects_append_from_slice_field_without_same_field_reassignment() {
+        let error = check_error(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1}}
+    grown := append(bag.values, 2)
+    print(len(grown))
+}
+"#,
+        );
+        assert!(error.message.contains("moving non-copy field out of `bag`"));
     }
 
     #[test]

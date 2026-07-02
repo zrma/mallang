@@ -2782,14 +2782,19 @@ fn cleanup_reassigned_active_binding<'a>(
 
 fn cleanup_overwritten_place_from_stmt(stmt: &IrStmt) -> Option<IrExpr> {
     match &stmt.kind {
-        IrStmtKind::FieldAssign { base, field, expr } if expr.ty.needs_cleanup() => Some(IrExpr {
-            kind: IrExprKind::FieldAccess {
-                base: Box::new(base.clone()),
-                field: field.clone(),
-            },
-            ty: expr.ty.clone(),
-            span: stmt.span,
-        }),
+        IrStmtKind::FieldAssign { base, field, expr }
+            if expr.ty.needs_cleanup()
+                && !field_assignment_consumes_overwritten_place(base, field, expr) =>
+        {
+            Some(IrExpr {
+                kind: IrExprKind::FieldAccess {
+                    base: Box::new(base.clone()),
+                    field: field.clone(),
+                },
+                ty: expr.ty.clone(),
+                span: stmt.span,
+            })
+        }
         IrStmtKind::IndexAssign { base, index, expr } if expr.ty.needs_cleanup() => Some(IrExpr {
             kind: IrExprKind::Index {
                 base: Box::new(base.clone()),
@@ -2799,6 +2804,41 @@ fn cleanup_overwritten_place_from_stmt(stmt: &IrStmt) -> Option<IrExpr> {
             span: stmt.span,
         }),
         _ => None,
+    }
+}
+
+fn field_assignment_consumes_overwritten_place(base: &IrExpr, field: &str, expr: &IrExpr) -> bool {
+    let IrExprKind::SliceAppend { slice, .. } = &expr.kind else {
+        return false;
+    };
+    is_same_ir_field_target(base, field, slice)
+}
+
+fn is_same_ir_field_target(base: &IrExpr, field: &str, expr: &IrExpr) -> bool {
+    let IrExprKind::FieldAccess {
+        base: expr_base,
+        field: expr_field,
+    } = &expr.kind
+    else {
+        return false;
+    };
+    expr_field == field && is_same_direct_ir_field_path(base, expr_base)
+}
+
+fn is_same_direct_ir_field_path(left: &IrExpr, right: &IrExpr) -> bool {
+    match (&left.kind, &right.kind) {
+        (IrExprKind::Var(left), IrExprKind::Var(right)) => left == right,
+        (
+            IrExprKind::FieldAccess {
+                base: left_base,
+                field: left_field,
+            },
+            IrExprKind::FieldAccess {
+                base: right_base,
+                field: right_field,
+            },
+        ) => left_field == right_field && is_same_direct_ir_field_path(left_base, right_base),
+        _ => false,
     }
 }
 
@@ -5022,6 +5062,43 @@ func main() {
         assert_eq!(item.ty, Type::Int);
 
         assert_drop_of(&ir.functions[0].body[4], "values");
+    }
+
+    #[test]
+    fn ir_lowers_slice_field_append_without_overwrite_drop() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1}}
+    bag.values = append(bag.values, 2)
+    print(len(bag.values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert_eq!(ir.functions[0].body.len(), 4);
+        let IrStmtKind::FieldAssign { base, field, expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected field assignment");
+        };
+        assert!(matches!(base.kind, IrExprKind::Var(ref name) if name == "bag"));
+        assert_eq!(field, "values");
+        let IrExprKind::SliceAppend { slice, item } = &expr.kind else {
+            panic!("expected slice append expression");
+        };
+        let IrExprKind::FieldAccess { base, field } = &slice.kind else {
+            panic!("expected field append source");
+        };
+        assert!(matches!(base.kind, IrExprKind::Var(ref name) if name == "bag"));
+        assert_eq!(field, "values");
+        assert_eq!(item.ty, Type::Int);
+        assert_drop_of(&ir.functions[0].body[3], "bag");
     }
 
     #[test]

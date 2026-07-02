@@ -3697,6 +3697,32 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_slice_field_append_reassignment() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    mut bag := Bag{values: []int{1, 2}}
+    bag.values = append(bag.values, 3)
+    print(bag.values[2])
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
+        assert!(c.contains("(mlg_bag).mlg_values = mallang_slice_append_tmp_"));
+        assert!(!c.contains("mlg_drop_Slice_int(&((mlg_bag).mlg_values));"));
+        assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
+    }
+
+    #[test]
     fn generates_c_for_fixed_size_array_element_assignment() {
         let program = parse(
             r#"

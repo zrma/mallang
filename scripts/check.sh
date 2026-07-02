@@ -392,6 +392,13 @@ if [[ "$slice_field_assignment_output" != $'5\n2\n8' ]]; then
   echo "slice field assignment native build smoke failed: expected 5, 2, 8 got '$slice_field_assignment_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/slice-field-append.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/slice-field-append.mlg -o target/mallang/slice-field-append >/dev/null
+slice_field_append_output="$(target/mallang/slice-field-append)"
+if [[ "$slice_field_append_output" != $'3\n7\n2\n9' ]]; then
+  echo "slice field append native build smoke failed: expected 3, 7, 2, 9 got '$slice_field_append_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
 range_blank_output="$(target/mallang/range-blank)"

@@ -22,8 +22,9 @@
 - Borrowed slice views.
 - First-class references.
 - Statement-spanning borrow lifetimes.
-- Consuming `append(bag.values, item)`; direct element assignment
-  `bag.values[i] = item` is handled by P56.
+- General partial moves from slice fields. Direct element assignment
+  `bag.values[i] = item` is handled by P56, and direct field path same-field
+  append reassignment is handled by P57.
 
 ## C-체크리스트
 

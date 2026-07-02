@@ -469,7 +469,8 @@
 - [x] `con bag.values[i]` / `mut bag.values[i]` borrow argument 허용
 - [x] inline slice temporary reject는 유지
 - [x] `examples/slice-field-read.mlg` native smoke 추가
-- [x] consuming `append(bag.values, item)`은 후속 work로 유지
+- [x] consuming `append(bag.values, item)`은 P57에서 direct field path same-field
+      reassignment로 제한해 완료
 
 ## P56: Local-Rooted Slice Field Element Assignment
 
@@ -478,4 +479,16 @@
 - [x] cleanup element overwrite에서 RHS temp, old element drop, slot assignment 순서 유지
 - [x] native C backend에서 local-rooted indexed lvalue assignment lowering
 - [x] `examples/slice-field-assignment.mlg` native smoke 추가
-- [x] consuming `append(bag.values, item)`은 후속 work로 유지
+- [x] consuming `append(bag.values, item)`은 P57에서 direct field path same-field
+      reassignment로 제한해 완료
+
+## P57: Direct Slice Field Append Reassignment
+
+- [x] `bag.values = append(bag.values, item)` 허용
+- [x] `shelf.bag.values = append(shelf.bag.values, item)`처럼 indexed segment가
+      없는 direct field path 허용
+- [x] 같은 field append에서는 cleanup overwrite drop을 생략해 realloc된 source를
+      double-drop하지 않도록 함
+- [x] `grown := append(bag.values, item)` 같은 general partial field move는
+      계속 reject
+- [x] `examples/slice-field-append.mlg` native smoke 추가
