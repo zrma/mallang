@@ -63,6 +63,7 @@
 - [x] named struct literal과 field access 추가
 - [x] struct typed IR와 C backend typedef/literal/access 추가
 - [x] struct receiver methods 설계/구현
+- [x] caller-visible `mut` receiver methods native smoke 추가
 - [x] direct mutable field assignment 추가
 - [x] field-level borrow arguments 추가
 - [x] nested field assignment와 nested field borrow argument 추가

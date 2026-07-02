@@ -55,6 +55,8 @@ cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
 target/mallang/methods
+cargo run --bin mlg -- build examples/mut-receiver.mlg -o target/mallang/mut-receiver
+target/mallang/mut-receiver
 cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/field-assignment
 target/mallang/field-assignment
 cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow
@@ -88,6 +90,7 @@ scripts/check.sh
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
+- `examples/mut-receiver.mlg`: native smoke for caller-visible `mut` receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.

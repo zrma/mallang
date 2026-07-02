@@ -64,6 +64,7 @@
 - [x] Add statement-form `match` with block arms.
 - [x] Struct declarations, named literals, and field access.
 - [x] Struct receiver methods.
+- [x] Caller-visible `mut` receiver methods in the native backend.
 - [x] Direct mutable struct field assignment.
 - [x] Field-level borrow arguments for direct local fields.
 - [x] Nested field assignment and nested field borrow arguments.

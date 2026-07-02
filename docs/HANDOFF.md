@@ -5,7 +5,7 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
 - 아직 없음: statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
@@ -26,6 +26,8 @@ cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
 target/mallang/methods
+cargo run --bin mlg -- build examples/mut-receiver.mlg -o target/mallang/mut-receiver
+target/mallang/mut-receiver
 cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/field-assignment
 target/mallang/field-assignment
 cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow

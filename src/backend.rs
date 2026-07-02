@@ -1407,6 +1407,35 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_mut_receiver_methods() {
+        let program = parse(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (self mut Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    mut counter := Counter{value: 1}
+    counter.inc()
+    print(counter.value)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("void mlg_Counter_inc(mlg_struct_Counter * mlg_self);"));
+        assert!(c.contains("((*mlg_self)).mlg_value = (((*mlg_self)).mlg_value + 1);"));
+        assert!(c.contains("mlg_Counter_inc(&(mlg_counter));"));
+    }
+
+    #[test]
     fn generates_c_for_field_assignment() {
         let program = parse(
             r#"

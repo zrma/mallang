@@ -171,6 +171,10 @@ func (self in User) age() int {
     return self.age
 }
 
+func (self mut Counter) inc() {
+    self.value = self.value + 1
+}
+
 print(user.age())
 ```
 

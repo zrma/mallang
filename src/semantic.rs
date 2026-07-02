@@ -2233,6 +2233,50 @@ func main() {
     }
 
     #[test]
+    fn allows_mut_receiver_method_call() {
+        check_ok(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (self mut Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    mut counter := Counter{value: 1}
+    counter.inc()
+    print(counter.value)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_mut_receiver_method_call_on_immutable_binding() {
+        let error = check_error(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (self mut Counter) inc() {
+    self.value = self.value + 1
+}
+
+func main() {
+    counter := Counter{value: 1}
+    counter.inc()
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow immutable binding `counter`"));
+    }
+
+    #[test]
     fn allows_field_assignment_on_mutable_struct_binding() {
         check_ok(
             r#"
