@@ -708,6 +708,9 @@ impl<'a> CGenerator<'a> {
             Type::Array { .. } => Err(CompileError::new(
                 "fixed-size arrays are not supported by the C backend yet",
             )),
+            Type::Slice(_) => Err(CompileError::new(
+                "IR invariant violation: cannot print slice value before slice printability is defined",
+            )),
             Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
                 self.emit_print_composite(arg, prelude, code)
             }
@@ -808,6 +811,9 @@ impl<'a> CGenerator<'a> {
             )),
             Type::Array { .. } => Err(CompileError::new(
                 "fixed-size arrays are not supported by the C backend yet",
+            )),
+            Type::Slice(_) => Err(CompileError::new(
+                "IR invariant violation: cannot print slice value before slice printability is defined",
             )),
         }
     }
@@ -1404,6 +1410,11 @@ impl<'a> CGenerator<'a> {
                 output.push_str(&self.typedef_for_array(ty)?);
                 output.push('\n');
             }
+            Type::Slice(element) => {
+                self.emit_type_def(element, emitted, visiting, output)?;
+                output.push_str(&self.typedef_for_slice(ty)?);
+                output.push('\n');
+            }
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
         visiting.pop();
@@ -1627,6 +1638,21 @@ impl<'a> CGenerator<'a> {
         output.push_str(";\n");
         Ok(output)
     }
+
+    fn typedef_for_slice(&self, ty: &Type) -> Result<String, CompileError> {
+        let Type::Slice(element) = ty else {
+            return Err(CompileError::new("internal error: expected slice type"));
+        };
+
+        Ok(format!(
+            "typedef struct {{\n    {} *{};\n    int64_t {};\n    int64_t {};\n}} {};\n",
+            element.c_name(),
+            c_field("data"),
+            c_field("len"),
+            c_field("cap"),
+            ty.c_name()
+        ))
+    }
 }
 
 impl Type {
@@ -1637,7 +1663,7 @@ impl Type {
             Self::String => "const char *".to_string(),
             Self::Unit => "void".to_string(),
             Self::Option(_) | Self::Result(_, _) => format!("mlg_{}", mangle_type(self)),
-            Self::Array { .. } => format!("mlg_{}", mangle_type(self)),
+            Self::Array { .. } | Self::Slice(_) => format!("mlg_{}", mangle_type(self)),
             Self::Struct(name) => format!("mlg_struct_{}", c_type_ident(name)),
         }
     }
@@ -1691,6 +1717,12 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
             }
         }
         Type::Array { element, .. } => {
+            collect_type(element, types);
+            if !types.contains(ty) {
+                types.push(ty.clone());
+            }
+        }
+        Type::Slice(element) => {
             collect_type(element, types);
             if !types.contains(ty) {
                 types.push(ty.clone());
@@ -1925,6 +1957,7 @@ fn mangle_type(ty: &Type) -> String {
         Type::Option(inner) => format!("Option_{}", mangle_type(inner)),
         Type::Result(ok, err) => format!("Result_{}_{}", mangle_type(ok), mangle_type(err)),
         Type::Array { len, element } => format!("Array_{}_{}", len, mangle_type(element)),
+        Type::Slice(element) => format!("Slice_{}", mangle_type(element)),
         Type::Struct(name) => format!("Struct_{}", c_type_ident(name)),
     }
 }
@@ -2028,6 +2061,38 @@ func add(a int, b int) int {
         assert!(c.contains("int main(void)"));
         assert!(c.contains("int64_t mlg_add(int64_t mlg_a, int64_t mlg_b);"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_y));"));
+    }
+
+    #[test]
+    fn generates_c_for_internal_owned_slice_type_shell() {
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![
+                IrFunction {
+                    name: "consume".to_string(),
+                    params: vec![crate::ir::IrParam {
+                        name: "values".to_string(),
+                        mode: ParamMode::Owned,
+                        ty: Type::Slice(Box::new(Type::Int)),
+                    }],
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+                IrFunction {
+                    name: "main".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+            ],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains(
+            "typedef struct {\n    int64_t *mlg_data;\n    int64_t mlg_len;\n    int64_t mlg_cap;\n} mlg_Slice_int;"
+        ));
+        assert!(c.contains("void mlg_consume(mlg_Slice_int mlg_values);"));
     }
 
     #[test]

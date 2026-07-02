@@ -66,6 +66,7 @@ pub enum Type {
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
     Array { len: usize, element: Box<Type> },
+    Slice(Box<Type>),
     Struct(String),
 }
 
@@ -79,6 +80,7 @@ impl Type {
             Self::Option(inner) => format!("Option[{}]", inner.source_name()),
             Self::Result(ok, err) => format!("Result[{}, {}]", ok.source_name(), err.source_name()),
             Self::Array { len, element } => format!("[{}]{}", len, element.source_name()),
+            Self::Slice(element) => format!("[]{}", element.source_name()),
             Self::Struct(name) => name.clone(),
         }
     }
@@ -89,8 +91,18 @@ impl Type {
             Self::String => false,
             Self::Option(inner) => inner.is_copy(),
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
-            Self::Array { .. } => false,
+            Self::Array { .. } | Self::Slice(_) => false,
             Self::Struct(_) => false,
+        }
+    }
+
+    pub fn needs_cleanup(&self) -> bool {
+        match self {
+            Self::Slice(_) => true,
+            Self::Option(inner) => inner.needs_cleanup(),
+            Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
+            Self::Array { element, .. } => element.needs_cleanup(),
+            Self::Int | Self::Bool | Self::String | Self::Unit | Self::Struct(_) => false,
         }
     }
 }
@@ -239,7 +251,7 @@ impl<'a> Checker<'a> {
                 visiting.pop();
                 Ok(())
             }
-            Type::Option(inner) | Type::Array { element: inner, .. } => {
+            Type::Option(inner) | Type::Array { element: inner, .. } | Type::Slice(inner) => {
                 self.reject_recursive_type(inner, span, visiting)
             }
             Type::Result(ok, err) => {
@@ -2531,7 +2543,7 @@ impl<'a> Checker<'a> {
                     .iter()
                     .all(|field| self.is_printable_type(&field.ty))
             }),
-            Type::Unit | Type::Array { .. } => false,
+            Type::Unit | Type::Array { .. } | Type::Slice(_) => false,
         }
     }
 
@@ -4792,6 +4804,22 @@ func main() {}
         assert!(error
             .message
             .contains("slice type syntax `[]T` is reserved"));
+    }
+
+    #[test]
+    fn classifies_internal_slice_types_as_cleanup_resources() {
+        assert!(Type::Slice(Box::new(Type::Int)).needs_cleanup());
+        assert!(Type::Option(Box::new(Type::Slice(Box::new(Type::Int)))).needs_cleanup());
+        assert!(Type::Array {
+            len: 2,
+            element: Box::new(Type::Slice(Box::new(Type::String))),
+        }
+        .needs_cleanup());
+        assert!(!Type::Array {
+            len: 2,
+            element: Box::new(Type::Int),
+        }
+        .needs_cleanup());
     }
 
     #[test]

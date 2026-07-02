@@ -240,6 +240,9 @@ Future v0 slice rules:
   range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.
+- The compiler may carry an internal slice type shell before `[]T` is accepted
+  by semantic analysis, but user programs still receive the reserved-feature
+  diagnostic until cleanup/drop lowering and value construction are implemented.
 
 `unit` is the implicit return type of functions that do not return a value.
 

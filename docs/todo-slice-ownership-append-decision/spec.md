@@ -30,7 +30,7 @@
 
 1. IR/backend에 owned heap resource cleanup/drop lowering을 추가한다.
 2. Semantic `Type::Slice(Box<Type>)`와 IR/backend type shell을 추가하되,
-   정상 value construction은 아직 제한한다.
+   정상 value construction은 아직 제한한다. 이 shell은 P34에서 완료됐다.
 3. `[]T{...}` literal, `len(slice)`, Copy-only `slice[i]` value access를
    구현한다.
 4. consuming `append(values, item)` built-in을 구현한다.

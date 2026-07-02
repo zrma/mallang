@@ -293,3 +293,10 @@
 - [x] slice native ABI를 `{ data, len, cap }` 형태의 compiler-owned heap resource로 결정
 - [x] `append(values, item)`을 첫 slice 인자를 소비하고 새 owned slice를 반환하는 built-in으로 결정
 - [x] slice implementation 선행 조건을 cleanup/drop lowering으로 고정
+
+## P34: Internal Slice Type Shell
+
+- [x] `Type::Slice(T)` internal type shell 추가
+- [x] slice type을 non-copy cleanup resource로 분류
+- [x] C backend에서 internal `{ data, len, cap }` slice typedef emission 추가
+- [x] user-facing `[]T` semantic reserved diagnostic 유지
