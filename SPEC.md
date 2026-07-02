@@ -247,6 +247,8 @@ Future v0 slice rules:
   automatic scope-exit drop insertion is implemented.
 - The typed IR may carry explicit internal drop statements before semantic
   lowering inserts them automatically.
+- Initial automatic drop insertion may cover straight-line owned cleanup
+  parameters and locals before full control-flow cleanup insertion is complete.
 
 `unit` is the implicit return type of functions that do not return a value.
 

@@ -314,3 +314,11 @@
 - [x] C backend에서 cleanup lvalue를 `mlg_drop_*(&place)`로 lowering
 - [x] non-cleanup type drop은 IR invariant error로 reject
 - [x] automatic scope exit/early return drop insertion은 다음 단계로 유지
+
+## P37: Straight-Line Cleanup Drop Insertion
+
+- [x] owned cleanup parameters를 active cleanup roots로 추적
+- [x] straight-line cleanup locals를 active cleanup roots로 추적
+- [x] function tail과 top-level `return` 전에 `IrStmtKind::Drop` 삽입
+- [x] returned cleanup root는 drop 대상에서 제외
+- [x] branch/loop/reassignment cleanup insertion은 다음 단계로 유지

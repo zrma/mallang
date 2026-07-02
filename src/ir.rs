@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     ast::{
@@ -284,6 +287,7 @@ impl<'a> Lowerer<'a> {
                 params.push(lower_param(receiver));
             }
             params.extend(sig.params.iter().map(lower_param));
+            let body = insert_straight_line_cleanup_drops(body, &params, function.body.span);
             functions.push(IrFunction {
                 name: ir_name,
                 params,
@@ -1876,6 +1880,153 @@ fn lower_param(param: &ParamSig) -> IrParam {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CleanupBinding {
+    name: String,
+    ty: Type,
+    span: Span,
+}
+
+fn insert_straight_line_cleanup_drops(
+    body: Vec<IrStmt>,
+    params: &[IrParam],
+    fallback_span: Span,
+) -> Vec<IrStmt> {
+    let mut output = Vec::new();
+    let mut active = params
+        .iter()
+        .filter(|param| param.mode == ParamMode::Owned && param.ty.needs_cleanup())
+        .map(|param| CleanupBinding {
+            name: param.name.clone(),
+            ty: param.ty.clone(),
+            span: fallback_span,
+        })
+        .collect::<Vec<_>>();
+
+    for stmt in body {
+        if let IrStmtKind::Return { expr } = &stmt.kind {
+            let returned_roots = cleanup_moved_roots_in_expr(expr);
+            push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
+            output.push(stmt);
+            return output;
+        }
+
+        let moved_roots = cleanup_moved_roots_in_stmt(&stmt);
+        let new_binding = cleanup_binding_from_stmt(&stmt);
+        output.push(stmt);
+        active.retain(|binding| !moved_roots.contains(&binding.name));
+        if let Some(binding) = new_binding {
+            active.push(binding);
+        }
+    }
+
+    push_cleanup_drops(&mut output, &active, &HashSet::new(), fallback_span);
+    output
+}
+
+fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
+    match &stmt.kind {
+        IrStmtKind::Let { name, ty, .. } if ty.needs_cleanup() => Some(CleanupBinding {
+            name: name.clone(),
+            ty: ty.clone(),
+            span: stmt.span,
+        }),
+        _ => None,
+    }
+}
+
+fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
+    match &stmt.kind {
+        IrStmtKind::Let { expr, .. }
+        | IrStmtKind::Assign { expr, .. }
+        | IrStmtKind::Return { expr }
+        | IrStmtKind::Expr { expr }
+        | IrStmtKind::Drop { expr } => cleanup_moved_roots_in_expr(expr),
+        IrStmtKind::FieldAssign { expr, .. } | IrStmtKind::IndexAssign { expr, .. } => {
+            cleanup_moved_roots_in_expr(expr)
+        }
+        IrStmtKind::If { .. }
+        | IrStmtKind::For { .. }
+        | IrStmtKind::RangeFor { .. }
+        | IrStmtKind::Break
+        | IrStmtKind::Continue
+        | IrStmtKind::Match { .. } => HashSet::new(),
+    }
+}
+
+fn cleanup_moved_roots_in_expr(expr: &IrExpr) -> HashSet<String> {
+    let mut roots = HashSet::new();
+    collect_cleanup_moved_roots(expr, &mut roots);
+    roots
+}
+
+fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
+    match &expr.kind {
+        IrExprKind::Var(name) if expr.ty.needs_cleanup() => {
+            roots.insert(name.clone());
+        }
+        IrExprKind::AdtConstructor { payload, .. } => {
+            if let Some(payload) = payload {
+                collect_cleanup_moved_roots(payload, roots);
+            }
+        }
+        IrExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                collect_cleanup_moved_roots(&field.expr, roots);
+            }
+        }
+        IrExprKind::ArrayLiteral { elements } => {
+            for element in elements {
+                collect_cleanup_moved_roots(element, roots);
+            }
+        }
+        IrExprKind::Call { args, .. } => {
+            for arg in args {
+                if arg.mode == ArgMode::Owned {
+                    collect_cleanup_moved_roots(&arg.expr, roots);
+                }
+            }
+        }
+        IrExprKind::Unary { expr, .. } => collect_cleanup_moved_roots(expr, roots),
+        IrExprKind::Binary { left, right, .. } => {
+            collect_cleanup_moved_roots(left, roots);
+            collect_cleanup_moved_roots(right, roots);
+        }
+        IrExprKind::If { .. }
+        | IrExprKind::Match { .. }
+        | IrExprKind::FieldAccess { .. }
+        | IrExprKind::Index { .. }
+        | IrExprKind::ArrayLen { .. }
+        | IrExprKind::Int(_)
+        | IrExprKind::String(_)
+        | IrExprKind::Bool(_)
+        | IrExprKind::Var(_) => {}
+    }
+}
+
+fn push_cleanup_drops(
+    output: &mut Vec<IrStmt>,
+    active: &[CleanupBinding],
+    excluded_roots: &HashSet<String>,
+    span: Span,
+) {
+    for binding in active.iter().rev() {
+        if excluded_roots.contains(&binding.name) {
+            continue;
+        }
+        output.push(IrStmt {
+            kind: IrStmtKind::Drop {
+                expr: IrExpr {
+                    kind: IrExprKind::Var(binding.name.clone()),
+                    ty: binding.ty.clone(),
+                    span: binding.span,
+                },
+            },
+            span,
+        });
+    }
+}
+
 fn arg_mode_for_param(mode: ParamMode) -> ArgMode {
     match mode {
         ParamMode::Owned => ArgMode::Owned,
@@ -1948,6 +2099,32 @@ mod tests {
     use super::*;
     use crate::{check, parse};
 
+    fn test_span() -> Span {
+        Span { start: 0, end: 0 }
+    }
+
+    fn test_slice_ty() -> Type {
+        Type::Slice(Box::new(Type::Int))
+    }
+
+    fn test_var(name: &str, ty: Type) -> IrExpr {
+        IrExpr {
+            kind: IrExprKind::Var(name.to_string()),
+            ty,
+            span: test_span(),
+        }
+    }
+
+    fn assert_drop_of(stmt: &IrStmt, expected_name: &str) {
+        let IrStmtKind::Drop { expr } = &stmt.kind else {
+            panic!("expected drop statement");
+        };
+        let IrExprKind::Var(name) = &expr.kind else {
+            panic!("expected drop target variable");
+        };
+        assert_eq!(name, expected_name);
+    }
+
     #[test]
     fn ir_lowers_first_target_program_with_types() {
         let program = parse(
@@ -1976,6 +2153,93 @@ func add(a int, b int) int {
             panic!("expected typed let");
         };
         assert_eq!(*ty, Type::Int);
+    }
+
+    #[test]
+    fn inserts_tail_drop_for_owned_cleanup_param() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty,
+        }];
+
+        let body = insert_straight_line_cleanup_drops(Vec::new(), &params, test_span());
+
+        assert_eq!(body.len(), 1);
+        assert_drop_of(&body[0], "values");
+    }
+
+    #[test]
+    fn inserts_drop_before_straight_line_return() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty,
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Return {
+                expr: IrExpr {
+                    kind: IrExprKind::Int(1),
+                    ty: Type::Int,
+                    span: test_span(),
+                },
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        assert_drop_of(&body[0], "values");
+        assert!(matches!(body[1].kind, IrStmtKind::Return { .. }));
+    }
+
+    #[test]
+    fn skips_drop_for_cleanup_root_returned_by_value() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty.clone(),
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Return {
+                expr: test_var("values", slice_ty),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 1);
+        assert!(matches!(body[0].kind, IrStmtKind::Return { .. }));
+    }
+
+    #[test]
+    fn tracks_cleanup_root_moved_into_local() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "seed".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty.clone(),
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Let {
+                mutable: false,
+                name: "values".to_string(),
+                ty: slice_ty.clone(),
+                expr: test_var("seed", slice_ty),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
     }
 
     #[test]
