@@ -643,10 +643,41 @@ fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
 
 fn type_from_ref(ty: &TypeRef) -> Result<Type, SemanticError> {
     match ty.name.as_str() {
-        "int" => Ok(Type::Int),
-        "bool" => Ok(Type::Bool),
-        "string" => Ok(Type::String),
-        "unit" => Ok(Type::Unit),
+        "int" if ty.args.is_empty() => Ok(Type::Int),
+        "bool" if ty.args.is_empty() => Ok(Type::Bool),
+        "string" if ty.args.is_empty() => Ok(Type::String),
+        "unit" if ty.args.is_empty() => Ok(Type::Unit),
+        "int" | "bool" | "string" | "unit" => Err(SemanticError::new(
+            format!("primitive type `{}` does not take type arguments", ty.name),
+            ty.span,
+        )),
+        "Option" => {
+            if ty.args.len() != 1 {
+                return Err(SemanticError::new(
+                    "`Option` expects exactly 1 type argument",
+                    ty.span,
+                ));
+            }
+            type_from_ref(&ty.args[0])?;
+            Err(SemanticError::new(
+                "`Option[T]` type checking is planned but not implemented yet",
+                ty.span,
+            ))
+        }
+        "Result" => {
+            if ty.args.len() != 2 {
+                return Err(SemanticError::new(
+                    "`Result` expects exactly 2 type arguments",
+                    ty.span,
+                ));
+            }
+            type_from_ref(&ty.args[0])?;
+            type_from_ref(&ty.args[1])?;
+            Err(SemanticError::new(
+                "`Result[T, E]` type checking is planned but not implemented yet",
+                ty.span,
+            ))
+        }
         _ => Err(SemanticError::new(
             format!("unknown type `{}`", ty.name),
             ty.span,
@@ -712,6 +743,37 @@ func add(a int, b int) int {
 "#,
         );
         assert!(error.message.contains("argument type mismatch"));
+    }
+
+    #[test]
+    fn rejects_planned_option_type_with_clear_diagnostic() {
+        let error = check_error(
+            r#"
+func find() Option[int] {
+    return None
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`Option[T]` type checking is planned"));
+    }
+
+    #[test]
+    fn rejects_generic_args_on_primitive_types() {
+        let error = check_error(
+            r#"
+func bad(value int[string]) {
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("primitive type `int` does not take type arguments"));
     }
 
     #[test]

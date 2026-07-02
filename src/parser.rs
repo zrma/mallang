@@ -130,8 +130,27 @@ impl Parser {
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, ParseError> {
-        let (name, span) = self.expect_ident("expected type name")?;
-        Ok(TypeRef { name, span })
+        let (name, start) = self.expect_ident("expected type name")?;
+        let mut args = Vec::new();
+        let mut span = start;
+
+        if self.eat(TokenTag::LeftBracket).is_some() {
+            if self.at(TokenTag::RightBracket) {
+                return Err(ParseError::new("expected type argument", self.peek().span));
+            }
+
+            loop {
+                args.push(self.parse_type_ref()?);
+                if self.eat(TokenTag::Comma).is_none() {
+                    break;
+                }
+            }
+
+            let end = self.expect(TokenTag::RightBracket, "expected `]` after type arguments")?;
+            span = start.join(end);
+        }
+
+        Ok(TypeRef { name, args, span })
     }
 
     fn parse_block(&mut self) -> Result<Block, ParseError> {
@@ -497,6 +516,8 @@ enum TokenTag {
     RightParen,
     LeftBrace,
     RightBrace,
+    LeftBracket,
+    RightBracket,
     Comma,
     Semicolon,
     ColonEqual,
@@ -513,6 +534,8 @@ impl TokenTag {
                 | (Self::RightParen, TokenKind::RightParen)
                 | (Self::LeftBrace, TokenKind::LeftBrace)
                 | (Self::RightBrace, TokenKind::RightBrace)
+                | (Self::LeftBracket, TokenKind::LeftBracket)
+                | (Self::RightBracket, TokenKind::RightBracket)
                 | (Self::Comma, TokenKind::Comma)
                 | (Self::Semicolon, TokenKind::Semicolon)
                 | (Self::ColonEqual, TokenKind::ColonEqual)
@@ -616,5 +639,34 @@ func main() {
         assert!(matches!(condition.kind, ExprKind::Binary { .. }));
         assert!(matches!(then_branch.kind, ExprKind::String(_)));
         assert!(matches!(else_branch.kind, ExprKind::String(_)));
+    }
+
+    #[test]
+    fn parses_generic_type_refs() {
+        let program = parse(
+            r#"
+func find() Option[int] {
+    return None
+}
+
+func read() Result[string, int] {
+    return Err(1)
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+
+        let option_ty = program.functions[0].return_type.as_ref().unwrap();
+        assert_eq!(option_ty.name, "Option");
+        assert_eq!(option_ty.args.len(), 1);
+        assert_eq!(option_ty.args[0].name, "int");
+
+        let result_ty = program.functions[1].return_type.as_ref().unwrap();
+        assert_eq!(result_ty.name, "Result");
+        assert_eq!(result_ty.args.len(), 2);
+        assert_eq!(result_ty.args[0].name, "string");
+        assert_eq!(result_ty.args[1].name, "int");
     }
 }

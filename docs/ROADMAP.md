@@ -45,7 +45,7 @@
 ## P5: Built-in ADTs
 
 - [x] `Option[T]` / `Result[T, E]` surface 설계
-- [ ] generic type reference parser 추가
+- [x] generic type reference parser 추가
 - [ ] `Some` / `None` / `Ok` / `Err` constructor type checking 추가
 - [ ] `Option` / `Result` exhaustive `match` 추가
 - [ ] tagged typed IR와 C backend layout 추가

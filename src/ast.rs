@@ -33,6 +33,7 @@ pub enum ParamMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeRef {
     pub name: String,
+    pub args: Vec<TypeRef>,
     pub span: Span,
 }
 
