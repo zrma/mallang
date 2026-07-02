@@ -54,7 +54,9 @@ This repository is the Mallang language PoC workspace.
 - Struct cleanup for owned slice fields, plus local-rooted slice field
   `len`/index/range/borrow reads, element assignment, and same-field append
   reassignment for direct and stable indexed field paths. Append can also take
-  a slice field source and leave that source field empty.
+  a slice field source and leave that source field empty. Ordinary owned value
+  positions can also take a slice field, such as `taken := bag.values` or
+  `consume(bag.values)`, with the source field reset to empty.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -190,6 +192,7 @@ scripts/check.sh
 - `examples/slice-field-append.mlg`: native smoke for direct slice field append reassignment.
 - `examples/indexed-slice-field-append.mlg`: native smoke for indexed slice field append reassignment.
 - `examples/slice-field-take-append.mlg`: native smoke for taking slice field append sources.
+- `examples/slice-field-take.mlg`: native smoke for owned slice field take expressions.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/print-struct.mlg`: native smoke for printing struct values with nested fields.
 - `examples/methods.mlg`: native smoke for struct receiver methods.

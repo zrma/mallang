@@ -951,6 +951,9 @@ impl<'a> CGenerator<'a> {
                     code: format!("({}).{}", code, c_field(field)),
                 })
             }
+            IrExprKind::SliceFieldTake { source } => {
+                self.emit_slice_field_take_stmt_expr(expr, source, env)
+            }
             IrExprKind::Index { base, index } => self.emit_index_stmt_expr(expr, base, index, env),
             IrExprKind::ArrayLen { array } => self.emit_array_len_stmt_expr(array, env),
             IrExprKind::SliceAppend { slice, item } => {
@@ -1159,6 +1162,32 @@ impl<'a> CGenerator<'a> {
                 "IR invariant violation: len source must be an array or slice",
             )),
         }
+    }
+
+    fn emit_slice_field_take_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        source: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        if !matches!(expr.ty, Type::Slice(_)) || source.ty != expr.ty {
+            return Err(CompileError::new(
+                "IR invariant violation: slice field take source must be a slice",
+            ));
+        }
+
+        let CExpr { mut prelude, code } = self.emit_borrow_lvalue_expr(source, env)?;
+        let temp = slice_field_take_temp_name(expr);
+        let empty = empty_slice_value_code(&expr.ty).ok_or_else(|| {
+            CompileError::new("IR invariant violation: slice field take source must be a slice")
+        })?;
+        prelude.push(format!("{} {temp} = {code};", expr.ty.c_name()));
+        prelude.push(format!("{code} = {empty};"));
+
+        Ok(CExpr {
+            prelude,
+            code: temp,
+        })
     }
 
     fn emit_slice_append_stmt_expr(
@@ -1867,6 +1896,7 @@ impl<'a> CGenerator<'a> {
                 }
             }
             IrExprKind::FieldAccess { base, .. } => self.collect_expr_types(base, types),
+            IrExprKind::SliceFieldTake { source } => self.collect_expr_types(source, types),
             IrExprKind::Index { base, index } => {
                 self.collect_expr_types(base, types);
                 self.collect_expr_types(index, types);
@@ -2425,6 +2455,10 @@ fn range_index_temp_name(expr: &IrExpr) -> String {
 
 fn slice_append_temp_name(expr: &IrExpr) -> String {
     format!("mallang_slice_append_tmp_{}", expr.span.start)
+}
+
+fn slice_field_take_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_slice_take_tmp_{}", expr.span.start)
 }
 
 fn is_blank_identifier(name: &str) -> bool {
@@ -3801,6 +3835,42 @@ func main() {
         ));
         assert!(c.contains("mlg_Slice_int mlg_grown = mallang_slice_append_tmp_"));
         assert!(c.contains("mlg_drop_Slice_int(&(mlg_grown));"));
+        assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
+    }
+
+    #[test]
+    fn generates_c_for_owned_slice_field_take_expression() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    bag := Bag{values: []int{1, 2}}
+    taken := bag.values
+    print(len(bag.values))
+    consume(bag.values)
+}
+
+func consume(values []int) {
+    print(len(values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_slice_take_tmp_"));
+        assert!(c.contains(" = (mlg_bag).mlg_values;"));
+        assert!(c.contains(
+            "(mlg_bag).mlg_values = (mlg_Slice_int){ .mlg_data = NULL, .mlg_len = 0, .mlg_cap = 0 };"
+        ));
+        assert!(c.contains("mlg_Slice_int mlg_taken = mallang_slice_take_tmp_"));
+        assert!(c.contains("mlg_consume(mallang_slice_take_tmp_"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_taken));"));
         assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
     }
 

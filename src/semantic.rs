@@ -1288,7 +1288,10 @@ impl<'a> Checker<'a> {
             ));
         };
 
-        if matches!(value_use, ValueUse::Owned) && !field_sig.ty.is_copy() {
+        if matches!(value_use, ValueUse::Owned)
+            && !field_sig.ty.is_copy()
+            && !(matches!(field_sig.ty, Type::Slice(_)) && is_direct_borrow_expr(base))
+        {
             self.mark_field_base_moved(base)?;
         }
 
@@ -5488,6 +5491,30 @@ func main() {
     grown := append(bag.values, 2)
     print(len(grown))
     print(len(bag.values))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_owned_slice_field_take_expression() {
+        check_ok(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    bag := Bag{values: []int{1, 2}}
+    taken := bag.values
+    print(len(taken))
+    print(len(bag.values))
+    consume(bag.values)
+    print(len(bag.values))
+}
+
+func consume(values []int) {
+    print(len(values))
 }
 "#,
         );

@@ -172,11 +172,11 @@ Array rules:
   local-rooted borrow surface as fixed-size arrays. Direct mutable slice element
   assignment is supported for `Copy` and non-copy element types. Same-field
   append reassignment is supported for owned slice field paths, including stable
-  indexed field paths. Append can also take an owned slice field source by
-  leaving the source field as an empty slice. Read-only indexed expressions can
-  inspect non-copy slice elements without moving them. Mutable range values,
-  general partial field moves beyond slice field take-append, and non-copy
-  element extraction remain reserved for later slices.
+  indexed field paths. Owned slice field paths can also be taken in owned value
+  positions by leaving the source field as an empty slice. Read-only indexed
+  expressions can inspect non-copy slice elements without moving them. Mutable
+  range values, general partial field moves beyond slice field take, and
+  non-copy element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -263,6 +263,10 @@ Indexing and length rules:
   compiler-owned take: the append result owns the consumed buffer, and the
   source field is reset to an empty slice before the owning struct is later
   dropped.
+- Owned slice field paths can also be taken in ordinary owned value positions,
+  such as `taken := bag.values` or `consume(bag.values)`. This uses the same
+  compiler-owned take rule: the result or callee owns the consumed buffer, and
+  the source field is reset to an empty slice.
 - Indexed owned slice field paths can also use same-field append reassignment,
   such as `store.bags[i].values = append(store.bags[i].values, item)`, when the
   target and source paths match structurally and every index expression in the
@@ -347,7 +351,9 @@ Rules:
 - Copy fields such as `int` and `bool` can be read as values.
 - Non-copy fields such as `string` can be borrowed for calls like `print`, but
   moving a non-copy field out of a named struct is rejected until destructuring
-  or partial-move semantics is designed.
+  or partial-move semantics is designed. Owned slice fields are the v0 exception:
+  moving `bag.values` takes the slice buffer and leaves `bag.values` empty so
+  later struct cleanup remains safe.
 - Field paths rooted in local bindings can be used as borrow arguments, such as
   `show(con user.name)` or `rename(mut user.profile.name)`.
 - Mutable field borrow arguments require the root binding to be `mut`.

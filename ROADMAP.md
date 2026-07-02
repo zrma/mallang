@@ -132,6 +132,7 @@
   `slice[i]` value access.
 - [x] Generate native C for consuming slice `append(slice, item)` growth.
 - [x] Generate native C for direct slice field append reassignment.
+- [x] Generate native C for owned slice field take expressions.
 
 ## Later
 
@@ -168,6 +169,7 @@
 - [x] Same-field append reassignment for direct owned slice field paths.
 - [x] Same-field append reassignment for stable indexed owned slice field paths.
 - [x] Field-take append sources for owned slice fields.
+- [x] Owned slice field take expressions.
 - [x] Indexed field assignment for array/slice element fields.
 - [x] Borrowed indexing expressions for read-only non-copy element inspection.
 - [x] Struct cleanup for owned slice fields.

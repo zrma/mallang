@@ -14,7 +14,8 @@
     `store.bags[i].values = append(store.bags[i].values, item)`를 허용한다.
   - root binding은 기존 field assignment 규칙대로 `mut`이어야 한다.
   - mismatched source index와 call index는 P59 field-take append source로 허용한다.
-  - general field partial move는 계속 reject한다.
+  - ordinary owned value position slice field take는 P60에서 허용한다.
+  - non-slice general field partial move는 계속 reject한다.
   - slice indexed field assignment source 제약을 direct local slice에서
     local-rooted slice place로 완화한다.
 - IR cleanup:
@@ -30,7 +31,8 @@
 ## 제외
 
 - Moving a slice field into another owner without same-statement reassignment is
-  handled as source-field take append in P59.
+  handled as source-field take append in P59 or ordinary owned value position
+  take in P60.
 - Call, `if`, `match`, or cleanup-allocating literals in matched same-field
   index expressions. Non-matched field source append uses P59 take semantics.
 - First-class references and statement-spanning borrow lifetimes.

@@ -1,0 +1,28 @@
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    bag := Bag{values: []int{1, 2}}
+    taken := bag.values
+    print(len(taken))
+    print(taken[1])
+    print(len(bag.values))
+    consume(bag.values)
+    print(len(bag.values))
+
+    store := Store{bags: []Bag{Bag{values: []int{3}}, Bag{values: []int{4, 5}}}}
+    i := 1
+    moved := store.bags[i].values
+    print(len(moved))
+    print(moved[1])
+    print(len(store.bags[i].values))
+}
+
+func consume(values []int) {
+    print(len(values))
+}

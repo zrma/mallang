@@ -167,6 +167,9 @@ pub enum IrExprKind {
         base: Box<IrExpr>,
         field: String,
     },
+    SliceFieldTake {
+        source: Box<IrExpr>,
+    },
     Index {
         base: Box<IrExpr>,
         index: Box<IrExpr>,
@@ -521,7 +524,7 @@ impl<'a> Lowerer<'a> {
         locals: &HashMap<String, Type>,
         return_type: &Type,
     ) -> Result<IrStmtKind, IrError> {
-        let source = self.lower_expr(parts.source, locals)?;
+        let source = self.lower_read_source_expr(parts.source, locals)?;
         let element = match &source.ty {
             Type::Array { element, .. } | Type::Slice(element) => element,
             _ => {
@@ -1120,6 +1123,19 @@ impl<'a> Lowerer<'a> {
         locals: &HashMap<String, Type>,
         span: Span,
     ) -> Result<(IrExprKind, Type), IrError> {
+        if is_direct_borrow_expr(base) {
+            let source = self.lower_borrow_field_access(base, field, locals, span)?;
+            if matches!(source.ty, Type::Slice(_)) {
+                let ty = source.ty.clone();
+                return Ok((
+                    IrExprKind::SliceFieldTake {
+                        source: Box::new(source),
+                    },
+                    ty,
+                ));
+            }
+        }
+
         let base = self.lower_expr(base, locals)?;
         let Type::Struct(type_name) = &base.ty else {
             return Err(IrError::new(
@@ -1145,6 +1161,38 @@ impl<'a> Lowerer<'a> {
         ))
     }
 
+    fn lower_borrow_field_access(
+        &self,
+        base: &Expr,
+        field: &str,
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<IrExpr, IrError> {
+        let base = self.lower_borrow_expr(base, locals)?;
+        let Type::Struct(type_name) = &base.ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted field access on non-struct value",
+                span,
+            ));
+        };
+        let sig = self.struct_sig(type_name, span)?;
+        let Some(field_sig) = sig.fields.iter().find(|candidate| candidate.name == field) else {
+            return Err(IrError::new(
+                "semantic analysis accepted unknown struct field access",
+                span,
+            ));
+        };
+
+        Ok(IrExpr {
+            kind: IrExprKind::FieldAccess {
+                base: Box::new(base),
+                field: field.to_string(),
+            },
+            ty: field_sig.ty.clone(),
+            span,
+        })
+    }
+
     fn lower_index_access(
         &self,
         base: &Expr,
@@ -1152,7 +1200,7 @@ impl<'a> Lowerer<'a> {
         locals: &HashMap<String, Type>,
         span: Span,
     ) -> Result<(IrExprKind, Type), IrError> {
-        let base = self.lower_expr(base, locals)?;
+        let base = self.lower_read_source_expr(base, locals)?;
         let index = self.lower_expr(index, locals)?;
         if index.ty != Type::Int {
             return Err(IrError::new(
@@ -1716,7 +1764,7 @@ impl<'a> Lowerer<'a> {
                 span,
             ));
         }
-        let array = self.lower_expr(&args[0].expr, locals)?;
+        let array = self.lower_read_source_expr(&args[0].expr, locals)?;
         if !matches!(array.ty, Type::Array { .. } | Type::Slice(_)) {
             return Err(IrError::new(
                 "semantic analysis accepted `len` on non-array non-slice value",
@@ -1732,6 +1780,18 @@ impl<'a> Lowerer<'a> {
         ))
     }
 
+    fn lower_read_source_expr(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+    ) -> Result<IrExpr, IrError> {
+        if is_direct_borrow_expr(expr) {
+            self.lower_borrow_expr(expr, locals)
+        } else {
+            self.lower_expr(expr, locals)
+        }
+    }
+
     fn lower_append_builtin(
         &self,
         args: &[Arg],
@@ -1744,7 +1804,11 @@ impl<'a> Lowerer<'a> {
                 span,
             ));
         }
-        let slice = self.lower_expr(&args[0].expr, locals)?;
+        let slice = if is_field_place_expr(&args[0].expr) {
+            self.lower_borrow_expr(&args[0].expr, locals)?
+        } else {
+            self.lower_expr(&args[0].expr, locals)?
+        };
         let Type::Slice(element_ty) = &slice.ty else {
             return Err(IrError::new(
                 "semantic analysis accepted `append` on non-slice value",
@@ -2590,6 +2654,13 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 field,
             }
         }
+        IrExprKind::SliceFieldTake { source } => {
+            let source = insert_place_expr_cleanup_drops(*source, active);
+            moved_roots.extend(source.moved_roots);
+            IrExprKind::SliceFieldTake {
+                source: Box::new(source.expr),
+            }
+        }
         IrExprKind::Index { base, index } => {
             let base = insert_place_expr_cleanup_drops(*base, active);
             let active_after_base = cleanup_bindings_after_moved_roots(active, &base.moved_roots);
@@ -2687,6 +2758,13 @@ fn insert_place_expr_cleanup_drops(
             IrExprKind::FieldAccess {
                 base: Box::new(base.expr),
                 field,
+            }
+        }
+        IrExprKind::SliceFieldTake { source } => {
+            let source = insert_place_expr_cleanup_drops(*source, active);
+            moved_roots.extend(source.moved_roots);
+            IrExprKind::SliceFieldTake {
+                source: Box::new(source.expr),
             }
         }
         IrExprKind::Index { base, index } => {
@@ -3029,6 +3107,9 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
             collect_cleanup_moved_roots(slice, roots);
             collect_cleanup_moved_roots(item, roots);
         }
+        IrExprKind::SliceFieldTake { source } => {
+            collect_cleanup_moved_roots(source, roots);
+        }
         IrExprKind::Call { args, .. } => {
             for arg in args {
                 if arg.mode == ArgMode::Owned {
@@ -3126,6 +3207,10 @@ fn is_direct_borrow_expr(expr: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+fn is_field_place_expr(expr: &Expr) -> bool {
+    matches!(expr.kind, ExprKind::FieldAccess { .. }) && is_direct_borrow_expr(expr)
 }
 
 fn is_blank_identifier(name: &str) -> bool {
@@ -5203,6 +5288,64 @@ func main() {
         assert!(matches!(slice.kind, IrExprKind::FieldAccess { .. }));
         assert_eq!(item.ty, Type::Int);
         assert_drop_of(&ir.functions[0].body[4], "grown");
+        assert_drop_of(&ir.functions[0].body[5], "bag");
+    }
+
+    #[test]
+    fn ir_lowers_owned_slice_field_take_expression() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values []int
+}
+
+func main() {
+    bag := Bag{values: []int{1, 2}}
+    taken := bag.values
+    print(len(bag.values))
+    consume(bag.values)
+}
+
+func consume(values []int) {
+    print(len(values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { name, expr, .. } = &ir.functions[0].body[1].kind else {
+            panic!("expected taken let");
+        };
+        assert_eq!(name, "taken");
+        let IrExprKind::SliceFieldTake { source } = &expr.kind else {
+            panic!("expected slice field take expression");
+        };
+        assert!(matches!(source.kind, IrExprKind::FieldAccess { .. }));
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected print expression");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected print call");
+        };
+        let IrExprKind::ArrayLen { array } = &args[0].expr.kind else {
+            panic!("expected len argument");
+        };
+        assert!(matches!(array.kind, IrExprKind::FieldAccess { .. }));
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[3].kind else {
+            panic!("expected consume expression");
+        };
+        let IrExprKind::Call { args, .. } = &expr.kind else {
+            panic!("expected consume call");
+        };
+        assert!(matches!(
+            args[0].expr.kind,
+            IrExprKind::SliceFieldTake { .. }
+        ));
+        assert_drop_of(&ir.functions[0].body[4], "taken");
         assert_drop_of(&ir.functions[0].body[5], "bag");
     }
 

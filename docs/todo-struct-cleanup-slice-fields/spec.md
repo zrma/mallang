@@ -22,10 +22,11 @@
 - Borrowed slice views.
 - First-class references.
 - Statement-spanning borrow lifetimes.
-- General partial moves from fields beyond slice field take-append. Direct
+- General partial moves from fields beyond slice field take. Direct
   element assignment `bag.values[i] = item` is handled by P56, direct field path
   same-field append reassignment is handled by P57, stable indexed field append
-  reassignment is handled by P58, and slice field take-append is handled by P59.
+  reassignment is handled by P58, slice field take-append is handled by P59, and
+  general owned value position slice field take is handled by P60.
 
 ## C-체크리스트
 

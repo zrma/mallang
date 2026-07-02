@@ -511,3 +511,12 @@
 - [x] direct local `values` append move semantics는 유지
 - [x] native backend에서 field source lvalue를 copy한 뒤 empty slice header를 write
 - [x] `examples/slice-field-take-append.mlg` native smoke 추가
+
+## P60: Owned Slice Field Take Expressions
+
+- [x] `taken := bag.values`처럼 owned value position에서 slice field take 허용
+- [x] `consume(bag.values)`처럼 owned parameter argument에서 slice field take 허용
+- [x] `len(bag.values)`, `bag.values[i]`, `range bag.values` read source는 take 없이 유지
+- [x] typed IR에 explicit slice field take node를 추가해 read와 move를 분리
+- [x] native backend에서 take source lvalue를 temp slice header로 copy한 뒤 empty slice header를 write
+- [x] `examples/slice-field-take.mlg` native smoke 추가
