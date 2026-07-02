@@ -1887,13 +1887,19 @@ struct CleanupBinding {
     span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CleanupInsertion {
+    body: Vec<IrStmt>,
+    moved_roots: HashSet<String>,
+    continues: bool,
+}
+
 fn insert_straight_line_cleanup_drops(
     body: Vec<IrStmt>,
     params: &[IrParam],
     fallback_span: Span,
 ) -> Vec<IrStmt> {
-    let mut output = Vec::new();
-    let mut active = params
+    let active = params
         .iter()
         .filter(|param| param.mode == ParamMode::Owned && param.ty.needs_cleanup())
         .map(|param| CleanupBinding {
@@ -1903,59 +1909,208 @@ fn insert_straight_line_cleanup_drops(
         })
         .collect::<Vec<_>>();
 
+    insert_cleanup_drops(body, active, fallback_span, &HashSet::new()).body
+}
+
+fn insert_cleanup_drops(
+    body: Vec<IrStmt>,
+    initial_active: Vec<CleanupBinding>,
+    fallback_span: Span,
+    tail_excluded_roots: &HashSet<String>,
+) -> CleanupInsertion {
+    let mut output = Vec::new();
+    let mut active = initial_active;
+    let mut moved_in_body = HashSet::new();
+
     for stmt in body {
-        let stmt = insert_branch_local_cleanup_drops(stmt);
+        let (stmt, branch_moved_roots) = insert_branch_cleanup_drops(stmt, &active);
         if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = cleanup_moved_roots_in_expr(expr);
+            moved_in_body.extend(returned_roots.iter().cloned());
             push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
             output.push(stmt);
-            return output;
+            return CleanupInsertion {
+                body: output,
+                moved_roots: moved_in_body,
+                continues: false,
+            };
         }
 
         let moved_roots = cleanup_moved_roots_in_stmt(&stmt);
+        let moved_roots = moved_roots
+            .into_iter()
+            .chain(branch_moved_roots)
+            .collect::<HashSet<_>>();
         let new_binding = cleanup_binding_from_stmt(&stmt);
         if let Some(binding) = cleanup_reassigned_active_binding(&stmt, &active, &moved_roots) {
             push_cleanup_drop(&mut output, binding, stmt.span);
         }
         output.push(stmt);
+        moved_in_body.extend(moved_roots.iter().cloned());
         active.retain(|binding| !moved_roots.contains(&binding.name));
         if let Some(binding) = new_binding {
             active.push(binding);
         }
     }
 
-    push_cleanup_drops(&mut output, &active, &HashSet::new(), fallback_span);
-    output
+    push_cleanup_drops(&mut output, &active, tail_excluded_roots, fallback_span);
+    CleanupInsertion {
+        body: output,
+        moved_roots: moved_in_body,
+        continues: true,
+    }
 }
 
-fn insert_branch_local_cleanup_drops(mut stmt: IrStmt) -> IrStmt {
+fn insert_branch_cleanup_drops(
+    mut stmt: IrStmt,
+    active: &[CleanupBinding],
+) -> (IrStmt, HashSet<String>) {
+    let mut moved_roots = HashSet::new();
+    let span = stmt.span;
+
     stmt.kind = match stmt.kind {
         IrStmtKind::If {
             condition,
             then_body,
             else_body,
-        } => IrStmtKind::If {
-            condition,
-            then_body: insert_straight_line_cleanup_drops(then_body, &[], stmt.span),
-            else_body: insert_straight_line_cleanup_drops(else_body, &[], stmt.span),
-        },
-        IrStmtKind::Match { scrutinee, arms } => IrStmtKind::Match {
-            scrutinee,
-            arms: arms
+        } => {
+            let condition_moved_roots = cleanup_moved_roots_in_expr(&condition);
+            let branch_active = cleanup_bindings_after_moved_roots(active, &condition_moved_roots);
+            let tail_excluded_roots = cleanup_binding_names(&branch_active);
+
+            let mut then_insertion =
+                insert_cleanup_drops(then_body, branch_active.clone(), span, &tail_excluded_roots);
+            let mut else_insertion =
+                insert_cleanup_drops(else_body, branch_active.clone(), span, &tail_excluded_roots);
+            let branch_moved_roots =
+                merged_cleanup_roots(&branch_active, [&then_insertion, &else_insertion]);
+
+            push_branch_merge_cleanup_drops(
+                &mut then_insertion.body,
+                &branch_active,
+                &branch_moved_roots,
+                &then_insertion.moved_roots,
+                span,
+                then_insertion.continues,
+            );
+            push_branch_merge_cleanup_drops(
+                &mut else_insertion.body,
+                &branch_active,
+                &branch_moved_roots,
+                &else_insertion.moved_roots,
+                span,
+                else_insertion.continues,
+            );
+
+            moved_roots.extend(condition_moved_roots);
+            moved_roots.extend(branch_moved_roots);
+
+            IrStmtKind::If {
+                condition,
+                then_body: then_insertion.body,
+                else_body: else_insertion.body,
+            }
+        }
+        IrStmtKind::Match { scrutinee, arms } => {
+            let scrutinee_moved_roots = cleanup_moved_roots_in_expr(&scrutinee);
+            let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee_moved_roots);
+            let tail_excluded_roots = cleanup_binding_names(&arm_active);
+            let mut arms = arms
                 .into_iter()
                 .map(|arm| {
-                    let span = arm.span;
-                    IrMatchBlockArm {
-                        pattern: arm.pattern,
-                        body: insert_straight_line_cleanup_drops(arm.body, &[], span),
-                        span,
-                    }
+                    let insertion = insert_cleanup_drops(
+                        arm.body,
+                        arm_active.clone(),
+                        arm.span,
+                        &tail_excluded_roots,
+                    );
+                    (arm.pattern, insertion, arm.span)
                 })
-                .collect(),
-        },
+                .collect::<Vec<_>>();
+            let arm_moved_roots =
+                merged_cleanup_roots(&arm_active, arms.iter().map(|(_, insertion, _)| insertion));
+
+            for (_, insertion, span) in &mut arms {
+                push_branch_merge_cleanup_drops(
+                    &mut insertion.body,
+                    &arm_active,
+                    &arm_moved_roots,
+                    &insertion.moved_roots,
+                    *span,
+                    insertion.continues,
+                );
+            }
+
+            moved_roots.extend(scrutinee_moved_roots);
+            moved_roots.extend(arm_moved_roots);
+
+            IrStmtKind::Match {
+                scrutinee,
+                arms: arms
+                    .into_iter()
+                    .map(|(pattern, insertion, span)| IrMatchBlockArm {
+                        pattern,
+                        body: insertion.body,
+                        span,
+                    })
+                    .collect(),
+            }
+        }
         kind => kind,
     };
-    stmt
+    (stmt, moved_roots)
+}
+
+fn cleanup_bindings_after_moved_roots(
+    active: &[CleanupBinding],
+    moved_roots: &HashSet<String>,
+) -> Vec<CleanupBinding> {
+    active
+        .iter()
+        .filter(|binding| !moved_roots.contains(&binding.name))
+        .cloned()
+        .collect()
+}
+
+fn cleanup_binding_names(active: &[CleanupBinding]) -> HashSet<String> {
+    active.iter().map(|binding| binding.name.clone()).collect()
+}
+
+fn merged_cleanup_roots<'a>(
+    active: &[CleanupBinding],
+    insertions: impl IntoIterator<Item = &'a CleanupInsertion>,
+) -> HashSet<String> {
+    let active_names = cleanup_binding_names(active);
+    let mut moved_roots = HashSet::new();
+    for insertion in insertions {
+        moved_roots.extend(
+            insertion
+                .moved_roots
+                .iter()
+                .filter(|root| active_names.contains(*root))
+                .cloned(),
+        );
+    }
+    moved_roots
+}
+
+fn push_branch_merge_cleanup_drops(
+    body: &mut Vec<IrStmt>,
+    active: &[CleanupBinding],
+    merged_moved_roots: &HashSet<String>,
+    branch_moved_roots: &HashSet<String>,
+    span: Span,
+    branch_continues: bool,
+) {
+    if !branch_continues {
+        return;
+    }
+    for binding in active.iter().rev() {
+        if merged_moved_roots.contains(&binding.name) && !branch_moved_roots.contains(&binding.name)
+        {
+            push_cleanup_drop(body, binding, span);
+        }
+    }
 }
 
 fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
@@ -2171,6 +2326,24 @@ mod tests {
         IrExpr {
             kind: IrExprKind::Bool(value),
             ty: Type::Bool,
+            span: test_span(),
+        }
+    }
+
+    fn test_owned_call(callee: &str, args: Vec<IrExpr>) -> IrExpr {
+        IrExpr {
+            kind: IrExprKind::Call {
+                callee: callee.to_string(),
+                args: args
+                    .into_iter()
+                    .map(|expr| IrArg {
+                        mode: ArgMode::Owned,
+                        expr,
+                        span: test_span(),
+                    })
+                    .collect(),
+            },
+            ty: Type::Unit,
             span: test_span(),
         }
     }
@@ -2429,6 +2602,178 @@ func add(a int, b int) int {
         assert_eq!(arms[1].body.len(), 2);
         assert_drop_of(&arms[0].body[1], "some_values");
         assert_drop_of(&arms[1].body[1], "none_values");
+    }
+
+    #[test]
+    fn inserts_merge_drop_for_if_outer_cleanup_root_moved_in_one_branch() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty.clone(),
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::If {
+                condition: test_bool(true),
+                then_body: vec![IrStmt {
+                    kind: IrStmtKind::Expr {
+                        expr: test_owned_call("consume", vec![test_var("values", slice_ty)]),
+                    },
+                    span: test_span(),
+                }],
+                else_body: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 1);
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(then_body.len(), 1);
+        assert_eq!(else_body.len(), 1);
+        assert_drop_of(&else_body[0], "values");
+    }
+
+    #[test]
+    fn inserts_merge_drop_for_match_outer_cleanup_root_moved_in_one_arm() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty.clone(),
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Match {
+                scrutinee: IrExpr {
+                    kind: IrExprKind::Var("maybe".to_string()),
+                    ty: Type::Option(Box::new(Type::Int)),
+                    span: test_span(),
+                },
+                arms: vec![
+                    IrMatchBlockArm {
+                        pattern: IrMatchPattern::Some("value".to_string()),
+                        body: vec![IrStmt {
+                            kind: IrStmtKind::Expr {
+                                expr: test_owned_call(
+                                    "consume",
+                                    vec![test_var("values", slice_ty)],
+                                ),
+                            },
+                            span: test_span(),
+                        }],
+                        span: test_span(),
+                    },
+                    IrMatchBlockArm {
+                        pattern: IrMatchPattern::None,
+                        body: Vec::new(),
+                        span: test_span(),
+                    },
+                ],
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 1);
+        let IrStmtKind::Match { arms, .. } = &body[0].kind else {
+            panic!("expected match statement");
+        };
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].body.len(), 1);
+        assert_eq!(arms[1].body.len(), 1);
+        assert_drop_of(&arms[1].body[0], "values");
+    }
+
+    #[test]
+    fn inserts_outer_cleanup_drop_before_branch_local_return() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty,
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::If {
+                condition: test_bool(true),
+                then_body: vec![IrStmt {
+                    kind: IrStmtKind::Return {
+                        expr: IrExpr {
+                            kind: IrExprKind::Int(1),
+                            ty: Type::Int,
+                            span: test_span(),
+                        },
+                    },
+                    span: test_span(),
+                }],
+                else_body: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(then_body.len(), 2);
+        assert_drop_of(&then_body[0], "values");
+        assert!(matches!(then_body[1].kind, IrStmtKind::Return { .. }));
+        assert!(else_body.is_empty());
+        assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn inserts_merge_drop_when_branch_returns_outer_cleanup_root() {
+        let slice_ty = test_slice_ty();
+        let params = vec![IrParam {
+            name: "values".to_string(),
+            mode: ParamMode::Owned,
+            ty: slice_ty.clone(),
+        }];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::If {
+                condition: test_bool(true),
+                then_body: vec![IrStmt {
+                    kind: IrStmtKind::Return {
+                        expr: test_var("values", slice_ty),
+                    },
+                    span: test_span(),
+                }],
+                else_body: Vec::new(),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 1);
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(then_body.len(), 1);
+        assert!(matches!(then_body[0].kind, IrStmtKind::Return { .. }));
+        assert_eq!(else_body.len(), 1);
+        assert_drop_of(&else_body[0], "values");
     }
 
     #[test]

@@ -336,3 +336,11 @@
 - [x] statement-form `match` arm body에 arm-local cleanup drop insertion 적용
 - [x] branch-local cleanup roots는 arm tail 또는 arm-local return 전에 drop
 - [x] outer cleanup root branch moves와 loop cleanup insertion은 다음 단계로 유지
+
+## P40: Branch Outer Cleanup Move Normalization
+
+- [x] `if` condition에서 move된 cleanup root를 parent active roots에서 제거
+- [x] `if` branch 중 하나에서 move된 outer cleanup root를 다른 continuing branch tail에서 drop
+- [x] statement-form `match` scrutinee/arm move도 같은 merge-drop 규칙 적용
+- [x] branch-local `return` 전에 outer cleanup root drop 삽입
+- [x] loop cleanup insertion은 다음 단계로 유지
