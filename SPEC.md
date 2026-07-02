@@ -82,10 +82,15 @@ Reserved built-in value names:
 print len Some None Ok Err
 ```
 
-These names cannot be used as global function names, parameter or receiver
-names, local bindings, range bindings, or match payload bindings in v0. Method
-and field names use dot-qualified namespaces and are not part of this value
-namespace rule.
+These names cannot be used as top-level type or function declarations,
+parameter or receiver names, local bindings, range bindings, or match payload
+bindings in v0. Method and field names use dot-qualified namespaces and are not
+part of this value namespace rule.
+
+Top-level `type` declarations and non-method `func` declarations share a
+declaration namespace in v0. A program cannot declare both `type User struct`
+and `func User(...)` at top level. Concrete method names are scoped by receiver
+type, so `func (con self User) User()` remains a receiver-qualified method.
 
 ## Bindings
 

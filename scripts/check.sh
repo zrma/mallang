@@ -226,6 +226,21 @@ if "${CARGO[@]}" run --bin mlg -- check "$builtin_value_name_fail_source" >/dev/
   echo "builtin value name check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+top_level_name_conflict_fail_source="target/mallang/check-top-level-name-conflict-fail.mlg"
+cat >"$top_level_name_conflict_fail_source" <<'MLG'
+type User struct {
+    age int
+}
+
+func User() {
+}
+
+func main() {}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$top_level_name_conflict_fail_source" >/dev/null 2>&1; then
+  echo "top-level name conflict check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

@@ -40,6 +40,7 @@
 - [x] conditionless `for` / empty-condition clause loop checking 추가
 - [x] `break` / `continue` outside-loop reject 추가
 - [x] built-in value name collision reject 추가
+- [x] top-level type/function declaration name conflict reject 추가
 - [x] statement-only `print` value-position reject 추가
 - [x] `mlg check` subcommand 추가
 
@@ -243,4 +244,11 @@
 - [x] global function 이름이 built-in value name과 충돌하면 reject
 - [x] parameter/local/range binding 이름이 built-in value name과 충돌하면 reject
 - [x] match payload binding 이름이 built-in value name과 충돌하면 reject
+- [x] `mlg check` failure smoke 추가
+
+## P27: Top-Level Declaration Namespace
+
+- [x] top-level struct와 non-method function 이름 충돌 reject
+- [x] top-level declaration에서 built-in type/value 이름 충돌 reject
+- [x] concrete method 이름은 receiver-qualified namespace로 유지
 - [x] `mlg check` failure smoke 추가

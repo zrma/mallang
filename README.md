@@ -21,6 +21,7 @@ This repository is the Mallang language PoC workspace.
 - Immutable bindings by default.
 - Built-in value names such as `print`, `len`, `Some`, `None`, `Ok`, and `Err`
   are reserved in user value bindings.
+- Top-level `type` and non-method `func` declarations cannot use the same name.
 - Ownership by default for non-copy values.
 - Explicit `con` and `mut` borrow calls.
 - Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter

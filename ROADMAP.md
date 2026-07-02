@@ -67,6 +67,7 @@
 - [x] Type-check fixed-size array element assignment in `for` clause post
   targets.
 - [x] Reject recursive struct value type definitions.
+- [x] Reject top-level type/function declaration name conflicts.
 - [x] Reject user value bindings that collide with built-in value names.
 - [x] Reject non-printable `print` arguments before native backend lowering.
 - [x] Reject statement-only `print` in value positions before native backend

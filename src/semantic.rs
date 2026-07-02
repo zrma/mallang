@@ -162,6 +162,7 @@ impl<'a> Checker<'a> {
                     struct_decl.span,
                 ));
             }
+            reject_builtin_value_name(&struct_decl.name, struct_decl.span)?;
             if self.structs.contains_key(struct_decl.name.as_str()) {
                 return Err(SemanticError::new(
                     format!("duplicate struct `{}`", struct_decl.name),
@@ -252,6 +253,12 @@ impl<'a> Checker<'a> {
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
         for function in &self.program.functions {
             if function.receiver.is_none() {
+                if is_builtin_type_name(&function.name) {
+                    return Err(SemanticError::new(
+                        format!("`{}` is a built-in type name", function.name),
+                        function.span,
+                    ));
+                }
                 reject_builtin_value_name(&function.name, function.span)?;
             }
 
@@ -315,6 +322,15 @@ impl<'a> Checker<'a> {
                     ));
                 }
             } else {
+                if self.structs.contains_key(function.name.as_str()) {
+                    return Err(SemanticError::new(
+                        format!(
+                            "top-level function `{}` conflicts with struct `{}`",
+                            function.name, function.name
+                        ),
+                        function.span,
+                    ));
+                }
                 if self.signatures.contains_key(function.name.as_str()) {
                     return Err(SemanticError::new(
                         format!("duplicate function `{}`", function.name),
@@ -3106,6 +3122,69 @@ func main() {
 "#,
         );
         assert!(error.message.contains("`len` is a built-in value name"));
+    }
+
+    #[test]
+    fn rejects_top_level_type_and_function_name_conflicts() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func User() {
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("top-level function `User` conflicts with struct `User`"));
+    }
+
+    #[test]
+    fn rejects_builtin_names_in_top_level_declarations() {
+        let error = check_error(
+            r#"
+type print struct {
+    value int
+}
+
+func main() {}
+"#,
+        );
+        assert!(error.message.contains("`print` is a built-in value name"));
+
+        let error = check_error(
+            r#"
+func int() {
+}
+
+func main() {}
+"#,
+        );
+        assert!(error.message.contains("`int` is a built-in type name"));
+    }
+
+    #[test]
+    fn allows_method_name_to_match_receiver_type_name() {
+        check_ok(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    user := User{age: 30}
+    print(user.User())
+}
+
+func (con self User) User() int {
+    return self.age
+}
+"#,
+        );
     }
 
     #[test]
