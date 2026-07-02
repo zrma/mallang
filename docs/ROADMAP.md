@@ -307,3 +307,10 @@
 - [x] internal slice drop helper에서 owned buffer free와 header reset 수행
 - [x] `Option`/`Result`/array wrapper cleanup helper가 active payload/element drop helper를 호출
 - [x] actual scope exit, early return, reassignment drop insertion은 다음 단계로 유지
+
+## P36: Explicit Drop IR Backend
+
+- [x] `IrStmtKind::Drop` explicit cleanup statement 추가
+- [x] C backend에서 cleanup lvalue를 `mlg_drop_*(&place)`로 lowering
+- [x] non-cleanup type drop은 IR invariant error로 reject
+- [x] automatic scope exit/early return drop insertion은 다음 단계로 유지

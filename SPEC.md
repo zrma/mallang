@@ -245,6 +245,8 @@ Future v0 slice rules:
   diagnostic until cleanup/drop lowering and value construction are implemented.
 - The backend may also emit internal drop helper shells for cleanup types before
   automatic scope-exit drop insertion is implemented.
+- The typed IR may carry explicit internal drop statements before semantic
+  lowering inserts them automatically.
 
 `unit` is the implicit return type of functions that do not return a value.
 

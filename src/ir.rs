@@ -95,6 +95,9 @@ pub enum IrStmtKind {
         element_ty: Type,
         body: Vec<IrStmt>,
     },
+    Drop {
+        expr: IrExpr,
+    },
     Break,
     Continue,
     Match {

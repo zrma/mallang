@@ -226,6 +226,7 @@ impl<'a> CGenerator<'a> {
                 element_ty,
                 body,
             } => self.emit_range_for_stmt(index_name, value_name, source, element_ty, body, env),
+            IrStmtKind::Drop { expr } => self.emit_drop_stmt(expr, env),
             IrStmtKind::Break => Ok("break;".to_string()),
             IrStmtKind::Continue => Ok(continue_label
                 .map(|label| format!("goto {label};"))
@@ -1104,6 +1105,25 @@ impl<'a> CGenerator<'a> {
         }
     }
 
+    fn emit_drop_stmt(
+        &self,
+        expr: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        if !expr.ty.needs_cleanup() {
+            return Err(CompileError::new(format!(
+                "IR invariant violation: drop requested for non-cleanup type `{}`",
+                expr.ty.source_name()
+            )));
+        }
+
+        let CExpr { prelude, code } = self.emit_borrow_lvalue_expr(expr, env)?;
+        Ok(finish_with_prelude(
+            prelude,
+            format!("{}(&({code}));", drop_fn_name(&expr.ty)),
+        ))
+    }
+
     fn emit_adt_constructor_stmt_expr(
         &self,
         ty: &Type,
@@ -1503,6 +1523,7 @@ impl<'a> CGenerator<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
+            IrStmtKind::Drop { expr } => self.collect_expr_types(expr, types),
             IrStmtKind::Match { scrutinee, arms } => {
                 self.collect_expr_types(scrutinee, types);
                 for arm in arms {
@@ -2272,6 +2293,75 @@ func add(a int, b int) int {
         assert!(c.contains(
             "static void mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
         ));
+    }
+
+    #[test]
+    fn generates_c_for_explicit_internal_drop_statement() {
+        let slice_ty = Type::Slice(Box::new(Type::Int));
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![
+                IrFunction {
+                    name: "consume".to_string(),
+                    params: vec![crate::ir::IrParam {
+                        name: "values".to_string(),
+                        mode: ParamMode::Owned,
+                        ty: slice_ty.clone(),
+                    }],
+                    return_type: Type::Unit,
+                    body: vec![IrStmt {
+                        kind: IrStmtKind::Drop {
+                            expr: IrExpr {
+                                kind: IrExprKind::Var("values".to_string()),
+                                ty: slice_ty,
+                                span,
+                            },
+                        },
+                        span,
+                    }],
+                },
+                IrFunction {
+                    name: "main".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+            ],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains("void mlg_consume(mlg_Slice_int mlg_values) {\n    mlg_drop_Slice_int(&(mlg_values));\n}"));
+    }
+
+    #[test]
+    fn rejects_explicit_internal_drop_for_non_cleanup_type() {
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![IrFunction {
+                name: "main".to_string(),
+                params: Vec::new(),
+                return_type: Type::Unit,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Drop {
+                        expr: IrExpr {
+                            kind: IrExprKind::Var("value".to_string()),
+                            ty: Type::Int,
+                            span,
+                        },
+                    },
+                    span,
+                }],
+            }],
+        };
+
+        let error = generate_c_from_ir(&program).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("drop requested for non-cleanup type `int`"));
     }
 
     #[test]
