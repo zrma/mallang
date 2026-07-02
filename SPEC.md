@@ -350,6 +350,8 @@ Rules:
   borrowed pattern form is introduced.
 - `match` scrutinees are evaluated once, including expression scrutinees such as
   direct function calls.
+- `print` displays ADT values as `Some(value)`, `None`, `Ok(value)`, and
+  `Err(value)` when the payload type itself is printable in the native backend.
 - v0 does not include `unwrap`, `?`, nested patterns, or user-defined enum
   declarations.
 
@@ -360,6 +362,7 @@ Implementation staging:
 3. Add exhaustive `match` checking for `Option` and `Result`.
 4. Lower ADTs into typed IR as tagged values.
 5. Specialize C backend layouts per concrete instantiation.
+6. Print ADT values with printable payloads in the native backend.
 
 ## Match
 

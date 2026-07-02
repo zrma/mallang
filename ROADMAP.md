@@ -67,6 +67,7 @@
 - [x] Add exhaustive `match` for built-in ADTs.
 - [x] Lower built-in ADTs into tagged typed IR.
 - [x] Add C backend layout for built-in ADTs.
+- [x] Print built-in ADT values with printable payloads in the C backend.
 - [x] Generate native code for non-local `match` scrutinee expressions.
 - [x] Add statement-form `match` with block arms.
 - [x] Struct declarations, named literals, and field access.

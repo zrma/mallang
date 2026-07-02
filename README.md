@@ -26,6 +26,7 @@ This repository is the Mallang language PoC workspace.
 - Functional features in the core language: `if` statements/expressions,
   `else if` sugar, `bool` logical operators, `|>` pipeline call sugar,
   `Option`, `Result`, and expression/statement `match`.
+- `Option` and `Result` values with printable payloads can be printed natively.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
@@ -56,6 +57,8 @@ cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
 target/mallang/pipeline
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
+cargo run --bin mlg -- build examples/print-adt.mlg -o target/mallang/print-adt
+target/mallang/print-adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
 target/mallang/match-temp
 cargo run --bin mlg -- build examples/if-match-expression.mlg -o target/mallang/if-match-expression
@@ -101,6 +104,7 @@ scripts/check.sh
 - `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
+- `examples/print-adt.mlg`: native smoke for printing `Option` / `Result` values.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
 - `examples/match-arm-prelude.mlg`: native smoke for `match` expression arms that need C preludes.
@@ -140,4 +144,5 @@ func add(a int, b int) int {
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
 `bool` logical operators, `|>` pipeline call sugar, statement/expression `if`,
 `else if` sugar, branch-aware returns, struct/method/nested-field, and built-in
-ADT expression/statement `match` subset via C source generation and `clang`.
+ADT expression/statement `match` plus ADT print output via C source generation
+and `clang`.

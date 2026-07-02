@@ -5,7 +5,7 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
 - 아직 없음: statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
@@ -26,6 +26,8 @@ cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
 target/mallang/pipeline
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
+cargo run --bin mlg -- build examples/print-adt.mlg -o target/mallang/print-adt
+target/mallang/print-adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
 target/mallang/match-temp
 cargo run --bin mlg -- build examples/if-match-expression.mlg -o target/mallang/if-match-expression

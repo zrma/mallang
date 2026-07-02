@@ -61,6 +61,7 @@
 - [x] `Some` / `None` / `Ok` / `Err` constructor type checking 추가
 - [x] `Option` / `Result` exhaustive `match` 추가
 - [x] tagged typed IR와 C backend layout 추가
+- [x] printable payload를 가진 `Option` / `Result` native print 추가
 - [x] non-local `match` scrutinee temp codegen 추가
 - [x] statement-form `match` block arm 추가
 

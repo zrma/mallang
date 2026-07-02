@@ -79,6 +79,13 @@ if [[ "$adt_output" != $'0\n0' ]]; then
   echo "adt native build smoke failed: expected two zero lines, got '$adt_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/print-adt.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/print-adt.mlg -o target/mallang/print-adt >/dev/null
+print_adt_output="$(target/mallang/print-adt)"
+if [[ "$print_adt_output" != $'Some(7)\nNone\nOk(1)\nErr(bad)\nSome(Ok(9))' ]]; then
+  echo "ADT print native build smoke failed: expected ADT display output, got '$print_adt_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/match-temp.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp >/dev/null
 match_temp_output="$(target/mallang/match-temp)"

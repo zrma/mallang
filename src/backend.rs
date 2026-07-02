@@ -364,13 +364,28 @@ impl<'a> CGenerator<'a> {
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),
-            Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
-                Err(CompileError::new(format!(
-                    "printing `{}` values is not implemented yet",
-                    arg.ty.source_name()
-                )))
-            }
+            Type::Option(_) | Type::Result(_, _) => self.emit_print_adt(arg, prelude, code),
+            Type::Struct(_) => Err(CompileError::new(format!(
+                "printing `{}` values is not implemented yet",
+                arg.ty.source_name()
+            ))),
         }
+    }
+
+    fn emit_print_adt(
+        &self,
+        arg: &IrExpr,
+        mut prelude: Vec<String>,
+        code: String,
+    ) -> Result<String, CompileError> {
+        let temp = print_temp_name(arg);
+        prelude.push(format!("{} {temp} = {code};", arg.ty.c_name()));
+
+        let mut body = String::new();
+        push_print_value_fragment(&arg.ty, &temp, &mut body, 0)?;
+        push_indented_lines(&mut body, "printf(\"\\n\");", 0);
+
+        Ok(finish_with_prelude(prelude, body))
     }
 
     fn emit_stmt_expr_with_env(
@@ -961,6 +976,65 @@ fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
     output
 }
 
+fn push_print_value_fragment(
+    ty: &Type,
+    code: &str,
+    output: &mut String,
+    level: usize,
+) -> Result<(), CompileError> {
+    match ty {
+        Type::Int => {
+            push_indented_lines(
+                output,
+                &format!("printf(\"%lld\", (long long)({code}));"),
+                level,
+            );
+            Ok(())
+        }
+        Type::Bool => {
+            push_indented_lines(
+                output,
+                &format!("printf(\"%s\", ({code}) ? \"true\" : \"false\");"),
+                level,
+            );
+            Ok(())
+        }
+        Type::String => {
+            push_indented_lines(output, &format!("printf(\"%s\", {code});"), level);
+            Ok(())
+        }
+        Type::Option(inner) => {
+            push_indented_lines(output, &format!("if (({code}).tag == 1) {{"), level);
+            push_indented_lines(output, "printf(\"Some(\");", level + 1);
+            push_print_value_fragment(inner, &format!("({code}).some"), output, level + 1)?;
+            push_indented_lines(output, "printf(\")\");", level + 1);
+            push_indented_lines(output, "} else {", level);
+            push_indented_lines(output, "printf(\"None\");", level + 1);
+            push_indented_lines(output, "}", level);
+            Ok(())
+        }
+        Type::Result(ok, err) => {
+            push_indented_lines(output, &format!("if (({code}).tag == 0) {{"), level);
+            push_indented_lines(output, "printf(\"Ok(\");", level + 1);
+            push_print_value_fragment(ok, &format!("({code}).ok"), output, level + 1)?;
+            push_indented_lines(output, "printf(\")\");", level + 1);
+            push_indented_lines(output, "} else {", level);
+            push_indented_lines(output, "printf(\"Err(\");", level + 1);
+            push_print_value_fragment(err, &format!("({code}).err"), output, level + 1)?;
+            push_indented_lines(output, "printf(\")\");", level + 1);
+            push_indented_lines(output, "}", level);
+            Ok(())
+        }
+        Type::Unit => Err(CompileError::new(
+            "IR invariant violation: cannot print unit",
+        )),
+        Type::Struct(_) => Err(CompileError::new(format!(
+            "printing `{}` values is not implemented yet",
+            ty.source_name()
+        ))),
+    }
+}
+
 fn if_expr_temp_block(condition: &str, temp: &str, then_expr: CExpr, else_expr: CExpr) -> String {
     let mut output = String::new();
     output.push_str(&format!("if ({}) {{\n", c_condition(condition)));
@@ -992,6 +1066,10 @@ fn match_expr_temp_block(
 
 fn match_expr_temp_name(expr: &IrExpr) -> String {
     format!("mallang_match_value_tmp_{}", expr.span.start)
+}
+
+fn print_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_print_tmp_{}", expr.span.start)
 }
 
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
@@ -1335,6 +1413,34 @@ func unwrap(value Option[int]) int {
         assert!(c.contains(".tag = 1"));
         assert!(c.contains(".tag = 0"));
         assert!(c.contains(".some"));
+    }
+
+    #[test]
+    fn generates_c_for_adt_printing() {
+        let program = parse(
+            r#"
+func main() {
+    print(maybe(true))
+    print(read(false))
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mallang_print_tmp_"));
+        assert!(c.contains("printf(\"Some(\");"));
+        assert!(c.contains("printf(\"Err(\");"));
     }
 
     #[test]

@@ -1,0 +1,19 @@
+func main() {
+    print(maybe(true))
+    print(maybe(false))
+    print(read(true))
+    print(read(false))
+    print(nested(true))
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+
+func nested(flag bool) Option[Result[int, string]] {
+    return if flag { Some(Ok(9)) } else { Some(Err("nested")) }
+}
