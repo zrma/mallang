@@ -13,7 +13,7 @@ use super::{
     utils::{
         finish_with_prelude, for_post_label, index_assign_value_temp_name, index_value_temp_name,
         is_blank_identifier, match_scrutinee_temp_name, print_temp_name, push_indented_lines,
-        range_index_temp_name, range_source_temp_name,
+        range_index_temp_name, range_source_temp_name, runtime_guard,
     },
     CExpr, CGenerator, CompileError,
 };
@@ -404,11 +404,14 @@ impl<'a> CGenerator<'a> {
                     let mut prelude = base.prelude;
                     prelude.extend(index.prelude);
                     prelude.push(format!("int64_t {index_temp} = {};", index.code));
-                    prelude.push(format!(
-                            "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    prelude.push(runtime_guard(
+                        format!(
+                            "{index_temp} < 0 || {index_temp} >= ({}).{}",
                             base.code,
                             c_field("len")
-                        ));
+                        ),
+                        "slice index out of bounds",
+                    ));
                     Ok(CExpr {
                         prelude,
                         code: format!("({}).{}[{index_temp}]", base.code, c_field("data")),
@@ -442,15 +445,19 @@ impl<'a> CGenerator<'a> {
         prelude.push(format!("int64_t {index_temp} = {};", index.code));
         match &base_ty {
             Type::Array { len, .. } => {
-                prelude.push(format!(
-                    "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+                prelude.push(runtime_guard(
+                    format!("{index_temp} < 0 || {index_temp} >= {len}"),
+                    "array index out of bounds",
                 ));
             }
             Type::Slice(_) => {
-                prelude.push(format!(
-                    "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
-                    base.code,
-                    c_field("len")
+                prelude.push(runtime_guard(
+                    format!(
+                        "{index_temp} < 0 || {index_temp} >= ({}).{}",
+                        base.code,
+                        c_field("len")
+                    ),
+                    "slice index out of bounds",
                 ));
             }
             _ => {

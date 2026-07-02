@@ -20,6 +20,18 @@ pub(super) fn finish_with_prelude(prelude: Vec<String>, body: String) -> String 
     output
 }
 
+pub(super) fn runtime_error_call(message: &str) -> String {
+    format!("mallang_runtime_error(\"{message}\");")
+}
+
+pub(super) fn runtime_guard(condition: impl AsRef<str>, message: &str) -> String {
+    format!(
+        "if ({}) {{\n    {}\n}}",
+        condition.as_ref(),
+        runtime_error_call(message)
+    )
+}
+
 pub(super) fn if_expr_temp_block(
     condition: &str,
     temp: &str,

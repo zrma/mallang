@@ -16,8 +16,8 @@ use super::{
         checked_binary_right_temp_name, checked_int_binary_builtin,
         checked_unary_operand_temp_name, checked_unary_result_temp_name, dividend_temp_name,
         divisor_temp_name, if_expr_temp_block, if_expr_temp_name, index_source_temp_name,
-        index_value_temp_name, match_expr_temp_name, match_scrutinee_temp_name,
-        slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
+        index_value_temp_name, match_expr_temp_name, match_scrutinee_temp_name, runtime_error_call,
+        runtime_guard, slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
     },
     AppendSourceExpr, CExpr, CGenerator, CompileError,
 };
@@ -149,8 +149,9 @@ impl<'a> CGenerator<'a> {
             let result_temp = checked_unary_result_temp_name(expr);
             prelude.push(format!("int64_t {operand_temp} = {code};"));
             prelude.push(format!("int64_t {result_temp};"));
-            prelude.push(format!(
-                "if (__builtin_sub_overflow((int64_t)0, {operand_temp}, &{result_temp})) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            prelude.push(runtime_guard(
+                format!("__builtin_sub_overflow((int64_t)0, {operand_temp}, &{result_temp})"),
+                "integer overflow",
             ));
             return Ok(CExpr {
                 prelude,
@@ -185,8 +186,9 @@ impl<'a> CGenerator<'a> {
             prelude.push(format!("int64_t {left_temp} = {};", left.code));
             prelude.push(format!("int64_t {right_temp} = {};", right.code));
             prelude.push(format!("int64_t {result_temp};"));
-            prelude.push(format!(
-                "if ({builtin}({left_temp}, {right_temp}, &{result_temp})) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            prelude.push(runtime_guard(
+                format!("{builtin}({left_temp}, {right_temp}, &{result_temp})"),
+                "integer overflow",
             ));
             return Ok(CExpr {
                 prelude,
@@ -199,11 +201,13 @@ impl<'a> CGenerator<'a> {
             let divisor_temp = divisor_temp_name(expr);
             prelude.push(format!("int64_t {dividend_temp} = {};", left.code));
             prelude.push(format!("int64_t {divisor_temp} = {};", right.code));
-            prelude.push(format!(
-                "if ({divisor_temp} == 0) {{\n    fprintf(stderr, \"mallang runtime error: division by zero\\n\");\n    exit(1);\n}}"
+            prelude.push(runtime_guard(
+                format!("{divisor_temp} == 0"),
+                "division by zero",
             ));
-            prelude.push(format!(
-                "if ({dividend_temp} == INT64_MIN && {divisor_temp} == -1) {{\n    fprintf(stderr, \"mallang runtime error: integer overflow\\n\");\n    exit(1);\n}}"
+            prelude.push(runtime_guard(
+                format!("{dividend_temp} == INT64_MIN && {divisor_temp} == -1"),
+                "integer overflow",
             ));
             return Ok(CExpr {
                 prelude,
@@ -236,8 +240,9 @@ impl<'a> CGenerator<'a> {
                 prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
                 prelude.extend(index.prelude);
                 prelude.push(format!("int64_t {index_temp} = {};", index.code));
-                prelude.push(format!(
-                    "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+                prelude.push(runtime_guard(
+                    format!("{index_temp} < 0 || {index_temp} >= {len}"),
+                    "array index out of bounds",
                 ));
 
                 Ok(CExpr {
@@ -256,9 +261,12 @@ impl<'a> CGenerator<'a> {
                 prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
                 prelude.extend(index.prelude);
                 prelude.push(format!("int64_t {index_temp} = {};", index.code));
-                prelude.push(format!(
-                    "if ({index_temp} < 0 || {index_temp} >= ({source_temp}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
-                    c_field("len")
+                prelude.push(runtime_guard(
+                    format!(
+                        "{index_temp} < 0 || {index_temp} >= ({source_temp}).{}",
+                        c_field("len")
+                    ),
+                    "slice index out of bounds",
                 ));
 
                 Ok(CExpr {
@@ -360,12 +368,15 @@ impl<'a> CGenerator<'a> {
         if let Some(clear_source) = slice.clear_source {
             prelude.push(clear_source);
         }
-        prelude.push(format!(
-            "if ({temp}.{len_field} == INT64_MAX) {{\n    fprintf(stderr, \"mallang runtime error: slice length overflow\\n\");\n    exit(1);\n}}"
+        prelude.push(runtime_guard(
+            format!("{temp}.{len_field} == INT64_MAX"),
+            "slice length overflow",
         ));
         prelude.push(format!("int64_t {new_len} = {temp}.{len_field} + 1;"));
         prelude.push(format!(
-            "if ({temp}.{cap_field} < {new_len}) {{\n    int64_t {new_cap} = ({temp}.{cap_field} == 0) ? 1 : {temp}.{cap_field};\n    while ({new_cap} < {new_len}) {{\n        if ({new_cap} > INT64_MAX / 2) {{\n            {new_cap} = {new_len};\n            break;\n        }}\n        {new_cap} = {new_cap} * 2;\n    }}\n    if ((uint64_t){new_cap} > UINT64_MAX / sizeof({element_ty})) {{\n        fprintf(stderr, \"mallang runtime error: slice allocation size overflow\\n\");\n        exit(1);\n    }}\n    void *{data_temp} = realloc({temp}.{data_field}, sizeof({element_ty}) * (uint64_t){new_cap});\n    if ({data_temp} == NULL) {{\n        fprintf(stderr, \"mallang runtime error: slice allocation failed\\n\");\n        exit(1);\n    }}\n    {temp}.{data_field} = {data_temp};\n    {temp}.{cap_field} = {new_cap};\n}}",
+            "if ({temp}.{cap_field} < {new_len}) {{\n    int64_t {new_cap} = ({temp}.{cap_field} == 0) ? 1 : {temp}.{cap_field};\n    while ({new_cap} < {new_len}) {{\n        if ({new_cap} > INT64_MAX / 2) {{\n            {new_cap} = {new_len};\n            break;\n        }}\n        {new_cap} = {new_cap} * 2;\n    }}\n    if ((uint64_t){new_cap} > UINT64_MAX / sizeof({element_ty})) {{\n        {allocation_size_error}\n    }}\n    void *{data_temp} = realloc({temp}.{data_field}, sizeof({element_ty}) * (uint64_t){new_cap});\n    if ({data_temp} == NULL) {{\n        {allocation_failed_error}\n    }}\n    {temp}.{data_field} = {data_temp};\n    {temp}.{cap_field} = {new_cap};\n}}",
+            allocation_size_error = runtime_error_call("slice allocation size overflow"),
+            allocation_failed_error = runtime_error_call("slice allocation failed"),
             element_ty = element.c_name()
         ));
         prelude.push(format!(
@@ -458,11 +469,14 @@ impl<'a> CGenerator<'a> {
                     let mut prelude = base.prelude;
                     prelude.extend(index.prelude);
                     prelude.push(format!("int64_t {index_temp} = {};", index.code));
-                    prelude.push(format!(
-                            "if ({index_temp} < 0 || {index_temp} >= ({}).{}) {{\n    fprintf(stderr, \"mallang runtime error: slice index out of bounds\\n\");\n    exit(1);\n}}",
+                    prelude.push(runtime_guard(
+                        format!(
+                            "{index_temp} < 0 || {index_temp} >= ({}).{}",
                             base.code,
                             c_field("len")
-                        ));
+                        ),
+                        "slice index out of bounds",
+                    ));
                     Ok(CExpr {
                         prelude,
                         code: format!("({}).{}[{index_temp}]", base.code, c_field("data")),
@@ -607,9 +621,9 @@ impl<'a> CGenerator<'a> {
                     element.c_name(),
                     elements.len()
                 ));
-                prelude.push(format!(
-                    "if ({temp}.{} == NULL) {{\n    fprintf(stderr, \"mallang runtime error: slice allocation failed\\n\");\n    exit(1);\n}}",
-                    c_field("data")
+                prelude.push(runtime_guard(
+                    format!("{temp}.{} == NULL", c_field("data")),
+                    "slice allocation failed",
                 ));
                 prelude.push(format!("{temp}.{} = {};", c_field("len"), elements.len()));
                 prelude.push(format!("{temp}.{} = {};", c_field("cap"), elements.len()));

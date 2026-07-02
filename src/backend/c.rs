@@ -8,7 +8,7 @@ mod utils;
 
 use names::{c_ident, c_param_decl, TypeCName};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
-use utils::{param_env, push_indented_lines};
+use utils::{param_env, push_indented_lines, runtime_error_call};
 
 use crate::{
     ast::Program,
@@ -83,12 +83,17 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdio.h>\n");
         output.push_str("#include <stdlib.h>\n");
         output.push_str("#include <string.h>\n\n");
+        output.push_str("static void mallang_runtime_error(const char *message) {\n");
+        output.push_str("    fprintf(stderr, \"mallang runtime error: %s\\n\", message);\n");
+        output.push_str("    exit(1);\n");
+        output.push_str("}\n\n");
         output.push_str("static int64_t mallang_check_index(int64_t index, int64_t len) {\n");
         output.push_str("    if (index < 0 || index >= len) {\n");
-        output.push_str(
-            "        fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n",
+        push_indented_lines(
+            &mut output,
+            &runtime_error_call("array index out of bounds"),
+            2,
         );
-        output.push_str("        exit(1);\n");
         output.push_str("    }\n");
         output.push_str("    return index;\n");
         output.push_str("}\n\n");

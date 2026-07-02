@@ -36,6 +36,26 @@ return a + b
 }
 
 #[test]
+fn generates_single_runtime_error_helper() {
+    let program = parse(
+        r#"
+func main() {
+values := [1]int{1}
+print(values[0])
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("static void mallang_runtime_error(const char *message)"));
+    assert_eq!(c.matches("fprintf(stderr").count(), 1);
+    assert!(c.contains("mallang_runtime_error(\"array index out of bounds\")"));
+}
+
+#[test]
 fn generates_c_for_internal_owned_slice_type_shell() {
     let program = IrProgram {
         structs: Vec::new(),
@@ -390,8 +410,9 @@ print(value % divisor)
 
     assert!(c.contains("int64_t mallang_divisor_"));
     assert!(c.contains("int64_t mallang_dividend_"));
-    assert!(c.contains("mallang runtime error: division by zero"));
-    assert!(c.contains("mallang runtime error: integer overflow"));
+    assert!(c.contains("mallang runtime error: %s"));
+    assert!(c.contains("mallang_runtime_error(\"division by zero\")"));
+    assert!(c.contains("mallang_runtime_error(\"integer overflow\")"));
     assert!(c.contains("if (mallang_divisor_"));
     assert!(c.contains(" == INT64_MIN && mallang_divisor_"));
     assert!(c.contains(" / mallang_divisor_"));
@@ -425,7 +446,7 @@ print(-step)
     assert!(c.contains("int64_t mallang_checked_result_"));
     assert!(c.contains("int64_t mallang_checked_unary_operand_"));
     assert!(c.contains("int64_t mallang_checked_unary_result_"));
-    assert!(c.contains("mallang runtime error: integer overflow"));
+    assert!(c.contains("mallang_runtime_error(\"integer overflow\")"));
 }
 
 #[test]
@@ -1106,7 +1127,7 @@ print(total)
     assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
     assert!(c.contains("int64_t mallang_index_value_"));
     assert!(c.contains("if (mallang_index_value_"));
-    assert!(c.contains("mallang runtime error: array index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"array index out of bounds\")"));
     assert!(c.contains(".mlg_data[mallang_index_value_"));
     assert!(c.contains("(void)(mlg_values);"));
     assert!(c.contains("__builtin_add_overflow"));
@@ -1135,7 +1156,7 @@ print(total)
     assert!(c.contains(".mlg_len = 3;"));
     assert!(c.contains(".mlg_cap = 3;"));
     assert!(c.contains(".mlg_data[0] = 1;"));
-    assert!(c.contains("mallang runtime error: slice index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains(".mlg_data[mallang_index_value_"));
     assert!(c.contains(".mlg_len"));
     assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
@@ -1207,7 +1228,7 @@ print(total)
     assert!(c.contains("_new_len = mallang_slice_append_tmp_"));
     assert!(c.contains("void *mallang_slice_append_tmp_"));
     assert!(c.contains("realloc(mallang_slice_append_tmp_"));
-    assert!(c.contains("mallang runtime error: slice allocation failed"));
+    assert!(c.contains("mallang_runtime_error(\"slice allocation failed\")"));
     assert!(c.contains(".mlg_data[mallang_slice_append_tmp_"));
     assert!(c.contains(" = 3;"));
     assert!(c.contains("mlg_values = mallang_slice_append_tmp_"));
@@ -1335,7 +1356,7 @@ print(store.bags[i].values[1])
 
     assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
     assert!(c.contains(".mlg_values = mallang_slice_append_tmp_"));
-    assert!(c.contains("mallang runtime error: slice index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(!c.contains("mlg_drop_Slice_int(&(((mlg_store).mlg_bags"));
     assert!(c.contains("mlg_drop_Struct_Store(&(mlg_store));"));
 }
@@ -1392,7 +1413,7 @@ print(name)
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("int64_t mallang_index_assign_value_"));
-    assert!(c.contains("mallang runtime error: slice index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains(">= (mlg_values).mlg_len"));
     assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
     assert!(c.contains("] = 5;"));
@@ -1711,7 +1732,7 @@ print(age)
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("((mlg_arrayUsers).mlg_data[mallang_check_index(0, 1)]).mlg_age = 31;"));
-    assert!(c.contains("mallang runtime error: slice index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains(">= (mlg_sliceUsers).mlg_len"));
     assert!(c.contains("((mlg_sliceUsers).mlg_data[mallang_index_value_"));
     assert!(c.contains("]).mlg_name = \"park\";"));
@@ -1849,7 +1870,7 @@ print(name)
     assert!(c.contains("void mlg_show(const char * const * mlg_name);"));
     assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
     assert!(c.contains("int64_t mallang_index_value_"));
-    assert!(c.contains("mallang runtime error: slice index out of bounds"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_index_value_"));
     assert!(c.contains("mlg_rename(&(((mlg_users).mlg_data[mallang_index_value_"));
     assert!(c.contains("]).mlg_name));"));

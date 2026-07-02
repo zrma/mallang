@@ -592,3 +592,9 @@
 - [x] `borrowed := con user.name` 같은 borrow marker value-position syntax reject parser regression 추가
 - [x] `return mut name` 같은 first-class mutable borrow return 후보 syntax reject parser regression 추가
 - [x] `con expr` / `mut expr`가 call argument mode prefix일 뿐 general expression이 아니라고 SPEC에 명시
+
+## P72: C Backend Runtime Error Helper
+
+- [x] generated C에 `mallang_runtime_error(const char *message)` helper 추가
+- [x] integer/index/slice allocation runtime guard emission을 helper 호출로 통합
+- [x] generated C에 direct `fprintf(stderr, ...)` runtime failure emission이 helper 하나로 모였는지 regression 추가
