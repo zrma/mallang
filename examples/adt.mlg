@@ -1,6 +1,6 @@
 func main() {
-    ignoreOption(maybe(false))
-    ignoreResult(read(false))
+    print(unwrap(maybe(false)))
+    print(status(read(false)))
 }
 
 func maybe(flag bool) Option[int] {
@@ -11,8 +11,16 @@ func read(flag bool) Result[int, string] {
     return if flag { Ok(1) } else { Err("bad") }
 }
 
-func ignoreOption(value Option[int]) {
+func unwrap(value Option[int]) int {
+    return match value {
+        case Some(inner) { inner }
+        case None { 0 }
+    }
 }
 
-func ignoreResult(value Result[int, string]) {
+func status(value Result[int, string]) int {
+    return match value {
+        case Ok(inner) { inner }
+        case Err(message) { 0 }
+    }
 }

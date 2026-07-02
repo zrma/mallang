@@ -2,8 +2,8 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Expr, ExprKind, Function, ParamMode, Program, Stmt, StmtKind,
-        TypeRef, UnaryOp,
+        Arg, ArgMode, BinaryOp, Expr, ExprKind, Function, MatchArm, MatchPattern, ParamMode,
+        Program, Stmt, StmtKind, TypeRef, UnaryOp,
     },
     token::Span,
 };
@@ -339,6 +339,9 @@ impl<'a> Checker<'a> {
                 value_use,
                 expected,
             ),
+            ExprKind::Match { scrutinee, arms } => {
+                self.check_match_expr(scrutinee, arms, locals, value_use, expected, expr.span)
+            }
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
             }
@@ -403,6 +406,244 @@ impl<'a> Checker<'a> {
 
         merge_branch_moves(locals, &branch_check.then_locals, &branch_check.else_locals);
         Ok(branch_check.then_ty)
+    }
+
+    fn check_match_expr(
+        &self,
+        scrutinee: &Expr,
+        arms: &[MatchArm],
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if arms.is_empty() {
+            return Err(SemanticError::new("match requires at least one arm", span));
+        }
+
+        let scrutinee_ty = self.check_expr(scrutinee, locals, ValueUse::Owned)?;
+        let prepared_arms = self.prepare_match_arms(&scrutinee_ty, arms, span)?;
+        let arm_checks = self.check_match_arms(&prepared_arms, locals, value_use, expected)?;
+        let first_ty = arm_checks[0].ty.clone();
+
+        for arm_check in &arm_checks[1..] {
+            if arm_check.ty != first_ty {
+                return Err(SemanticError::new(
+                    format!(
+                        "match arms must have the same type: got `{}` and `{}`",
+                        first_ty.source_name(),
+                        arm_check.ty.source_name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        if first_ty == Type::Unit {
+            return Err(SemanticError::new(
+                "match expression arms must produce a value in v0",
+                span,
+            ));
+        }
+
+        merge_many_branch_moves(locals, arm_checks.iter().map(|check| &check.locals));
+        Ok(first_ty)
+    }
+
+    fn prepare_match_arms<'b>(
+        &self,
+        scrutinee_ty: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
+        match scrutinee_ty {
+            Type::Option(inner) => self.prepare_option_match_arms(inner, arms, span),
+            Type::Result(ok, err) => self.prepare_result_match_arms(ok, err, arms, span),
+            _ => Err(SemanticError::new(
+                format!(
+                    "match scrutinee must be `Option` or `Result`, got `{}`",
+                    scrutinee_ty.source_name()
+                ),
+                span,
+            )),
+        }
+    }
+
+    fn prepare_option_match_arms<'b>(
+        &self,
+        inner: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
+        let mut prepared = Vec::new();
+        let mut seen_some = false;
+        let mut seen_none = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Some(binding) => {
+                    if seen_some {
+                        return Err(SemanticError::new(
+                            "Option match must contain exactly one `Some` arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_some = true;
+                    prepared.push(PreparedMatchArm {
+                        expr: &arm.expr,
+                        binding: Some((binding.as_str(), inner.clone())),
+                    });
+                }
+                MatchPattern::None => {
+                    if seen_none {
+                        return Err(SemanticError::new(
+                            "Option match must contain exactly one `None` arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_none = true;
+                    prepared.push(PreparedMatchArm {
+                        expr: &arm.expr,
+                        binding: None,
+                    });
+                }
+                MatchPattern::Ok(_) | MatchPattern::Err(_) => {
+                    return Err(SemanticError::new(
+                        "Option match patterns must be `Some(name)` and `None`",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_some || !seen_none {
+            return Err(SemanticError::new(
+                "Option match must include `Some(name)` and `None` arms",
+                span,
+            ));
+        }
+        Ok(prepared)
+    }
+
+    fn prepare_result_match_arms<'b>(
+        &self,
+        ok: &Type,
+        err: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
+        let mut prepared = Vec::new();
+        let mut seen_ok = false;
+        let mut seen_err = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Ok(binding) => {
+                    if seen_ok {
+                        return Err(SemanticError::new(
+                            "Result match must contain exactly one `Ok` arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_ok = true;
+                    prepared.push(PreparedMatchArm {
+                        expr: &arm.expr,
+                        binding: Some((binding.as_str(), ok.clone())),
+                    });
+                }
+                MatchPattern::Err(binding) => {
+                    if seen_err {
+                        return Err(SemanticError::new(
+                            "Result match must contain exactly one `Err` arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_err = true;
+                    prepared.push(PreparedMatchArm {
+                        expr: &arm.expr,
+                        binding: Some((binding.as_str(), err.clone())),
+                    });
+                }
+                MatchPattern::Some(_) | MatchPattern::None => {
+                    return Err(SemanticError::new(
+                        "Result match patterns must be `Ok(name)` and `Err(name)`",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_ok || !seen_err {
+            return Err(SemanticError::new(
+                "Result match must include `Ok(name)` and `Err(name)` arms",
+                span,
+            ));
+        }
+        Ok(prepared)
+    }
+
+    fn check_match_arms(
+        &self,
+        arms: &[PreparedMatchArm<'_>],
+        locals: &HashMap<String, Local>,
+        value_use: ValueUse,
+        expected: Option<&Type>,
+    ) -> Result<Vec<MatchArmCheck>, SemanticError> {
+        if let Some(expected) = expected {
+            return arms
+                .iter()
+                .map(|arm| self.check_prepared_match_arm(arm, locals, value_use, Some(expected)))
+                .collect();
+        }
+
+        let mut first_error = None;
+        for arm in arms {
+            match self.check_prepared_match_arm(arm, locals, value_use, None) {
+                Ok(_) => {
+                    let expected_ty = self
+                        .check_prepared_match_arm(arm, locals, value_use, None)?
+                        .ty;
+                    let mut checks = Vec::new();
+                    for retry_arm in arms {
+                        checks.push(self.check_prepared_match_arm(
+                            retry_arm,
+                            locals,
+                            value_use,
+                            Some(&expected_ty),
+                        )?);
+                    }
+                    return Ok(checks);
+                }
+                Err(error) if first_error.is_none() => first_error = Some(error),
+                Err(_) => {}
+            }
+        }
+
+        Err(first_error.expect("match arms are non-empty"))
+    }
+
+    fn check_prepared_match_arm(
+        &self,
+        arm: &PreparedMatchArm<'_>,
+        locals: &HashMap<String, Local>,
+        value_use: ValueUse,
+        expected: Option<&Type>,
+    ) -> Result<MatchArmCheck, SemanticError> {
+        let mut arm_locals = locals.clone();
+        if let Some((name, ty)) = &arm.binding {
+            arm_locals.insert(
+                (*name).to_string(),
+                Local {
+                    ty: ty.clone(),
+                    mutable: false,
+                    moved: false,
+                },
+            );
+        }
+        let ty = self.check_expr_with_expected(arm.expr, &mut arm_locals, value_use, expected)?;
+        Ok(MatchArmCheck {
+            ty,
+            locals: arm_locals,
+        })
     }
 
     fn check_if_branches(
@@ -824,6 +1065,16 @@ struct IfBranchCheck {
     else_locals: HashMap<String, Local>,
 }
 
+struct PreparedMatchArm<'a> {
+    expr: &'a Expr,
+    binding: Option<(&'a str, Type)>,
+}
+
+struct MatchArmCheck {
+    ty: Type,
+    locals: HashMap<String, Local>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ValueUse {
     Owned,
@@ -876,6 +1127,20 @@ fn merge_branch_moves(
         let moved_in_then = then_locals.get(name).is_some_and(|branch| branch.moved);
         let moved_in_else = else_locals.get(name).is_some_and(|branch| branch.moved);
         local.moved |= moved_in_then || moved_in_else;
+    }
+}
+
+fn merge_many_branch_moves<'a>(
+    locals: &mut HashMap<String, Local>,
+    branch_locals: impl Iterator<Item = &'a HashMap<String, Local>>,
+) {
+    let branch_locals = branch_locals.collect::<Vec<_>>();
+    for (name, local) in locals {
+        local.moved |= branch_locals.iter().any(|branch| {
+            branch
+                .get(name)
+                .is_some_and(|branch_local| branch_local.moved)
+        });
     }
 }
 
@@ -1069,6 +1334,114 @@ func consume(value Option[string]) {
 "#,
         );
         assert!(error.message.contains("use of moved value `s`"));
+    }
+
+    #[test]
+    fn allows_option_match_expression() {
+        check_ok(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Some(inner) { inner + 1 }
+        case None { 0 }
+    }
+    print(out)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_result_match_expression() {
+        check_ok(
+            r#"
+func main() {
+    result := read(false)
+    code := match result {
+        case Ok(value) { value }
+        case Err(message) { 0 }
+    }
+    print(code)
+}
+
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_non_exhaustive_option_match() {
+        let error = check_error(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Some(inner) { inner }
+    }
+    print(out)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("Option match must include `Some(name)` and `None` arms"));
+    }
+
+    #[test]
+    fn rejects_result_pattern_in_option_match() {
+        let error = check_error(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Ok(inner) { inner }
+        case None { 0 }
+    }
+    print(out)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("Option match patterns must be `Some(name)` and `None`"));
+    }
+
+    #[test]
+    fn rejects_match_arm_type_mismatch() {
+        let error = check_error(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Some(inner) { inner }
+        case None { false }
+    }
+    print(out)
+}
+"#,
+        );
+        assert!(error.message.contains("match arms must have the same type"));
+    }
+
+    #[test]
+    fn ownership_moves_match_scrutinee() {
+        let error = check_error(
+            r#"
+func main() {
+    value := Some("hello")
+    out := match value {
+        case Some(inner) { inner }
+        case None { "fallback" }
+    }
+    print(value)
+    print(out)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `value`"));
     }
 
     #[test]

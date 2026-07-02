@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, Param, ParamMode, Program, Stmt,
-        StmtKind, TypeRef, UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchPattern, Param,
+        ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
     },
     lexer::{lex, LexError},
     token::{Keyword, Span, Token, TokenKind},
@@ -307,6 +307,7 @@ impl Parser {
                 span: token.span,
             }),
             TokenKind::Keyword(Keyword::If) => self.finish_if_expr(token.span),
+            TokenKind::Keyword(Keyword::Match) => self.finish_match_expr(token.span),
             TokenKind::Minus => {
                 let expr = self.parse_precedence(6)?;
                 let span = token.span.join(expr.span);
@@ -367,6 +368,89 @@ impl Parser {
         let expr = self.parse_expression()?;
         while self.eat(TokenTag::Semicolon).is_some() {}
         let end = self.expect(TokenTag::RightBrace, "expected `}` after if branch")?;
+
+        Ok((expr, end))
+    }
+
+    fn finish_match_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
+        let scrutinee = self.parse_expression()?;
+        self.expect(TokenTag::LeftBrace, "expected `{` before match arms")?;
+        let mut arms = Vec::new();
+
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            arms.push(self.parse_match_arm()?);
+        }
+
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after match arms")?;
+        Ok(Expr {
+            kind: ExprKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+            },
+            span: start.join(end),
+        })
+    }
+
+    fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
+        let start = self.expect_keyword(Keyword::Case, "expected `case` in match")?;
+        let pattern = self.parse_match_pattern()?;
+        let (expr, end) = self.parse_match_branch_expr()?;
+
+        Ok(MatchArm {
+            pattern,
+            expr,
+            span: start.join(end),
+        })
+    }
+
+    fn parse_match_pattern(&mut self) -> Result<MatchPattern, ParseError> {
+        let (name, span) = self.expect_ident("expected match pattern")?;
+        match name.as_str() {
+            "None" => Ok(MatchPattern::None),
+            "Some" => {
+                let binding = self.parse_payload_pattern("Some")?;
+                Ok(MatchPattern::Some(binding))
+            }
+            "Ok" => {
+                let binding = self.parse_payload_pattern("Ok")?;
+                Ok(MatchPattern::Ok(binding))
+            }
+            "Err" => {
+                let binding = self.parse_payload_pattern("Err")?;
+                Ok(MatchPattern::Err(binding))
+            }
+            _ => Err(ParseError::new(
+                "expected `Some`, `None`, `Ok`, or `Err` pattern",
+                span,
+            )),
+        }
+    }
+
+    fn parse_payload_pattern(&mut self, constructor: &str) -> Result<String, ParseError> {
+        self.expect(TokenTag::LeftParen, "expected `(` in payload pattern")?;
+        let (binding, _) = self.expect_ident("expected payload binding")?;
+        self.expect(TokenTag::RightParen, "expected `)` after payload pattern")?;
+        if matches!(binding.as_str(), "Some" | "None" | "Ok" | "Err") {
+            return Err(ParseError::new(
+                format!("`{binding}` cannot be used as a `{constructor}` payload binding"),
+                self.peek().span,
+            ));
+        }
+        Ok(binding)
+    }
+
+    fn parse_match_branch_expr(&mut self) -> Result<(Expr, Span), ParseError> {
+        self.expect(TokenTag::LeftBrace, "expected `{` before match branch")?;
+        if self.at(TokenTag::RightBrace) {
+            return Err(ParseError::new(
+                "expected expression in match branch",
+                self.peek().span,
+            ));
+        }
+
+        let expr = self.parse_expression()?;
+        while self.eat(TokenTag::Semicolon).is_some() {}
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after match branch")?;
 
         Ok((expr, end))
     }
@@ -668,5 +752,32 @@ func main() {}
         assert_eq!(result_ty.args.len(), 2);
         assert_eq!(result_ty.args[0].name, "string");
         assert_eq!(result_ty.args[1].name, "int");
+    }
+
+    #[test]
+    fn parses_match_expression() {
+        let program = parse(
+            r#"
+func main() {
+    value := Some(1)
+    out := match value {
+        case Some(x) { x }
+        case None { 0 }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[1].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Match { scrutinee, arms } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        assert!(matches!(scrutinee.kind, ExprKind::Var(_)));
+        assert_eq!(arms.len(), 2);
+        assert!(matches!(arms[0].pattern, MatchPattern::Some(_)));
+        assert!(matches!(arms[1].pattern, MatchPattern::None));
     }
 }

@@ -231,11 +231,9 @@ Implementation staging:
 `match` destructures algebraic data types.
 
 ```go
-match user {
-case Some(u):
-    print(u.name)
-case None:
-    print("not found")
+label := match user {
+    case Some(u) { u.name }
+    case None { "not found" }
 }
 ```
 
@@ -246,6 +244,8 @@ Rules:
 - Nested patterns are deferred.
 - Matching `Option[T]` requires exactly `Some(name)` and `None` arms.
 - Matching `Result[T, E]` requires exactly `Ok(name)` and `Err(name)` arms.
+- All arms of a `match` expression must produce the same non-`unit` type.
+- Matching a move-only scrutinee consumes it.
 
 ## Ownership Rules
 

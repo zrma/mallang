@@ -51,7 +51,7 @@
 - [x] `Option[T]`, `Result[T, E]`, and `match` surface design.
 - [x] Parse generic type references for `Option[T]` and `Result[T, E]`.
 - [x] Type-check `Some`, `None`, `Ok`, and `Err` constructors.
-- [ ] Add exhaustive `match` for built-in ADTs.
+- [x] Add exhaustive `match` for built-in ADTs.
 - [ ] Lower built-in ADTs into tagged typed IR.
 - [ ] Add C backend layout for built-in ADTs.
 - Modules/packages.

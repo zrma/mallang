@@ -253,6 +253,12 @@ impl<'a> Lowerer<'a> {
                     ty,
                 )
             }
+            ExprKind::Match { .. } => {
+                return Err(IrError::new(
+                    "match lowering is planned but not implemented yet",
+                    expr.span,
+                ));
+            }
             ExprKind::Call { callee, args } => self.lower_call(callee, args, locals, expr.span)?,
             ExprKind::Unary { op, expr } => {
                 let expr = self.lower_expr(expr, locals)?;
@@ -448,5 +454,28 @@ func main() {}
         assert!(error
             .message
             .contains("ADT constructor lowering is planned"));
+    }
+
+    #[test]
+    fn ir_rejects_match_until_tagged_ir_exists() {
+        let program = parse(
+            r#"
+func unwrap(value Option[int]) int {
+    return match value {
+        case Some(inner) { inner }
+        case None { 0 }
+    }
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let error = lower(&checked).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("match lowering is planned but not implemented yet"));
     }
 }
