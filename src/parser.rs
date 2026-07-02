@@ -315,10 +315,19 @@ impl Parser {
         let condition = self.parse_expression_without_struct_literals()?;
         let then_block = self.parse_block()?;
         let mut span = start.join(then_block.span);
-        let else_block = if self.eat_keyword(Keyword::Else).is_some() {
-            let block = self.parse_block()?;
-            span = start.join(block.span);
-            Some(block)
+        let else_block = if let Some(else_start) = self.eat_keyword(Keyword::Else) {
+            if self.at_keyword(Keyword::If) {
+                let nested = self.parse_if_statement()?;
+                span = start.join(nested.span);
+                Some(Block {
+                    span: else_start.join(nested.span),
+                    statements: vec![nested],
+                })
+            } else {
+                let block = self.parse_block()?;
+                span = start.join(block.span);
+                Some(block)
+            }
         } else {
             None
         };
@@ -457,7 +466,14 @@ impl Parser {
         let condition = self.parse_expression_without_struct_literals()?;
         let (then_branch, _) = self.parse_if_branch_expr()?;
         self.expect_keyword(Keyword::Else, "expected `else` in if expression")?;
-        let (else_branch, end) = self.parse_if_branch_expr()?;
+        let (else_branch, end) = if self.at_keyword(Keyword::If) {
+            let if_start = self.expect_keyword(Keyword::If, "expected `if` after `else`")?;
+            let expr = self.finish_if_expr(if_start)?;
+            let end = expr.span;
+            (expr, end)
+        } else {
+            self.parse_if_branch_expr()?
+        };
         let span = start.join(end);
 
         Ok(Expr {
@@ -898,6 +914,35 @@ func main() {
     }
 
     #[test]
+    fn parses_else_if_expression_as_nested_if() {
+        let program = parse(
+            r#"
+func main() {
+    label := if false { "no" } else if true { "yes" } else { "fallback" }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::If { else_branch, .. } = &expr.kind else {
+            panic!("expected outer if expression");
+        };
+        let ExprKind::If {
+            then_branch,
+            else_branch,
+            ..
+        } = &else_branch.kind
+        else {
+            panic!("expected nested if expression");
+        };
+        assert!(matches!(then_branch.kind, ExprKind::String(_)));
+        assert!(matches!(else_branch.kind, ExprKind::String(_)));
+    }
+
+    #[test]
     fn parses_if_statement() {
         let program = parse(
             r#"
@@ -921,6 +966,40 @@ func main() {
             panic!("expected if statement");
         };
         assert!(matches!(condition.kind, ExprKind::Binary { .. }));
+        assert_eq!(then_block.statements.len(), 1);
+        assert_eq!(else_block.as_ref().unwrap().statements.len(), 1);
+    }
+
+    #[test]
+    fn parses_else_if_statement_as_nested_if() {
+        let program = parse(
+            r#"
+func main() {
+    if false {
+        print("no")
+    } else if true {
+        print("yes")
+    } else {
+        print("fallback")
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::If { else_block, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected outer if statement");
+        };
+        let nested_block = else_block.as_ref().expect("expected synthetic else block");
+        assert_eq!(nested_block.statements.len(), 1);
+        let StmtKind::If {
+            then_block,
+            else_block,
+            ..
+        } = &nested_block.statements[0].kind
+        else {
+            panic!("expected nested if statement");
+        };
         assert_eq!(then_block.statements.len(), 1);
         assert_eq!(else_block.as_ref().unwrap().statements.len(), 1);
     }

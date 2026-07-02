@@ -16,6 +16,7 @@
 - [x] Implement a Pratt parser for expressions.
 - [x] Produce an AST with precise source spans.
 - [x] Parse the first target program.
+- [x] Parse `else if` as nested `if` sugar.
 
 ## Milestone 2: Static Semantics
 

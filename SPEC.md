@@ -246,7 +246,7 @@ Statement rules:
   the statement in v0.
 - An `if` statement is return-complete only when both `then` and `else` blocks
   are return-complete.
-- `else if` is not sugar in v0; use nested `if` inside an `else` block.
+- `else if` is sugar for a nested statement-form `if` inside the `else` branch.
 
 Expression form:
 
@@ -263,6 +263,7 @@ Rules:
 - `if` used as an expression requires `else`.
 - Both branches must have the same type.
 - Expression branches must produce a value.
+- `else if` is sugar for a nested `if` expression in the else branch.
 
 ## Option and Result
 

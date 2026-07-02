@@ -14,6 +14,7 @@
 - [x] function declaration parser 추가
 - [x] block/statement parser 추가
 - [x] Pratt expression parser 추가
+- [x] `else if` sugar parser 추가
 - [x] `examples/first.mlg`를 AST로 파싱하는 test 추가
 
 ## P2: Static Semantics

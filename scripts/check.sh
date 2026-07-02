@@ -99,3 +99,10 @@ if [[ "$return_completeness_output" != $'1\n2' ]]; then
   echo "return completeness native build smoke failed: expected 1 and 2, got '$return_completeness_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/else-if.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/else-if.mlg -o target/mallang/else-if >/dev/null
+else_if_output="$(target/mallang/else-if)"
+if [[ "$else_if_output" != $'1\n2\n3' ]]; then
+  echo "else-if native build smoke failed: expected 1, 2, and 3, got '$else_if_output'" >&2
+  exit 1
+fi

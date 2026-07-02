@@ -13,6 +13,8 @@
 - branch 안에서 move된 outer binding은 branch 이후 moved 상태로 보수적으로 합친다.
 - `if` expression은 기존처럼 `else`와 branch value를 요구한다.
 - `else if` sugar와 block expression generalization은 이번 work unit 범위 밖이다.
+- `else if` sugar는 후속 `docs/todo-else-if-sugar/spec.md`에서 nested `if`
+  parser sugar로 지원한다.
 - return-completeness analysis는 후속 `docs/todo-return-completeness/spec.md`에서
   statement-form `if` branch 대상으로 확장한다.
 

@@ -1,0 +1,15 @@
+func main() {
+    print(choose(true, false))
+    print(choose(false, true))
+    print(choose(false, false))
+}
+
+func choose(primary bool, secondary bool) int {
+    if primary {
+        return 1
+    } else if secondary {
+        return 2
+    } else {
+        return 3
+    }
+}
