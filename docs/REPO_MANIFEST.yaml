@@ -1,0 +1,22 @@
+name: mallang
+language: rust
+primary_entrypoints:
+  - README.md
+  - SPEC.md
+  - ROADMAP.md
+  - docs/HANDOFF.md
+  - docs/ROADMAP.md
+commands:
+  check: scripts/check.sh
+  format: cargo fmt --all --check
+  test: cargo test --workspace
+  clippy: cargo clippy --workspace --all-targets -- -D warnings
+  lexer_smoke: cargo run --bin mlg -- examples/hello.mlg
+vcs:
+  system: jj
+  default_bookmark: main
+agent_workflow:
+  todo_glob: docs/todo-*
+  required_todo_files:
+    - spec.md
+    - open-questions.md

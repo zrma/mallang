@@ -1,0 +1,11 @@
+[package]
+name = "mallang"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "mlg"
+path = "src/main.rs"
+
+[dependencies]

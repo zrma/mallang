@@ -1,0 +1,9 @@
+func main() {
+    name := "kim"
+    msg := greet(in name)
+    print(msg)
+}
+
+func greet(name in string) string {
+    return "hello " + name
+}

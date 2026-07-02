@@ -1,0 +1,84 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenKind {
+    Ident(String),
+    Int(String),
+    String(String),
+    Keyword(Keyword),
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    LeftBracket,
+    RightBracket,
+    Comma,
+    Dot,
+    Colon,
+    Semicolon,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Equal,
+    EqualEqual,
+    Bang,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    ColonEqual,
+    Arrow,
+    PipeGreater,
+    Eof,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keyword {
+    Func,
+    Return,
+    If,
+    Else,
+    Match,
+    Case,
+    Mut,
+    In,
+    True,
+    False,
+    Struct,
+    Type,
+    Nil,
+}
+
+impl Keyword {
+    pub fn from_ident(ident: &str) -> Option<Self> {
+        match ident {
+            "func" => Some(Self::Func),
+            "return" => Some(Self::Return),
+            "if" => Some(Self::If),
+            "else" => Some(Self::Else),
+            "match" => Some(Self::Match),
+            "case" => Some(Self::Case),
+            "mut" => Some(Self::Mut),
+            "in" => Some(Self::In),
+            "true" => Some(Self::True),
+            "false" => Some(Self::False),
+            "struct" => Some(Self::Struct),
+            "type" => Some(Self::Type),
+            "nil" => Some(Self::Nil),
+            _ => None,
+        }
+    }
+}
