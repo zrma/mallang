@@ -175,6 +175,16 @@ if "${CARGO[@]}" run --bin mlg -- check "$wrapped_recursive_struct_fail_source" 
   echo "wrapped recursive struct check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+main_param_fail_source="target/mallang/check-main-param-fail.mlg"
+cat >"$main_param_fail_source" <<'MLG'
+func main(value int) {
+    print(value)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$main_param_fail_source" >/dev/null 2>&1; then
+  echo "main parameter check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 array_print_fail_source="target/mallang/check-array-print-fail.mlg"
 cat >"$array_print_fail_source" <<'MLG'
 func main() {

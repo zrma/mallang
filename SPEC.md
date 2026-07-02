@@ -50,6 +50,10 @@ func greet(con name string) string {
 }
 ```
 
+The program entrypoint is exactly `func main()` in v0. `main` must not declare a
+receiver, parameters, or a return type, and the name is reserved for the
+entrypoint rather than receiver-qualified methods.
+
 ## Lexical Rules
 
 - Identifiers use ASCII letters, digits, and `_`.

@@ -16,6 +16,8 @@ This repository is the Mallang language PoC workspace.
 ## Current Scope
 
 - Go-like surface syntax.
+- Entrypoint is exactly `func main()`; `main` cannot be used for methods,
+  parameters, or return-bearing signatures in v0.
 - No pointer syntax.
 - No `nil`.
 - Immutable bindings by default.

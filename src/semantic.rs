@@ -3104,6 +3104,38 @@ func choose(flag bool) int {
     }
 
     #[test]
+    fn rejects_main_with_method_receiver() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func (con self User) main() {
+    print(self.name)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`main` must not declare a method receiver"));
+    }
+
+    #[test]
+    fn rejects_main_with_parameters() {
+        let error = check_error("func main(value int) { print(value) }");
+        assert!(error.message.contains("`main` must not take parameters"));
+    }
+
+    #[test]
+    fn rejects_main_with_return_type() {
+        let error = check_error("func main() int { return 0 }");
+        assert!(error
+            .message
+            .contains("`main` must not declare a return type in v0"));
+    }
+
+    #[test]
     fn allows_struct_literal_and_field_access() {
         check_ok(
             r#"

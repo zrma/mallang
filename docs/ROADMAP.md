@@ -273,3 +273,9 @@
 - [x] `append`를 future slice growth built-in value name으로 예약
 - [x] top-level function/local binding 충돌 semantic regression 추가
 - [x] `mlg check` failure smoke 갱신
+
+## P31: Entrypoint Signature Semantics
+
+- [x] `func main()`을 v0 entrypoint signature로 고정
+- [x] `main` method receiver, parameter, return type reject 회귀 테스트 추가
+- [x] `mlg check` failure smoke로 invalid entrypoint signature 고정
