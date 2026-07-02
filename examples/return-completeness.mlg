@@ -1,0 +1,12 @@
+func main() {
+    print(choose(true))
+    print(choose(false))
+}
+
+func choose(flag bool) int {
+    if flag {
+        return 1
+    } else {
+        return 2
+    }
+}

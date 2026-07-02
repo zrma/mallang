@@ -24,6 +24,7 @@
 - [x] immutable binding reassignment reject
 - [x] `if` expression type checking 추가
 - [x] statement-form `if` type checking 추가
+- [x] statement-form `if` return-completeness analysis 추가
 - [x] `mlg check` subcommand 추가
 
 ## P3: Ownership Lite

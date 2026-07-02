@@ -221,6 +221,7 @@ Rules:
 - Borrow arguments may be local variables or field paths rooted in local variables.
 - Borrowed values cannot be stored in variables in v0.
 - Borrowed values cannot be returned in v0.
+- Non-`unit` functions must return on every path the v0 checker can prove.
 
 ## Expressions
 
@@ -243,6 +244,8 @@ Statement rules:
 - Bindings introduced inside a branch do not leak outside the branch.
 - Moving an outer value inside either branch makes the value unavailable after
   the statement in v0.
+- An `if` statement is return-complete only when both `then` and `else` blocks
+  are return-complete.
 - `else if` is not sugar in v0; use nested `if` inside an `else` block.
 
 Expression form:

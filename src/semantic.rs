@@ -308,13 +308,8 @@ impl<'a> Checker<'a> {
             }
         }
 
-        let mut returned = false;
-        for stmt in &function.body.statements {
-            if matches!(stmt.kind, StmtKind::Return { .. }) {
-                returned = true;
-            }
-            self.check_stmt(stmt, &mut locals, &sig.return_type)?;
-        }
+        let returned =
+            self.check_block_statements(&function.body, &mut locals, &sig.return_type)?;
 
         if sig.return_type != Type::Unit && !returned {
             return Err(SemanticError::new(
@@ -360,7 +355,7 @@ impl<'a> Checker<'a> {
         stmt: &Stmt,
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
-    ) -> Result<Type, SemanticError> {
+    ) -> Result<bool, SemanticError> {
         match &stmt.kind {
             StmtKind::Let {
                 mutable,
@@ -384,7 +379,7 @@ impl<'a> Checker<'a> {
                         stmt.span,
                     ));
                 }
-                Ok(Type::Unit)
+                Ok(false)
             }
             StmtKind::Assign { name, expr } => {
                 let (local_ty, local_mutable) = {
@@ -414,11 +409,11 @@ impl<'a> Checker<'a> {
                         stmt.span,
                     ));
                 }
-                Ok(Type::Unit)
+                Ok(false)
             }
             StmtKind::FieldAssign { base, field, expr } => {
                 self.check_field_assign(base, field, expr, locals)?;
-                Ok(Type::Unit)
+                Ok(false)
             }
             StmtKind::Return { expr } => {
                 let value_ty = self.check_expr_with_expected(
@@ -437,7 +432,7 @@ impl<'a> Checker<'a> {
                         stmt.span,
                     ));
                 }
-                Ok(Type::Unit)
+                Ok(true)
             }
             StmtKind::If {
                 condition,
@@ -453,16 +448,22 @@ impl<'a> Checker<'a> {
                 }
 
                 let mut then_locals = locals.clone();
-                self.check_block_statements(then_block, &mut then_locals, return_type)?;
+                let then_returns =
+                    self.check_block_statements(then_block, &mut then_locals, return_type)?;
                 let mut else_locals = locals.clone();
-                if let Some(else_block) = else_block {
-                    self.check_block_statements(else_block, &mut else_locals, return_type)?;
-                }
+                let else_returns = if let Some(else_block) = else_block {
+                    self.check_block_statements(else_block, &mut else_locals, return_type)?
+                } else {
+                    false
+                };
 
                 merge_branch_moves(locals, &then_locals, &else_locals);
-                Ok(Type::Unit)
+                Ok(then_returns && else_returns)
             }
-            StmtKind::Expr { expr } => self.check_expr(expr, locals, ValueUse::Owned),
+            StmtKind::Expr { expr } => {
+                self.check_expr(expr, locals, ValueUse::Owned)?;
+                Ok(false)
+            }
         }
     }
 
@@ -471,11 +472,12 @@ impl<'a> Checker<'a> {
         block: &Block,
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<bool, SemanticError> {
+        let mut returns = false;
         for stmt in &block.statements {
-            self.check_stmt(stmt, locals, return_type)?;
+            returns |= self.check_stmt(stmt, locals, return_type)?;
         }
-        Ok(())
+        Ok(returns)
     }
 
     fn check_expr(
@@ -1888,6 +1890,90 @@ func add(a int, b int) int {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_return_completeness_across_if_statement_branches() {
+        check_ok(
+            r#"
+func main() {
+    print(choose(true))
+}
+
+func choose(flag bool) int {
+    if flag {
+        return 1
+    } else {
+        return 2
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_nested_return_completeness_across_if_statement_branches() {
+        check_ok(
+            r#"
+func main() {
+    print(choose(true, false))
+}
+
+func choose(left bool, right bool) int {
+    if left {
+        if right {
+            return 1
+        } else {
+            return 2
+        }
+    } else {
+        return 3
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_if_statement_return_without_else_branch_in_non_unit_function() {
+        let error = check_error(
+            r#"
+func main() {
+    print(choose(true))
+}
+
+func choose(flag bool) int {
+    if flag {
+        return 1
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("function `choose` must return `int`"));
+    }
+
+    #[test]
+    fn rejects_if_statement_return_when_else_branch_does_not_return() {
+        let error = check_error(
+            r#"
+func main() {
+    print(choose(true))
+}
+
+func choose(flag bool) int {
+    if flag {
+        return 1
+    } else {
+        print(2)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("function `choose` must return `int`"));
     }
 
     #[test]

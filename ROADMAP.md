@@ -26,6 +26,7 @@
 - [x] Reject immutable binding reassignment.
 - [x] Support `if` expressions with compatible branch types.
 - [x] Support statement-form `if` with branch-local bindings.
+- [x] Support return-completeness analysis across statement-form `if` branches.
 
 ## Milestone 3: Ownership and Borrowing
 

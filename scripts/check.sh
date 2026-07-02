@@ -92,3 +92,10 @@ if [[ "$nested_fields_output" != $'kim\nlee\n30' ]]; then
   echo "nested fields native build smoke failed: expected kim, lee, and 30, got '$nested_fields_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/return-completeness.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/return-completeness.mlg -o target/mallang/return-completeness >/dev/null
+return_completeness_output="$(target/mallang/return-completeness)"
+if [[ "$return_completeness_output" != $'1\n2' ]]; then
+  echo "return completeness native build smoke failed: expected 1 and 2, got '$return_completeness_output'" >&2
+  exit 1
+fi

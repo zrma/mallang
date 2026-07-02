@@ -23,6 +23,7 @@ This repository is the Mallang language PoC workspace.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
   `Option`, `Result`, and `match`.
+- Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
 - Go-like receiver methods with Mallang parameter modes.
@@ -58,6 +59,8 @@ cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-b
 target/mallang/field-borrow
 cargo run --bin mlg -- build examples/nested-fields.mlg -o target/mallang/nested-fields
 target/mallang/nested-fields
+cargo run --bin mlg -- build examples/return-completeness.mlg -o target/mallang/return-completeness
+target/mallang/return-completeness
 ```
 
 Run the full local gate:
@@ -80,6 +83,7 @@ scripts/check.sh
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
 - `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.
+- `examples/return-completeness.mlg`: native smoke for branch-aware return analysis.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -104,5 +108,5 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`,
-statement/expression `if`, struct/method/nested-field, and built-in ADT subset
-via C source generation and `clang`.
+statement/expression `if`, branch-aware returns, struct/method/nested-field,
+and built-in ADT subset via C source generation and `clang`.

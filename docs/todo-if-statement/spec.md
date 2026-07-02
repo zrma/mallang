@@ -12,8 +12,9 @@
 - branch block 안의 binding은 branch 밖으로 새지 않는다.
 - branch 안에서 move된 outer binding은 branch 이후 moved 상태로 보수적으로 합친다.
 - `if` expression은 기존처럼 `else`와 branch value를 요구한다.
-- `else if` sugar, block expression generalization, return-completeness analysis는
-  이번 work unit 범위 밖이다.
+- `else if` sugar와 block expression generalization은 이번 work unit 범위 밖이다.
+- return-completeness analysis는 후속 `docs/todo-return-completeness/spec.md`에서
+  statement-form `if` branch 대상으로 확장한다.
 
 ## C-체크리스트
 
