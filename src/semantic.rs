@@ -2682,6 +2682,20 @@ func main() {
     }
 
     #[test]
+    fn allows_initless_for_clause_statement() {
+        check_ok(
+            r#"
+func main() {
+    mut i := 0
+    for ; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_break_and_continue_inside_for_statement() {
         check_ok(
             r#"

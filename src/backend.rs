@@ -1569,6 +1569,26 @@ func main() {
     }
 
     #[test]
+    fn generates_c_for_initless_for_clause_statement() {
+        let program = parse(
+            r#"
+func main() {
+    mut i := 0
+    for ; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("for (; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
+    }
+
+    #[test]
     fn generates_c_for_loop_control_statements() {
         let program = parse(
             r#"

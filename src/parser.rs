@@ -362,9 +362,14 @@ impl Parser {
     fn parse_for_statement(&mut self) -> Result<Stmt, ParseError> {
         let start = self.expect_keyword(Keyword::For, "expected `for`")?;
 
-        if self.starts_for_clause_header() {
-            let init = self.parse_for_init()?;
-            self.expect(TokenTag::Semicolon, "expected `;` after for init")?;
+        if self.at(TokenTag::Semicolon) || self.starts_for_clause_header() {
+            let init = if self.eat(TokenTag::Semicolon).is_some() {
+                None
+            } else {
+                let init = self.parse_for_init()?;
+                self.expect(TokenTag::Semicolon, "expected `;` after for init")?;
+                Some(init)
+            };
             let condition = self.parse_expression_without_struct_literals()?;
             self.expect(TokenTag::Semicolon, "expected `;` after for condition")?;
             let post = self.parse_for_post()?;
@@ -373,7 +378,7 @@ impl Parser {
 
             return Ok(Stmt {
                 kind: StmtKind::For {
-                    init: Some(init),
+                    init,
                     condition,
                     post: Some(post),
                     body,
@@ -1173,6 +1178,30 @@ func add(a int, b int) int {
             }) if matches!(&target.kind, ExprKind::Var(name) if name == "i")
         ));
         assert_eq!(body.statements.len(), 1);
+    }
+
+    #[test]
+    fn parses_initless_for_clause_statement() {
+        let program =
+            parse("func main() { mut i := 0 for ; i < 3; i = i + 1 { print(i) } }").unwrap();
+        let StmtKind::For {
+            init,
+            condition,
+            post,
+            ..
+        } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert!(matches!(
+            condition.kind,
+            ExprKind::Binary {
+                op: BinaryOp::Less,
+                ..
+            }
+        ));
+        assert!(matches!(post, Some(ForPost::Assign { .. })));
     }
 
     #[test]

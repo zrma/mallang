@@ -1621,6 +1621,37 @@ func main() {
     }
 
     #[test]
+    fn ir_lowers_initless_for_clause_statement() {
+        let program = parse(
+            r#"
+func main() {
+    mut i := 0
+    for ; i < 3; i = i + 1 {
+        print(i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected for statement");
+        };
+        assert!(init.is_none());
+        assert_eq!(condition.ty, Type::Bool);
+        assert!(matches!(post.as_deref(), Some(IrForPost::Assign { .. })));
+        assert_eq!(body.len(), 1);
+    }
+
+    #[test]
     fn ir_lowers_loop_control_statements() {
         let program = parse(
             r#"

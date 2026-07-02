@@ -24,6 +24,8 @@ cargo run --bin mlg -- build examples/loop-control.mlg -o target/mallang/loop-co
 target/mallang/loop-control
 cargo run --bin mlg -- build examples/for-clause.mlg -o target/mallang/for-clause
 target/mallang/for-clause
+cargo run --bin mlg -- build examples/for-clause-initless.mlg -o target/mallang/for-clause-initless
+target/mallang/for-clause-initless
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators

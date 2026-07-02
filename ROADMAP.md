@@ -21,6 +21,7 @@
 - [x] Parse condition-only `for` statements.
 - [x] Parse `break` and `continue` loop control statements.
 - [x] Parse Go-like `for init; condition; post` clause loops.
+- [x] Parse initless `for ; condition; post` clause loops.
 
 ## Milestone 2: Static Semantics
 
@@ -36,6 +37,7 @@
 - [x] Support return-completeness analysis across statement-form `if` branches.
 - [x] Support condition-only `for` statement checking with loop-local bindings.
 - [x] Support `for init; condition; post` checking with header-local bindings.
+- [x] Support initless `for ; condition; post` checking.
 - [x] Reject `break` and `continue` outside loops.
 
 ## Milestone 3: Ownership and Borrowing
@@ -67,6 +69,7 @@
 - [x] Generate native C `while` loops for condition-only `for` statements.
 - [x] Generate native C `break` and `continue` statements.
 - [x] Generate native C `for` loops for `for init; condition; post`.
+- [x] Generate native C `for` loops for initless clause loops.
 
 ## Later
 

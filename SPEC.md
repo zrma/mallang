@@ -278,12 +278,17 @@ for enabled {
 for mut i := 0; i < 3; i = i + 1 {
     print(i)
 }
+
+for ; i < 3; i = i + 1 {
+    print(i)
+}
 ```
 
 Rules:
 
 - The condition must have type `bool`.
-- In the three-clause form, init is `name := expr` or `mut name := expr`.
+- In the three-clause form, init is optional. When present, it is `name := expr`
+  or `mut name := expr`.
 - In the three-clause form, post is a single variable or field assignment.
 - Bindings introduced by the init clause are scoped to the loop header and body.
 - Bindings introduced inside the body do not leak outside the body.
@@ -294,8 +299,7 @@ Rules:
 - `break` and `continue` are only valid inside loops.
 - A `for` statement is not considered return-complete in v0, even when its
   condition is statically `true`.
-- v0 does not yet include `range`, initless clause loops, empty conditions, or
-  post declarations.
+- v0 does not yet include `range`, empty conditions, or post declarations.
 
 Expression form:
 

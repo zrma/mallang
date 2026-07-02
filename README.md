@@ -57,6 +57,8 @@ cargo run --bin mlg -- build examples/loop-control.mlg -o target/mallang/loop-co
 target/mallang/loop-control
 cargo run --bin mlg -- build examples/for-clause.mlg -o target/mallang/for-clause
 target/mallang/for-clause
+cargo run --bin mlg -- build examples/for-clause-initless.mlg -o target/mallang/for-clause-initless
+target/mallang/for-clause-initless
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
@@ -113,6 +115,7 @@ scripts/check.sh
 - `examples/for-loop.mlg`: native smoke for condition-only `for` loops.
 - `examples/loop-control.mlg`: native smoke for `break` and `continue`.
 - `examples/for-clause.mlg`: native smoke for `for init; condition; post`.
+- `examples/for-clause-initless.mlg`: native smoke for initless `for ; condition; post`.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.

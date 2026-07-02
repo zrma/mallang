@@ -85,6 +85,13 @@ if [[ "$for_clause_output" != "8" ]]; then
   echo "for-clause native build smoke failed: expected 8 got '$for_clause_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/for-clause-initless.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/for-clause-initless.mlg -o target/mallang/for-clause-initless >/dev/null
+for_clause_initless_output="$(target/mallang/for-clause-initless)"
+if [[ "$for_clause_initless_output" != $'8\n5' ]]; then
+  echo "initless for-clause native build smoke failed: expected 8 and 5 got '$for_clause_initless_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
 string_equality_output="$(target/mallang/string-equality)"
