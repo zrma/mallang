@@ -1980,10 +1980,22 @@ fn insert_cleanup_drops(
             .chain(branch_moved_roots)
             .collect::<HashSet<_>>();
         let new_binding = cleanup_binding_from_stmt(&stmt);
-        if let Some(binding) = cleanup_reassigned_active_binding(&stmt, &active, &moved_roots) {
+        let reassigned_binding =
+            cleanup_reassigned_active_binding(&stmt, &active, &moved_roots).cloned();
+        let overwritten_place = cleanup_overwritten_place_from_stmt(&stmt);
+        let (stmt, rhs_temp) = if reassigned_binding.is_some() || overwritten_place.is_some() {
+            prepare_cleanup_assignment_rhs(stmt)
+        } else {
+            (stmt, None)
+        };
+
+        if let Some(temp) = rhs_temp {
+            output.push(temp);
+        }
+        if let Some(binding) = &reassigned_binding {
             push_cleanup_drop(&mut output, binding, stmt.span);
         }
-        if let Some(overwritten_place) = cleanup_overwritten_place_from_stmt(&stmt) {
+        if let Some(overwritten_place) = overwritten_place {
             push_cleanup_drop_expr(&mut output, overwritten_place, stmt.span);
         }
         output.push(stmt);
@@ -2318,6 +2330,72 @@ fn cleanup_overwritten_place_from_stmt(stmt: &IrStmt) -> Option<IrExpr> {
     }
 }
 
+fn prepare_cleanup_assignment_rhs(stmt: IrStmt) -> (IrStmt, Option<IrStmt>) {
+    let span = stmt.span;
+    match stmt.kind {
+        IrStmtKind::Assign { name, expr } if expr.ty.needs_cleanup() => {
+            let (_, temp_stmt, temp_expr) = cleanup_assignment_rhs_temp(expr, span);
+            let stmt = IrStmt {
+                kind: IrStmtKind::Assign {
+                    name,
+                    expr: temp_expr,
+                },
+                span,
+            };
+            (stmt, Some(temp_stmt))
+        }
+        IrStmtKind::FieldAssign { base, field, expr } if expr.ty.needs_cleanup() => {
+            let (_, temp_stmt, temp_expr) = cleanup_assignment_rhs_temp(expr, span);
+            let stmt = IrStmt {
+                kind: IrStmtKind::FieldAssign {
+                    base,
+                    field,
+                    expr: temp_expr,
+                },
+                span,
+            };
+            (stmt, Some(temp_stmt))
+        }
+        IrStmtKind::IndexAssign { base, index, expr } if expr.ty.needs_cleanup() => {
+            let (_, temp_stmt, temp_expr) = cleanup_assignment_rhs_temp(expr, span);
+            let stmt = IrStmt {
+                kind: IrStmtKind::IndexAssign {
+                    base,
+                    index,
+                    expr: temp_expr,
+                },
+                span,
+            };
+            (stmt, Some(temp_stmt))
+        }
+        kind => (IrStmt { kind, span }, None),
+    }
+}
+
+fn cleanup_assignment_rhs_temp(expr: IrExpr, stmt_span: Span) -> (String, IrStmt, IrExpr) {
+    let temp_name = cleanup_assignment_rhs_temp_name(stmt_span);
+    let temp_ty = expr.ty.clone();
+    let temp_expr = IrExpr {
+        kind: IrExprKind::Var(temp_name.clone()),
+        ty: temp_ty.clone(),
+        span: expr.span,
+    };
+    let temp_stmt = IrStmt {
+        kind: IrStmtKind::Let {
+            mutable: false,
+            name: temp_name.clone(),
+            ty: temp_ty,
+            expr,
+        },
+        span: stmt_span,
+    };
+    (temp_name, temp_stmt, temp_expr)
+}
+
+fn cleanup_assignment_rhs_temp_name(span: Span) -> String {
+    format!("mallang_cleanup_assign_rhs_{}_{}", span.start, span.end)
+}
+
 fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
     match &stmt.kind {
         IrStmtKind::Let { expr, .. }
@@ -2571,6 +2649,50 @@ mod tests {
         assert_eq!(name, expected_base);
     }
 
+    fn assert_cleanup_rhs_temp(stmt: &IrStmt, expected_moved_root: &str) -> String {
+        let IrStmtKind::Let { name, expr, .. } = &stmt.kind else {
+            panic!("expected cleanup rhs temp let");
+        };
+        assert!(name.starts_with("mallang_cleanup_assign_rhs_"));
+        let IrExprKind::Var(root) = &expr.kind else {
+            panic!("expected cleanup rhs temp to move a root variable");
+        };
+        assert_eq!(root, expected_moved_root);
+        name.clone()
+    }
+
+    fn assert_assign_from_temp(stmt: &IrStmt, expected_name: &str, expected_temp: &str) {
+        let IrStmtKind::Assign { name, expr } = &stmt.kind else {
+            panic!("expected assignment");
+        };
+        assert_eq!(name, expected_name);
+        let IrExprKind::Var(temp) = &expr.kind else {
+            panic!("expected assignment rhs temp");
+        };
+        assert_eq!(temp, expected_temp);
+    }
+
+    fn assert_field_assign_from_temp(stmt: &IrStmt, expected_field: &str, expected_temp: &str) {
+        let IrStmtKind::FieldAssign { field, expr, .. } = &stmt.kind else {
+            panic!("expected field assignment");
+        };
+        assert_eq!(field, expected_field);
+        let IrExprKind::Var(temp) = &expr.kind else {
+            panic!("expected field assignment rhs temp");
+        };
+        assert_eq!(temp, expected_temp);
+    }
+
+    fn assert_index_assign_from_temp(stmt: &IrStmt, expected_temp: &str) {
+        let IrStmtKind::IndexAssign { expr, .. } = &stmt.kind else {
+            panic!("expected index assignment");
+        };
+        let IrExprKind::Var(temp) = &expr.kind else {
+            panic!("expected index assignment rhs temp");
+        };
+        assert_eq!(temp, expected_temp);
+    }
+
     #[test]
     fn ir_lowers_first_target_program_with_types() {
         let program = parse(
@@ -2689,7 +2811,7 @@ func add(a int, b int) int {
     }
 
     #[test]
-    fn drops_old_cleanup_root_before_reassignment() {
+    fn evaluates_cleanup_rhs_before_root_reassignment_drop() {
         let slice_ty = test_slice_ty();
         let params = vec![
             IrParam {
@@ -2713,14 +2835,15 @@ func add(a int, b int) int {
 
         let body = insert_straight_line_cleanup_drops(body, &params, test_span());
 
-        assert_eq!(body.len(), 3);
-        assert_drop_of(&body[0], "values");
-        assert!(matches!(body[1].kind, IrStmtKind::Assign { .. }));
-        assert_drop_of(&body[2], "values");
+        assert_eq!(body.len(), 4);
+        let temp = assert_cleanup_rhs_temp(&body[0], "replacement");
+        assert_drop_of(&body[1], "values");
+        assert_assign_from_temp(&body[2], "values", &temp);
+        assert_drop_of(&body[3], "values");
     }
 
     #[test]
-    fn drops_old_cleanup_field_before_assignment() {
+    fn evaluates_cleanup_field_rhs_before_assignment_drop() {
         let slice_ty = test_slice_ty();
         let body = vec![IrStmt {
             kind: IrStmtKind::FieldAssign {
@@ -2733,13 +2856,14 @@ func add(a int, b int) int {
 
         let body = insert_straight_line_cleanup_drops(body, &[], test_span());
 
-        assert_eq!(body.len(), 2);
-        assert_drop_field(&body[0], "holder", "values");
-        assert!(matches!(body[1].kind, IrStmtKind::FieldAssign { .. }));
+        assert_eq!(body.len(), 3);
+        let temp = assert_cleanup_rhs_temp(&body[0], "replacement");
+        assert_drop_field(&body[1], "holder", "values");
+        assert_field_assign_from_temp(&body[2], "values", &temp);
     }
 
     #[test]
-    fn drops_old_cleanup_array_element_before_assignment() {
+    fn evaluates_cleanup_array_element_rhs_before_assignment_drop() {
         let slice_ty = test_slice_ty();
         let array_ty = Type::Array {
             len: 2,
@@ -2760,9 +2884,10 @@ func add(a int, b int) int {
 
         let body = insert_straight_line_cleanup_drops(body, &[], test_span());
 
-        assert_eq!(body.len(), 2);
-        assert_drop_index(&body[0], "values");
-        assert!(matches!(body[1].kind, IrStmtKind::IndexAssign { .. }));
+        assert_eq!(body.len(), 3);
+        let temp = assert_cleanup_rhs_temp(&body[0], "replacement");
+        assert_drop_index(&body[1], "values");
+        assert_index_assign_from_temp(&body[2], &temp);
     }
 
     #[test]

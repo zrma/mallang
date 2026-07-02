@@ -375,3 +375,10 @@
 - [x] cleanup type fixed-array element assignment 앞에 old element drop 삽입
 - [x] backend explicit field/index drop lvalue lowering regression 추가
 - [x] source-level slice surface는 reserved 상태 유지
+
+## P45: Cleanup Assignment RHS Before Drop
+
+- [x] cleanup type local reassignment에서 RHS temp 평가를 old root drop보다 먼저 삽입
+- [x] cleanup type field assignment에서 RHS temp 평가를 old field drop보다 먼저 삽입
+- [x] cleanup type fixed-array element assignment에서 RHS temp 평가를 old element drop보다 먼저 삽입
+- [x] source-level slice surface는 reserved 상태 유지
