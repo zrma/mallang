@@ -379,6 +379,10 @@ impl<'a> Checker<'a> {
                 self.check_field_assign(base, field, expr, locals)?;
                 Ok(false)
             }
+            StmtKind::IndexAssign { base, index, expr } => {
+                self.check_index_assign(base, index, expr, locals, stmt.span)?;
+                Ok(false)
+            }
             StmtKind::Return { expr } => {
                 let value_ty = self.check_expr_with_expected(
                     expr,
@@ -1068,16 +1072,6 @@ impl<'a> Checker<'a> {
     ) -> Result<Type, SemanticError> {
         let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
         let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
-        if index_ty != Type::Int {
-            return Err(SemanticError::new(
-                format!(
-                    "array index must have type `int`, got `{}`",
-                    index_ty.source_name()
-                ),
-                index.span,
-            ));
-        }
-
         let Type::Array { len, element } = base_ty else {
             return Err(SemanticError::new(
                 format!(
@@ -1087,6 +1081,47 @@ impl<'a> Checker<'a> {
                 base.span,
             ));
         };
+
+        self.validate_index_type_and_bounds(index, &index_ty, len)?;
+
+        if !element.is_copy() {
+            return Err(SemanticError::new(
+                format!(
+                    "array indexing requires a Copy element type in v0, got `{}`",
+                    element.source_name()
+                ),
+                span,
+            ));
+        }
+
+        Ok(*element)
+    }
+
+    fn check_index_expr(
+        &self,
+        index: &Expr,
+        locals: &mut HashMap<String, Local>,
+        len: usize,
+    ) -> Result<(), SemanticError> {
+        let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+        self.validate_index_type_and_bounds(index, &index_ty, len)
+    }
+
+    fn validate_index_type_and_bounds(
+        &self,
+        index: &Expr,
+        index_ty: &Type,
+        len: usize,
+    ) -> Result<(), SemanticError> {
+        if index_ty != &Type::Int {
+            return Err(SemanticError::new(
+                format!(
+                    "array index must have type `int`, got `{}`",
+                    index_ty.source_name()
+                ),
+                index.span,
+            ));
+        }
 
         if let Some(index_value) = const_int_expr(index) {
             let out_of_bounds = if index_value < 0 {
@@ -1105,17 +1140,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        if !element.is_copy() {
-            return Err(SemanticError::new(
-                format!(
-                    "array indexing requires a Copy element type in v0, got `{}`",
-                    element.source_name()
-                ),
-                span,
-            ));
-        }
-
-        Ok(*element)
+        Ok(())
     }
 
     fn check_field_assign(
@@ -1164,6 +1189,80 @@ impl<'a> Checker<'a> {
                     value_ty.source_name()
                 ),
                 expr.span,
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn check_index_assign(
+        &self,
+        base: &Expr,
+        index: &Expr,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        let ExprKind::Var(name) = &base.kind else {
+            return Err(SemanticError::new(
+                "array assignment target must be a direct mutable local array in v0",
+                base.span,
+            ));
+        };
+
+        let (base_ty, mutable) = {
+            let Some(local) = locals.get(name) else {
+                return Err(SemanticError::new(
+                    format!("unknown variable `{name}`"),
+                    base.span,
+                ));
+            };
+            if local.moved {
+                return Err(SemanticError::new(
+                    format!("use of moved value `{name}`"),
+                    base.span,
+                ));
+            }
+            (local.ty.clone(), local.mutable)
+        };
+        if !mutable {
+            return Err(SemanticError::new(
+                format!("cannot assign through immutable array binding `{name}`"),
+                base.span,
+            ));
+        }
+
+        let Type::Array { len, element } = base_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "array assignment target must be a fixed-size array, got `{}`",
+                    base_ty.source_name()
+                ),
+                base.span,
+            ));
+        };
+
+        self.check_index_expr(index, locals, len)?;
+        if !element.is_copy() {
+            return Err(SemanticError::new(
+                format!(
+                    "array element assignment requires a Copy element type in v0, got `{}`",
+                    element.source_name()
+                ),
+                span,
+            ));
+        }
+
+        let value_ty =
+            self.check_expr_with_expected(expr, locals, ValueUse::Owned, Some(&element))?;
+        if value_ty != *element {
+            return Err(SemanticError::new(
+                format!(
+                    "array assignment type mismatch: expected `{}`, got `{}`",
+                    element.source_name(),
+                    value_ty.source_name()
+                ),
+                span,
             ));
         }
 
@@ -3660,6 +3759,73 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_fixed_size_array_element_assignment() {
+        check_ok(
+            r#"
+func consume(values [3]int) {
+}
+
+func main() {
+    mut values := [3]int{1, 2, 3}
+    index := 1
+    values[index] = 5
+    print(values[index])
+    consume(values)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_array_element_assignment_on_immutable_binding() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [1]int{1}
+    values[0] = 2
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign through immutable array binding `values`"));
+    }
+
+    #[test]
+    fn rejects_array_element_assignment_for_non_copy_elements() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    mut users := [1]User{User{age: 1}}
+    users[0] = User{age: 2}
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array element assignment requires a Copy element type in v0, got `User`"));
+    }
+
+    #[test]
+    fn rejects_array_element_assignment_literal_index_out_of_bounds() {
+        let error = check_error(
+            r#"
+func main() {
+    mut values := [1]int{1}
+    values[1] = 2
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array index 1 is out of bounds for length 1"));
     }
 
     #[test]

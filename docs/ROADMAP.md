@@ -119,3 +119,12 @@
 - [x] non-literal fixed array indexes에 native runtime bounds guard 추가
 - [x] runtime guard codegen에서 base/index expression 중복 평가 방지
 - [x] native smoke에서 dynamic in-bounds index 경로 검증
+
+## P10: Fixed Array Element Assignment
+
+- [x] `values[i] = expr` statement parser 추가
+- [x] mutable fixed-size array binding/parameter에만 element assignment 허용
+- [x] Copy element assignment만 v0에서 허용
+- [x] assignment index compile-time/runtime bounds check 적용
+- [x] typed IR와 C backend에서 checked element assignment 추가
+- [x] native smoke에서 assignment 이후 range/index/len 결과 검증

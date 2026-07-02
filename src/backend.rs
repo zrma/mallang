@@ -169,6 +169,9 @@ impl<'a> CGenerator<'a> {
                     format!("({}).{} = {};", base.code, c_field(field), expr.code),
                 ))
             }
+            IrStmtKind::IndexAssign { base, index, expr } => {
+                self.emit_index_assign_stmt(base, index, expr, env)
+            }
             IrStmtKind::Return { expr } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(expr, env)?;
                 Ok(finish_with_prelude(prelude, format!("return {};", code)))
@@ -449,6 +452,42 @@ impl<'a> CGenerator<'a> {
                 "IR invariant violation: invalid assignment target",
             )),
         }
+    }
+
+    fn emit_index_assign_stmt(
+        &self,
+        base: &IrExpr,
+        index: &IrExpr,
+        expr: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let Type::Array { len, .. } = &base.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: index assignment base must be an array",
+            ));
+        };
+        let IrExprKind::Var(name) = &base.kind else {
+            return Err(CompileError::new(
+                "IR invariant violation: index assignment base must be a variable",
+            ));
+        };
+
+        let index_temp = index_assign_value_temp_name(index);
+        let index = self.emit_stmt_expr_with_env(index, env)?;
+        let value = self.emit_stmt_expr_with_env(expr, env)?;
+        let target = c_assignment_target(name, env);
+
+        let mut prelude = index.prelude;
+        prelude.push(format!("int64_t {index_temp} = {};", index.code));
+        prelude.push(format!(
+            "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+        ));
+        prelude.extend(value.prelude);
+
+        Ok(finish_with_prelude(
+            prelude,
+            format!("({target}).mlg_data[{index_temp}] = {};", value.code),
+        ))
     }
 
     fn emit_match_stmt(
@@ -1210,6 +1249,11 @@ impl<'a> CGenerator<'a> {
                 self.collect_expr_types(base, types);
                 self.collect_expr_types(expr, types);
             }
+            IrStmtKind::IndexAssign { base, index, expr } => {
+                self.collect_expr_types(base, types);
+                self.collect_expr_types(index, types);
+                self.collect_expr_types(expr, types);
+            }
             IrStmtKind::If {
                 condition,
                 then_body,
@@ -1523,6 +1567,10 @@ fn index_source_temp_name(expr: &IrExpr) -> String {
 
 fn index_value_temp_name(expr: &IrExpr) -> String {
     format!("mallang_index_value_{}", expr.span.start)
+}
+
+fn index_assign_value_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_index_assign_value_{}", expr.span.start)
 }
 
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
@@ -2254,6 +2302,29 @@ func main() {
         assert!(c.contains(".mlg_data[mallang_index_value_"));
         assert!(c.contains("(void)(mlg_values);"));
         assert!(c.contains("int64_t mlg_total = ((mallang_index_src_"));
+    }
+
+    #[test]
+    fn generates_c_for_fixed_size_array_element_assignment() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [3]int{1, 2, 3}
+    index := 1
+    values[index] = 5
+    print(values[index])
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mallang_index_assign_value_"));
+        assert!(c.contains("if (mallang_index_assign_value_"));
+        assert!(c.contains("(mlg_values).mlg_data[mallang_index_assign_value_"));
+        assert!(c.contains("] = 5;"));
     }
 
     #[test]

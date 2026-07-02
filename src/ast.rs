@@ -82,6 +82,11 @@ pub enum StmtKind {
         field: String,
         expr: Expr,
     },
+    IndexAssign {
+        base: Expr,
+        index: Expr,
+        expr: Expr,
+    },
     Return {
         expr: Expr,
     },

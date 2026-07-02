@@ -339,9 +339,14 @@ impl Parser {
                 field,
                 expr,
             },
+            ExprKind::Index { base, index } => StmtKind::IndexAssign {
+                base: *base,
+                index: *index,
+                expr,
+            },
             _ => {
                 return Err(ParseError::new(
-                    "assignment target must be a variable or field access",
+                    "assignment target must be a variable, field access, or index expression",
                     start,
                 ));
             }
@@ -1815,6 +1820,29 @@ func main() {
         };
         assert!(matches!(&callee.kind, ExprKind::Var(name) if name == "len"));
         assert_eq!(args.len(), 1);
+    }
+
+    #[test]
+    fn parses_array_index_assignment() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [3]int{1, 2, 3}
+    index := 1
+    values[index] = 5
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::IndexAssign { base, index, expr } =
+            &program.functions[0].body.statements[2].kind
+        else {
+            panic!("expected index assignment");
+        };
+        assert!(matches!(base.kind, ExprKind::Var(_)));
+        assert!(matches!(index.kind, ExprKind::Var(_)));
+        assert!(matches!(expr.kind, ExprKind::Int(5)));
     }
 
     #[test]

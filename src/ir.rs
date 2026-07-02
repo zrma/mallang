@@ -69,6 +69,11 @@ pub enum IrStmtKind {
         field: String,
         expr: IrExpr,
     },
+    IndexAssign {
+        base: IrExpr,
+        index: IrExpr,
+        expr: IrExpr,
+    },
     Return {
         expr: IrExpr,
     },
@@ -363,6 +368,30 @@ impl<'a> Lowerer<'a> {
                     field: field.clone(),
                     expr,
                 }
+            }
+            StmtKind::IndexAssign { base, index, expr } => {
+                let base = self.lower_expr(base, locals)?;
+                let Type::Array { element, .. } = &base.ty else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array assignment on non-array value",
+                        stmt.span,
+                    ));
+                };
+                if !element.is_copy() {
+                    return Err(IrError::new(
+                        "semantic analysis accepted assignment to non-copy array element",
+                        stmt.span,
+                    ));
+                }
+                let index = self.lower_expr(index, locals)?;
+                if index.ty != Type::Int {
+                    return Err(IrError::new(
+                        "semantic analysis accepted array assignment with non-int index",
+                        index.span,
+                    ));
+                }
+                let expr = self.lower_expr_with_expected(expr, locals, Some(element))?;
+                IrStmtKind::IndexAssign { base, index, expr }
             }
             StmtKind::Return { expr } => IrStmtKind::Return {
                 expr: self.lower_expr_with_expected(expr, locals, Some(return_type))?,
@@ -2247,5 +2276,28 @@ func main() {
             panic!("expected array len expression");
         };
         assert!(matches!(array.ty, Type::Array { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_fixed_size_array_element_assignment() {
+        let program = parse(
+            r#"
+func main() {
+    mut values := [2]int{1, 2}
+    index := 1
+    values[index] = 5
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::IndexAssign { base, index, expr } = &ir.functions[0].body[2].kind else {
+            panic!("expected index assignment");
+        };
+        assert!(matches!(base.ty, Type::Array { .. }));
+        assert_eq!(index.ty, Type::Int);
+        assert_eq!(expr.ty, Type::Int);
     }
 }

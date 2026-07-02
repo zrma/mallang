@@ -127,15 +127,18 @@ Array rules:
 - The first native layout is a C struct wrapper with a fixed `data[N]` field,
   not a raw C array, so array values can be assigned, moved, and passed through
   the existing value pipeline.
-- Fixed-size array indexing and `len` are supported for `Copy` element access.
+- Fixed-size array indexing, `len`, and mutable element assignment are supported
+  for `Copy` elements.
 - Slices `[]T`, append/growth, mutable range values, borrowed indexing,
-  non-copy element indexing, and array mutation are reserved for later slices.
+  non-copy element indexing, and non-copy element assignment are reserved for
+  later slices.
 
 Fixed-size array indexing and length are intentionally smaller than full slices.
 
 ```go
 value := values[i]
 count := len(values)
+values[i] = 5
 ```
 
 Indexing and length rules:
@@ -149,6 +152,13 @@ Indexing and length rules:
 - Non-literal indexes are checked by generated native code before element
   access. An out-of-bounds runtime index terminates the program with a Mallang
   runtime error instead of performing unchecked C memory access.
+- `values[i] = expr` requires `values` to be a direct `mut` local array binding
+  or `mut` array parameter in v0.
+- Array element assignment is supported only when the element type is `Copy`.
+- Array element assignment uses the same compile-time literal and native runtime
+  bounds checks as array indexing.
+- The assignment index is evaluated and bounds-checked before the right-hand
+  expression is evaluated.
 - Slice type syntax `[]T` is still deferred because owned slices, borrowed
   views, append/growth, and mutation require a larger ownership decision.
 
