@@ -54,6 +54,7 @@ pub struct StructSig {
 pub struct FieldSig {
     pub name: String,
     pub ty: Type,
+    pub ty_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -187,6 +188,7 @@ impl<'a> Checker<'a> {
                 fields.push(FieldSig {
                     name: field.name.clone(),
                     ty: self.type_from_ref(&field.ty)?,
+                    ty_span: field.ty.span,
                 });
             }
 
@@ -194,7 +196,57 @@ impl<'a> Checker<'a> {
                 .insert(struct_decl.name.as_str(), StructSig { fields });
         }
 
+        self.reject_recursive_structs()?;
+
         Ok(())
+    }
+
+    fn reject_recursive_structs(&self) -> Result<(), SemanticError> {
+        for struct_decl in &self.program.structs {
+            let mut visiting = vec![struct_decl.name.clone()];
+            let struct_sig = self.struct_sig(&struct_decl.name, struct_decl.span)?;
+            for field_sig in &struct_sig.fields {
+                self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, &mut visiting)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn reject_recursive_type(
+        &self,
+        ty: &Type,
+        span: Span,
+        visiting: &mut Vec<String>,
+    ) -> Result<(), SemanticError> {
+        match ty {
+            Type::Struct(name) => {
+                if visiting.contains(name) {
+                    return Err(SemanticError::new(
+                        format!(
+                            "recursive type definition involving `{name}` is not supported in v0"
+                        ),
+                        span,
+                    ));
+                }
+
+                visiting.push(name.clone());
+                let struct_sig = self.struct_sig(name, span)?;
+                for field_sig in &struct_sig.fields {
+                    self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, visiting)?;
+                }
+                visiting.pop();
+                Ok(())
+            }
+            Type::Option(inner) | Type::Array { element: inner, .. } => {
+                self.reject_recursive_type(inner, span, visiting)
+            }
+            Type::Result(ok, err) => {
+                self.reject_recursive_type(ok, span, visiting)?;
+                self.reject_recursive_type(err, span, visiting)
+            }
+            Type::Int | Type::Bool | Type::String | Type::Unit => Ok(()),
+        }
     }
 
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
@@ -2884,6 +2936,71 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn rejects_direct_recursive_struct_type() {
+        let error = check_error(
+            r#"
+type Node struct {
+    next Node
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("recursive type definition involving `Node`"));
+    }
+
+    #[test]
+    fn rejects_indirect_recursive_struct_type() {
+        let error = check_error(
+            r#"
+type A struct {
+    b B
+}
+
+type B struct {
+    a A
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("recursive type definition involving `A`"));
+    }
+
+    #[test]
+    fn rejects_wrapped_recursive_struct_type() {
+        let error = check_error(
+            r#"
+type Node struct {
+    next Option[Node]
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("recursive type definition involving `Node`"));
+
+        let error = check_error(
+            r#"
+type Bucket struct {
+    values [1]Bucket
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("recursive type definition involving `Bucket`"));
     }
 
     #[test]

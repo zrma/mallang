@@ -252,7 +252,10 @@ Rules:
   `mut pair.right`, `mut user.name.first`, and `mut user.name.last` are allowed.
 - `print` displays struct values as `Type{field: value, ...}` when every field
   type is printable in the native backend.
-- v0 does not include recursive by-value structs or struct pattern matching.
+- v0 rejects recursive by-value structs. This includes direct recursion and
+  recursion through `Option`, `Result`, or fixed-size arrays. Recursive data
+  modeling needs a future owned indirection or borrowed view design.
+- v0 does not include struct pattern matching.
 
 Methods use Go-like receiver declarations with Mallang's parameter mode syntax.
 

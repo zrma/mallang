@@ -151,6 +151,30 @@ if "${CARGO[@]}" run --bin mlg -- run "$checked_rem_fail_source" >/dev/null 2>&1
   echo "native checked remainder overflow failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+recursive_struct_fail_source="target/mallang/check-recursive-struct-fail.mlg"
+cat >"$recursive_struct_fail_source" <<'MLG'
+type Node struct {
+    next Node
+}
+
+func main() {}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$recursive_struct_fail_source" >/dev/null 2>&1; then
+  echo "recursive struct check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+wrapped_recursive_struct_fail_source="target/mallang/check-wrapped-recursive-struct-fail.mlg"
+cat >"$wrapped_recursive_struct_fail_source" <<'MLG'
+type Node struct {
+    next Option[Node]
+}
+
+func main() {}
+MLG
+if "${CARGO[@]}" run --bin mlg -- check "$wrapped_recursive_struct_fail_source" >/dev/null 2>&1; then
+  echo "wrapped recursive struct check failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

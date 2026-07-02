@@ -33,6 +33,7 @@ This repository is the Mallang language PoC workspace.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
 - Struct values with printable fields can be printed natively.
+- Recursive struct value definitions are rejected by `mlg check`.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
@@ -200,6 +201,6 @@ Current status: implemented for the first `int`, `bool`, `string`, string equali
 guarded integer division/remainder, checked integer arithmetic, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
 condition-only, conditionless, and `for init; condition; post` loops with
 `break` / `continue`, `else if` sugar, branch-aware returns,
-struct/method/nested-field, struct print output, and built-in ADT
+struct/method/nested-field, recursive struct value-type rejection, struct print output, and built-in ADT
 expression/statement `match` plus ADT print output via C source generation and
 `clang`.

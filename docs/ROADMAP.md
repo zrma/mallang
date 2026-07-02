@@ -221,3 +221,10 @@
 - [x] dynamic `+`, `-`, `*`, unary `-`를 checked C builtin으로 lowering
 - [x] dynamic `INT64_MIN / -1`와 `INT64_MIN % -1` runtime guard 추가
 - [x] native smoke에서 정상 산술과 overflow 실패 검증
+
+## P24: Recursive Struct Type Check
+
+- [x] direct recursive struct value type semantic reject 추가
+- [x] indirect recursive struct value type semantic reject 추가
+- [x] `Option`/`Result`/fixed array wrapper 안의 recursive struct reference reject 추가
+- [x] `mlg check` failure smoke 추가

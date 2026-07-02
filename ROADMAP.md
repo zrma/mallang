@@ -66,6 +66,7 @@
   non-copy element arrays.
 - [x] Type-check fixed-size array element assignment in `for` clause post
   targets.
+- [x] Reject recursive struct value type definitions.
 - [x] Reject reserved slice type syntax `[]T` with an explicit diagnostic.
 
 ## Milestone 3: Ownership and Borrowing
