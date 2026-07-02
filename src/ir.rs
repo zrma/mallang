@@ -2,8 +2,8 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Expr, ExprKind, MatchArm, MatchPattern, ParamMode, Stmt, StmtKind,
-        UnaryOp,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, MatchArm, MatchPattern, ParamMode, Stmt,
+        StmtKind, UnaryOp,
     },
     semantic::{CheckedProgram, FunctionSig, ParamSig, Type},
     token::Span,
@@ -53,6 +53,11 @@ pub enum IrStmtKind {
     },
     Return {
         expr: IrExpr,
+    },
+    If {
+        condition: IrExpr,
+        then_body: Vec<IrStmt>,
+        else_body: Vec<IrStmt>,
     },
     Expr {
         expr: IrExpr,
@@ -227,6 +232,35 @@ impl<'a> Lowerer<'a> {
             StmtKind::Return { expr } => IrStmtKind::Return {
                 expr: self.lower_expr_with_expected(expr, locals, Some(return_type))?,
             },
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                let condition = self.lower_expr(condition, locals)?;
+                if condition.ty != Type::Bool {
+                    return Err(IrError::new(
+                        "semantic analysis accepted a non-bool if condition",
+                        condition.span,
+                    ));
+                }
+
+                let mut then_locals = locals.clone();
+                let then_body =
+                    self.lower_block_statements(then_block, &mut then_locals, return_type)?;
+                let else_body = if let Some(else_block) = else_block {
+                    let mut else_locals = locals.clone();
+                    self.lower_block_statements(else_block, &mut else_locals, return_type)?
+                } else {
+                    Vec::new()
+                };
+
+                IrStmtKind::If {
+                    condition,
+                    then_body,
+                    else_body,
+                }
+            }
             StmtKind::Expr { expr } => IrStmtKind::Expr {
                 expr: self.lower_expr(expr, locals)?,
             },
@@ -236,6 +270,19 @@ impl<'a> Lowerer<'a> {
             kind,
             span: stmt.span,
         })
+    }
+
+    fn lower_block_statements(
+        &self,
+        block: &Block,
+        locals: &mut HashMap<String, Type>,
+        return_type: &Type,
+    ) -> Result<Vec<IrStmt>, IrError> {
+        let mut body = Vec::new();
+        for stmt in &block.statements {
+            body.push(self.lower_stmt(stmt, locals, return_type)?);
+        }
+        Ok(body)
     }
 
     fn lower_expr(&self, expr: &Expr, locals: &HashMap<String, Type>) -> Result<IrExpr, IrError> {
@@ -888,6 +935,36 @@ func main() {
         };
         assert_eq!(*ty, Type::String);
         assert!(matches!(expr.kind, IrExprKind::If { .. }));
+    }
+
+    #[test]
+    fn ir_lowers_if_statement() {
+        let program = parse(
+            r#"
+func main() {
+    if true {
+        print("yes")
+    } else {
+        print("no")
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::If {
+            condition,
+            then_body,
+            else_body,
+        } = &ir.functions[0].body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(condition.ty, Type::Bool);
+        assert_eq!(then_body.len(), 1);
+        assert_eq!(else_body.len(), 1);
     }
 
     #[test]

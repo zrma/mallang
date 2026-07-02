@@ -174,6 +174,10 @@ impl Parser {
             return self.parse_return_statement();
         }
 
+        if self.at_keyword(Keyword::If) {
+            return self.parse_if_statement();
+        }
+
         if self.at_keyword(Keyword::Mut)
             || (self.at(TokenTag::Ident) && self.peek_next_is(TokenTag::ColonEqual))
         {
@@ -234,6 +238,29 @@ impl Parser {
 
         Ok(Stmt {
             kind: StmtKind::Return { expr },
+            span,
+        })
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_keyword(Keyword::If, "expected `if`")?;
+        let condition = self.parse_expression()?;
+        let then_block = self.parse_block()?;
+        let mut span = start.join(then_block.span);
+        let else_block = if self.eat_keyword(Keyword::Else).is_some() {
+            let block = self.parse_block()?;
+            span = start.join(block.span);
+            Some(block)
+        } else {
+            None
+        };
+
+        Ok(Stmt {
+            kind: StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            },
             span,
         })
     }
@@ -723,6 +750,34 @@ func main() {
         assert!(matches!(condition.kind, ExprKind::Binary { .. }));
         assert!(matches!(then_branch.kind, ExprKind::String(_)));
         assert!(matches!(else_branch.kind, ExprKind::String(_)));
+    }
+
+    #[test]
+    fn parses_if_statement() {
+        let program = parse(
+            r#"
+func main() {
+    if 1 < 2 {
+        print("yes")
+    } else {
+        print("no")
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::If {
+            condition,
+            then_block,
+            else_block,
+        } = &program.functions[0].body.statements[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert!(matches!(condition.kind, ExprKind::Binary { .. }));
+        assert_eq!(then_block.statements.len(), 1);
+        assert_eq!(else_block.as_ref().unwrap().statements.len(), 1);
     }
 
     #[test]

@@ -146,6 +146,27 @@ Rules:
 
 `if` is both a statement and an expression.
 
+Statement form:
+
+```go
+if enabled {
+    print("on")
+} else {
+    print("off")
+}
+```
+
+Statement rules:
+
+- The condition must have type `bool`.
+- `else` is optional for statement-form `if`.
+- Bindings introduced inside a branch do not leak outside the branch.
+- Moving an outer value inside either branch makes the value unavailable after
+  the statement in v0.
+- `else if` is not sugar in v0; use nested `if` inside an `else` block.
+
+Expression form:
+
 ```go
 label := if score >= 60 {
     "pass"
@@ -158,6 +179,7 @@ Rules:
 
 - `if` used as an expression requires `else`.
 - Both branches must have the same type.
+- Expression branches must produce a value.
 
 ## Option and Result
 

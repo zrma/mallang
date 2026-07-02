@@ -25,6 +25,7 @@
 - [x] Reject `nil`, pointer-like syntax, and unresolved identifiers.
 - [x] Reject immutable binding reassignment.
 - [x] Support `if` expressions with compatible branch types.
+- [x] Support statement-form `if` with branch-local bindings.
 
 ## Milestone 3: Ownership and Borrowing
 
@@ -44,6 +45,7 @@
 - [x] Produce a native executable for the first target program.
 - [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
+- [x] Generate native C blocks for statement-form `if`.
 
 ## Later
 

@@ -63,6 +63,11 @@ pub enum StmtKind {
     Return {
         expr: Expr,
     },
+    If {
+        condition: Expr,
+        then_block: Block,
+        else_block: Option<Block>,
+    },
     Expr {
         expr: Expr,
     },

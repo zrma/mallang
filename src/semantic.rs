@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Expr, ExprKind, Function, MatchArm, MatchPattern, ParamMode,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, Function, MatchArm, MatchPattern, ParamMode,
         Program, Stmt, StmtKind, TypeRef, UnaryOp,
     },
     token::Span,
@@ -292,8 +292,43 @@ impl<'a> Checker<'a> {
                 }
                 Ok(Type::Unit)
             }
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+                if condition_ty != Type::Bool {
+                    return Err(SemanticError::new(
+                        "if condition must have type `bool`",
+                        condition.span,
+                    ));
+                }
+
+                let mut then_locals = locals.clone();
+                self.check_block_statements(then_block, &mut then_locals, return_type)?;
+                let mut else_locals = locals.clone();
+                if let Some(else_block) = else_block {
+                    self.check_block_statements(else_block, &mut else_locals, return_type)?;
+                }
+
+                merge_branch_moves(locals, &then_locals, &else_locals);
+                Ok(Type::Unit)
+            }
             StmtKind::Expr { expr } => self.check_expr(expr, locals, ValueUse::Owned),
         }
+    }
+
+    fn check_block_statements(
+        &self,
+        block: &Block,
+        locals: &mut HashMap<String, Local>,
+        return_type: &Type,
+    ) -> Result<(), SemanticError> {
+        for stmt in &block.statements {
+            self.check_stmt(stmt, locals, return_type)?;
+        }
+        Ok(())
     }
 
     fn check_expr(
@@ -1228,6 +1263,69 @@ func add(a int, b int) int {
     fn rejects_nil() {
         let error = check_error("func main() { print(nil) }");
         assert!(error.message.contains("`nil` is reserved"));
+    }
+
+    #[test]
+    fn allows_if_statement() {
+        check_ok(
+            r#"
+func main() {
+    if true {
+        print("yes")
+    } else {
+        print("no")
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_non_bool_if_statement_condition() {
+        let error = check_error(
+            r#"
+func main() {
+    if 1 {
+        print("bad")
+    }
+}
+"#,
+        );
+        assert!(error.message.contains("if condition must have type `bool`"));
+    }
+
+    #[test]
+    fn if_statement_branch_locals_do_not_leak() {
+        let error = check_error(
+            r#"
+func main() {
+    if true {
+        inner := 1
+    }
+    print(inner)
+}
+"#,
+        );
+        assert!(error.message.contains("unknown variable `inner`"));
+    }
+
+    #[test]
+    fn if_statement_merges_branch_moves() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    if true {
+        consume(s)
+    }
+    print(s)
+}
+
+func consume(value string) {
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `s`"));
     }
 
     #[test]

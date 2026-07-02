@@ -35,6 +35,13 @@ if [[ "$if_output" != "pass" ]]; then
   echo "if native build smoke failed: expected pass, got '$if_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/if-statement.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement >/dev/null
+if_statement_output="$(target/mallang/if-statement)"
+if [[ "$if_statement_output" != "then" ]]; then
+  echo "if statement native build smoke failed: expected then, got '$if_statement_output'" >&2
+  exit 1
+fi
 "$CARGO" run --bin mlg -- check examples/adt.mlg >/dev/null
 "$CARGO" run --bin mlg -- ir examples/adt.mlg >/dev/null
 "$CARGO" run --bin mlg -- build examples/adt.mlg -o target/mallang/adt >/dev/null

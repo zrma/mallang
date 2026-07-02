@@ -1,0 +1,8 @@
+func main() {
+    flag := true
+    if flag {
+        print("then")
+    } else {
+        print("else")
+    }
+}

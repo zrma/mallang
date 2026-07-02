@@ -111,9 +111,7 @@ impl<'a> CGenerator<'a> {
 
         for stmt in &function.body {
             let line = self.emit_stmt(stmt)?;
-            output.push_str("    ");
-            output.push_str(&line);
-            output.push('\n');
+            push_indented_lines(&mut output, &line, 1);
         }
 
         if function.name == "main" {
@@ -136,6 +134,11 @@ impl<'a> CGenerator<'a> {
                 Ok(format!("{} = {};", c_ident(name), self.emit_expr(expr)?))
             }
             IrStmtKind::Return { expr } => Ok(format!("return {};", self.emit_expr(expr)?)),
+            IrStmtKind::If {
+                condition,
+                then_body,
+                else_body,
+            } => self.emit_if_stmt(condition, then_body, else_body),
             IrStmtKind::Expr { expr } => {
                 if let IrExprKind::Call { callee, args } = &expr.kind {
                     if callee == "print" {
@@ -146,6 +149,32 @@ impl<'a> CGenerator<'a> {
                 Ok(format!("{};", self.emit_expr(expr)?))
             }
         }
+    }
+
+    fn emit_if_stmt(
+        &self,
+        condition: &IrExpr,
+        then_body: &[IrStmt],
+        else_body: &[IrStmt],
+    ) -> Result<String, CompileError> {
+        let mut output = String::new();
+        output.push_str(&format!("if ({}) {{\n", self.emit_expr(condition)?));
+        for stmt in then_body {
+            let code = self.emit_stmt(stmt)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
+        if else_body.is_empty() {
+            output.push('}');
+            return Ok(output);
+        }
+
+        output.push_str("} else {\n");
+        for stmt in else_body {
+            let code = self.emit_stmt(stmt)?;
+            push_indented_lines(&mut output, &code, 1);
+        }
+        output.push('}');
+        Ok(output)
     }
 
     fn emit_print(&self, args: &[IrArg]) -> Result<String, CompileError> {
@@ -378,6 +407,19 @@ impl<'a> CGenerator<'a> {
             IrStmtKind::Assign { expr, .. }
             | IrStmtKind::Return { expr }
             | IrStmtKind::Expr { expr } => self.collect_expr_types(expr, types),
+            IrStmtKind::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                self.collect_expr_types(condition, types);
+                for stmt in then_body {
+                    self.collect_stmt_types(stmt, types);
+                }
+                for stmt in else_body {
+                    self.collect_stmt_types(stmt, types);
+                }
+            }
         }
     }
 
@@ -478,6 +520,19 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
             }
         }
         Type::Int | Type::Bool | Type::String | Type::Unit => {}
+    }
+}
+
+fn push_indented_lines(output: &mut String, code: &str, level: usize) {
+    let indent = "    ".repeat(level);
+    for line in code.lines() {
+        if line.is_empty() {
+            output.push('\n');
+        } else {
+            output.push_str(&indent);
+            output.push_str(line);
+            output.push('\n');
+        }
     }
 }
 
@@ -591,6 +646,29 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
+    }
+
+    #[test]
+    fn generates_c_for_if_statement_from_ir() {
+        let program = parse(
+            r#"
+func main() {
+    if true {
+        print("yes")
+    } else {
+        print("no")
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("if (true) {"));
+        assert!(c.contains("} else {"));
+        assert!(c.contains("printf(\"%s\\n\", \"yes\");"));
     }
 
     #[test]

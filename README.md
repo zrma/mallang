@@ -21,8 +21,8 @@ This repository is the Mallang language PoC workspace.
 - Ownership by default for non-copy values.
 - Explicit `in` and `mut` borrow calls.
 - Native compilation path through a C backend first.
-- Functional features in the core language: `if` expressions, `Option`,
-  `Result`, and `match`.
+- Functional features in the core language: `if` statements/expressions,
+  `Option`, `Result`, and `match`.
 
 ## Bootstrap
 
@@ -37,6 +37,8 @@ cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
+cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement
+target/mallang/if-statement
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 ```
@@ -53,6 +55,7 @@ scripts/check.sh
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
+- `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
@@ -77,5 +80,6 @@ func add(a int, b int) int {
 }
 ```
 
-Current status: implemented for the first `int`, `bool`, `string`, `if`
-expression, and built-in ADT subset via C source generation and `clang`.
+Current status: implemented for the first `int`, `bool`, `string`,
+statement/expression `if`, and built-in ADT subset via C source generation and
+`clang`.
