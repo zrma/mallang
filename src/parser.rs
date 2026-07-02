@@ -715,6 +715,8 @@ impl Parser {
         let op = match &self.peek().kind {
             TokenKind::EqualEqual => BinaryOp::Equal,
             TokenKind::BangEqual => BinaryOp::NotEqual,
+            TokenKind::AmpAmp => BinaryOp::LogicalAnd,
+            TokenKind::PipePipe => BinaryOp::LogicalOr,
             TokenKind::Less => BinaryOp::Less,
             TokenKind::LessEqual => BinaryOp::LessEqual,
             TokenKind::Greater => BinaryOp::Greater,
@@ -727,14 +729,16 @@ impl Parser {
             _ => return None,
         };
         let precedence = match op {
+            BinaryOp::LogicalOr => 1,
+            BinaryOp::LogicalAnd => 2,
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => 2,
-            BinaryOp::Add | BinaryOp::Subtract => 3,
-            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Remainder => 4,
+            | BinaryOp::GreaterEqual => 3,
+            BinaryOp::Add | BinaryOp::Subtract => 4,
+            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Remainder => 5,
         };
 
         Some((op, precedence))
@@ -902,6 +906,34 @@ func add(a int, b int) int {
             right.kind,
             ExprKind::Binary {
                 op: BinaryOp::Multiply,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn respects_logical_operator_precedence() {
+        let program = parse("func main() { x := a || b && c == d }").unwrap();
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Binary { op, right, .. } = &expr.kind else {
+            panic!("expected binary expression");
+        };
+        assert_eq!(*op, BinaryOp::LogicalOr);
+        let ExprKind::Binary {
+            op: right_op,
+            right: and_right,
+            ..
+        } = &right.kind
+        else {
+            panic!("expected logical and expression");
+        };
+        assert_eq!(*right_op, BinaryOp::LogicalAnd);
+        assert!(matches!(
+            and_right.kind,
+            ExprKind::Binary {
+                op: BinaryOp::Equal,
                 ..
             }
         ));

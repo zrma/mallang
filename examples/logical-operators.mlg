@@ -1,0 +1,28 @@
+func main() {
+    mut hits := 0
+
+    print(false && bump(mut hits))
+    print(hits)
+
+    print(true || bump(mut hits))
+    print(hits)
+
+    print(true && bump(mut hits))
+    print(hits)
+
+    print(false || bump(mut hits))
+    print(hits)
+
+    print(check(7, true))
+    print(check(3, true))
+    print(check(7, false))
+}
+
+func bump(value mut int) bool {
+    value = value + 1
+    return true
+}
+
+func check(score int, enabled bool) bool {
+    return enabled && (score >= 5 || score == 3)
+}

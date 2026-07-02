@@ -201,6 +201,8 @@ pub enum BinaryOp {
     Remainder,
     Equal,
     NotEqual,
+    LogicalAnd,
+    LogicalOr,
     Less,
     LessEqual,
     Greater,

@@ -24,7 +24,8 @@ This repository is the Mallang language PoC workspace.
   assignments are visible to the caller without exposing pointer syntax.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
-  `else if` sugar, `Option`, `Result`, and expression/statement `match`.
+  `else if` sugar, `bool` logical operators, `Option`, `Result`, and
+  expression/statement `match`.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
@@ -49,6 +50,8 @@ cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-stat
 target/mallang/if-statement
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
+cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
+target/mallang/logical-operators
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
@@ -93,6 +96,7 @@ scripts/check.sh
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
+- `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
@@ -131,6 +135,6 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
-statement/expression `if`, `else if` sugar, branch-aware returns,
+`bool` logical operators, statement/expression `if`, `else if` sugar, branch-aware returns,
 struct/method/nested-field, and built-in ADT expression/statement `match`
 subset via C source generation and `clang`.

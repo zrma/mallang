@@ -475,6 +475,8 @@ impl<'a> Lowerer<'a> {
                     | BinaryOp::Remainder => Type::Int,
                     BinaryOp::Equal
                     | BinaryOp::NotEqual
+                    | BinaryOp::LogicalAnd
+                    | BinaryOp::LogicalOr
                     | BinaryOp::Less
                     | BinaryOp::LessEqual
                     | BinaryOp::Greater

@@ -1743,6 +1743,16 @@ impl<'a> Checker<'a> {
                     ))
                 }
             }
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                if left_ty == Type::Bool {
+                    Ok(Type::Bool)
+                } else {
+                    Err(SemanticError::new(
+                        "logical operators require `bool` operands",
+                        left.span.join(right.span),
+                    ))
+                }
+            }
             BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
                 if left_ty == Type::Int {
                     Ok(Type::Bool)
@@ -2518,6 +2528,29 @@ func main() {
 "#,
         );
         assert!(error.message.contains("if condition must have type `bool`"));
+    }
+
+    #[test]
+    fn allows_logical_operators_on_bool_values() {
+        check_ok(
+            r#"
+func main() {
+    print(check(true, false, 7))
+}
+
+func check(left bool, right bool, score int) bool {
+    return left || right && score > 5
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_logical_operators_on_non_bool_values() {
+        let error = check_error("func main() { print(1 && 2) }");
+        assert!(error
+            .message
+            .contains("logical operators require `bool` operands"));
     }
 
     #[test]

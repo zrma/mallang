@@ -88,10 +88,12 @@ impl<'a> Lexer<'a> {
             '=' => TokenKind::Equal,
             '!' if self.match_char('=') => TokenKind::BangEqual,
             '!' => TokenKind::Bang,
+            '&' if self.match_char('&') => TokenKind::AmpAmp,
             '<' if self.match_char('=') => TokenKind::LessEqual,
             '<' => TokenKind::Less,
             '>' if self.match_char('=') => TokenKind::GreaterEqual,
             '>' => TokenKind::Greater,
+            '|' if self.match_char('|') => TokenKind::PipePipe,
             '|' if self.match_char('>') => TokenKind::PipeGreater,
             '"' => self.string_token(start)?,
             ch if ch.is_ascii_digit() => self.int_token(start),
@@ -271,6 +273,24 @@ mod tests {
                 TokenKind::Ident("y".to_string()),
                 TokenKind::ColonEqual,
                 TokenKind::Int("2".to_string()),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_logical_operators() {
+        let tokens = lex("ready && enabled || fallback").unwrap();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();
+
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Ident("ready".to_string()),
+                TokenKind::AmpAmp,
+                TokenKind::Ident("enabled".to_string()),
+                TokenKind::PipePipe,
+                TokenKind::Ident("fallback".to_string()),
                 TokenKind::Eof,
             ]
         );

@@ -1125,6 +1125,8 @@ impl COperator for crate::ast::BinaryOp {
             Self::Remainder => "%",
             Self::Equal => "==",
             Self::NotEqual => "!=",
+            Self::LogicalAnd => "&&",
+            Self::LogicalOr => "||",
             Self::Less => "<",
             Self::LessEqual => "<=",
             Self::Greater => ">",
@@ -1217,6 +1219,28 @@ func main() {
         let c = generate_c_from_ir(&ir).unwrap();
 
         assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
+    }
+
+    #[test]
+    fn generates_c_for_logical_operators_from_ir() {
+        let program = parse(
+            r#"
+func main() {
+    print(check(7, true, false))
+}
+
+func check(score int, left bool, right bool) bool {
+    return left || right && score > 5
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains(" || "));
+        assert!(c.contains(" && "));
     }
 
     #[test]

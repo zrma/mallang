@@ -22,6 +22,7 @@
 - [x] first native subset용 name resolver 추가
 - [x] first native subset용 primitive type checker 추가
 - [x] `string` equality semantic/backend/native smoke 추가
+- [x] `bool` logical operator semantic/backend/native smoke 추가
 - [x] first native subset용 function signature checker 추가
 - [x] immutable binding reassignment reject
 - [x] `if` expression type checking 추가
@@ -49,6 +50,7 @@
 - [x] `in`/`mut` parameter hidden-reference C ABI 추가
 - [x] prelude가 필요한 `if` expression branch용 C temp lowering 추가
 - [x] prelude가 필요한 `match` expression arm용 C temp lowering 추가
+- [x] `&&` / `||` short-circuit native smoke 추가
 
 ## P5: Built-in ADTs
 

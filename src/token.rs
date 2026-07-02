@@ -44,6 +44,8 @@ pub enum TokenKind {
     EqualEqual,
     Bang,
     BangEqual,
+    AmpAmp,
+    PipePipe,
     Less,
     LessEqual,
     Greater,
