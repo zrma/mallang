@@ -101,4 +101,14 @@
 - [x] array-only `for i, value := range values { ... }` parser/semantic 추가
 - [x] fixed-size array typed IR와 C struct-wrapper layout 추가
 - [x] array-only `range` C backend/native smoke 추가
-- [ ] slice `[]T`, indexing, `len`, append/growth, mutable range는 후속 slice로 분리
+- [x] fixed array indexing/`len`을 slice 설계와 분리하고 slice `[]T`,
+  append/growth, mutable range는 후속 slice로 보류
+
+## P8: Fixed Array Indexing And Len
+
+- [ ] `values[i]` indexing expression parser 추가
+- [ ] fixed-size array indexing semantic/type checking 추가
+- [ ] `len(values)` fixed-size array built-in semantic 추가
+- [ ] fixed-size array indexing typed IR와 C backend 추가
+- [ ] fixed-size array `len` typed IR와 C backend 추가
+- [ ] native smoke에서 range 이후 source 재사용, indexing, `len` 검증

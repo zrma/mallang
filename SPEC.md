@@ -65,7 +65,7 @@ func greet(name in string) string {
 Reserved words:
 
 ```text
-func return if else for break continue match case mut in true false struct type nil
+func return if else for break continue range match case mut in true false struct type nil
 ```
 
 `nil` is reserved so the compiler can produce a clear error instead of treating
@@ -127,8 +127,29 @@ Array rules:
 - The first native layout is a C struct wrapper with a fixed `data[N]` field,
   not a raw C array, so array values can be assigned, moved, and passed through
   the existing value pipeline.
-- Slices `[]T`, indexing, `len`, append/growth, and array mutation are reserved
-  for later slices.
+- Fixed-size array indexing and `len` are the next array follow-up.
+- Slices `[]T`, append/growth, mutable range values, borrowed indexing,
+  non-copy element indexing, and array mutation are reserved for later slices.
+
+Fixed-size array indexing and length are intentionally smaller than full slices.
+
+```go
+value := values[i]
+count := len(values)
+```
+
+Initial indexing and length rules:
+
+- `values[i]` is valid only when `values` has fixed-size array type `[N]T` and
+  `i` has type `int`.
+- `values[i]` yields a value only when `T` is `Copy`.
+- Non-copy element access waits for borrowed indexing or destructuring semantics.
+- `len(values)` returns `int` for fixed-size arrays and does not move `values`.
+- Compile-time bounds checking is allowed when the index is an integer literal,
+  but general runtime bounds behavior is a backend decision for the
+  implementation slice.
+- Slice type syntax `[]T` is still deferred because owned slices, borrowed
+  views, append/growth, and mutation require a larger ownership decision.
 
 `unit` is the implicit return type of functions that do not return a value.
 
