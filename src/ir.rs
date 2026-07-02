@@ -1,7 +1,10 @@
 use std::{collections::HashMap, fmt};
 
 use crate::{
-    ast::{Arg, ArgMode, BinaryOp, Expr, ExprKind, ParamMode, Stmt, StmtKind, UnaryOp},
+    ast::{
+        Arg, ArgMode, BinaryOp, Expr, ExprKind, MatchArm, MatchPattern, ParamMode, Stmt, StmtKind,
+        UnaryOp,
+    },
     semantic::{CheckedProgram, FunctionSig, ParamSig, Type},
     token::Span,
 };
@@ -74,6 +77,14 @@ pub enum IrExprKind {
         then_branch: Box<IrExpr>,
         else_branch: Box<IrExpr>,
     },
+    AdtConstructor {
+        constructor: IrAdtConstructor,
+        payload: Option<Box<IrExpr>>,
+    },
+    Match {
+        scrutinee: Box<IrExpr>,
+        arms: Vec<IrMatchArm>,
+    },
     Call {
         callee: String,
         args: Vec<IrArg>,
@@ -87,6 +98,29 @@ pub enum IrExprKind {
         left: Box<IrExpr>,
         right: Box<IrExpr>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IrAdtConstructor {
+    Some,
+    None,
+    Ok,
+    Err,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrMatchArm {
+    pub pattern: IrMatchPattern,
+    pub expr: IrExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IrMatchPattern {
+    Some(String),
+    None,
+    Ok(String),
+    Err(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,7 +176,7 @@ impl<'a> Lowerer<'a> {
             }
             let mut body = Vec::new();
             for stmt in &function.body.statements {
-                body.push(self.lower_stmt(stmt, &mut locals)?);
+                body.push(self.lower_stmt(stmt, &mut locals, &sig.return_type)?);
             }
             functions.push(IrFunction {
                 name: function.name.clone(),
@@ -159,6 +193,7 @@ impl<'a> Lowerer<'a> {
         &self,
         stmt: &Stmt,
         locals: &mut HashMap<String, Type>,
+        return_type: &Type,
     ) -> Result<IrStmt, IrError> {
         let kind = match &stmt.kind {
             StmtKind::Let {
@@ -177,14 +212,20 @@ impl<'a> Lowerer<'a> {
                 }
             }
             StmtKind::Assign { name, expr } => {
-                let expr = self.lower_expr(expr, locals)?;
+                let Some(expected) = locals.get(name).cloned() else {
+                    return Err(IrError::new(
+                        format!("unknown assignment target `{name}` during IR lowering"),
+                        stmt.span,
+                    ));
+                };
+                let expr = self.lower_expr_with_expected(expr, locals, Some(&expected))?;
                 IrStmtKind::Assign {
                     name: name.clone(),
                     expr,
                 }
             }
             StmtKind::Return { expr } => IrStmtKind::Return {
-                expr: self.lower_expr(expr, locals)?,
+                expr: self.lower_expr_with_expected(expr, locals, Some(return_type))?,
             },
             StmtKind::Expr { expr } => IrStmtKind::Expr {
                 expr: self.lower_expr(expr, locals)?,
@@ -198,6 +239,15 @@ impl<'a> Lowerer<'a> {
     }
 
     fn lower_expr(&self, expr: &Expr, locals: &HashMap<String, Type>) -> Result<IrExpr, IrError> {
+        self.lower_expr_with_expected(expr, locals, None)
+    }
+
+    fn lower_expr_with_expected(
+        &self,
+        expr: &Expr,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<IrExpr, IrError> {
         let (kind, ty) = match &expr.kind {
             ExprKind::Int(value) => (IrExprKind::Int(*value), Type::Int),
             ExprKind::String(value) => (IrExprKind::String(value.clone()), Type::String),
@@ -210,56 +260,35 @@ impl<'a> Lowerer<'a> {
             }
             ExprKind::Var(name) => {
                 if matches!(name.as_str(), "None") {
-                    return Err(IrError::new(
-                        "ADT constructor lowering is planned but not implemented yet",
-                        expr.span,
-                    ));
+                    self.lower_none_constructor(expected, expr.span)?
+                } else {
+                    let Some(ty) = locals.get(name).cloned() else {
+                        return Err(IrError::new(
+                            format!("unknown variable `{name}` during IR lowering"),
+                            expr.span,
+                        ));
+                    };
+                    (IrExprKind::Var(name.clone()), ty)
                 }
-                let Some(ty) = locals.get(name).cloned() else {
-                    return Err(IrError::new(
-                        format!("unknown variable `{name}` during IR lowering"),
-                        expr.span,
-                    ));
-                };
-                (IrExprKind::Var(name.clone()), ty)
             }
             ExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
-            } => {
-                let condition = self.lower_expr(condition, locals)?;
-                if condition.ty != Type::Bool {
-                    return Err(IrError::new(
-                        "semantic analysis accepted a non-bool if condition",
-                        condition.span,
-                    ));
-                }
-                let then_branch = self.lower_expr(then_branch, locals)?;
-                let else_branch = self.lower_expr(else_branch, locals)?;
-                if then_branch.ty != else_branch.ty {
-                    return Err(IrError::new(
-                        "semantic analysis accepted mismatched if branch types",
-                        expr.span,
-                    ));
-                }
-                let ty = then_branch.ty.clone();
-                (
-                    IrExprKind::If {
-                        condition: Box::new(condition),
-                        then_branch: Box::new(then_branch),
-                        else_branch: Box::new(else_branch),
-                    },
-                    ty,
-                )
+            } => self.lower_if_expr(
+                condition,
+                then_branch,
+                else_branch,
+                locals,
+                expected,
+                expr.span,
+            )?,
+            ExprKind::Match { scrutinee, arms } => {
+                self.lower_match_expr(scrutinee, arms, locals, expected, expr.span)?
             }
-            ExprKind::Match { .. } => {
-                return Err(IrError::new(
-                    "match lowering is planned but not implemented yet",
-                    expr.span,
-                ));
+            ExprKind::Call { callee, args } => {
+                self.lower_call(callee, args, locals, expected, expr.span)?
             }
-            ExprKind::Call { callee, args } => self.lower_call(callee, args, locals, expr.span)?,
             ExprKind::Unary { op, expr } => {
                 let expr = self.lower_expr(expr, locals)?;
                 let ty = match (*op, &expr.ty) {
@@ -314,11 +343,402 @@ impl<'a> Lowerer<'a> {
         })
     }
 
+    fn lower_if_expr(
+        &self,
+        condition: &Expr,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let condition = self.lower_expr(condition, locals)?;
+        if condition.ty != Type::Bool {
+            return Err(IrError::new(
+                "semantic analysis accepted a non-bool if condition",
+                condition.span,
+            ));
+        }
+
+        let (then_branch, else_branch) =
+            self.lower_pair_branches(then_branch, else_branch, locals, expected)?;
+        if then_branch.ty != else_branch.ty {
+            return Err(IrError::new(
+                "semantic analysis accepted mismatched if branch types",
+                span,
+            ));
+        }
+
+        let ty = then_branch.ty.clone();
+        Ok((
+            IrExprKind::If {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            },
+            ty,
+        ))
+    }
+
+    fn lower_pair_branches(
+        &self,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<(IrExpr, IrExpr), IrError> {
+        if let Some(expected) = expected {
+            return Ok((
+                self.lower_expr_with_expected(then_branch, locals, Some(expected))?,
+                self.lower_expr_with_expected(else_branch, locals, Some(expected))?,
+            ));
+        }
+
+        match self.lower_expr(then_branch, locals) {
+            Ok(then_expr) => {
+                let else_expr =
+                    self.lower_expr_with_expected(else_branch, locals, Some(&then_expr.ty))?;
+                Ok((then_expr, else_expr))
+            }
+            Err(then_error) => {
+                let else_expr = self.lower_expr(else_branch, locals)?;
+                let then_expr = self
+                    .lower_expr_with_expected(then_branch, locals, Some(&else_expr.ty))
+                    .map_err(|_| then_error)?;
+                Ok((then_expr, else_expr))
+            }
+        }
+    }
+
+    fn lower_match_expr(
+        &self,
+        scrutinee: &Expr,
+        arms: &[MatchArm],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let scrutinee = self.lower_expr(scrutinee, locals)?;
+        let prepared_arms = self.prepare_match_arms(&scrutinee.ty, arms, span)?;
+        let arms = self.lower_match_arms(&prepared_arms, locals, expected)?;
+        let ty = arms[0].expr.ty.clone();
+
+        for arm in &arms[1..] {
+            if arm.expr.ty != ty {
+                return Err(IrError::new(
+                    "semantic analysis accepted mismatched match arm types",
+                    span,
+                ));
+            }
+        }
+
+        Ok((
+            IrExprKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+            },
+            ty,
+        ))
+    }
+
+    fn prepare_match_arms<'b>(
+        &self,
+        scrutinee_ty: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
+        match scrutinee_ty {
+            Type::Option(inner) => self.prepare_option_match_arms(inner, arms, span),
+            Type::Result(ok, err) => self.prepare_result_match_arms(ok, err, arms, span),
+            _ => Err(IrError::new(
+                "semantic analysis accepted match on non-ADT value",
+                span,
+            )),
+        }
+    }
+
+    fn prepare_option_match_arms<'b>(
+        &self,
+        inner: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
+        let mut prepared = Vec::new();
+        let mut seen_some = false;
+        let mut seen_none = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Some(binding) => {
+                    if seen_some {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Some arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_some = true;
+                    prepared.push(PreparedMatchArm {
+                        pattern: IrMatchPattern::Some(binding.clone()),
+                        expr: &arm.expr,
+                        binding: Some((binding.clone(), inner.clone())),
+                    });
+                }
+                MatchPattern::None => {
+                    if seen_none {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate None arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_none = true;
+                    prepared.push(PreparedMatchArm {
+                        pattern: IrMatchPattern::None,
+                        expr: &arm.expr,
+                        binding: None,
+                    });
+                }
+                MatchPattern::Ok(_) | MatchPattern::Err(_) => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted invalid Option match pattern",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_some || !seen_none {
+            return Err(IrError::new(
+                "semantic analysis accepted non-exhaustive Option match",
+                span,
+            ));
+        }
+
+        Ok(prepared)
+    }
+
+    fn prepare_result_match_arms<'b>(
+        &self,
+        ok: &Type,
+        err: &Type,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
+        let mut prepared = Vec::new();
+        let mut seen_ok = false;
+        let mut seen_err = false;
+
+        for arm in arms {
+            match &arm.pattern {
+                MatchPattern::Ok(binding) => {
+                    if seen_ok {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Ok arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_ok = true;
+                    prepared.push(PreparedMatchArm {
+                        pattern: IrMatchPattern::Ok(binding.clone()),
+                        expr: &arm.expr,
+                        binding: Some((binding.clone(), ok.clone())),
+                    });
+                }
+                MatchPattern::Err(binding) => {
+                    if seen_err {
+                        return Err(IrError::new(
+                            "semantic analysis accepted duplicate Err arm",
+                            arm.span,
+                        ));
+                    }
+                    seen_err = true;
+                    prepared.push(PreparedMatchArm {
+                        pattern: IrMatchPattern::Err(binding.clone()),
+                        expr: &arm.expr,
+                        binding: Some((binding.clone(), err.clone())),
+                    });
+                }
+                MatchPattern::Some(_) | MatchPattern::None => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted invalid Result match pattern",
+                        arm.span,
+                    ));
+                }
+            }
+        }
+
+        if !seen_ok || !seen_err {
+            return Err(IrError::new(
+                "semantic analysis accepted non-exhaustive Result match",
+                span,
+            ));
+        }
+
+        Ok(prepared)
+    }
+
+    fn lower_match_arms(
+        &self,
+        arms: &[PreparedMatchArm<'_>],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<Vec<IrMatchArm>, IrError> {
+        if let Some(expected) = expected {
+            return arms
+                .iter()
+                .map(|arm| self.lower_prepared_match_arm(arm, locals, Some(expected)))
+                .collect();
+        }
+
+        let mut first_error = None;
+        for arm in arms {
+            match self.lower_prepared_match_arm(arm, locals, None) {
+                Ok(first_arm) => {
+                    let expected_ty = first_arm.expr.ty.clone();
+                    let mut lowered = Vec::new();
+                    for retry_arm in arms {
+                        lowered.push(self.lower_prepared_match_arm(
+                            retry_arm,
+                            locals,
+                            Some(&expected_ty),
+                        )?);
+                    }
+                    return Ok(lowered);
+                }
+                Err(error) if first_error.is_none() => first_error = Some(error),
+                Err(_) => {}
+            }
+        }
+
+        Err(first_error.expect("match arms are non-empty"))
+    }
+
+    fn lower_prepared_match_arm(
+        &self,
+        arm: &PreparedMatchArm<'_>,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+    ) -> Result<IrMatchArm, IrError> {
+        let mut arm_locals = locals.clone();
+        if let Some((name, ty)) = &arm.binding {
+            arm_locals.insert(name.clone(), ty.clone());
+        }
+
+        Ok(IrMatchArm {
+            pattern: arm.pattern.clone(),
+            expr: self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?,
+            span: arm.expr.span,
+        })
+    }
+
+    fn lower_none_constructor(
+        &self,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let Some(expected @ Type::Option(_)) = expected else {
+            return Err(IrError::new(
+                "semantic analysis accepted `None` without Option context",
+                span,
+            ));
+        };
+
+        Ok((
+            IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::None,
+                payload: None,
+            },
+            expected.clone(),
+        ))
+    }
+
+    fn lower_some_constructor(
+        &self,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let arg = expect_constructor_arg("Some", args, span)?;
+        let expected_payload = match expected {
+            Some(Type::Option(inner)) => Some(inner.as_ref()),
+            _ => None,
+        };
+        let payload = self.lower_expr_with_expected(&arg.expr, locals, expected_payload)?;
+        let ty = Type::Option(Box::new(payload.ty.clone()));
+
+        Ok((
+            IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::Some,
+                payload: Some(Box::new(payload)),
+            },
+            ty,
+        ))
+    }
+
+    fn lower_ok_constructor(
+        &self,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let arg = expect_constructor_arg("Ok", args, span)?;
+        let Some(Type::Result(expected_ok, expected_err)) = expected else {
+            return Err(IrError::new(
+                "semantic analysis accepted `Ok` without Result context",
+                span,
+            ));
+        };
+        let payload = self.lower_expr_with_expected(&arg.expr, locals, Some(expected_ok))?;
+        let ty = Type::Result(
+            Box::new(payload.ty.clone()),
+            Box::new(expected_err.as_ref().clone()),
+        );
+
+        Ok((
+            IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::Ok,
+                payload: Some(Box::new(payload)),
+            },
+            ty,
+        ))
+    }
+
+    fn lower_err_constructor(
+        &self,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let arg = expect_constructor_arg("Err", args, span)?;
+        let Some(Type::Result(expected_ok, expected_err)) = expected else {
+            return Err(IrError::new(
+                "semantic analysis accepted `Err` without Result context",
+                span,
+            ));
+        };
+        let payload = self.lower_expr_with_expected(&arg.expr, locals, Some(expected_err))?;
+        let ty = Type::Result(
+            Box::new(expected_ok.as_ref().clone()),
+            Box::new(payload.ty.clone()),
+        );
+
+        Ok((
+            IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::Err,
+                payload: Some(Box::new(payload)),
+            },
+            ty,
+        ))
+    }
+
     fn lower_call(
         &self,
         callee: &Expr,
         args: &[Arg],
         locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
         span: Span,
     ) -> Result<(IrExprKind, Type), IrError> {
         let ExprKind::Var(name) = &callee.kind else {
@@ -328,23 +748,22 @@ impl<'a> Lowerer<'a> {
             ));
         };
 
-        if matches!(name.as_str(), "Some" | "Ok" | "Err") {
-            return Err(IrError::new(
-                "ADT constructor lowering is planned but not implemented yet",
-                span,
-            ));
-        }
-
-        let mut lowered_args = Vec::new();
-        for arg in args {
-            lowered_args.push(IrArg {
-                mode: arg.mode,
-                expr: self.lower_expr(&arg.expr, locals)?,
-                span: arg.span,
-            });
+        match name.as_str() {
+            "Some" => return self.lower_some_constructor(args, locals, expected, span),
+            "Ok" => return self.lower_ok_constructor(args, locals, expected, span),
+            "Err" => return self.lower_err_constructor(args, locals, expected, span),
+            _ => {}
         }
 
         if name == "print" {
+            let mut lowered_args = Vec::new();
+            for arg in args {
+                lowered_args.push(IrArg {
+                    mode: arg.mode,
+                    expr: self.lower_expr(&arg.expr, locals)?,
+                    span: arg.span,
+                });
+            }
             return Ok((
                 IrExprKind::Call {
                     callee: name.clone(),
@@ -355,6 +774,14 @@ impl<'a> Lowerer<'a> {
         }
 
         let sig = self.function_sig(name, span)?;
+        let mut lowered_args = Vec::new();
+        for (arg, param) in args.iter().zip(sig.params.iter()) {
+            lowered_args.push(IrArg {
+                mode: arg.mode,
+                expr: self.lower_expr_with_expected(&arg.expr, locals, Some(&param.ty))?,
+                span: arg.span,
+            });
+        }
         Ok((
             IrExprKind::Call {
                 callee: name.clone(),
@@ -378,6 +805,33 @@ fn lower_param(param: &ParamSig) -> IrParam {
         mode: param.mode,
         ty: param.ty.clone(),
     }
+}
+
+struct PreparedMatchArm<'a> {
+    pattern: IrMatchPattern,
+    expr: &'a Expr,
+    binding: Option<(String, Type)>,
+}
+
+fn expect_constructor_arg<'a>(
+    constructor: &str,
+    args: &'a [Arg],
+    span: Span,
+) -> Result<&'a Arg, IrError> {
+    if args.len() != 1 {
+        return Err(IrError::new(
+            format!("`{constructor}` expects exactly one argument"),
+            span,
+        ));
+    }
+    let arg = &args[0];
+    if !matches!(arg.mode, ArgMode::Owned) {
+        return Err(IrError::new(
+            format!("`{constructor}` expects an owned argument"),
+            arg.span,
+        ));
+    }
+    Ok(arg)
 }
 
 #[cfg(test)]
@@ -437,7 +891,7 @@ func main() {
     }
 
     #[test]
-    fn ir_rejects_adt_constructors_until_tagged_ir_exists() {
+    fn ir_lowers_adt_constructors() {
         let program = parse(
             r#"
 func find() Option[int] {
@@ -449,15 +903,23 @@ func main() {}
         )
         .unwrap();
         let checked = check(&program).unwrap();
-        let error = lower(&checked).unwrap_err();
+        let ir = lower(&checked).unwrap();
 
-        assert!(error
-            .message
-            .contains("ADT constructor lowering is planned"));
+        let IrStmtKind::Return { expr } = &ir.functions[0].body[0].kind else {
+            panic!("expected return");
+        };
+        assert!(matches!(
+            expr.kind,
+            IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::None,
+                ..
+            }
+        ));
+        assert_eq!(expr.ty, Type::Option(Box::new(Type::Int)));
     }
 
     #[test]
-    fn ir_rejects_match_until_tagged_ir_exists() {
+    fn ir_lowers_match_expression() {
         let program = parse(
             r#"
 func unwrap(value Option[int]) int {
@@ -472,10 +934,15 @@ func main() {}
         )
         .unwrap();
         let checked = check(&program).unwrap();
-        let error = lower(&checked).unwrap_err();
+        let ir = lower(&checked).unwrap();
 
-        assert!(error
-            .message
-            .contains("match lowering is planned but not implemented yet"));
+        let IrStmtKind::Return { expr } = &ir.functions[0].body[0].kind else {
+            panic!("expected return");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        assert_eq!(expr.ty, Type::Int);
+        assert_eq!(arms.len(), 2);
     }
 }

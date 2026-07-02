@@ -48,4 +48,4 @@
 - [x] generic type reference parser 추가
 - [x] `Some` / `None` / `Ok` / `Err` constructor type checking 추가
 - [x] `Option` / `Result` exhaustive `match` 추가
-- [ ] tagged typed IR와 C backend layout 추가
+- [x] tagged typed IR와 C backend layout 추가

@@ -36,3 +36,9 @@ if [[ "$if_output" != "pass" ]]; then
   exit 1
 fi
 "$CARGO" run --bin mlg -- check examples/adt.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/adt.mlg -o target/mallang/adt >/dev/null
+adt_output="$(target/mallang/adt)"
+if [[ "$adt_output" != $'0\n0' ]]; then
+  echo "adt native build smoke failed: expected two zero lines, got '$adt_output'" >&2
+  exit 1
+fi

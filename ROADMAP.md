@@ -52,8 +52,8 @@
 - [x] Parse generic type references for `Option[T]` and `Result[T, E]`.
 - [x] Type-check `Some`, `None`, `Ok`, and `Err` constructors.
 - [x] Add exhaustive `match` for built-in ADTs.
-- [ ] Lower built-in ADTs into tagged typed IR.
-- [ ] Add C backend layout for built-in ADTs.
+- [x] Lower built-in ADTs into tagged typed IR.
+- [x] Add C backend layout for built-in ADTs.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.
