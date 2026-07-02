@@ -41,6 +41,7 @@
 - [x] Support `string` equality without moving compared values.
 - [x] Support `bool` logical operators `&&` and `||`.
 - [x] Support bool unary operator `!`.
+- [x] Reject literal integer division and remainder by zero.
 - [x] Add first-subset function signature checking.
 - [x] Reject `nil`, pointer-like syntax, and unresolved identifiers.
 - [x] Reject immutable binding reassignment.
@@ -94,6 +95,7 @@
 - [x] Generate C temps for `match` expression arms that need prelude statements.
 - [x] Lower `bool` logical operators to native short-circuit code.
 - [x] Lower bool unary operator `!` to native C.
+- [x] Guard integer division and remainder by zero in native C.
 - [x] Compile `|>` pipeline call sugar through the existing call backend.
 - [x] Generate native C `while` loops for condition-only `for` statements.
 - [x] Generate native C `break` and `continue` statements.

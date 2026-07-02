@@ -898,16 +898,41 @@ impl<'a> CGenerator<'a> {
             }
             IrExprKind::Binary { op, left, right } => {
                 let operand_ty = left.ty.clone();
-                let left = self.emit_stmt_expr_with_env(left, env)?;
-                let right = self.emit_stmt_expr_with_env(right, env)?;
-                let mut prelude = left.prelude;
-                prelude.extend(right.prelude);
-                Ok(CExpr {
-                    prelude,
-                    code: c_binary_expr(*op, &expr.ty, &operand_ty, left.code, right.code),
-                })
+                self.emit_binary_stmt_expr(expr, *op, left, right, &operand_ty, env)
             }
         }
+    }
+
+    fn emit_binary_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        op: BinaryOp,
+        left: &IrExpr,
+        right: &IrExpr,
+        operand_ty: &Type,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let left = self.emit_stmt_expr_with_env(left, env)?;
+        let right = self.emit_stmt_expr_with_env(right, env)?;
+        let mut prelude = left.prelude;
+        prelude.extend(right.prelude);
+
+        if matches!(op, BinaryOp::Divide | BinaryOp::Remainder) && operand_ty == &Type::Int {
+            let divisor_temp = divisor_temp_name(expr);
+            prelude.push(format!("int64_t {divisor_temp} = {};", right.code));
+            prelude.push(format!(
+                "if ({divisor_temp} == 0) {{\n    fprintf(stderr, \"mallang runtime error: division by zero\\n\");\n    exit(1);\n}}"
+            ));
+            return Ok(CExpr {
+                prelude,
+                code: c_binary_expr(op, &expr.ty, operand_ty, left.code, divisor_temp),
+            });
+        }
+
+        Ok(CExpr {
+            prelude,
+            code: c_binary_expr(op, &expr.ty, operand_ty, left.code, right.code),
+        })
     }
 
     fn emit_index_stmt_expr(
@@ -1684,6 +1709,10 @@ fn index_assign_value_temp_name(expr: &IrExpr) -> String {
     format!("mallang_index_assign_value_{}", expr.span.start)
 }
 
+fn divisor_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_divisor_{}_{}", expr.span.start, expr.span.end)
+}
+
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
     function
         .params
@@ -1950,6 +1979,30 @@ func check(score int, left bool, right bool) bool {
 
         assert!(c.contains(" || "));
         assert!(c.contains(" && "));
+    }
+
+    #[test]
+    fn generates_c_guard_for_integer_division_and_remainder() {
+        let program = parse(
+            r#"
+func main() {
+    value := 20
+    divisor := 6
+    print(value / divisor)
+    print(value % divisor)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mallang_divisor_"));
+        assert!(c.contains("mallang runtime error: division by zero"));
+        assert!(c.contains("if (mallang_divisor_"));
+        assert!(c.contains(" / mallang_divisor_"));
+        assert!(c.contains(" % mallang_divisor_"));
     }
 
     #[test]

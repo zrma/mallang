@@ -207,3 +207,10 @@
 - [x] semantic checker에서 `!` operand/result type 검증
 - [x] typed IR와 C backend에서 `UnaryOp::Not` 검증
 - [x] native smoke에서 `!`와 short-circuit operator 조합 검증
+
+## P22: Integer Division Zero Safety
+
+- [x] literal `/ 0` and `% 0` semantic reject 추가
+- [x] dynamic divisor를 C temp로 한 번만 평가
+- [x] native C에서 zero divisor runtime guard 추가
+- [x] native smoke에서 정상 `/`/`%`와 zero divisor 실패 검증

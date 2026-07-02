@@ -43,6 +43,37 @@ if [[ "$if_output" != "pass" ]]; then
   echo "if native build smoke failed: expected pass, got '$if_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/int-division.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division >/dev/null
+int_division_output="$(target/mallang/int-division)"
+if [[ "$int_division_output" != $'3\n2\n6' ]]; then
+  echo "int division native build smoke failed: expected 3, 2, 6 got '$int_division_output'" >&2
+  exit 1
+fi
+division_fail_source="target/mallang/run-division-fail.mlg"
+cat >"$division_fail_source" <<'MLG'
+func main() {
+    value := 10
+    divisor := 0
+    print(value / divisor)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$division_fail_source" >/dev/null 2>&1; then
+  echo "native division failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+remainder_fail_source="target/mallang/run-remainder-fail.mlg"
+cat >"$remainder_fail_source" <<'MLG'
+func main() {
+    value := 10
+    divisor := 0
+    print(value % divisor)
+}
+MLG
+if "${CARGO[@]}" run --bin mlg -- run "$remainder_fail_source" >/dev/null 2>&1; then
+  echo "native remainder failure smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

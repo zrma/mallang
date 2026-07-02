@@ -2233,6 +2233,11 @@ impl<'a> Checker<'a> {
             | BinaryOp::Divide
             | BinaryOp::Remainder => {
                 if left_ty == Type::Int {
+                    if matches!(op, BinaryOp::Divide | BinaryOp::Remainder)
+                        && const_int_expr(right) == Some(0)
+                    {
+                        return Err(SemanticError::new("division by zero", right.span));
+                    }
                     Ok(Type::Int)
                 } else {
                     Err(SemanticError::new(
@@ -3424,6 +3429,18 @@ func check(left bool, right bool, score int) bool {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn rejects_literal_division_by_zero() {
+        let error = check_error("func main() { print(10 / 0) }");
+        assert!(error.message.contains("division by zero"));
+    }
+
+    #[test]
+    fn rejects_literal_remainder_by_zero() {
+        let error = check_error("func main() { print(10 % 0) }");
+        assert!(error.message.contains("division by zero"));
     }
 
     #[test]

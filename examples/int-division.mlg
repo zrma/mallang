@@ -1,0 +1,8 @@
+func main() {
+    value := 20
+    divisor := 6
+
+    print(value / divisor)
+    print(value % divisor)
+    print((value + 4) / (divisor - 2))
+}

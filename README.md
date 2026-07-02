@@ -40,6 +40,8 @@ This repository is the Mallang language PoC workspace.
   `con`/`mut` method receivers.
 - Slice type syntax `[]T` is parsed but reserved by `mlg check` until slice
   ownership and native ABI are defined.
+- Integer division and remainder guard zero divisors before native execution can
+  reach C undefined behavior.
 
 ## Bootstrap
 
@@ -54,6 +56,8 @@ cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
+cargo run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division
+target/mallang/int-division
 cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement
 target/mallang/if-statement
 cargo run --bin mlg -- build examples/for-loop.mlg -o target/mallang/for-loop
@@ -131,6 +135,7 @@ scripts/check.sh
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
+- `examples/int-division.mlg`: native smoke for guarded integer division and remainder.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
 - `examples/for-loop.mlg`: native smoke for condition-only `for` loops.
 - `examples/loop-control.mlg`: native smoke for `break` and `continue`.
@@ -187,7 +192,7 @@ func add(a int, b int) int {
 ```
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
-`bool` logical operators, `|>` pipeline call sugar, statement/expression `if`,
+guarded integer division/remainder, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
 condition-only, conditionless, and `for init; condition; post` loops with
 `break` / `continue`, `else if` sugar, branch-aware returns,
 struct/method/nested-field, struct print output, and built-in ADT
