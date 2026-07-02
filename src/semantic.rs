@@ -293,6 +293,18 @@ impl<'a> Checker<'a> {
                 expr.span,
             )),
             ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => self.check_if_expr(
+                condition,
+                then_branch,
+                else_branch,
+                locals,
+                value_use,
+                expr.span,
+            ),
             ExprKind::Call { callee, args } => self.check_call(callee, args, locals, expr.span),
             ExprKind::Unary { op, expr } => {
                 let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
@@ -311,6 +323,49 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Binary { op, left, right } => self.check_binary(*op, left, right, locals),
         }
+    }
+
+    fn check_if_expr(
+        &self,
+        condition: &Expr,
+        then_branch: &Expr,
+        else_branch: &Expr,
+        locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+        if condition_ty != Type::Bool {
+            return Err(SemanticError::new(
+                "if condition must have type `bool`",
+                condition.span,
+            ));
+        }
+
+        let mut then_locals = locals.clone();
+        let then_ty = self.check_expr(then_branch, &mut then_locals, value_use)?;
+        let mut else_locals = locals.clone();
+        let else_ty = self.check_expr(else_branch, &mut else_locals, value_use)?;
+
+        if then_ty != else_ty {
+            return Err(SemanticError::new(
+                format!(
+                    "if branches must have the same type: got `{}` and `{}`",
+                    then_ty.source_name(),
+                    else_ty.source_name()
+                ),
+                span,
+            ));
+        }
+        if then_ty == Type::Unit {
+            return Err(SemanticError::new(
+                "if expression branches must produce a value in v0",
+                span,
+            ));
+        }
+
+        merge_branch_moves(locals, &then_locals, &else_locals);
+        Ok(then_ty)
     }
 
     fn check_var(
@@ -570,6 +625,18 @@ fn borrow_arg_name(arg: &Arg) -> Result<&str, SemanticError> {
     Ok(name)
 }
 
+fn merge_branch_moves(
+    locals: &mut HashMap<String, Local>,
+    then_locals: &HashMap<String, Local>,
+    else_locals: &HashMap<String, Local>,
+) {
+    for (name, local) in locals {
+        let moved_in_then = then_locals.get(name).is_some_and(|branch| branch.moved);
+        let moved_in_else = else_locals.get(name).is_some_and(|branch| branch.moved);
+        local.moved |= moved_in_then || moved_in_else;
+    }
+}
+
 fn type_from_optional_ref(ty: Option<&TypeRef>) -> Result<Type, SemanticError> {
     ty.map_or(Ok(Type::Unit), type_from_ref)
 }
@@ -658,6 +725,49 @@ func add(a int, b int) int {
     #[test]
     fn allows_mutable_assignment() {
         check_ok("func main() { mut x := 1 x = 2 print(x) }");
+    }
+
+    #[test]
+    fn allows_if_expression_value() {
+        check_ok(
+            r#"
+func main() {
+    score := 70
+    label := if score >= 60 { "pass" } else { "fail" }
+    print(label)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_if_condition_that_is_not_bool() {
+        let error = check_error("func main() { x := if 1 { 1 } else { 2 } }");
+        assert!(error.message.contains("if condition must have type `bool`"));
+    }
+
+    #[test]
+    fn rejects_if_branch_type_mismatch() {
+        let error = check_error("func main() { x := if true { 1 } else { false } }");
+        assert!(error
+            .message
+            .contains("if branches must have the same type"));
+    }
+
+    #[test]
+    fn ownership_merges_moves_from_if_branches() {
+        let error = check_error(
+            r#"
+func main() {
+    s := "hello"
+    flag := true
+    picked := if flag { s } else { "fallback" }
+    print(s)
+    print(picked)
+}
+"#,
+        );
+        assert!(error.message.contains("use of moved value `s`"));
     }
 
     #[test]

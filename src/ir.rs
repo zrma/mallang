@@ -69,6 +69,11 @@ pub enum IrExprKind {
     String(String),
     Bool(bool),
     Var(String),
+    If {
+        condition: Box<IrExpr>,
+        then_branch: Box<IrExpr>,
+        else_branch: Box<IrExpr>,
+    },
     Call {
         callee: String,
         args: Vec<IrArg>,
@@ -210,6 +215,36 @@ impl<'a> Lowerer<'a> {
                     ));
                 };
                 (IrExprKind::Var(name.clone()), ty)
+            }
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let condition = self.lower_expr(condition, locals)?;
+                if condition.ty != Type::Bool {
+                    return Err(IrError::new(
+                        "semantic analysis accepted a non-bool if condition",
+                        condition.span,
+                    ));
+                }
+                let then_branch = self.lower_expr(then_branch, locals)?;
+                let else_branch = self.lower_expr(else_branch, locals)?;
+                if then_branch.ty != else_branch.ty {
+                    return Err(IrError::new(
+                        "semantic analysis accepted mismatched if branch types",
+                        expr.span,
+                    ));
+                }
+                let ty = then_branch.ty;
+                (
+                    IrExprKind::If {
+                        condition: Box::new(condition),
+                        then_branch: Box::new(then_branch),
+                        else_branch: Box::new(else_branch),
+                    },
+                    ty,
+                )
             }
             ExprKind::Call { callee, args } => self.lower_call(callee, args, locals, expr.span)?,
             ExprKind::Unary { op, expr } => {
@@ -358,5 +393,26 @@ func add(a int, b int) int {
             panic!("expected typed let");
         };
         assert_eq!(ty, Type::Int);
+    }
+
+    #[test]
+    fn ir_lowers_if_expression_with_branch_type() {
+        let program = parse(
+            r#"
+func main() {
+    label := if true { "pass" } else { "fail" }
+    print(label)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { ty, expr, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected typed let");
+        };
+        assert_eq!(*ty, Type::String);
+        assert!(matches!(expr.kind, IrExprKind::If { .. }));
     }
 }

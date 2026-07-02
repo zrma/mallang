@@ -26,7 +26,7 @@ This repository is the Mallang language PoC workspace.
 
 ## Bootstrap
 
-The current executable can lex, parse, and build the first native subset.
+The current executable can lex, parse, check, and build the first native subset.
 
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
@@ -34,6 +34,8 @@ cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
+cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
+target/mallang/if
 ```
 
 Run the full local gate:
@@ -47,6 +49,7 @@ scripts/check.sh
 - `SPEC.md`: v0 language specification.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
+- `examples/if.mlg`: native smoke for `if` expressions.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.
@@ -70,5 +73,5 @@ func add(a int, b int) int {
 }
 ```
 
-Current status: implemented for the first `int` subset via C source generation
-and `clang`.
+Current status: implemented for the first `int`, `bool`, `string`, and `if`
+expression subset via C source generation and `clang`.

@@ -156,6 +156,16 @@ impl<'a> CGenerator<'a> {
             IrExprKind::String(value) => Ok(c_string(value)),
             IrExprKind::Bool(value) => Ok(if *value { "true" } else { "false" }.to_string()),
             IrExprKind::Var(name) => Ok(c_ident(name)),
+            IrExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => Ok(format!(
+                "(({}) ? ({}) : ({}))",
+                self.emit_expr(condition)?,
+                self.emit_expr(then_branch)?,
+                self.emit_expr(else_branch)?
+            )),
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
                     return Err(CompileError::new(
@@ -273,5 +283,23 @@ func add(a int, b int) int {
         assert!(c.contains("int main(void)"));
         assert!(c.contains("int64_t mlg_add(int64_t mlg_a, int64_t mlg_b);"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_y));"));
+    }
+
+    #[test]
+    fn generates_c_for_if_expression_from_ir() {
+        let program = parse(
+            r#"
+func main() {
+    label := if true { "pass" } else { "fail" }
+    print(label)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
     }
 }

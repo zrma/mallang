@@ -1,0 +1,9 @@
+func main() {
+    score := 70
+    label := if score >= 60 {
+        "pass"
+    } else {
+        "fail"
+    }
+    print(label)
+}

@@ -287,6 +287,7 @@ impl Parser {
                 kind: ExprKind::Nil,
                 span: token.span,
             }),
+            TokenKind::Keyword(Keyword::If) => self.finish_if_expr(token.span),
             TokenKind::Minus => {
                 let expr = self.parse_precedence(6)?;
                 let span = token.span.join(expr.span);
@@ -316,6 +317,39 @@ impl Parser {
             }
             _ => Err(ParseError::new("expected expression", token.span)),
         }
+    }
+
+    fn finish_if_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
+        let condition = self.parse_expression()?;
+        let (then_branch, _) = self.parse_if_branch_expr()?;
+        self.expect_keyword(Keyword::Else, "expected `else` in if expression")?;
+        let (else_branch, end) = self.parse_if_branch_expr()?;
+        let span = start.join(end);
+
+        Ok(Expr {
+            kind: ExprKind::If {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+            },
+            span,
+        })
+    }
+
+    fn parse_if_branch_expr(&mut self) -> Result<(Expr, Span), ParseError> {
+        self.expect(TokenTag::LeftBrace, "expected `{` before if branch")?;
+        if self.at(TokenTag::RightBrace) {
+            return Err(ParseError::new(
+                "expected expression in if branch",
+                self.peek().span,
+            ));
+        }
+
+        let expr = self.parse_expression()?;
+        while self.eat(TokenTag::Semicolon).is_some() {}
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after if branch")?;
+
+        Ok((expr, end))
     }
 
     fn finish_call(&mut self, callee: Expr) -> Result<Expr, ParseError> {
@@ -555,5 +589,32 @@ func add(a int, b int) int {
             program.functions[0].body.statements[1].kind,
             StmtKind::Assign { .. }
         ));
+    }
+
+    #[test]
+    fn parses_if_expression() {
+        let program = parse(
+            r#"
+func main() {
+    label := if 1 < 2 { "yes" } else { "no" }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = &expr.kind
+        else {
+            panic!("expected if expression");
+        };
+        assert!(matches!(condition.kind, ExprKind::Binary { .. }));
+        assert!(matches!(then_branch.kind, ExprKind::String(_)));
+        assert!(matches!(else_branch.kind, ExprKind::String(_)));
     }
 }

@@ -80,6 +80,11 @@ pub enum ExprKind {
     Bool(bool),
     Nil,
     Var(String),
+    If {
+        condition: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Box<Expr>,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Arg>,

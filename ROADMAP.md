@@ -24,7 +24,7 @@
 - [x] Add first-subset function signature checking.
 - [x] Reject `nil`, pointer-like syntax, and unresolved identifiers.
 - [x] Reject immutable binding reassignment.
-- Support `if` expressions with compatible branch types.
+- [x] Support `if` expressions with compatible branch types.
 
 ## Milestone 3: Ownership and Borrowing
 

@@ -22,6 +22,7 @@
 - [x] first native subset용 primitive type checker 추가
 - [x] first native subset용 function signature checker 추가
 - [x] immutable binding reassignment reject
+- [x] `if` expression type checking 추가
 - [x] `mlg check` subcommand 추가
 
 ## P3: Ownership Lite
@@ -36,6 +37,7 @@
 ## P4: Native Backend
 
 - [x] typed IR 추가
+- [x] `if` expression typed IR/codegen 추가
 - [x] first native subset용 C codegen 추가
 - [x] `mlg build` subcommand 추가
 - [x] `clang` 기반 native binary smoke 추가
