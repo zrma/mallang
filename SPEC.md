@@ -105,7 +105,10 @@ y = y + x
 Rules:
 
 - Reassignment requires a `mut` local binding.
-- Shadowing is allowed only in a nested block.
+- Redeclaring a binding in the same block is rejected.
+- Shadowing is allowed only in a nested block, including `if`, `for`, and
+  `range` bodies.
+- A move of a shadowed inner binding does not move the outer binding.
 - v0 does not support uninitialized locals.
 
 ## Types

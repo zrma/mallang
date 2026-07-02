@@ -1,0 +1,29 @@
+func main() {
+    value := "outer"
+    if true {
+        value := 7
+        print(value)
+    }
+    print(value)
+
+    word := "keep"
+    if true {
+        word := "move"
+        consume(word)
+    }
+    print(word)
+
+    for mut index := 0; index < 1; index = index + 1 {
+        index := "loop"
+        print(index)
+    }
+
+    values := [1]int{3}
+    for _, item := range values {
+        item := "range"
+        print(item)
+    }
+}
+
+func consume(value string) {
+}

@@ -156,6 +156,7 @@ scripts/check.sh
 - `examples/for-empty-condition.mlg`: native smoke for `for {}` and `for ; ; post`.
 - `examples/range-blank.mlg`: native smoke for blank identifiers in array range loops.
 - `examples/range-index.mlg`: native build/run smoke for one-variable array range over non-copy elements.
+- `examples/shadowing.mlg`: native smoke for nested block shadowing and outer move isolation.
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
@@ -207,6 +208,6 @@ Current status: implemented for the first `int`, `bool`, `string`, string equali
 guarded integer division/remainder, checked integer arithmetic, `bool` operators, `|>` pipeline call sugar, statement/expression `if`,
 condition-only, conditionless, and `for init; condition; post` loops with
 `break` / `continue`, `else if` sugar, branch-aware returns,
-struct/method/nested-field, recursive struct value-type rejection, semantic printability checks, struct print output, and built-in ADT
+struct/method/nested-field, nested block shadowing, recursive struct value-type rejection, semantic printability checks, struct print output, and built-in ADT
 expression/statement `match` plus ADT print output via C source generation and
 `clang`.

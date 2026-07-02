@@ -69,6 +69,8 @@
 - [x] Reject recursive struct value type definitions.
 - [x] Reject top-level type/function declaration name conflicts.
 - [x] Reject user value bindings that collide with built-in value names.
+- [x] Allow shadowing only in nested blocks while rejecting same-block
+  redeclarations.
 - [x] Reject non-printable `print` arguments before native backend lowering.
 - [x] Reject statement-only `print` in value positions before native backend
   lowering.
@@ -113,6 +115,7 @@
 - [x] Generate native C layout for fixed-size arrays.
 - [x] Generate native C loops for array-only `range`.
 - [x] Generate native C loops for one-variable array-only `range`.
+- [x] Preserve nested block shadowing in generated C `for` and `range` bodies.
 - [x] Generate native C for fixed-size array indexing.
 - [x] Generate native C for fixed-size array `len`.
 - [x] Generate native C bounds checks for fixed-size array indexing.

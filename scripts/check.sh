@@ -241,6 +241,13 @@ if "${CARGO[@]}" run --bin mlg -- check "$top_level_name_conflict_fail_source" >
   echo "top-level name conflict check failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/shadowing.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/shadowing.mlg -o target/mallang/shadowing >/dev/null
+shadowing_output="$(target/mallang/shadowing)"
+if [[ "$shadowing_output" != $'7\nouter\nkeep\nloop\nrange' ]]; then
+  echo "shadowing native build smoke failed: expected nested shadowing output, got '$shadowing_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"

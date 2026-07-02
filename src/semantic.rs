@@ -362,6 +362,7 @@ impl<'a> Checker<'a> {
                     mutable: matches!(receiver.mode, ParamMode::Mut),
                     borrowed: !matches!(receiver.mode, ParamMode::Owned),
                     moved: false,
+                    scope_depth: 0,
                 },
             );
         }
@@ -374,6 +375,7 @@ impl<'a> Checker<'a> {
                         mutable: matches!(param.mode, ParamMode::Mut),
                         borrowed: !matches!(param.mode, ParamMode::Owned),
                         moved: false,
+                        scope_depth: 0,
                     },
                 )
                 .is_some()
@@ -386,7 +388,7 @@ impl<'a> Checker<'a> {
         }
 
         let returned =
-            self.check_block_statements(&function.body, &mut locals, &sig.return_type, 0)?;
+            self.check_block_statements(&function.body, &mut locals, &sig.return_type, 0, 0)?;
 
         if sig.return_type != Type::Unit && !returned {
             return Err(SemanticError::new(
@@ -435,6 +437,7 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
         loop_depth: usize,
+        scope_depth: usize,
     ) -> Result<bool, SemanticError> {
         match &stmt.kind {
             StmtKind::Let {
@@ -442,7 +445,7 @@ impl<'a> Checker<'a> {
                 name,
                 expr,
             } => {
-                self.check_let_binding(*mutable, name, expr, locals, stmt.span)?;
+                self.check_let_binding(*mutable, name, expr, locals, stmt.span, scope_depth)?;
                 Ok(false)
             }
             StmtKind::Assign { name, expr } => {
@@ -495,6 +498,7 @@ impl<'a> Checker<'a> {
                     &mut then_locals,
                     return_type,
                     loop_depth,
+                    scope_depth + 1,
                 )?;
                 let mut else_locals = locals.clone();
                 let else_returns = if let Some(else_block) = else_block {
@@ -503,6 +507,7 @@ impl<'a> Checker<'a> {
                         &mut else_locals,
                         return_type,
                         loop_depth,
+                        scope_depth + 1,
                     )?
                 } else {
                     false
@@ -518,8 +523,9 @@ impl<'a> Checker<'a> {
                 body,
             } => {
                 let mut loop_locals = locals.clone();
+                let loop_scope_depth = scope_depth + 1;
                 if let Some(init) = init {
-                    self.check_for_init(init, &mut loop_locals, stmt.span)?;
+                    self.check_for_init(init, &mut loop_locals, stmt.span, loop_scope_depth)?;
                 }
 
                 if let Some(condition) = condition {
@@ -534,7 +540,13 @@ impl<'a> Checker<'a> {
                 }
 
                 let mut body_locals = loop_locals.clone();
-                self.check_block_statements(body, &mut body_locals, return_type, loop_depth + 1)?;
+                self.check_block_statements(
+                    body,
+                    &mut body_locals,
+                    return_type,
+                    loop_depth + 1,
+                    loop_scope_depth + 1,
+                )?;
                 let mut post_locals = loop_locals.clone();
                 merge_loop_body_moves(&mut post_locals, &body_locals);
                 if let Some(post) = post {
@@ -562,6 +574,7 @@ impl<'a> Checker<'a> {
                     locals,
                     return_type,
                     loop_depth,
+                    scope_depth,
                 )?;
                 Ok(false)
             }
@@ -583,9 +596,17 @@ impl<'a> Checker<'a> {
                 }
                 Ok(false)
             }
-            StmtKind::Match { scrutinee, arms } => {
-                self.check_match_stmt(scrutinee, arms, locals, return_type, loop_depth, stmt.span)
-            }
+            StmtKind::Match { scrutinee, arms } => self.check_match_stmt(
+                MatchStmtParts {
+                    scrutinee,
+                    arms,
+                    span: stmt.span,
+                },
+                locals,
+                return_type,
+                loop_depth,
+                scope_depth,
+            ),
             StmtKind::Expr { expr } => {
                 self.check_stmt_expr(expr, locals)?;
                 Ok(false)
@@ -614,27 +635,31 @@ impl<'a> Checker<'a> {
         expr: &Expr,
         locals: &mut HashMap<String, Local>,
         span: Span,
+        scope_depth: usize,
     ) -> Result<(), SemanticError> {
         reject_builtin_value_name(name, span)?;
 
         let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
         if locals
-            .insert(
-                name.to_string(),
-                Local {
-                    ty: ty.clone(),
-                    mutable,
-                    borrowed: false,
-                    moved: false,
-                },
-            )
-            .is_some()
+            .get(name)
+            .is_some_and(|local| local.scope_depth == scope_depth)
         {
             return Err(SemanticError::new(
                 format!("binding `{name}` already exists in this block"),
                 span,
             ));
         }
+
+        locals.insert(
+            name.to_string(),
+            Local {
+                ty,
+                mutable,
+                borrowed: false,
+                moved: false,
+                scope_depth,
+            },
+        );
         Ok(())
     }
 
@@ -680,13 +705,14 @@ impl<'a> Checker<'a> {
         init: &ForInit,
         locals: &mut HashMap<String, Local>,
         span: Span,
+        scope_depth: usize,
     ) -> Result<(), SemanticError> {
         match init {
             ForInit::Let {
                 mutable,
                 name,
                 expr,
-            } => self.check_let_binding(*mutable, name, expr, locals, span),
+            } => self.check_let_binding(*mutable, name, expr, locals, span, scope_depth),
         }
     }
 
@@ -719,10 +745,11 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
         loop_depth: usize,
+        scope_depth: usize,
     ) -> Result<bool, SemanticError> {
         let mut returns = false;
         for stmt in &block.statements {
-            returns |= self.check_stmt(stmt, locals, return_type, loop_depth)?;
+            returns |= self.check_stmt(stmt, locals, return_type, loop_depth, scope_depth)?;
         }
         Ok(returns)
     }
@@ -901,19 +928,21 @@ impl<'a> Checker<'a> {
 
     fn check_match_stmt(
         &self,
-        scrutinee: &Expr,
-        arms: &[MatchBlockArm],
+        parts: MatchStmtParts<'_>,
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
         loop_depth: usize,
-        span: Span,
+        scope_depth: usize,
     ) -> Result<bool, SemanticError> {
-        if arms.is_empty() {
-            return Err(SemanticError::new("match requires at least one arm", span));
+        if parts.arms.is_empty() {
+            return Err(SemanticError::new(
+                "match requires at least one arm",
+                parts.span,
+            ));
         }
 
-        let scrutinee_ty = self.check_expr(scrutinee, locals, ValueUse::Owned)?;
-        let prepared_arms = self.prepare_match_block_arms(&scrutinee_ty, arms, span)?;
+        let scrutinee_ty = self.check_expr(parts.scrutinee, locals, ValueUse::Owned)?;
+        let prepared_arms = self.prepare_match_block_arms(&scrutinee_ty, parts.arms, parts.span)?;
         let mut checks = Vec::new();
         for arm in &prepared_arms {
             checks.push(self.check_prepared_match_block_arm(
@@ -921,6 +950,7 @@ impl<'a> Checker<'a> {
                 locals,
                 return_type,
                 loop_depth,
+                scope_depth + 1,
             )?);
         }
 
@@ -1073,6 +1103,7 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         return_type: &Type,
         loop_depth: usize,
+        scope_depth: usize,
     ) -> Result<(), SemanticError> {
         if !is_blank_identifier(parts.index_name) {
             reject_builtin_value_name(parts.index_name, parts.span)?;
@@ -1109,6 +1140,8 @@ impl<'a> Checker<'a> {
         }
 
         let mut body_locals = locals.clone();
+        let range_scope_depth = scope_depth + 1;
+        let body_scope_depth = range_scope_depth + 1;
         if !is_blank_identifier(parts.index_name) {
             body_locals.insert(
                 parts.index_name.to_string(),
@@ -1117,6 +1150,7 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    scope_depth: range_scope_depth,
                 },
             );
         }
@@ -1128,11 +1162,18 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    scope_depth: range_scope_depth,
                 },
             );
         }
 
-        self.check_block_statements(parts.body, &mut body_locals, return_type, loop_depth + 1)?;
+        self.check_block_statements(
+            parts.body,
+            &mut body_locals,
+            return_type,
+            loop_depth + 1,
+            body_scope_depth,
+        )?;
         merge_loop_body_moves(locals, &body_locals);
         Ok(())
     }
@@ -1689,6 +1730,7 @@ impl<'a> Checker<'a> {
         expected: Option<&Type>,
     ) -> Result<MatchArmCheck, SemanticError> {
         let mut arm_locals = locals.clone();
+        let arm_scope_depth = nested_scope_depth(locals);
         if let Some((name, ty)) = &arm.binding {
             arm_locals.insert(
                 (*name).to_string(),
@@ -1697,6 +1739,7 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    scope_depth: arm_scope_depth,
                 },
             );
         }
@@ -1713,6 +1756,7 @@ impl<'a> Checker<'a> {
         locals: &HashMap<String, Local>,
         return_type: &Type,
         loop_depth: usize,
+        scope_depth: usize,
     ) -> Result<MatchBlockArmCheck, SemanticError> {
         let mut arm_locals = locals.clone();
         if let Some((name, ty)) = &arm.binding {
@@ -1723,11 +1767,17 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    scope_depth,
                 },
             );
         }
-        let returns =
-            self.check_block_statements(arm.block, &mut arm_locals, return_type, loop_depth)?;
+        let returns = self.check_block_statements(
+            arm.block,
+            &mut arm_locals,
+            return_type,
+            loop_depth,
+            scope_depth,
+        )?;
         Ok(MatchBlockArmCheck {
             returns,
             locals: arm_locals,
@@ -2567,6 +2617,7 @@ struct Local {
     mutable: bool,
     borrowed: bool,
     moved: bool,
+    scope_depth: usize,
 }
 
 struct IfExprParts<'a> {
@@ -2581,6 +2632,12 @@ struct RangeForParts<'a> {
     value_name: &'a str,
     source: &'a Expr,
     body: &'a Block,
+    span: Span,
+}
+
+struct MatchStmtParts<'a> {
+    scrutinee: &'a Expr,
+    arms: &'a [MatchBlockArm],
     span: Span,
 }
 
@@ -2847,8 +2904,12 @@ fn merge_branch_moves(
     else_locals: &HashMap<String, Local>,
 ) {
     for (name, local) in locals {
-        let moved_in_then = then_locals.get(name).is_some_and(|branch| branch.moved);
-        let moved_in_else = else_locals.get(name).is_some_and(|branch| branch.moved);
+        let moved_in_then = then_locals
+            .get(name)
+            .is_some_and(|branch| same_binding(local, branch) && branch.moved);
+        let moved_in_else = else_locals
+            .get(name)
+            .is_some_and(|branch| same_binding(local, branch) && branch.moved);
         local.moved |= moved_in_then || moved_in_else;
     }
 }
@@ -2862,7 +2923,7 @@ fn merge_many_branch_moves<'a>(
         local.moved |= branch_locals.iter().any(|branch| {
             branch
                 .get(name)
-                .is_some_and(|branch_local| branch_local.moved)
+                .is_some_and(|branch_local| same_binding(local, branch_local) && branch_local.moved)
         });
     }
 }
@@ -2872,8 +2933,22 @@ fn merge_loop_body_moves(
     body_locals: &HashMap<String, Local>,
 ) {
     for (name, local) in locals {
-        local.moved |= body_locals.get(name).is_some_and(|body| body.moved);
+        local.moved |= body_locals
+            .get(name)
+            .is_some_and(|body| same_binding(local, body) && body.moved);
     }
+}
+
+fn same_binding(left: &Local, right: &Local) -> bool {
+    left.scope_depth == right.scope_depth
+}
+
+fn nested_scope_depth(locals: &HashMap<String, Local>) -> usize {
+    locals
+        .values()
+        .map(|local| local.scope_depth)
+        .max()
+        .map_or(0, |depth| depth + 1)
 }
 
 fn is_builtin_type_name(name: &str) -> bool {
@@ -3165,6 +3240,89 @@ func main() {}
 "#,
         );
         assert!(error.message.contains("`int` is a built-in type name"));
+    }
+
+    #[test]
+    fn allows_shadowing_in_nested_if_block() {
+        check_ok(
+            r#"
+func main() {
+    value := "outer"
+    if true {
+        value := 1
+        print(value)
+    }
+    print(value)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_shadowing_in_same_block() {
+        let error = check_error(
+            r#"
+func main() {
+    value := 1
+    value := 2
+    print(value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("binding `value` already exists in this block"));
+    }
+
+    #[test]
+    fn shadowed_inner_move_does_not_move_outer_binding() {
+        check_ok(
+            r#"
+func main() {
+    word := "outer"
+    if true {
+        word := "inner"
+        consume(word)
+    }
+    print(word)
+}
+
+func consume(value string) {
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_for_body_to_shadow_init_binding() {
+        check_ok(
+            r#"
+func main() {
+    label := "outer"
+    for mut label := 0; label < 1; label = label + 1 {
+        label := "inner"
+        print(label)
+    }
+    print(label)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_range_body_to_shadow_range_binding() {
+        check_ok(
+            r#"
+func main() {
+    values := [1]int{7}
+    for index, value := range values {
+        value := "shadow"
+        print(index)
+        print(value)
+    }
+}
+"#,
+        );
     }
 
     #[test]

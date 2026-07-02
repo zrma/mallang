@@ -379,10 +379,12 @@ impl<'a> CGenerator<'a> {
         if let Some(value_ident) = value_ident {
             body_env.insert(value_name.to_string(), value_ident);
         }
+        push_indented_lines(&mut output, "{", 1);
         for stmt in body {
             let code = self.emit_stmt_with_env(stmt, &body_env)?;
-            push_indented_lines(&mut output, &code, 1);
+            push_indented_lines(&mut output, &code, 2);
         }
+        push_indented_lines(&mut output, "}", 1);
         output.push('}');
         Ok(output)
     }
@@ -422,11 +424,13 @@ impl<'a> CGenerator<'a> {
             push_indented_lines(&mut output, "}", 2);
         }
 
+        push_indented_lines(&mut output, "{", 2);
         for stmt in body {
             let code =
                 self.emit_stmt_with_env_and_continue(stmt, env, continue_label.as_deref())?;
-            push_indented_lines(&mut output, &code, 2);
+            push_indented_lines(&mut output, &code, 3);
         }
+        push_indented_lines(&mut output, "}", 2);
 
         if let Some(post) = post {
             let label = continue_label

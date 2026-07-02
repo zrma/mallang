@@ -252,3 +252,11 @@
 - [x] top-level declaration에서 built-in type/value 이름 충돌 reject
 - [x] concrete method 이름은 receiver-qualified namespace로 유지
 - [x] `mlg check` failure smoke 추가
+
+## P28: Shadowing Scope Semantics
+
+- [x] same-block binding redeclaration reject 유지
+- [x] nested block shadowing 허용
+- [x] shadowed inner binding move가 outer binding move로 merge되지 않게 고정
+- [x] `for`/`range` body shadowing을 위한 native C block lowering 추가
+- [x] native smoke에서 nested shadowing 출력 검증
