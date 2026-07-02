@@ -204,7 +204,7 @@ impl<'a> CGenerator<'a> {
             output.push_str(&line);
             output.push('\n');
         }
-        output.push_str(&format!("if ({code}) {{\n"));
+        output.push_str(&format!("if ({}) {{\n", c_condition(&code)));
         for stmt in then_body {
             let code = self.emit_stmt_with_env(stmt, env)?;
             push_indented_lines(&mut output, &code, 1);
@@ -418,7 +418,7 @@ impl<'a> CGenerator<'a> {
                 self.emit_adt_constructor_stmt_expr(&expr.ty, *constructor, payload.as_deref(), env)
             }
             IrExprKind::Match { scrutinee, arms } => {
-                self.emit_match_stmt_expr(scrutinee, arms, env)
+                self.emit_match_stmt_expr(expr, scrutinee, arms, env)
             }
             IrExprKind::StructLiteral { type_name, fields } => {
                 self.emit_struct_literal_stmt_expr(type_name, fields, env)
@@ -470,66 +470,6 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_expr_with_env(
-        &self,
-        expr: &IrExpr,
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        match &expr.kind {
-            IrExprKind::Int(value) => Ok(value.to_string()),
-            IrExprKind::String(value) => Ok(c_string(value)),
-            IrExprKind::Bool(value) => Ok(if *value { "true" } else { "false" }.to_string()),
-            IrExprKind::Var(name) => Ok(env.get(name).cloned().unwrap_or_else(|| c_ident(name))),
-            IrExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => Ok(format!(
-                "(({}) ? ({}) : ({}))",
-                self.emit_expr_with_env(condition, env)?,
-                self.emit_expr_with_env(then_branch, env)?,
-                self.emit_expr_with_env(else_branch, env)?
-            )),
-            IrExprKind::AdtConstructor {
-                constructor,
-                payload,
-            } => self.emit_adt_constructor(&expr.ty, *constructor, payload.as_deref(), env),
-            IrExprKind::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, env),
-            IrExprKind::StructLiteral { type_name, fields } => {
-                self.emit_struct_literal(type_name, fields, env)
-            }
-            IrExprKind::FieldAccess { base, field } => Ok(format!(
-                "({}).{}",
-                self.emit_expr_with_env(base, env)?,
-                c_field(field)
-            )),
-            IrExprKind::Call { callee, args } => {
-                if callee == "print" {
-                    return Err(CompileError::new(
-                        "`print` is only supported as a statement",
-                    ));
-                }
-                let args = args
-                    .iter()
-                    .map(|arg| self.emit_call_arg(arg, env))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(format!("{}({})", c_ident(callee), args.join(", ")))
-            }
-            IrExprKind::Unary { op, expr } => Ok(format!(
-                "({}{})",
-                op.c_operator(),
-                self.emit_expr_with_env(expr, env)?
-            )),
-            IrExprKind::Binary { op, left, right } => Ok(c_binary_expr(
-                *op,
-                &expr.ty,
-                &left.ty,
-                self.emit_expr_with_env(left, env)?,
-                self.emit_expr_with_env(right, env)?,
-            )),
-        }
-    }
-
     fn emit_call_arg_stmt_expr(
         &self,
         arg: &IrArg,
@@ -540,15 +480,6 @@ impl<'a> CGenerator<'a> {
             prelude,
             code: c_arg_code(arg.mode, code),
         })
-    }
-
-    fn emit_call_arg(
-        &self,
-        arg: &IrArg,
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        let code = self.emit_expr_with_env(&arg.expr, env)?;
-        Ok(c_arg_code(arg.mode, code))
     }
 
     fn emit_adt_constructor_stmt_expr(
@@ -601,51 +532,6 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_adt_constructor(
-        &self,
-        ty: &Type,
-        constructor: IrAdtConstructor,
-        payload: Option<&IrExpr>,
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        let c_type = ty.c_name();
-        match (ty, constructor) {
-            (Type::Option(_), IrAdtConstructor::Some) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Some payload missing")
-                })?;
-                Ok(format!(
-                    "({c_type}){{ .tag = 1, .some = {} }}",
-                    self.emit_expr_with_env(payload, env)?
-                ))
-            }
-            (Type::Option(_), IrAdtConstructor::None) => Ok(format!("({c_type}){{ .tag = 0 }}")),
-            (Type::Result(_, _), IrAdtConstructor::Ok) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Ok payload missing")
-                })?;
-                Ok(format!(
-                    "({c_type}){{ .tag = 0, .ok = {} }}",
-                    self.emit_expr_with_env(payload, env)?
-                ))
-            }
-            (Type::Result(_, _), IrAdtConstructor::Err) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Err payload missing")
-                })?;
-                Ok(format!(
-                    "({c_type}){{ .tag = 1, .err = {} }}",
-                    self.emit_expr_with_env(payload, env)?
-                ))
-            }
-            _ => Err(CompileError::new(format!(
-                "IR invariant violation: `{}` constructor does not match `{}`",
-                constructor.c_name(),
-                ty.source_name()
-            ))),
-        }
-    }
-
     fn emit_struct_literal_stmt_expr(
         &self,
         type_name: &str,
@@ -670,85 +556,46 @@ impl<'a> CGenerator<'a> {
         })
     }
 
-    fn emit_struct_literal(
-        &self,
-        type_name: &str,
-        fields: &[crate::ir::IrFieldValue],
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        let field_codes = fields
-            .iter()
-            .map(|field| {
-                Ok(format!(
-                    ".{} = {}",
-                    c_field(&field.name),
-                    self.emit_expr_with_env(&field.expr, env)?
-                ))
-            })
-            .collect::<Result<Vec<_>, CompileError>>()?;
-
-        Ok(format!(
-            "({}){{ {} }}",
-            Type::Struct(type_name.to_string()).c_name(),
-            field_codes.join(", ")
-        ))
-    }
-
-    fn emit_match(
-        &self,
-        scrutinee: &IrExpr,
-        arms: &[IrMatchArm],
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        let IrExprKind::Var(name) = &scrutinee.kind else {
-            return Err(CompileError::new(
-                "C backend currently requires match scrutinee to be a local variable",
-            ));
-        };
-        let scrutinee_code = env.get(name).cloned().unwrap_or_else(|| c_ident(name));
-
-        self.emit_match_with_scrutinee(&scrutinee_code, &scrutinee.ty, arms, env)
-    }
-
     fn emit_match_stmt_expr(
         &self,
+        expr: &IrExpr,
         scrutinee: &IrExpr,
         arms: &[IrMatchArm],
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        if matches!(scrutinee.kind, IrExprKind::Var(_)) {
-            return Ok(CExpr::simple(self.emit_match(scrutinee, arms, env)?));
-        }
+        let (prelude, scrutinee_code) = if let IrExprKind::Var(name) = &scrutinee.kind {
+            (
+                Vec::new(),
+                env.get(name).cloned().unwrap_or_else(|| c_ident(name)),
+            )
+        } else {
+            let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(scrutinee, env)?;
+            let temp = match_scrutinee_temp_name(scrutinee);
+            prelude.push(format!("{} {temp} = {code};", scrutinee.ty.c_name()));
+            (prelude, temp)
+        };
 
-        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(scrutinee, env)?;
-        let temp = match_scrutinee_temp_name(scrutinee);
-        prelude.push(format!("{} {temp} = {code};", scrutinee.ty.c_name()));
-        let code = self.emit_match_with_scrutinee(&temp, &scrutinee.ty, arms, env)?;
-        Ok(CExpr { prelude, code })
-    }
-
-    fn emit_match_with_scrutinee(
-        &self,
-        scrutinee: &str,
-        scrutinee_ty: &Type,
-        arms: &[IrMatchArm],
-        env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
-        match scrutinee_ty {
-            Type::Option(_) => self.emit_option_match(scrutinee, arms, env),
-            Type::Result(_, _) => self.emit_result_match(scrutinee, arms, env),
+        match &scrutinee.ty {
+            Type::Option(_) => {
+                self.emit_option_match_stmt_expr(expr, &scrutinee_code, arms, env, prelude)
+            }
+            Type::Result(_, _) => {
+                self.emit_result_match_stmt_expr(expr, &scrutinee_code, arms, env, prelude)
+            }
             _ => Err(CompileError::new(
                 "IR invariant violation: match on non-ADT value",
             )),
         }
     }
 
-    fn emit_option_match(
+    fn emit_option_match_stmt_expr(
         &self,
+        expr: &IrExpr,
         scrutinee: &str,
         arms: &[IrMatchArm],
         env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
+        mut prelude: Vec<String>,
+    ) -> Result<CExpr, CompileError> {
         let some_arm = arms
             .iter()
             .find_map(|arm| match &arm.pattern {
@@ -766,19 +613,41 @@ impl<'a> CGenerator<'a> {
 
         let mut some_env = env.clone();
         some_env.insert(some_arm.0.clone(), format!("({scrutinee}).some"));
-        Ok(format!(
-            "((({scrutinee}).tag == 1) ? ({}) : ({}))",
-            self.emit_expr_with_env(some_arm.1, &some_env)?,
-            self.emit_expr_with_env(none_expr, env)?
-        ))
+        let some_expr = self.emit_stmt_expr_with_env(some_arm.1, &some_env)?;
+        let none_expr = self.emit_stmt_expr_with_env(none_expr, env)?;
+
+        if some_expr.prelude.is_empty() && none_expr.prelude.is_empty() {
+            return Ok(CExpr {
+                prelude,
+                code: format!(
+                    "((({scrutinee}).tag == 1) ? ({}) : ({}))",
+                    some_expr.code, none_expr.code
+                ),
+            });
+        }
+
+        let temp = match_expr_temp_name(expr);
+        prelude.push(format!("{} {temp};", expr.ty.c_name()));
+        prelude.push(match_expr_temp_block(
+            &format!("({scrutinee}).tag == 1"),
+            &temp,
+            some_expr,
+            none_expr,
+        ));
+        Ok(CExpr {
+            prelude,
+            code: temp,
+        })
     }
 
-    fn emit_result_match(
+    fn emit_result_match_stmt_expr(
         &self,
+        expr: &IrExpr,
         scrutinee: &str,
         arms: &[IrMatchArm],
         env: &HashMap<String, String>,
-    ) -> Result<String, CompileError> {
+        mut prelude: Vec<String>,
+    ) -> Result<CExpr, CompileError> {
         let ok_arm = arms
             .iter()
             .find_map(|arm| match &arm.pattern {
@@ -798,11 +667,31 @@ impl<'a> CGenerator<'a> {
         ok_env.insert(ok_arm.0.clone(), format!("({scrutinee}).ok"));
         let mut err_env = env.clone();
         err_env.insert(err_arm.0.clone(), format!("({scrutinee}).err"));
-        Ok(format!(
-            "((({scrutinee}).tag == 0) ? ({}) : ({}))",
-            self.emit_expr_with_env(ok_arm.1, &ok_env)?,
-            self.emit_expr_with_env(err_arm.1, &err_env)?
-        ))
+        let ok_expr = self.emit_stmt_expr_with_env(ok_arm.1, &ok_env)?;
+        let err_expr = self.emit_stmt_expr_with_env(err_arm.1, &err_env)?;
+
+        if ok_expr.prelude.is_empty() && err_expr.prelude.is_empty() {
+            return Ok(CExpr {
+                prelude,
+                code: format!(
+                    "((({scrutinee}).tag == 0) ? ({}) : ({}))",
+                    ok_expr.code, err_expr.code
+                ),
+            });
+        }
+
+        let temp = match_expr_temp_name(expr);
+        prelude.push(format!("{} {temp};", expr.ty.c_name()));
+        prelude.push(match_expr_temp_block(
+            &format!("({scrutinee}).tag == 0"),
+            &temp,
+            ok_expr,
+            err_expr,
+        ));
+        Ok(CExpr {
+            prelude,
+            code: temp,
+        })
     }
 
     fn collect_defined_types(&self) -> Vec<Type> {
@@ -1074,7 +963,7 @@ fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
 
 fn if_expr_temp_block(condition: &str, temp: &str, then_expr: CExpr, else_expr: CExpr) -> String {
     let mut output = String::new();
-    output.push_str(&format!("if ({condition}) {{\n"));
+    output.push_str(&format!("if ({}) {{\n", c_condition(condition)));
     for line in then_expr.prelude {
         push_indented_lines(&mut output, &line, 1);
     }
@@ -1090,6 +979,19 @@ fn if_expr_temp_block(condition: &str, temp: &str, then_expr: CExpr, else_expr: 
 
 fn if_expr_temp_name(expr: &IrExpr) -> String {
     format!("mallang_if_tmp_{}", expr.span.start)
+}
+
+fn match_expr_temp_block(
+    condition: &str,
+    temp: &str,
+    then_expr: CExpr,
+    else_expr: CExpr,
+) -> String {
+    if_expr_temp_block(condition, temp, then_expr, else_expr)
+}
+
+fn match_expr_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_match_value_tmp_{}", expr.span.start)
 }
 
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
@@ -1117,6 +1019,37 @@ fn c_arg_code(mode: ArgMode, code: String) -> String {
     match mode {
         ArgMode::Owned => code,
         ArgMode::In | ArgMode::Mut => format!("&({code})"),
+    }
+}
+
+fn c_condition(code: &str) -> String {
+    strip_enclosing_parens(code).unwrap_or(code).to_string()
+}
+
+fn strip_enclosing_parens(code: &str) -> Option<&str> {
+    let bytes = code.as_bytes();
+    if bytes.first() != Some(&b'(') || bytes.last() != Some(&b')') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    for (index, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 && index != bytes.len() - 1 {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if depth == 0 {
+        Some(&code[1..code.len() - 1])
+    } else {
+        None
     }
 }
 
@@ -1404,6 +1337,48 @@ func maybe(flag bool) Option[int] {
         assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
         assert!(c.contains("= mlg_maybe(false);"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((("));
+    }
+
+    #[test]
+    fn generates_c_for_match_expression_with_arm_prelude() {
+        let program = parse(
+            r#"
+func main() {
+    print(resolve(true))
+}
+
+func resolve(flag bool) int {
+    value := maybe(flag)
+    return match value {
+        case Some(inner) {
+            if inner == 7 {
+                match maybe(true) {
+                    case Some(nested) { nested }
+                    case None { 0 }
+                }
+            } else {
+                inner
+            }
+        }
+        case None { 0 }
+    }
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("int64_t mallang_match_value_tmp_"));
+        assert!(c.contains("if ((mlg_value).tag == 1) {"));
+        assert!(c.contains("int64_t mallang_if_tmp_"));
+        assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
+        assert!(c.contains("return mallang_match_value_tmp_"));
     }
 
     #[test]

@@ -79,6 +79,13 @@ if [[ "$if_match_expression_output" != $'7\n0' ]]; then
   echo "if match expression native build smoke failed: expected 7 and 0, got '$if_match_expression_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/match-arm-prelude.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/match-arm-prelude.mlg -o target/mallang/match-arm-prelude >/dev/null
+match_arm_prelude_output="$(target/mallang/match-arm-prelude)"
+if [[ "$match_arm_prelude_output" != $'7\n0' ]]; then
+  echo "match arm prelude native build smoke failed: expected 7 and 0, got '$match_arm_prelude_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/structs.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/structs.mlg -o target/mallang/structs >/dev/null
 structs_output="$(target/mallang/structs)"

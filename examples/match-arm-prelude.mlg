@@ -1,0 +1,25 @@
+func main() {
+    print(resolve(true))
+    print(resolve(false))
+}
+
+func resolve(flag bool) int {
+    value := maybe(flag)
+    return match value {
+        case Some(inner) {
+            if inner == 7 {
+                match maybe(true) {
+                    case Some(nested) { nested }
+                    case None { 0 }
+                }
+            } else {
+                inner
+            }
+        }
+        case None { 0 }
+    }
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
