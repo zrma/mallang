@@ -46,7 +46,7 @@ fi
 "${CARGO[@]}" run --bin mlg -- check examples/logical-operators.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators >/dev/null
 logical_operators_output="$(target/mallang/logical-operators)"
-if [[ "$logical_operators_output" != $'false\n0\ntrue\n0\ntrue\n1\ntrue\n2\ntrue\ntrue\nfalse' ]]; then
+if [[ "$logical_operators_output" != $'false\n0\ntrue\n0\ntrue\n1\ntrue\n2\ntrue\ntrue\nfalse\ntrue\nfalse' ]]; then
   echo "logical operators native build smoke failed: expected short-circuit bool output, got '$logical_operators_output'" >&2
   exit 1
 fi

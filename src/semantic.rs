@@ -3427,6 +3427,21 @@ func check(left bool, right bool, score int) bool {
     }
 
     #[test]
+    fn allows_bool_unary_not() {
+        check_ok(
+            r#"
+func main() {
+    print(check(false, true))
+}
+
+func check(left bool, right bool) bool {
+    return !left && right
+}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_pipeline_expression_call_sugar() {
         check_ok(
             r#"
@@ -3451,6 +3466,12 @@ func add(value int, amount int) int {
         assert!(error
             .message
             .contains("logical operators require `bool` operands"));
+    }
+
+    #[test]
+    fn rejects_unary_not_on_non_bool_values() {
+        let error = check_error("func main() { print(!1) }");
+        assert!(error.message.contains("`!` expects a `bool` operand"));
     }
 
     #[test]

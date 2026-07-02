@@ -1953,6 +1953,23 @@ func check(score int, left bool, right bool) bool {
     }
 
     #[test]
+    fn generates_c_for_bool_unary_not() {
+        let program = parse(
+            r#"
+func main() {
+    print(!false)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("(!false)"));
+    }
+
+    #[test]
     fn generates_c_for_for_statement() {
         let program = parse(
             r#"

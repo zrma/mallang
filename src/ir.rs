@@ -1997,6 +1997,33 @@ func main() {
     }
 
     #[test]
+    fn ir_lowers_bool_unary_not() {
+        let program = parse(
+            r#"
+func main() {
+    flag := !false
+    print(flag)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { ty, expr, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected typed let");
+        };
+        assert_eq!(*ty, Type::Bool);
+        assert!(matches!(
+            expr.kind,
+            IrExprKind::Unary {
+                op: UnaryOp::Not,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn ir_lowers_if_statement() {
         let program = parse(
             r#"

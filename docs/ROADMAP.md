@@ -200,3 +200,10 @@
 - [x] `build`와 `run`의 native compile path 공유
 - [x] `target/mallang/run/<source-stem>` binary 실행
 - [x] native smoke에서 program stdout 검증
+
+## P21: Bool Unary Not
+
+- [x] `!expr` parser precedence 고정
+- [x] semantic checker에서 `!` operand/result type 검증
+- [x] typed IR와 C backend에서 `UnaryOp::Not` 검증
+- [x] native smoke에서 `!`와 short-circuit operator 조합 검증

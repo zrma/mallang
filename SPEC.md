@@ -59,8 +59,8 @@ func greet(con name string) string {
 - Integer literals are base-10 in v0.
 - Equality operators `==` and `!=` support `int`, `bool`, and `string`. String
   equality compares contents and does not move the compared values.
-- Logical operators `&&` and `||` support `bool` operands and use
-  short-circuit evaluation in the native backend.
+- Bool operators `!`, `&&`, and `||` support `bool` operands. `&&` and `||`
+  use short-circuit evaluation in the native backend.
 
 Reserved words:
 

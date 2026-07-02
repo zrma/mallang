@@ -16,6 +16,8 @@ func main() {
     print(check(7, true))
     print(check(3, true))
     print(check(7, false))
+    print(!check(7, false))
+    print(!check(7, true) && check(3, true))
 }
 
 func bump(mut value int) bool {

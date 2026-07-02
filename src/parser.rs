@@ -1274,6 +1274,25 @@ func add(a int, b int) int {
     }
 
     #[test]
+    fn parses_unary_not_before_logical_and() {
+        let program = parse("func main() { x := !a && b }").unwrap();
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Binary { op, left, .. } = &expr.kind else {
+            panic!("expected logical and expression");
+        };
+        assert_eq!(*op, BinaryOp::LogicalAnd);
+        assert!(matches!(
+            left.kind,
+            ExprKind::Unary {
+                op: UnaryOp::Not,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parses_pipeline_expression_as_call_sugar() {
         let program = parse("func main() { x := 1 + 2 |> double() |> add(3) }").unwrap();
         let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {

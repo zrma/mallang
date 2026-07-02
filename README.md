@@ -26,7 +26,7 @@ This repository is the Mallang language PoC workspace.
 - Native compilation path through a C backend first.
 - Functional features in the core language: `if` statements/expressions,
   condition-only, conditionless, and `for init; condition; post` loops with
-  `break` / `continue`, `else if` sugar, `bool` logical operators, `|>`
+  `break` / `continue`, `else if` sugar, `bool` operators, `|>`
   pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - Branch-aware return completeness for statement-form `if`.
@@ -142,7 +142,7 @@ scripts/check.sh
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
-- `examples/logical-operators.mlg`: native smoke for `bool` logical operators and short-circuiting.
+- `examples/logical-operators.mlg`: native smoke for `bool` operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/print-adt.mlg`: native smoke for printing `Option` / `Result` values.
