@@ -553,3 +553,10 @@
 - [x] expression/literal/call/borrow-lvalue/match-expression emission을 `src/backend/c/expressions.rs`로 분리
 - [x] statement emitter가 쓰는 `emit_stmt_expr_with_env` / `emit_borrow_lvalue_expr`만 module-visible boundary로 유지
 - [x] `CGenerator`의 public `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P66: C Backend Utility Helper Split
+
+- [x] shared formatting, temp-name, checked-int helper, and parameter-env utilities를 `src/backend/c/utils.rs`로 분리
+- [x] `c.rs`는 C output orchestration과 `CGenerator` boundary 중심으로 축소
+- [x] statement/type/expression emitters가 utility helpers를 `utils` module 경유로 사용하게 정리
+- [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지

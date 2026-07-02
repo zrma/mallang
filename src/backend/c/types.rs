@@ -5,7 +5,8 @@ use crate::{
 
 use super::{
     names::{c_field, drop_fn_name, TypeCName},
-    push_indented_lines, CompileError,
+    utils::push_indented_lines,
+    CompileError,
 };
 
 pub(super) fn collect_defined_types(program: &IrProgram) -> Vec<Type> {

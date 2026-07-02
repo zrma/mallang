@@ -7,16 +7,19 @@ use crate::{
 };
 
 use super::{
-    checked_binary_left_temp_name, checked_binary_result_temp_name, checked_binary_right_temp_name,
-    checked_int_binary_builtin, checked_unary_operand_temp_name, checked_unary_result_temp_name,
-    dividend_temp_name, divisor_temp_name, if_expr_temp_block, if_expr_temp_name,
-    index_source_temp_name, index_value_temp_name, match_expr_temp_name, match_scrutinee_temp_name,
     names::{
         c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
         empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
     },
-    slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name, AppendSourceExpr,
-    CExpr, CGenerator, CompileError,
+    utils::{
+        checked_binary_left_temp_name, checked_binary_result_temp_name,
+        checked_binary_right_temp_name, checked_int_binary_builtin,
+        checked_unary_operand_temp_name, checked_unary_result_temp_name, dividend_temp_name,
+        divisor_temp_name, if_expr_temp_block, if_expr_temp_name, index_source_temp_name,
+        index_value_temp_name, match_expr_temp_name, match_scrutinee_temp_name,
+        slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
+    },
+    AppendSourceExpr, CExpr, CGenerator, CompileError,
 };
 
 impl<'a> CGenerator<'a> {

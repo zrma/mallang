@@ -9,11 +9,13 @@ use crate::{
 };
 
 use super::{
-    finish_with_prelude, for_post_label, index_assign_value_temp_name, index_value_temp_name,
-    is_blank_identifier, match_scrutinee_temp_name,
     names::{c_assignment_target, c_condition, c_field, c_ident, drop_fn_name, TypeCName},
-    print_temp_name, push_indented_lines, range_index_temp_name, range_source_temp_name, CExpr,
-    CGenerator, CompileError,
+    utils::{
+        finish_with_prelude, for_post_label, index_assign_value_temp_name, index_value_temp_name,
+        is_blank_identifier, match_scrutinee_temp_name, print_temp_name, push_indented_lines,
+        range_index_temp_name, range_source_temp_name,
+    },
+    CExpr, CGenerator, CompileError,
 };
 
 impl<'a> CGenerator<'a> {
