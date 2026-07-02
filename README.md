@@ -46,10 +46,11 @@ This repository is the Mallang language PoC workspace.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
 - Fixed-size arrays with range loops, element borrow arguments, and `con`/`mut`
-  method receivers.
+  method receivers plus read-only indexed expressions for non-copy elements.
 - Owned move-only slices with `[]T` literals, `len(slice)`, Copy-only
   `slice[i]`, consuming `append(slice, item)`, and range loops with Copy value
-  iteration plus element borrow, assignment, and indexed field assignment.
+  iteration plus element borrow, assignment, indexed field assignment, and
+  read-only indexed expressions for non-copy elements.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -186,6 +187,7 @@ scripts/check.sh
 - `examples/slice-element-borrow.mlg`: native smoke for owned slice element borrow arguments.
 - `examples/slice-element-assignment.mlg`: native smoke for owned slice element assignment.
 - `examples/indexed-field-assignment.mlg`: native smoke for indexed array/slice field assignment.
+- `examples/indexed-field-read.mlg`: native smoke for borrowed indexed array/slice field reads.
 - `examples/array-element-methods.mlg`: native smoke for fixed array element method receivers.
 - `examples/mut-parameter-abi.mlg`: native smoke for caller-visible `mut` parameter mutation.
 - `examples/nested-fields.mlg`: native smoke for nested field assignment and borrow arguments.

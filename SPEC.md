@@ -160,6 +160,8 @@ Array rules:
   `Copy` and non-copy elements.
 - Fixed-size array element borrow arguments are supported for `Copy` and
   non-copy elements.
+- Fixed-size array indexing is also valid in read-only borrow contexts for
+  non-copy elements, such as `print(users[i])` or `print(users[i].name)`.
 - Fixed-size array element method receivers are supported for `con` and `mut`
   receiver modes.
 - Slice type syntax `[]T` denotes an owned, move-only growable buffer. It is not
@@ -168,8 +170,10 @@ Array rules:
   `append(slice, item)` growth. Slice range supports the same Copy value
   iteration surface as arrays. Slice element borrow arguments extend the same
   local-rooted borrow surface as fixed-size arrays. Direct mutable slice element
-  assignment is supported for `Copy` and non-copy element types. Mutable range
-  values and non-copy element extraction remain reserved for later slices.
+  assignment is supported for `Copy` and non-copy element types. Read-only
+  indexed expressions can inspect non-copy slice elements without moving them.
+  Mutable range values and non-copy element extraction remain reserved for later
+  slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -195,6 +199,9 @@ Indexing and length rules:
 - `values[i]` is valid when `values` has fixed-size array type `[N]T` or slice
   type `[]T` and `i` has type `int`.
 - `values[i]` yields a value only when `T` is `Copy`.
+- `values[i]` may also be used in read-only borrow contexts when `T` is
+  non-copy. This supports printing or reading Copy fields from indexed
+  array/slice elements without moving the element.
 - `con values[i]` and `mut values[i]` are valid as direct function call
   arguments even when `T` is non-copy. Field paths rooted in an indexed array or
   slice element, such as `con users[i].name`, are also valid borrow arguments.

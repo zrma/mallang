@@ -873,7 +873,7 @@ impl<'a> Checker<'a> {
                 self.check_field_access(base, field, locals, value_use, expr.span)
             }
             ExprKind::Index { base, index } => {
-                self.check_index_access(base, index, locals, expr.span)
+                self.check_index_access(base, index, locals, value_use, expr.span)
             }
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
@@ -1308,6 +1308,7 @@ impl<'a> Checker<'a> {
         base: &Expr,
         index: &Expr,
         locals: &mut HashMap<String, Local>,
+        value_use: ValueUse,
         span: Span,
     ) -> Result<Type, SemanticError> {
         let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
@@ -1316,7 +1317,7 @@ impl<'a> Checker<'a> {
             Type::Array { len, element } => {
                 self.validate_index_type_and_bounds(index, &index_ty, len)?;
 
-                if !element.is_copy() {
+                if matches!(value_use, ValueUse::Owned) && !element.is_copy() {
                     return Err(SemanticError::new(
                         format!(
                             "array indexing requires a Copy element type in v0, got `{}`",
@@ -1337,7 +1338,7 @@ impl<'a> Checker<'a> {
                 }
                 self.validate_index_type_and_non_negative_literal(index, &index_ty, "slice")?;
 
-                if !element.is_copy() {
+                if matches!(value_use, ValueUse::Owned) && !element.is_copy() {
                     return Err(SemanticError::new(
                         format!(
                             "slice indexing requires a Copy element type in v0, got `{}`",
@@ -2094,16 +2095,18 @@ impl<'a> Checker<'a> {
     }
 
     fn mark_field_base_moved(&self, base: &Expr) -> Result<(), SemanticError> {
-        if let ExprKind::Var(name) = &base.kind {
-            return Err(SemanticError::new(
-                format!(
-                    "moving non-copy field out of `{name}` is not supported without destructuring"
-                ),
+        match &base.kind {
+            ExprKind::Var(name) => Err(SemanticError::new(
+                format!("moving non-copy field out of `{name}` is not supported without destructuring"),
                 base.span,
-            ));
+            )),
+            ExprKind::Index { .. } => Err(SemanticError::new(
+                "moving non-copy field out of indexed element is not supported without destructuring",
+                base.span,
+            )),
+            ExprKind::FieldAccess { base, .. } => self.mark_field_base_moved(base),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     fn check_call(
@@ -5343,6 +5346,26 @@ func main() {
     }
 
     #[test]
+    fn allows_borrowed_slice_index_field_access_for_non_copy_elements() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    users := []User{User{name: "kim", age: 30}}
+    print(users[0])
+    print(users[0].name)
+    age := users[0].age
+    print(age)
+}
+"#,
+        );
+    }
+
+    #[test]
     fn rejects_inline_slice_len_until_temporary_cleanup_exists() {
         let error = check_error(
             r#"
@@ -5725,6 +5748,58 @@ func main() {
         assert!(error
             .message
             .contains("array indexing requires a Copy element type in v0, got `User`"));
+    }
+
+    #[test]
+    fn allows_borrowed_array_index_field_access_for_non_copy_elements() {
+        check_ok(
+            r#"
+type Profile struct {
+    label string
+    score int
+}
+
+type User struct {
+    name string
+    age int
+    profile Profile
+}
+
+func main() {
+    users := [2]User{
+        User{name: "kim", age: 30, profile: Profile{label: "a", score: 7}},
+        User{name: "lee", age: 20, profile: Profile{label: "b", score: 9}},
+    }
+    print(users[0])
+    print(users[1].name)
+    age := users[1].age
+    print(age)
+    print(users[0].profile.label)
+    score := users[0].profile.score
+    print(score)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_moving_non_copy_field_out_of_indexed_element() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    users := [1]User{User{name: "kim"}}
+    name := users[0].name
+    print(name)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("moving non-copy field out of indexed element"));
     }
 
     #[test]

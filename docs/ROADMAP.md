@@ -442,4 +442,13 @@
 - [x] non-Copy indexed element를 value extraction 없이 assignment target IR로 lowering
 - [x] native C backend에서 array/slice indexed lvalue field assignment lowering
 - [x] `examples/indexed-field-assignment.mlg` native smoke 추가
-- [x] borrowed indexing expression, mutable range values는 후속 work로 유지
+- [x] borrowed indexing expression은 P53에서 완료, mutable range values는 후속 work로 유지
+
+## P53: Borrowed Indexing Expressions
+
+- [x] `ValueUse::Borrow` index expression에서 non-Copy array/slice element inspection 허용
+- [x] `ValueUse::Owned` index extraction은 기존 Copy requirement 유지
+- [x] indexed element의 non-Copy field move는 계속 reject
+- [x] native C backend에서 read-only indexed field access smoke 추가
+- [x] `examples/indexed-field-read.mlg` native smoke 추가
+- [x] first-class references, statement-spanning borrow lifetimes, mutable range values는 후속 work로 유지

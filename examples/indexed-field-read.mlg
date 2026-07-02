@@ -1,0 +1,29 @@
+type Profile struct {
+    label string
+    score int
+}
+
+type User struct {
+    name string
+    age int
+    profile Profile
+}
+
+func main() {
+    users := [2]User{
+        User{name: "kim", age: 30, profile: Profile{label: "primary", score: 7}},
+        User{name: "lee", age: 20, profile: Profile{label: "backup", score: 9}},
+    }
+    print(users[0])
+    print(users[1].name)
+    print(users[0].profile.label)
+    age := users[1].age
+    print(age)
+
+    sliceUsers := []User{
+        User{name: "park", age: 40, profile: Profile{label: "slice", score: 11}},
+    }
+    print(sliceUsers[0].name)
+    score := sliceUsers[0].profile.score
+    print(score)
+}

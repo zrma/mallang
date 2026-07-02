@@ -376,6 +376,13 @@ if [[ "$indexed_field_assignment_output" != $'31\npark\n21' ]]; then
   echo "indexed field assignment native build smoke failed: expected 31, park, 21 got '$indexed_field_assignment_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/indexed-field-read.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/indexed-field-read.mlg -o target/mallang/indexed-field-read >/dev/null
+indexed_field_read_output="$(target/mallang/indexed-field-read)"
+if [[ "$indexed_field_read_output" != $'User{name: kim, age: 30, profile: Profile{label: primary, score: 7}}\nlee\nprimary\n20\npark\n11' ]]; then
+  echo "indexed field read native build smoke failed: expected borrowed indexed field output, got '$indexed_field_read_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
 range_blank_output="$(target/mallang/range-blank)"

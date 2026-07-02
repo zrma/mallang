@@ -1169,13 +1169,6 @@ impl<'a> Lowerer<'a> {
                 ));
             }
         };
-        if !ty.is_copy() {
-            return Err(IrError::new(
-                "semantic analysis accepted indexing a non-copy array or slice element",
-                span,
-            ));
-        }
-
         Ok((
             IrExprKind::Index {
                 base: Box::new(base),
