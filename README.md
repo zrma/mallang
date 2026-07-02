@@ -26,6 +26,8 @@ This repository is the Mallang language PoC workspace.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   field access/assignment.
 - Go-like receiver methods with Mallang parameter modes.
+- Field-level borrow arguments for direct local fields such as `in user.name`
+  and `mut user.name`.
 
 ## Bootstrap
 
@@ -52,6 +54,8 @@ cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
 target/mallang/methods
 cargo run --bin mlg -- build examples/field-assignment.mlg -o target/mallang/field-assignment
 target/mallang/field-assignment
+cargo run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow
+target/mallang/field-borrow
 ```
 
 Run the full local gate:
@@ -72,6 +76,7 @@ scripts/check.sh
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
+- `examples/field-borrow.mlg`: native smoke for direct field borrow arguments.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics.

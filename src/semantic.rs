@@ -1171,7 +1171,7 @@ impl<'a> Checker<'a> {
         }
 
         let sig = self.function_sig(name, callee.span)?;
-        self.check_call_args(name, args, &sig.params, locals, HashMap::new(), span)?;
+        self.check_call_args(name, args, &sig.params, locals, Vec::new(), span)?;
         Ok(sig.return_type.clone())
     }
 
@@ -1198,7 +1198,7 @@ impl<'a> Checker<'a> {
             name: method_name.to_string(),
         };
         let sig = self.method_sig(&key, span)?;
-        let mut call_borrows = HashMap::new();
+        let mut call_borrows = Vec::new();
         match sig.receiver.mode {
             ParamMode::Owned => {
                 let receiver_ty = self.check_expr_with_expected(
@@ -1270,7 +1270,7 @@ impl<'a> Checker<'a> {
         args: &[Arg],
         params: &[ParamSig],
         locals: &mut HashMap<String, Local>,
-        mut call_borrows: HashMap<String, BorrowKind>,
+        mut call_borrows: Vec<(BorrowPlace, BorrowKind)>,
         span: Span,
     ) -> Result<(), SemanticError> {
         if args.len() != params.len() {
@@ -1426,23 +1426,11 @@ impl<'a> Checker<'a> {
     fn register_call_borrow(
         &self,
         arg: &Arg,
-        call_borrows: &mut HashMap<String, BorrowKind>,
+        call_borrows: &mut Vec<(BorrowPlace, BorrowKind)>,
         kind: BorrowKind,
     ) -> Result<(), SemanticError> {
-        let name = borrow_arg_name(arg)?.to_string();
-        match (call_borrows.get(&name).copied(), kind) {
-            (None, kind) => {
-                call_borrows.insert(name, kind);
-                Ok(())
-            }
-            (Some(BorrowKind::Shared), BorrowKind::Shared) => Ok(()),
-            (Some(BorrowKind::Shared), BorrowKind::Exclusive)
-            | (Some(BorrowKind::Exclusive), BorrowKind::Shared)
-            | (Some(BorrowKind::Exclusive), BorrowKind::Exclusive) => Err(SemanticError::new(
-                format!("borrow of `{name}` overlaps with an active borrow in this call"),
-                arg.span,
-            )),
-        }
+        let place = borrow_arg_place(arg)?;
+        register_borrow_place(place, kind, arg.span, call_borrows)
     }
 
     fn check_borrow_arg(
@@ -1451,27 +1439,79 @@ impl<'a> Checker<'a> {
         locals: &mut HashMap<String, Local>,
         mutable: bool,
     ) -> Result<Type, SemanticError> {
-        let name = borrow_arg_name(arg)?;
-        let Some(local) = locals.get(name) else {
-            return Err(SemanticError::new(
-                format!("unknown variable `{name}`"),
-                arg.expr.span,
-            ));
-        };
-        if local.moved {
-            return Err(SemanticError::new(
-                format!("borrow of moved value `{name}`"),
-                arg.expr.span,
-            ));
-        }
-        if mutable && !local.mutable {
-            return Err(SemanticError::new(
-                format!("cannot mutably borrow immutable binding `{name}`"),
-                arg.span,
-            ));
-        }
+        match borrow_arg_place(arg)? {
+            BorrowPlace {
+                root: name,
+                field: None,
+            } => {
+                let Some(local) = locals.get(&name) else {
+                    return Err(SemanticError::new(
+                        format!("unknown variable `{name}`"),
+                        arg.expr.span,
+                    ));
+                };
+                if local.moved {
+                    return Err(SemanticError::new(
+                        format!("borrow of moved value `{name}`"),
+                        arg.expr.span,
+                    ));
+                }
+                if mutable && !local.mutable {
+                    return Err(SemanticError::new(
+                        format!("cannot mutably borrow immutable binding `{name}`"),
+                        arg.span,
+                    ));
+                }
 
-        Ok(local.ty.clone())
+                Ok(local.ty.clone())
+            }
+            BorrowPlace {
+                root: name,
+                field: Some(field),
+            } => {
+                let Some(local) = locals.get(&name) else {
+                    return Err(SemanticError::new(
+                        format!("unknown variable `{name}`"),
+                        arg.expr.span,
+                    ));
+                };
+                if local.moved {
+                    return Err(SemanticError::new(
+                        format!("borrow of moved value `{name}`"),
+                        arg.expr.span,
+                    ));
+                }
+                if mutable && !local.mutable {
+                    return Err(SemanticError::new(
+                        format!("cannot mutably borrow field of immutable binding `{name}`"),
+                        arg.span,
+                    ));
+                }
+
+                let Type::Struct(type_name) = &local.ty else {
+                    return Err(SemanticError::new(
+                        format!(
+                            "field borrow requires a struct value, got `{}`",
+                            local.ty.source_name()
+                        ),
+                        arg.expr.span,
+                    ));
+                };
+                let struct_sig = self.struct_sig(type_name, arg.expr.span)?;
+                let Some(field_sig) = struct_sig
+                    .fields
+                    .iter()
+                    .find(|candidate| candidate.name == field)
+                else {
+                    return Err(SemanticError::new(
+                        format!("unknown field `{field}` on `{type_name}`"),
+                        arg.expr.span,
+                    ));
+                };
+
+                Ok(field_sig.ty.clone())
+            }
+        }
     }
 
     fn check_receiver_borrow(
@@ -1680,37 +1720,99 @@ enum BorrowKind {
     Exclusive,
 }
 
-fn borrow_arg_name(arg: &Arg) -> Result<&str, SemanticError> {
-    let ExprKind::Var(name) = &arg.expr.kind else {
-        return Err(SemanticError::new(
-            "borrow arguments must be direct local variables in v0",
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BorrowPlace {
+    root: String,
+    field: Option<String>,
+}
+
+impl BorrowPlace {
+    fn root(root: String) -> Self {
+        Self { root, field: None }
+    }
+
+    fn field(root: String, field: String) -> Self {
+        Self {
+            root,
+            field: Some(field),
+        }
+    }
+
+    fn display(&self) -> String {
+        match &self.field {
+            Some(field) => format!("{}.{}", self.root, field),
+            None => self.root.clone(),
+        }
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        self.root == other.root
+            && (self.field.is_none() || other.field.is_none() || self.field == other.field)
+    }
+}
+
+fn borrow_arg_place(arg: &Arg) -> Result<BorrowPlace, SemanticError> {
+    match &arg.expr.kind {
+        ExprKind::Var(name) => Ok(BorrowPlace::root(name.clone())),
+        ExprKind::FieldAccess { base, field } => {
+            let ExprKind::Var(root) = &base.kind else {
+                return Err(SemanticError::new(
+                    "borrow arguments must be direct local variables or direct local fields in v0",
+                    arg.span,
+                ));
+            };
+            Ok(BorrowPlace::field(root.clone(), field.clone()))
+        }
+        _ => Err(SemanticError::new(
+            "borrow arguments must be direct local variables or direct local fields in v0",
             arg.span,
+        )),
+    }
+}
+
+fn register_borrow_place(
+    place: BorrowPlace,
+    kind: BorrowKind,
+    span: Span,
+    call_borrows: &mut Vec<(BorrowPlace, BorrowKind)>,
+) -> Result<(), SemanticError> {
+    for (active_place, active_kind) in call_borrows.iter() {
+        if !place.overlaps(active_place) {
+            continue;
+        }
+        if matches!(
+            (*active_kind, kind),
+            (BorrowKind::Shared, BorrowKind::Shared)
+        ) {
+            continue;
+        }
+        return Err(SemanticError::new(
+            format!(
+                "borrow of `{}` overlaps with an active borrow in this call",
+                place.display()
+            ),
+            span,
         ));
-    };
-    Ok(name)
+    }
+
+    call_borrows.push((place, kind));
+    Ok(())
 }
 
 fn register_receiver_borrow(
     receiver: &Expr,
-    call_borrows: &mut HashMap<String, BorrowKind>,
+    call_borrows: &mut Vec<(BorrowPlace, BorrowKind)>,
     kind: BorrowKind,
 ) -> Result<(), SemanticError> {
     let ExprKind::Var(name) = &receiver.kind else {
         return Ok(());
     };
-    match (call_borrows.get(name).copied(), kind) {
-        (None, kind) => {
-            call_borrows.insert(name.clone(), kind);
-            Ok(())
-        }
-        (Some(BorrowKind::Shared), BorrowKind::Shared) => Ok(()),
-        (Some(BorrowKind::Shared), BorrowKind::Exclusive)
-        | (Some(BorrowKind::Exclusive), BorrowKind::Shared)
-        | (Some(BorrowKind::Exclusive), BorrowKind::Exclusive) => Err(SemanticError::new(
-            format!("borrow of `{name}` overlaps with an active borrow in this call"),
-            receiver.span,
-        )),
-    }
+    register_borrow_place(
+        BorrowPlace::root(name.clone()),
+        kind,
+        receiver.span,
+        call_borrows,
+    )
 }
 
 fn expect_constructor_arg<'a>(
@@ -2449,6 +2551,165 @@ func touch(s mut string) {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn ownership_allows_field_level_read_borrow_argument() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    user := User{name: "kim", age: 30}
+    showName(in user.name)
+    print(user.age)
+}
+
+func showName(name in string) {
+    print(name)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_allows_field_level_mut_borrow_argument_on_mutable_binding() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut user := User{name: "kim"}
+    touchName(mut user.name)
+}
+
+func touchName(name mut string) {
+    print(name)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_field_level_mut_borrow_of_immutable_binding() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    touchName(mut user.name)
+}
+
+func touchName(name mut string) {
+    print(name)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot mutably borrow field of immutable binding `user`"));
+    }
+
+    #[test]
+    fn borrow_conflict_rejects_same_field_shared_then_mut_borrow_in_one_call() {
+        let error = check_error(
+            r#"
+type User struct {
+    name string
+}
+
+func main() {
+    mut user := User{name: "kim"}
+    compare(in user.name, mut user.name)
+}
+
+func compare(left in string, right mut string) {
+    print(left)
+    print(right)
+}
+"#,
+        );
+        assert!(error.message.contains("overlaps with an active borrow"));
+    }
+
+    #[test]
+    fn borrow_conflict_allows_disjoint_field_mut_borrows_in_one_call() {
+        check_ok(
+            r#"
+type Pair struct {
+    left int
+    right int
+}
+
+func main() {
+    mut pair := Pair{left: 1, right: 2}
+    touchBoth(mut pair.left, mut pair.right)
+}
+
+func touchBoth(left mut int, right mut int) {
+    print(left)
+    print(right)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn borrow_conflict_rejects_field_mut_borrow_overlapping_whole_struct_borrow() {
+        let error = check_error(
+            r#"
+type Pair struct {
+    left int
+    right int
+}
+
+func main() {
+    mut pair := Pair{left: 1, right: 2}
+    touchBoth(mut pair.left, in pair)
+}
+
+func touchBoth(left mut int, whole in Pair) {
+    print(left)
+    print(whole.right)
+}
+"#,
+        );
+        assert!(error.message.contains("overlaps with an active borrow"));
+    }
+
+    #[test]
+    fn ownership_rejects_nested_field_borrow_argument_in_v0() {
+        let error = check_error(
+            r#"
+type Name struct {
+    value string
+}
+
+type User struct {
+    name Name
+}
+
+func main() {
+    user := User{name: Name{value: "kim"}}
+    show(in user.name.value)
+}
+
+func show(value in string) {
+    print(value)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("borrow arguments must be direct local variables or direct local fields"));
     }
 
     #[test]

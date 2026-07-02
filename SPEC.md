@@ -138,7 +138,14 @@ Rules:
 - Non-copy fields such as `string` can be borrowed for calls like `print`, but
   moving a non-copy field out of a named struct is rejected until destructuring
   or partial-move semantics is designed.
-- v0 does not include nested field assignment, field-level borrow arguments,
+- Direct local fields can be used as borrow arguments, such as
+  `show(in user.name)` or `rename(mut user.name)`.
+- Mutable field borrow arguments require the root struct binding to be `mut`.
+- Borrow conflict checks are field-aware within a single call: overlapping
+  whole-struct/field borrows and same-field exclusive borrows are rejected,
+  while disjoint mutable field borrows such as `mut pair.left` and
+  `mut pair.right` are allowed.
+- v0 does not include nested field assignment, nested field borrow arguments,
   recursive by-value structs, or struct pattern matching.
 
 Methods use Go-like receiver declarations with Mallang's existing parameter
@@ -186,6 +193,8 @@ Call sites must make borrow mode explicit.
 ```go
 readName(in user)
 rename(mut user, "lee")
+readField(in user.name)
+renameField(mut user.name)
 consume(user)
 ```
 
@@ -194,6 +203,7 @@ Rules:
 - Passing a non-copy value as `T` moves ownership into the callee.
 - Passing `in T` creates a read-only borrow for the duration of the call.
 - Passing `mut T` creates an exclusive mutable borrow for the duration of the call.
+- Borrow arguments may be direct local variables or direct local fields.
 - Borrowed values cannot be stored in variables in v0.
 - Borrowed values cannot be returned in v0.
 

@@ -60,6 +60,8 @@
 - [x] Struct declarations, named literals, and field access.
 - [x] Struct receiver methods.
 - [x] Direct mutable struct field assignment.
+- [x] Field-level borrow arguments for direct local fields.
+- Nested field assignment and nested field borrow arguments.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

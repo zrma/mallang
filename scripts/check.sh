@@ -78,3 +78,10 @@ if [[ "$field_assignment_output" != $'kim\n31' ]]; then
   echo "field assignment native build smoke failed: expected kim and 31, got '$field_assignment_output'" >&2
   exit 1
 fi
+"$CARGO" run --bin mlg -- check examples/field-borrow.mlg >/dev/null
+"$CARGO" run --bin mlg -- build examples/field-borrow.mlg -o target/mallang/field-borrow >/dev/null
+field_borrow_output="$(target/mallang/field-borrow)"
+if [[ "$field_borrow_output" != $'kim\n30' ]]; then
+  echo "field borrow native build smoke failed: expected kim and 30, got '$field_borrow_output'" >&2
+  exit 1
+fi
