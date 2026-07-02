@@ -165,6 +165,8 @@ Rules:
   whole-struct/field borrows and same-field exclusive borrows are rejected,
   while disjoint mutable field borrows such as `mut pair.left`,
   `mut pair.right`, `mut user.name.first`, and `mut user.name.last` are allowed.
+- `print` displays struct values as `Type{field: value, ...}` when every field
+  type is printable in the native backend.
 - v0 does not include recursive by-value structs or struct pattern matching.
 
 Methods use Go-like receiver declarations with Mallang's existing parameter

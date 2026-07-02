@@ -114,6 +114,13 @@ if [[ "$structs_output" != $'kim\n30' ]]; then
   echo "structs native build smoke failed: expected kim and 30, got '$structs_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/print-struct.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/print-struct.mlg -o target/mallang/print-struct >/dev/null
+print_struct_output="$(target/mallang/print-struct)"
+if [[ "$print_struct_output" != "User{name: kim, age: 30, active: true, profile: Profile{display: neo}, status: Some(7)}" ]]; then
+  echo "struct print native build smoke failed: expected User field display output, got '$print_struct_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/methods.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/methods.mlg -o target/mallang/methods >/dev/null
 methods_output="$(target/mallang/methods)"

@@ -30,6 +30,7 @@ This repository is the Mallang language PoC workspace.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
+- Struct values with printable fields can be printed natively.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
   `in user.name` and `mut user.profile.name`.
@@ -67,6 +68,8 @@ cargo run --bin mlg -- build examples/match-arm-prelude.mlg -o target/mallang/ma
 target/mallang/match-arm-prelude
 cargo run --bin mlg -- build examples/structs.mlg -o target/mallang/structs
 target/mallang/structs
+cargo run --bin mlg -- build examples/print-struct.mlg -o target/mallang/print-struct
+target/mallang/print-struct
 cargo run --bin mlg -- build examples/methods.mlg -o target/mallang/methods
 target/mallang/methods
 cargo run --bin mlg -- build examples/mut-receiver.mlg -o target/mallang/mut-receiver
@@ -109,6 +112,7 @@ scripts/check.sh
 - `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
 - `examples/match-arm-prelude.mlg`: native smoke for `match` expression arms that need C preludes.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
+- `examples/print-struct.mlg`: native smoke for printing struct values with nested fields.
 - `examples/methods.mlg`: native smoke for struct receiver methods.
 - `examples/mut-receiver.mlg`: native smoke for caller-visible `mut` receiver methods.
 - `examples/field-assignment.mlg`: native smoke for mutable struct field assignment.
@@ -143,6 +147,6 @@ func add(a int, b int) int {
 
 Current status: implemented for the first `int`, `bool`, `string`, string equality,
 `bool` logical operators, `|>` pipeline call sugar, statement/expression `if`,
-`else if` sugar, branch-aware returns, struct/method/nested-field, and built-in
-ADT expression/statement `match` plus ADT print output via C source generation
-and `clang`.
+`else if` sugar, branch-aware returns, struct/method/nested-field, struct print
+output, and built-in ADT expression/statement `match` plus ADT print output via
+C source generation and `clang`.

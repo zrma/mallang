@@ -75,3 +75,4 @@
 - [x] direct mutable field assignment 추가
 - [x] field-level borrow arguments 추가
 - [x] nested field assignment와 nested field borrow argument 추가
+- [x] printable field를 가진 struct native print 추가

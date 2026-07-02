@@ -1,0 +1,22 @@
+type Profile struct {
+    display string
+}
+
+type User struct {
+    name string
+    age int
+    active bool
+    profile Profile
+    status Option[int]
+}
+
+func main() {
+    user := User{
+        name: "kim",
+        age: 30,
+        active: true,
+        profile: Profile{display: "neo"},
+        status: Some(7),
+    }
+    print(user)
+}

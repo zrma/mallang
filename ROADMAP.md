@@ -76,6 +76,7 @@
 - [x] Direct mutable struct field assignment.
 - [x] Field-level borrow arguments for direct local fields.
 - [x] Nested field assignment and nested field borrow arguments.
+- [x] Print struct values with printable fields in the C backend.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.
