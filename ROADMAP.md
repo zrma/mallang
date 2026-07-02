@@ -23,7 +23,8 @@
 - [x] Parse Go-like `for init; condition; post` clause loops.
 - [x] Parse initless `for ; condition; post` clause loops.
 - [x] Parse conditionless `for` loops and empty-condition clause loops.
-- [ ] Parse fixed-size array types and literals.
+- [x] Parse fixed-size array type references.
+- [ ] Parse fixed-size array literals.
 - [ ] Parse array-only `range` loops.
 
 ## Milestone 2: Static Semantics

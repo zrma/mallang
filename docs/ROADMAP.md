@@ -95,7 +95,7 @@
 ## P7: Arrays And Range
 
 - [x] fixed-size array와 array-only `range`의 v0 surface 결정
-- [ ] `[N]T` type reference parser 추가
+- [x] `[N]T` type reference parser 추가
 - [ ] `[N]T{...}` fixed-size array literal parser 추가
 - [ ] fixed-size array semantic/type checking 추가
 - [ ] array-only `for i, value := range values { ... }` parser/semantic 추가

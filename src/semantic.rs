@@ -1960,6 +1960,13 @@ impl<'a> Checker<'a> {
     }
 
     fn type_from_ref(&self, ty: &TypeRef) -> Result<Type, SemanticError> {
+        if ty.array_len.is_some() {
+            return Err(SemanticError::new(
+                "fixed-size array types are parsed but not type-checked yet",
+                ty.span,
+            ));
+        }
+
         match ty.name.as_str() {
             "int" if ty.args.is_empty() => Ok(Type::Int),
             "bool" if ty.args.is_empty() => Ok(Type::Bool),
@@ -3269,6 +3276,21 @@ func main() {}
         assert!(error
             .message
             .contains("primitive type `int` does not take type arguments"));
+    }
+
+    #[test]
+    fn rejects_fixed_size_array_types_until_type_checking_slice() {
+        let error = check_error(
+            r#"
+func bad(values [3]int) {
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("fixed-size array types are parsed but not type-checked yet"));
     }
 
     #[test]

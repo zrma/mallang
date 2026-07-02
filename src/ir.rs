@@ -1388,6 +1388,13 @@ impl<'a> Lowerer<'a> {
     }
 
     fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
+        if ty.array_len.is_some() {
+            return Err(IrError::new(
+                "fixed-size array types are parsed but not lowered to IR yet",
+                ty.span,
+            ));
+        }
+
         match ty.name.as_str() {
             "int" if ty.args.is_empty() => Ok(Type::Int),
             "bool" if ty.args.is_empty() => Ok(Type::Bool),

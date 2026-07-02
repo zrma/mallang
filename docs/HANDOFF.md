@@ -5,8 +5,8 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
-- 아직 없음: fixed-size array implementation, array-only `range`, slice surface syntax, statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
+- 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, string equality without moves, `bool` logical operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, nested field access, nested mutable field assignment, nested field-level borrow arguments, read/mut struct receiver methods, generic type refs, fixed-size array type refs parsed but not type-checked, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, first native subset C backend, hidden-reference C ABI for `in`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `Option`/`Result` surface spec
+- 아직 없음: fixed-size array semantic/type checking, fixed-size array literal implementation, array-only `range`, slice surface syntax, statement-spanning borrow lifetimes, full C backend, method values/interfaces/dynamic dispatch
 
 ## 빠른 시작
 
@@ -78,7 +78,7 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. `[N]T` type reference와 `[N]T{...}` fixed-size array literal parser 추가
+1. `[N]T{...}` fixed-size array literal parser 추가
 2. fixed-size array semantic/type checking과 move-only ownership rule 추가
 3. fixed-size array typed IR/C struct-wrapper layout 추가
 4. array-only `for i, value := range values { ... }` parser/semantic/backend 추가

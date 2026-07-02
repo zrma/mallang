@@ -142,7 +142,7 @@ impl Parser {
             TokenTag::RightParen,
             "expected `)` after function parameters",
         )?;
-        let return_type = if self.at(TokenTag::Ident) {
+        let return_type = if self.starts_type_ref() {
             Some(self.parse_type_ref()?)
         } else {
             None
@@ -188,6 +188,10 @@ impl Parser {
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, ParseError> {
+        if self.at(TokenTag::LeftBracket) {
+            return self.parse_array_type_ref();
+        }
+
         let (name, start) = self.expect_ident("expected type name")?;
         let mut args = Vec::new();
         let mut span = start;
@@ -208,7 +212,37 @@ impl Parser {
             span = start.join(end);
         }
 
-        Ok(TypeRef { name, args, span })
+        Ok(TypeRef {
+            name,
+            args,
+            array_len: None,
+            span,
+        })
+    }
+
+    fn parse_array_type_ref(&mut self) -> Result<TypeRef, ParseError> {
+        let start = self.expect(TokenTag::LeftBracket, "expected `[` before array length")?;
+        let token = self.advance().clone();
+        let TokenKind::Int(length) = token.kind else {
+            return Err(ParseError::new("expected array length", token.span));
+        };
+        let length = length
+            .parse::<usize>()
+            .map_err(|_| ParseError::new("array length is out of range", token.span))?;
+        self.expect(TokenTag::RightBracket, "expected `]` after array length")?;
+        let element = self.parse_type_ref()?;
+        let span = start.join(element.span);
+
+        Ok(TypeRef {
+            name: "Array".to_string(),
+            args: vec![element],
+            array_len: Some(length),
+            span,
+        })
+    }
+
+    fn starts_type_ref(&self) -> bool {
+        self.at(TokenTag::Ident) || self.at(TokenTag::LeftBracket)
     }
 
     fn parse_block(&mut self) -> Result<Block, ParseError> {
@@ -1565,6 +1599,43 @@ func main() {}
         assert_eq!(result_ty.args.len(), 2);
         assert_eq!(result_ty.args[0].name, "string");
         assert_eq!(result_ty.args[1].name, "int");
+    }
+
+    #[test]
+    fn parses_fixed_size_array_type_refs() {
+        let program = parse(
+            r#"
+type Bag struct {
+    values [3]int
+}
+
+func make() [3]int {
+    return values
+}
+
+func wrap(values Option[[2]string]) {
+}
+"#,
+        )
+        .unwrap();
+
+        let field_ty = &program.structs[0].fields[0].ty;
+        assert_eq!(field_ty.name, "Array");
+        assert_eq!(field_ty.array_len, Some(3));
+        assert_eq!(field_ty.args.len(), 1);
+        assert_eq!(field_ty.args[0].name, "int");
+
+        let return_ty = program.functions[0].return_type.as_ref().unwrap();
+        assert_eq!(return_ty.name, "Array");
+        assert_eq!(return_ty.array_len, Some(3));
+        assert_eq!(return_ty.args[0].name, "int");
+
+        let option_ty = &program.functions[1].params[0].ty;
+        assert_eq!(option_ty.name, "Option");
+        let array_ty = &option_ty.args[0];
+        assert_eq!(array_ty.name, "Array");
+        assert_eq!(array_ty.array_len, Some(2));
+        assert_eq!(array_ty.args[0].name, "string");
     }
 
     #[test]

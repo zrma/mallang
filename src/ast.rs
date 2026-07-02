@@ -50,6 +50,7 @@ pub enum ParamMode {
 pub struct TypeRef {
     pub name: String,
     pub args: Vec<TypeRef>,
+    pub array_len: Option<usize>,
     pub span: Span,
 }
 
