@@ -153,6 +153,13 @@ pub enum IrExprKind {
         base: Box<IrExpr>,
         field: String,
     },
+    Index {
+        base: Box<IrExpr>,
+        index: Box<IrExpr>,
+    },
+    ArrayLen {
+        array: Box<IrExpr>,
+    },
     Call {
         callee: String,
         args: Vec<IrArg>,
@@ -618,6 +625,9 @@ impl<'a> Lowerer<'a> {
             ExprKind::FieldAccess { base, field } => {
                 self.lower_field_access(base, field, locals, expr.span)?
             }
+            ExprKind::Index { base, index } => {
+                self.lower_index_access(base, index, locals, expr.span)?
+            }
             ExprKind::Call { callee, args } => {
                 self.lower_call(callee, args, locals, expected, expr.span)?
             }
@@ -892,6 +902,44 @@ impl<'a> Lowerer<'a> {
             IrExprKind::FieldAccess {
                 base: Box::new(base),
                 field: field.to_string(),
+            },
+            ty,
+        ))
+    }
+
+    fn lower_index_access(
+        &self,
+        base: &Expr,
+        index: &Expr,
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let base = self.lower_expr(base, locals)?;
+        let index = self.lower_expr(index, locals)?;
+        if index.ty != Type::Int {
+            return Err(IrError::new(
+                "semantic analysis accepted array index with non-int type",
+                index.span,
+            ));
+        }
+        let Type::Array { element, .. } = &base.ty else {
+            return Err(IrError::new(
+                "semantic analysis accepted indexing on non-array value",
+                span,
+            ));
+        };
+        let ty = (**element).clone();
+        if !ty.is_copy() {
+            return Err(IrError::new(
+                "semantic analysis accepted indexing a non-copy array element",
+                span,
+            ));
+        }
+
+        Ok((
+            IrExprKind::Index {
+                base: Box::new(base),
+                index: Box::new(index),
             },
             ty,
         ))
@@ -1379,6 +1427,10 @@ impl<'a> Lowerer<'a> {
             _ => {}
         }
 
+        if name == "len" {
+            return self.lower_len_builtin(args, locals, span);
+        }
+
         if name == "print" {
             let mut lowered_args = Vec::new();
             for arg in args {
@@ -1412,6 +1464,34 @@ impl<'a> Lowerer<'a> {
                 args: lowered_args,
             },
             sig.return_type.clone(),
+        ))
+    }
+
+    fn lower_len_builtin(
+        &self,
+        args: &[Arg],
+        locals: &HashMap<String, Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        if args.len() != 1 || args[0].mode != ArgMode::Owned {
+            return Err(IrError::new(
+                "semantic analysis accepted invalid `len` arguments",
+                span,
+            ));
+        }
+        let array = self.lower_expr(&args[0].expr, locals)?;
+        if !matches!(array.ty, Type::Array { .. }) {
+            return Err(IrError::new(
+                "semantic analysis accepted `len` on non-array value",
+                span,
+            ));
+        }
+
+        Ok((
+            IrExprKind::ArrayLen {
+                array: Box::new(array),
+            },
+            Type::Int,
         ))
     }
 
@@ -2132,5 +2212,40 @@ func main() {
         assert!(matches!(source.ty, Type::Array { .. }));
         assert_eq!(*element_ty, Type::Int);
         assert_eq!(body.len(), 2);
+    }
+
+    #[test]
+    fn ir_lowers_fixed_size_array_indexing_and_len() {
+        let program = parse(
+            r#"
+func main() {
+    values := [2]int{1, 2}
+    first := values[1]
+    count := len(values)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { expr, ty, .. } = &ir.functions[0].body[1].kind else {
+            panic!("expected let statement");
+        };
+        assert_eq!(*ty, Type::Int);
+        let IrExprKind::Index { base, index } = &expr.kind else {
+            panic!("expected index expression");
+        };
+        assert!(matches!(base.ty, Type::Array { .. }));
+        assert_eq!(index.ty, Type::Int);
+
+        let IrStmtKind::Let { expr, ty, .. } = &ir.functions[0].body[2].kind else {
+            panic!("expected let statement");
+        };
+        assert_eq!(*ty, Type::Int);
+        let IrExprKind::ArrayLen { array } = &expr.kind else {
+            panic!("expected array len expression");
+        };
+        assert!(matches!(array.ty, Type::Array { .. }));
     }
 }

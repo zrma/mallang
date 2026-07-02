@@ -571,6 +571,11 @@ impl Parser {
                 continue;
             }
 
+            if self.at(TokenTag::LeftBracket) {
+                left = self.finish_index(left)?;
+                continue;
+            }
+
             if self.at(TokenTag::Dot) {
                 left = self.finish_field_access(left)?;
                 continue;
@@ -953,6 +958,24 @@ impl Parser {
             kind: ExprKind::FieldAccess {
                 base: Box::new(base),
                 field,
+            },
+            span,
+        })
+    }
+
+    fn finish_index(&mut self, base: Expr) -> Result<Expr, ParseError> {
+        self.expect(TokenTag::LeftBracket, "expected `[` in index expression")?;
+        let index = self.parse_expression()?;
+        let end = self.expect(
+            TokenTag::RightBracket,
+            "expected `]` after index expression",
+        )?;
+        let span = base.span.join(end);
+
+        Ok(Expr {
+            kind: ExprKind::Index {
+                base: Box::new(base),
+                index: Box::new(index),
             },
             span,
         })
@@ -1760,6 +1783,38 @@ func main() {
         assert_eq!(value_name, "value");
         assert!(matches!(source.kind, ExprKind::Var(_)));
         assert_eq!(body.statements.len(), 2);
+    }
+
+    #[test]
+    fn parses_array_index_and_len_call() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    first := values[0]
+    count := len(values)
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[1].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Index { base, index } = &expr.kind else {
+            panic!("expected index expression");
+        };
+        assert!(matches!(base.kind, ExprKind::Var(_)));
+        assert!(matches!(index.kind, ExprKind::Int(0)));
+
+        let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[2].kind else {
+            panic!("expected let statement");
+        };
+        let ExprKind::Call { callee, args } = &expr.kind else {
+            panic!("expected len call");
+        };
+        assert!(matches!(&callee.kind, ExprKind::Var(name) if name == "len"));
+        assert_eq!(args.len(), 1);
     }
 
     #[test]

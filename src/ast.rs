@@ -161,6 +161,10 @@ pub enum ExprKind {
         base: Box<Expr>,
         field: String,
     },
+    Index {
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Arg>,

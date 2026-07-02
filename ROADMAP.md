@@ -26,7 +26,7 @@
 - [x] Parse fixed-size array type references.
 - [x] Parse fixed-size array literals.
 - [x] Parse array-only `range` loops.
-- [ ] Parse fixed-size array indexing expressions.
+- [x] Parse fixed-size array indexing expressions.
 
 ## Milestone 2: Static Semantics
 
@@ -48,8 +48,8 @@
 - [x] Type-check fixed-size array literals.
 - [x] Type-check array-only `range` loops with immutable `int` index and copy
   element bindings.
-- [ ] Type-check fixed-size array indexing for copy elements.
-- [ ] Type-check `len([N]T)` as a read-only built-in returning `int`.
+- [x] Type-check fixed-size array indexing for copy elements.
+- [x] Type-check `len([N]T)` as a read-only built-in returning `int`.
 
 ## Milestone 3: Ownership and Borrowing
 
@@ -85,8 +85,8 @@
 - [x] Generate native C loops for conditionless `for` forms.
 - [x] Generate native C layout for fixed-size arrays.
 - [x] Generate native C loops for array-only `range`.
-- [ ] Generate native C for fixed-size array indexing.
-- [ ] Generate native C for fixed-size array `len`.
+- [x] Generate native C for fixed-size array indexing.
+- [x] Generate native C for fixed-size array `len`.
 
 ## Later
 
@@ -107,7 +107,6 @@
 - [x] Field-level borrow arguments for direct local fields.
 - [x] Nested field assignment and nested field borrow arguments.
 - [x] Print struct values with printable fields in the C backend.
-- Fixed-size array indexing and `len`.
 - Slice `[]T`, append/growth, mutable range values, and array mutation.
 - Modules/packages.
 - Closures and higher-order functions.

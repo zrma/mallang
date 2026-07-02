@@ -106,9 +106,9 @@
 
 ## P8: Fixed Array Indexing And Len
 
-- [ ] `values[i]` indexing expression parser 추가
-- [ ] fixed-size array indexing semantic/type checking 추가
-- [ ] `len(values)` fixed-size array built-in semantic 추가
-- [ ] fixed-size array indexing typed IR와 C backend 추가
-- [ ] fixed-size array `len` typed IR와 C backend 추가
-- [ ] native smoke에서 range 이후 source 재사용, indexing, `len` 검증
+- [x] `values[i]` indexing expression parser 추가
+- [x] fixed-size array indexing semantic/type checking 추가
+- [x] `len(values)` fixed-size array built-in semantic 추가
+- [x] fixed-size array indexing typed IR와 C backend 추가
+- [x] fixed-size array `len` typed IR와 C backend 추가
+- [x] native smoke에서 range 이후 source 재사용, indexing, `len` 검증

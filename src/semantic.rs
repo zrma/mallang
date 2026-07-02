@@ -685,6 +685,9 @@ impl<'a> Checker<'a> {
             ExprKind::FieldAccess { base, field } => {
                 self.check_field_access(base, field, locals, value_use, expr.span)
             }
+            ExprKind::Index { base, index } => {
+                self.check_index_access(base, index, locals, expr.span)
+            }
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
             }
@@ -1054,6 +1057,48 @@ impl<'a> Checker<'a> {
         }
 
         Ok(field_sig.ty.clone())
+    }
+
+    fn check_index_access(
+        &self,
+        base: &Expr,
+        index: &Expr,
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
+        let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+        if index_ty != Type::Int {
+            return Err(SemanticError::new(
+                format!(
+                    "array index must have type `int`, got `{}`",
+                    index_ty.source_name()
+                ),
+                index.span,
+            ));
+        }
+
+        let Type::Array { element, .. } = base_ty else {
+            return Err(SemanticError::new(
+                format!(
+                    "indexing requires a fixed-size array, got `{}`",
+                    base_ty.source_name()
+                ),
+                base.span,
+            ));
+        };
+
+        if !element.is_copy() {
+            return Err(SemanticError::new(
+                format!(
+                    "array indexing requires a Copy element type in v0, got `{}`",
+                    element.source_name()
+                ),
+                span,
+            ));
+        }
+
+        Ok(*element)
     }
 
     fn check_field_assign(
@@ -1608,6 +1653,10 @@ impl<'a> Checker<'a> {
             _ => {}
         }
 
+        if name == "len" {
+            return self.check_len_builtin(args, locals, span);
+        }
+
         if name == "print" {
             if args.len() != 1 {
                 return Err(SemanticError::new(
@@ -1625,6 +1674,39 @@ impl<'a> Checker<'a> {
         let sig = self.function_sig(name, callee.span)?;
         self.check_call_args(name, args, &sig.params, locals, Vec::new(), span)?;
         Ok(sig.return_type.clone())
+    }
+
+    fn check_len_builtin(
+        &self,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if args.len() != 1 {
+            return Err(SemanticError::new(
+                "`len` expects exactly one argument",
+                span,
+            ));
+        }
+        if args[0].mode != ArgMode::Owned {
+            return Err(SemanticError::new(
+                "`len` arguments do not take `in` or `mut` mode markers",
+                args[0].span,
+            ));
+        }
+
+        let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
+        if !matches!(arg_ty, Type::Array { .. }) {
+            return Err(SemanticError::new(
+                format!(
+                    "`len` expects a fixed-size array, got `{}`",
+                    arg_ty.source_name()
+                ),
+                args[0].span,
+            ));
+        }
+
+        Ok(Type::Int)
     }
 
     fn check_method_call(
@@ -3532,6 +3614,87 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_fixed_size_array_indexing_and_len_without_move() {
+        check_ok(
+            r#"
+func consume(values [3]int) {
+}
+
+func main() {
+    values := [3]int{1, 2, 3}
+    first := values[0]
+    count := len(values)
+    print(first + count)
+    consume(values)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_indexing_non_array_values() {
+        let error = check_error(
+            r#"
+func main() {
+    value := 1
+    first := value[0]
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("indexing requires a fixed-size array, got `int`"));
+    }
+
+    #[test]
+    fn rejects_non_int_array_index() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [1]int{1}
+    first := values["bad"]
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array index must have type `int`, got `string`"));
+    }
+
+    #[test]
+    fn rejects_indexing_non_copy_array_elements() {
+        let error = check_error(
+            r#"
+type User struct {
+    age int
+}
+
+func main() {
+    users := [1]User{User{age: 1}}
+    user := users[0]
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array indexing requires a Copy element type in v0, got `User`"));
+    }
+
+    #[test]
+    fn rejects_len_on_non_array_values() {
+        let error = check_error(
+            r#"
+func main() {
+    count := len(1)
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("`len` expects a fixed-size array, got `int`"));
     }
 
     #[test]

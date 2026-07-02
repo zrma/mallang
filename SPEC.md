@@ -127,7 +127,7 @@ Array rules:
 - The first native layout is a C struct wrapper with a fixed `data[N]` field,
   not a raw C array, so array values can be assigned, moved, and passed through
   the existing value pipeline.
-- Fixed-size array indexing and `len` are the next array follow-up.
+- Fixed-size array indexing and `len` are supported for `Copy` element access.
 - Slices `[]T`, append/growth, mutable range values, borrowed indexing,
   non-copy element indexing, and array mutation are reserved for later slices.
 
@@ -138,7 +138,7 @@ value := values[i]
 count := len(values)
 ```
 
-Initial indexing and length rules:
+Indexing and length rules:
 
 - `values[i]` is valid only when `values` has fixed-size array type `[N]T` and
   `i` has type `int`.

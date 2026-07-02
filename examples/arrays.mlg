@@ -7,6 +7,7 @@ func main() {
     for i, value := range values {
         total = total + i + value
     }
+    total = total + values[1] + len(values)
     print(total)
     consume(values)
 }

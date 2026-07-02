@@ -758,6 +758,17 @@ impl<'a> CGenerator<'a> {
                     code: format!("({}).{}", code, c_field(field)),
                 })
             }
+            IrExprKind::Index { base, index } => {
+                let base = self.emit_stmt_expr_with_env(base, env)?;
+                let index = self.emit_stmt_expr_with_env(index, env)?;
+                let mut prelude = base.prelude;
+                prelude.extend(index.prelude);
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}).mlg_data[{}]", base.code, index.code),
+                })
+            }
+            IrExprKind::ArrayLen { array } => self.emit_array_len_stmt_expr(array, env),
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
                     return Err(CompileError::new(
@@ -796,6 +807,25 @@ impl<'a> CGenerator<'a> {
                 })
             }
         }
+    }
+
+    fn emit_array_len_stmt_expr(
+        &self,
+        array: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Array { len, .. } = &array.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: len source must be an array",
+            ));
+        };
+        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
+        prelude.push(format!("(void)({code});"));
+
+        Ok(CExpr {
+            prelude,
+            code: len.to_string(),
+        })
     }
 
     fn emit_call_arg_stmt_expr(
@@ -1262,6 +1292,11 @@ impl<'a> CGenerator<'a> {
                 }
             }
             IrExprKind::FieldAccess { base, .. } => self.collect_expr_types(base, types),
+            IrExprKind::Index { base, index } => {
+                self.collect_expr_types(base, types);
+                self.collect_expr_types(index, types);
+            }
+            IrExprKind::ArrayLen { array } => self.collect_expr_types(array, types),
             IrExprKind::Call { args, .. } => {
                 for arg in args {
                     self.collect_expr_types(&arg.expr, types);
@@ -2160,6 +2195,27 @@ func main() {
         assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
         assert!(c.contains(".mlg_data[mlg_i];"));
         assert!(c.contains("mlg_total = ((mlg_total + mlg_i) + mlg_value);"));
+    }
+
+    #[test]
+    fn generates_c_for_fixed_size_array_indexing_and_len() {
+        let program = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    total := values[1] + len(values)
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("(mlg_values).mlg_data[1]"));
+        assert!(c.contains("(void)(mlg_values);"));
+        assert!(c.contains("int64_t mlg_total = ((mlg_values).mlg_data[1] + 3);"));
     }
 
     #[test]

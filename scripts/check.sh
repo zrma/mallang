@@ -103,8 +103,8 @@ fi
 "${CARGO[@]}" run --bin mlg -- ir examples/arrays.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/arrays.mlg -o target/mallang/arrays >/dev/null
 arrays_output="$(target/mallang/arrays)"
-if [[ "$arrays_output" != "9" ]]; then
-  echo "arrays native build smoke failed: expected 9, got '$arrays_output'" >&2
+if [[ "$arrays_output" != "14" ]]; then
+  echo "arrays native build smoke failed: expected 14, got '$arrays_output'" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
