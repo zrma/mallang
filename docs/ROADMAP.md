@@ -533,3 +533,10 @@
 - [x] C identifier/type-name/operator helper utilities를 `src/backend/c/names.rs`로 분리
 - [x] `Type` C name, parameter ABI type, ADT constructor name, operator spelling helper를 names module로 이동
 - [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
+
+## P63: C Backend Type Emitter Split
+
+- [x] type collection과 `typedef` emission을 `src/backend/c/types.rs`로 분리
+- [x] cleanup-capable type의 `mlg_drop_*` helper emission을 type emitter module로 이동
+- [x] `CGenerator`는 C output orchestration, function/statement/expression emission 책임 유지
+- [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지

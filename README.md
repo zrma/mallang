@@ -219,6 +219,7 @@ scripts/check.sh
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.
 - `src/backend/c/names.rs`: C backend identifier, type-name, and operator helpers.
+- `src/backend/c/types.rs`: C backend type layout and drop helper emission.
 - `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone
