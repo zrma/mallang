@@ -134,6 +134,7 @@
 - [x] Generate native C for direct slice field append reassignment.
 - [x] Generate native C for owned slice field take expressions.
 - [x] Split backend public API from C backend implementation module.
+- [x] Split C backend name/type helper utilities into a dedicated module.
 
 ## Later
 
@@ -176,6 +177,7 @@
 - [x] Struct cleanup for owned slice fields.
 - [x] Local-rooted slice field len/index/range/borrow reads.
 - [x] Local-rooted array/slice element assignment.
+- [x] C backend name/type helper module split.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Mutable range values.

@@ -218,6 +218,7 @@ scripts/check.sh
 - `src/ir.rs`: typed IR lowering after semantic analysis.
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.
+- `src/backend/c/names.rs`: C backend identifier, type-name, and operator helpers.
 - `src/token.rs`: token model shared by the frontend.
 
 ## First Milestone

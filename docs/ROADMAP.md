@@ -527,3 +527,9 @@
 - [x] C backend implementation을 `src/backend/c.rs`로 분리
 - [x] existing `generate_c` / `generate_c_from_ir` public re-export 유지
 - [x] CLI와 tests가 backend module split 뒤에도 같은 API를 사용하게 유지
+
+## P62: C Backend Name Helpers Split
+
+- [x] C identifier/type-name/operator helper utilities를 `src/backend/c/names.rs`로 분리
+- [x] `Type` C name, parameter ABI type, ADT constructor name, operator spelling helper를 names module로 이동
+- [x] 기존 `generate_c` / `generate_c_from_ir` API와 C output behavior 유지
