@@ -101,10 +101,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. cleanup drop insertion을 outer-root loop moves와 for-init runtime state tracking으로 확장
-2. `[]T{...}`, `len(slice)`, Copy-only `slice[i]` value access 구현
-3. consuming built-in `append(values, item) -> []T` 구현
-4. borrowed indexing expression의 ownership boundary 결정
-5. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
-6. full C backend 범위를 native subset별로 쪼개기
-7. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정
+1. RHS-before-drop evaluation order를 보장하는 assignment statement redesign 검토
+2. expression-form `if`/`match` branch cleanup normalization
+3. `[]T{...}`, `len(slice)`, Copy-only `slice[i]` value access 구현
+4. consuming built-in `append(values, item) -> []T` 구현
+5. borrowed indexing expression의 ownership boundary 결정
+6. statement-spanning borrow lifetimes가 필요한 syntax가 생기는지 점검
+7. full C backend 범위를 native subset별로 쪼개기
+8. method values/interfaces/dynamic dispatch를 v0 이후로 미루는 결정 확정

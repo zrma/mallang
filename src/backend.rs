@@ -2214,7 +2214,11 @@ fn c_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{check, ir::lower, parse};
+    use crate::{
+        check,
+        ir::{lower, IrStruct, IrStructField},
+        parse,
+    };
 
     #[test]
     fn generates_c_for_first_target_program_from_ir() {
@@ -2345,6 +2349,100 @@ func add(a int, b int) int {
         let c = generate_c_from_ir(&program).unwrap();
 
         assert!(c.contains("void mlg_consume(mlg_Slice_int mlg_values) {\n    mlg_drop_Slice_int(&(mlg_values));\n}"));
+    }
+
+    #[test]
+    fn generates_c_for_explicit_internal_cleanup_field_drop_statement() {
+        let slice_ty = Type::Slice(Box::new(Type::Int));
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: vec![IrStruct {
+                name: "Holder".to_string(),
+                fields: vec![IrStructField {
+                    name: "values".to_string(),
+                    ty: slice_ty.clone(),
+                }],
+            }],
+            functions: vec![IrFunction {
+                name: "consume".to_string(),
+                params: vec![crate::ir::IrParam {
+                    name: "holder".to_string(),
+                    mode: ParamMode::Owned,
+                    ty: Type::Struct("Holder".to_string()),
+                }],
+                return_type: Type::Unit,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Drop {
+                        expr: IrExpr {
+                            kind: IrExprKind::FieldAccess {
+                                base: Box::new(IrExpr {
+                                    kind: IrExprKind::Var("holder".to_string()),
+                                    ty: Type::Struct("Holder".to_string()),
+                                    span,
+                                }),
+                                field: "values".to_string(),
+                            },
+                            ty: slice_ty,
+                            span,
+                        },
+                    },
+                    span,
+                }],
+            }],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains("mlg_drop_Slice_int(&((mlg_holder).mlg_values));"));
+    }
+
+    #[test]
+    fn generates_c_for_explicit_internal_cleanup_array_element_drop_statement() {
+        let slice_ty = Type::Slice(Box::new(Type::Int));
+        let array_ty = Type::Array {
+            len: 2,
+            element: Box::new(slice_ty.clone()),
+        };
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![IrFunction {
+                name: "consume".to_string(),
+                params: vec![crate::ir::IrParam {
+                    name: "values".to_string(),
+                    mode: ParamMode::Owned,
+                    ty: array_ty.clone(),
+                }],
+                return_type: Type::Unit,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Drop {
+                        expr: IrExpr {
+                            kind: IrExprKind::Index {
+                                base: Box::new(IrExpr {
+                                    kind: IrExprKind::Var("values".to_string()),
+                                    ty: array_ty,
+                                    span,
+                                }),
+                                index: Box::new(IrExpr {
+                                    kind: IrExprKind::Int(0),
+                                    ty: Type::Int,
+                                    span,
+                                }),
+                            },
+                            ty: slice_ty,
+                            span,
+                        },
+                    },
+                    span,
+                }],
+            }],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(
+            c.contains("mlg_drop_Slice_int(&((mlg_values).mlg_data[mallang_check_index(0, 2)]));")
+        );
     }
 
     #[test]

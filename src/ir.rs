@@ -1983,6 +1983,9 @@ fn insert_cleanup_drops(
         if let Some(binding) = cleanup_reassigned_active_binding(&stmt, &active, &moved_roots) {
             push_cleanup_drop(&mut output, binding, stmt.span);
         }
+        if let Some(overwritten_place) = cleanup_overwritten_place_from_stmt(&stmt) {
+            push_cleanup_drop_expr(&mut output, overwritten_place, stmt.span);
+        }
         output.push(stmt);
         moved_in_body.extend(moved_roots.iter().cloned());
         active.retain(|binding| !moved_roots.contains(&binding.name));
@@ -2293,6 +2296,28 @@ fn cleanup_reassigned_active_binding<'a>(
     active.iter().find(|binding| binding.name == *name)
 }
 
+fn cleanup_overwritten_place_from_stmt(stmt: &IrStmt) -> Option<IrExpr> {
+    match &stmt.kind {
+        IrStmtKind::FieldAssign { base, field, expr } if expr.ty.needs_cleanup() => Some(IrExpr {
+            kind: IrExprKind::FieldAccess {
+                base: Box::new(base.clone()),
+                field: field.clone(),
+            },
+            ty: expr.ty.clone(),
+            span: stmt.span,
+        }),
+        IrStmtKind::IndexAssign { base, index, expr } if expr.ty.needs_cleanup() => Some(IrExpr {
+            kind: IrExprKind::Index {
+                base: Box::new(base.clone()),
+                index: Box::new(index.clone()),
+            },
+            ty: expr.ty.clone(),
+            span: stmt.span,
+        }),
+        _ => None,
+    }
+}
+
 fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
     match &stmt.kind {
         IrStmtKind::Let { expr, .. }
@@ -2377,14 +2402,20 @@ fn push_cleanup_drops(
 }
 
 fn push_cleanup_drop(output: &mut Vec<IrStmt>, binding: &CleanupBinding, span: Span) {
-    output.push(IrStmt {
-        kind: IrStmtKind::Drop {
-            expr: IrExpr {
-                kind: IrExprKind::Var(binding.name.clone()),
-                ty: binding.ty.clone(),
-                span: binding.span,
-            },
+    push_cleanup_drop_expr(
+        output,
+        IrExpr {
+            kind: IrExprKind::Var(binding.name.clone()),
+            ty: binding.ty.clone(),
+            span: binding.span,
         },
+        span,
+    );
+}
+
+fn push_cleanup_drop_expr(output: &mut Vec<IrStmt>, expr: IrExpr, span: Span) {
+    output.push(IrStmt {
+        kind: IrStmtKind::Drop { expr },
         span,
     });
 }
@@ -2511,6 +2542,33 @@ mod tests {
             panic!("expected drop target variable");
         };
         assert_eq!(name, expected_name);
+    }
+
+    fn assert_drop_field(stmt: &IrStmt, expected_base: &str, expected_field: &str) {
+        let IrStmtKind::Drop { expr } = &stmt.kind else {
+            panic!("expected drop statement");
+        };
+        let IrExprKind::FieldAccess { base, field } = &expr.kind else {
+            panic!("expected drop target field");
+        };
+        let IrExprKind::Var(name) = &base.kind else {
+            panic!("expected field base variable");
+        };
+        assert_eq!(name, expected_base);
+        assert_eq!(field, expected_field);
+    }
+
+    fn assert_drop_index(stmt: &IrStmt, expected_base: &str) {
+        let IrStmtKind::Drop { expr } = &stmt.kind else {
+            panic!("expected drop statement");
+        };
+        let IrExprKind::Index { base, .. } = &expr.kind else {
+            panic!("expected drop target index");
+        };
+        let IrExprKind::Var(name) = &base.kind else {
+            panic!("expected index base variable");
+        };
+        assert_eq!(name, expected_base);
     }
 
     #[test]
@@ -2659,6 +2717,52 @@ func add(a int, b int) int {
         assert_drop_of(&body[0], "values");
         assert!(matches!(body[1].kind, IrStmtKind::Assign { .. }));
         assert_drop_of(&body[2], "values");
+    }
+
+    #[test]
+    fn drops_old_cleanup_field_before_assignment() {
+        let slice_ty = test_slice_ty();
+        let body = vec![IrStmt {
+            kind: IrStmtKind::FieldAssign {
+                base: test_var("holder", Type::Struct("Holder".to_string())),
+                field: "values".to_string(),
+                expr: test_var("replacement", slice_ty.clone()),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        assert_eq!(body.len(), 2);
+        assert_drop_field(&body[0], "holder", "values");
+        assert!(matches!(body[1].kind, IrStmtKind::FieldAssign { .. }));
+    }
+
+    #[test]
+    fn drops_old_cleanup_array_element_before_assignment() {
+        let slice_ty = test_slice_ty();
+        let array_ty = Type::Array {
+            len: 2,
+            element: Box::new(slice_ty.clone()),
+        };
+        let body = vec![IrStmt {
+            kind: IrStmtKind::IndexAssign {
+                base: test_var("values", array_ty),
+                index: IrExpr {
+                    kind: IrExprKind::Int(0),
+                    ty: Type::Int,
+                    span: test_span(),
+                },
+                expr: test_var("replacement", slice_ty),
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &[], test_span());
+
+        assert_eq!(body.len(), 2);
+        assert_drop_index(&body[0], "values");
+        assert!(matches!(body[1].kind, IrStmtKind::IndexAssign { .. }));
     }
 
     #[test]

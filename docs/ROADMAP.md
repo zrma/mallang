@@ -368,3 +368,10 @@
 - [x] `range` body에서 outer move-only binding move reject
 - [x] loop body-local move-only binding move는 허용 유지
 - [x] runtime moved-state tracking 대신 v0 정적 제한으로 cleanup safety 유지
+
+## P44: Field/Index Cleanup Overwrite Drop
+
+- [x] cleanup type field assignment 앞에 old field drop 삽입
+- [x] cleanup type fixed-array element assignment 앞에 old element drop 삽입
+- [x] backend explicit field/index drop lvalue lowering regression 추가
+- [x] source-level slice surface는 reserved 상태 유지
