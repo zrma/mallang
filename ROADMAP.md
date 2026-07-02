@@ -141,6 +141,7 @@
 - [x] Split C backend shared utility and temp-name helpers into a dedicated module.
 - [x] Split C backend unit tests into a dedicated test module.
 - [x] Keep mutable range value syntax deferred with parser/semantic regressions.
+- [x] Keep by-reference range iteration syntax deferred with parser regression coverage.
 
 ## Later
 
@@ -190,9 +191,10 @@
 - [x] C backend utility/temp-name helper module split.
 - [x] C backend unit test module split.
 - [x] Mutable range values deferred with explicit regression coverage.
+- [x] By-reference range iteration deferred with explicit regression coverage.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- By-reference range iteration and explicit mutable range design.
+- Statement-spanning borrow lifetimes for future borrowed iteration.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

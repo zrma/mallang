@@ -574,3 +574,9 @@
 - [x] 기존 range value binding이 immutable local임을 semantic regression으로 고정
 - [x] SPEC에 mutable range design이 copied local mutation, element borrow, indexed assignment 중 하나를 나중에 결정해야 한다고 명시
 - [x] by-reference range iteration은 별도 future design 후보로 유지
+
+## P69: By-Reference Range Iteration Deferred
+
+- [x] `for i, con value := range values` syntax를 v0에서 계속 reject하도록 parser regression 추가
+- [x] range binding syntax가 `con`/`mut` marker를 모두 받지 않는다고 SPEC에 명시
+- [x] future borrowed range iteration은 statement-spanning borrow lifetime 설계 뒤에 열도록 고정

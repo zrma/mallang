@@ -2052,6 +2052,23 @@ func main() {
     }
 
     #[test]
+    fn rejects_by_reference_range_value_binding_syntax() {
+        let error = parse(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    for i, con value := range values {
+        print(value)
+    }
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("expected range value binding name"));
+    }
+
+    #[test]
     fn parses_array_index_and_len_call() {
         let program = parse(
             r#"
