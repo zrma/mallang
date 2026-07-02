@@ -519,11 +519,14 @@ impl<'a> Lowerer<'a> {
         return_type: &Type,
     ) -> Result<IrStmtKind, IrError> {
         let source = self.lower_expr(parts.source, locals)?;
-        let Type::Array { element, .. } = &source.ty else {
-            return Err(IrError::new(
-                "semantic analysis accepted range over non-array source",
-                parts.span,
-            ));
+        let element = match &source.ty {
+            Type::Array { element, .. } | Type::Slice(element) => element,
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted range over non-array non-slice source",
+                    parts.span,
+                ));
+            }
         };
         if !is_blank_identifier(parts.value_name) && !element.is_copy() {
             return Err(IrError::new(
@@ -4669,6 +4672,42 @@ func main() {
         assert!(matches!(source.ty, Type::Array { .. }));
         assert_eq!(*element_ty, Type::Int);
         assert_eq!(body.len(), 2);
+    }
+
+    #[test]
+    fn ir_lowers_slice_range_loops() {
+        let program = parse(
+            r#"
+func main() {
+    values := []int{1, 2}
+    for i, value := range values {
+        print(i)
+        print(value)
+    }
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            element_ty,
+            body,
+        } = &ir.functions[0].body[1].kind
+        else {
+            panic!("expected range loop");
+        };
+        assert_eq!(index_name, "i");
+        assert_eq!(value_name, "value");
+        assert!(matches!(source.ty, Type::Slice(_)));
+        assert_eq!(*element_ty, Type::Int);
+        assert_eq!(body.len(), 2);
+
+        assert_drop_of(&ir.functions[0].body[2], "values");
     }
 
     #[test]

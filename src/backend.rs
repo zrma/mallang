@@ -337,10 +337,17 @@ impl<'a> CGenerator<'a> {
         body: &[IrStmt],
         env: &HashMap<String, String>,
     ) -> Result<String, CompileError> {
-        let Type::Array { len, .. } = &source.ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: range source must be an array",
-            ));
+        let (range_len, array_len) = match &source.ty {
+            Type::Array { len, .. } => (len.to_string(), Some(*len)),
+            Type::Slice(_) => (
+                format!("({}).{}", range_source_temp_name(source), c_field("len")),
+                None,
+            ),
+            _ => {
+                return Err(CompileError::new(
+                    "IR invariant violation: range source must be an array or slice",
+                ));
+            }
         };
 
         let CExpr { prelude, code } = self.emit_stmt_expr_with_env(source, env)?;
@@ -362,10 +369,10 @@ impl<'a> CGenerator<'a> {
         }
         output.push_str(&format!("{} {source_temp} = {code};\n", source.ty.c_name()));
         output.push_str(&format!(
-            "for (int64_t {index_ident} = 0; {index_ident} < {len}; {index_ident} = ({index_ident} + 1)) {{\n"
+            "for (int64_t {index_ident} = 0; {index_ident} < {range_len}; {index_ident} = ({index_ident} + 1)) {{\n"
         ));
         if let Some(value_ident) = &value_ident {
-            if *len != 0 {
+            if array_len != Some(0) {
                 push_indented_lines(
                     &mut output,
                     &format!(
@@ -3384,6 +3391,35 @@ func main() {
         assert!(c.contains(".mlg_data[mlg_i];"));
         assert!(c.contains("__builtin_add_overflow"));
         assert!(c.contains("mlg_total = mallang_checked_result_"));
+    }
+
+    #[test]
+    fn generates_c_for_slice_range_loops() {
+        let program = parse(
+            r#"
+func main() {
+    values := []int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    print(total)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_range_src_"));
+        assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < (mallang_range_src_"));
+        assert!(c.contains(".mlg_len; mlg_i = (mlg_i + 1)) {"));
+        assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
+        assert!(c.contains(".mlg_data[mlg_i];"));
+        assert!(c.contains("__builtin_add_overflow"));
+        assert!(c.contains("mlg_total = mallang_checked_result_"));
+        assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
     }
 
     #[test]

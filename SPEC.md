@@ -165,9 +165,9 @@ Array rules:
 - Slice type syntax `[]T` denotes an owned, move-only growable buffer. It is not
   a Go-style aliasing slice header. The first source-level slice surface supports
   slice literals, `len(slice)`, Copy-only `slice[i]` value access, and consuming
-  `append(slice, item)` growth. Slice range, mutable range values, slice element
-  borrow arguments, and non-copy element extraction remain reserved for later
-  slices.
+  `append(slice, item)` growth. Slice range supports the same Copy value
+  iteration surface as arrays. Mutable range values, slice element borrow
+  arguments, and non-copy element extraction remain reserved for later slices.
 
 Fixed-size array indexing and length share the value-read surface with the first
 owned slice implementation.
@@ -484,8 +484,8 @@ Rules:
   condition is statically `true`.
 - v0 does not yet include post declarations.
 
-Range loops are a Go-like iteration form. The first v0 implementation slice is
-array-only.
+Range loops are a Go-like iteration form over fixed-size arrays and owned
+slices.
 
 ```go
 for i, value := range values {
@@ -504,7 +504,10 @@ for i := range values {
 
 Range rules:
 
-- The range source must be a fixed-size array.
+- The range source must be a fixed-size array or owned slice.
+- Range over slices requires a direct local slice source in this slice.
+  Inline cleanup temporaries such as `range []int{1, 2}` are deferred until
+  borrowed temporary cleanup is implemented.
 - The two-variable range form introduces immutable `int` index and immutable
   element value bindings scoped to the loop body.
 - The one-variable range form introduces only the immutable `int` index binding.
@@ -512,12 +515,14 @@ Range rules:
   scope.
 - The element binding is allowed only when the element type is `Copy`; if the
   value binding is `_`, or the one-variable range form is used, no element copy
-  is created and non-copy element arrays may be ranged by index.
+  is created and non-copy element arrays or slices may be ranged by index.
 - The range source is read for iteration and is still usable after the loop.
+- Assigning to the active range source binding inside the loop is rejected in
+  v0.
 - `break` and `continue` follow the same nearest-loop rules as other `for`
   forms.
-- Mutable range variables, range over slices/maps/strings, and by-reference
-  element iteration are reserved for later slices.
+- Mutable range variables, range over maps/strings, and by-reference element
+  iteration are reserved for later slices.
 
 Expression form:
 

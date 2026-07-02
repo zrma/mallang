@@ -405,4 +405,14 @@
 - [x] `values = append(values, item)` 재할당 후 cleanup root 재활성화
 - [x] typed IR `SliceAppend`와 native C realloc growth lowering 추가
 - [x] `examples/slice-append.mlg` native smoke 추가
-- [x] slice range와 slice element borrow는 후속 work로 유지
+- [x] slice element borrow는 후속 work로 유지
+
+## P49: Slice Range
+
+- [x] owned slice를 `range` source로 허용
+- [x] Copy value binding과 index-only non-Copy iteration 지원
+- [x] inline slice range source는 temporary cleanup 전까지 reject
+- [x] range body에서 active range source reassignment reject
+- [x] native C backend에서 slice header `mlg_len` 기반 loop lowering 추가
+- [x] `examples/slice-range.mlg` native smoke 추가
+- [x] slice element borrow는 후속 work로 유지

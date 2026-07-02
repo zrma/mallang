@@ -60,6 +60,8 @@
 - [x] Type-check blank identifiers in array-only `range` loops, including
   index-only range over non-copy element arrays.
 - [x] Type-check one-variable array-only `range` loops as index-only iteration.
+- [x] Type-check slice `range` loops with Copy value iteration and index-only
+  non-Copy iteration.
 - [x] Type-check fixed-size array indexing for copy elements.
 - [x] Type-check `len([N]T)` as a read-only built-in returning `int`.
 - [x] Type-check fixed-size array element assignment for mutable copy and
@@ -117,6 +119,7 @@
 - [x] Generate native C layout for fixed-size arrays.
 - [x] Generate native C loops for array-only `range`.
 - [x] Generate native C loops for one-variable array-only `range`.
+- [x] Generate native C loops for slice `range`.
 - [x] Preserve nested block shadowing in generated C `for` and `range` bodies.
 - [x] Generate native C for fixed-size array indexing.
 - [x] Generate native C for fixed-size array `len`.
@@ -157,9 +160,10 @@
 - [x] Open source-level owned slice literals, `len(slice)`, and Copy-only
   `slice[i]` value access.
 - [x] Slice append/growth.
+- [x] Slice range with Copy value iteration.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Slice range and mutable range values.
+- Mutable range values.
 - Modules/packages.
 - Closures and higher-order functions.
 - C interop boundary.

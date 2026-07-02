@@ -383,6 +383,7 @@ impl<'a> Checker<'a> {
                     mutable: matches!(receiver.mode, ParamMode::Mut),
                     borrowed: !matches!(receiver.mode, ParamMode::Owned),
                     moved: false,
+                    range_source: false,
                     scope_depth: 0,
                 },
             );
@@ -396,6 +397,7 @@ impl<'a> Checker<'a> {
                         mutable: matches!(param.mode, ParamMode::Mut),
                         borrowed: !matches!(param.mode, ParamMode::Owned),
                         moved: false,
+                        range_source: false,
                         scope_depth: 0,
                     },
                 )
@@ -708,6 +710,7 @@ impl<'a> Checker<'a> {
                 mutable,
                 borrowed: false,
                 moved: false,
+                range_source: false,
                 scope_depth,
             },
         );
@@ -733,6 +736,12 @@ impl<'a> Checker<'a> {
         if !local_mutable {
             return Err(SemanticError::new(
                 format!("cannot assign to immutable binding `{name}`"),
+                span,
+            ));
+        }
+        if locals.get(name).is_some_and(|local| local.range_source) {
+            return Err(SemanticError::new(
+                format!("cannot assign to active range source `{name}` in v0"),
                 span,
             ));
         }
@@ -1179,14 +1188,26 @@ impl<'a> Checker<'a> {
         }
 
         let source_ty = self.check_expr(parts.source, locals, ValueUse::Borrow)?;
-        let Type::Array { element, .. } = source_ty else {
-            return Err(SemanticError::new(
-                format!(
-                    "range source must be a fixed-size array, got `{}`",
-                    source_ty.source_name()
-                ),
-                parts.source.span,
-            ));
+        let element = match &source_ty {
+            Type::Array { element, .. } => element,
+            Type::Slice(element) => {
+                if !matches!(parts.source.kind, ExprKind::Var(_)) {
+                    return Err(SemanticError::new(
+                        "range over slices requires a direct local slice in v0",
+                        parts.source.span,
+                    ));
+                }
+                element
+            }
+            _ => {
+                return Err(SemanticError::new(
+                    format!(
+                        "range source must be a fixed-size array or slice, got `{}`",
+                        source_ty.source_name()
+                    ),
+                    parts.source.span,
+                ));
+            }
         };
         if !is_blank_identifier(parts.value_name) && !element.is_copy() {
             return Err(SemanticError::new(
@@ -1209,6 +1230,7 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    range_source: false,
                     scope_depth: range_scope_depth,
                 },
             );
@@ -1221,9 +1243,15 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    range_source: false,
                     scope_depth: range_scope_depth,
                 },
             );
+        }
+        if let ExprKind::Var(name) = &parts.source.kind {
+            if let Some(local) = body_locals.get_mut(name) {
+                local.range_source = true;
+            }
         }
 
         self.check_block_statements(
@@ -1837,6 +1865,7 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    range_source: false,
                     scope_depth: arm_scope_depth,
                 },
             );
@@ -1865,6 +1894,7 @@ impl<'a> Checker<'a> {
                     mutable: false,
                     borrowed: false,
                     moved: false,
+                    range_source: false,
                     scope_depth,
                 },
             );
@@ -2775,6 +2805,7 @@ struct Local {
     mutable: bool,
     borrowed: bool,
     moved: bool,
+    range_source: bool,
     scope_depth: usize,
 }
 
@@ -5557,6 +5588,91 @@ func main() {
     }
 
     #[test]
+    fn allows_slice_range_loop_and_source_reuse() {
+        check_ok(
+            r#"
+func consume(values []int) {
+}
+
+func main() {
+    values := []int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    print(total)
+    consume(values)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn allows_index_only_slice_range_for_non_copy_elements() {
+        check_ok(
+            r#"
+func main() {
+    values := []string{"kim", "lee"}
+    for i := range values {
+        print(i)
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_inline_slice_range_until_temporary_cleanup_exists() {
+        let error = check_error(
+            r#"
+func main() {
+    for i, value := range []int{1, 2} {
+        print(i + value)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("range over slices requires a direct local slice"));
+    }
+
+    #[test]
+    fn rejects_assigning_active_range_source() {
+        let error = check_error(
+            r#"
+func main() {
+    mut values := []int{1, 2}
+    for i := range values {
+        values = append(values, i)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("cannot assign to active range source `values`"));
+    }
+
+    #[test]
+    fn rejects_slice_range_value_binding_for_non_copy_elements() {
+        let error = check_error(
+            r#"
+func main() {
+    values := []string{"kim"}
+    for i, value := range values {
+        print(i)
+        print(value)
+    }
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("range value binding requires a Copy element type in v0, got `string`"));
+    }
+
+    #[test]
     fn rejects_range_over_non_array_source() {
         let error = check_error(
             r#"
@@ -5569,7 +5685,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("range source must be a fixed-size array, got `int`"));
+            .contains("range source must be a fixed-size array or slice, got `int`"));
     }
 
     #[test]

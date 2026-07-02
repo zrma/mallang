@@ -35,7 +35,8 @@
    구현한다. 이 단계는 P47에서 완료됐다.
 4. consuming `append(values, item)` built-in을 구현한다. 이 단계는 P48에서
    완료됐다.
-5. slice range와 element borrow를 별도 slice로 확장한다.
+5. slice range를 별도 slice로 확장한다. 이 단계는 P49에서 완료됐다.
+6. slice element borrow를 별도 slice로 확장한다.
 
 ## 제외
 

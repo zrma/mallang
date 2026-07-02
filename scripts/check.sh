@@ -348,6 +348,13 @@ if [[ "$slice_append_output" != "9" ]]; then
   echo "slice append native build smoke failed: expected 9, got '$slice_append_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/slice-range.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/slice-range.mlg -o target/mallang/slice-range >/dev/null
+slice_range_output="$(target/mallang/slice-range)"
+if [[ "$slice_range_output" != "9" ]]; then
+  echo "slice range native build smoke failed: expected 9, got '$slice_range_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/range-blank.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/range-blank.mlg -o target/mallang/range-blank >/dev/null
 range_blank_output="$(target/mallang/range-blank)"

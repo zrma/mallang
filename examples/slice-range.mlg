@@ -1,0 +1,8 @@
+func main() {
+    values := []int{1, 2, 3}
+    mut total := 0
+    for i, value := range values {
+        total = total + i + value
+    }
+    print(total)
+}

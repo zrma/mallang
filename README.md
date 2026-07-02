@@ -45,12 +45,11 @@ This repository is the Mallang language PoC workspace.
 - Go-like receiver methods with Mallang parameter modes.
 - Field-level borrow arguments for local-rooted field paths such as
   `con user.name` and `mut user.profile.name`.
-- Fixed-size arrays with array-only range loops, element borrow arguments, and
-  `con`/`mut` method receivers.
-- Slice type syntax `[]T` is parsed but reserved by `mlg check` until slice
-  ownership and native ABI are implemented. The accepted direction is owned,
-  move-only growable slices with compiler-managed cleanup rather than Go-style
-  aliasing slice headers.
+- Fixed-size arrays with range loops, element borrow arguments, and `con`/`mut`
+  method receivers.
+- Owned move-only slices with `[]T` literals, `len(slice)`, Copy-only
+  `slice[i]`, consuming `append(slice, item)`, and range loops with Copy value
+  iteration.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
