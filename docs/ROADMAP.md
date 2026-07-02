@@ -112,3 +112,10 @@
 - [x] fixed-size array indexing typed IR와 C backend 추가
 - [x] fixed-size array `len` typed IR와 C backend 추가
 - [x] native smoke에서 range 이후 source 재사용, indexing, `len` 검증
+
+## P9: Fixed Array Bounds Safety
+
+- [x] literal out-of-bounds fixed array indexes를 `mlg check`에서 reject
+- [x] non-literal fixed array indexes에 native runtime bounds guard 추가
+- [x] runtime guard codegen에서 base/index expression 중복 평가 방지
+- [x] native smoke에서 dynamic in-bounds index 경로 검증

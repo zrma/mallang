@@ -145,9 +145,10 @@ Indexing and length rules:
 - `values[i]` yields a value only when `T` is `Copy`.
 - Non-copy element access waits for borrowed indexing or destructuring semantics.
 - `len(values)` returns `int` for fixed-size arrays and does not move `values`.
-- Compile-time bounds checking is allowed when the index is an integer literal,
-  but general runtime bounds behavior is a backend decision for the
-  implementation slice.
+- Integer literal indexes outside `0 <= i < N` are rejected by `mlg check`.
+- Non-literal indexes are checked by generated native code before element
+  access. An out-of-bounds runtime index terminates the program with a Mallang
+  runtime error instead of performing unchecked C memory access.
 - Slice type syntax `[]T` is still deferred because owned slices, borrowed
   views, append/growth, and mutation require a larger ownership decision.
 

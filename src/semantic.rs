@@ -1078,7 +1078,7 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let Type::Array { element, .. } = base_ty else {
+        let Type::Array { len, element } = base_ty else {
             return Err(SemanticError::new(
                 format!(
                     "indexing requires a fixed-size array, got `{}`",
@@ -1087,6 +1087,23 @@ impl<'a> Checker<'a> {
                 base.span,
             ));
         };
+
+        if let Some(index_value) = const_int_expr(index) {
+            let out_of_bounds = if index_value < 0 {
+                true
+            } else {
+                match usize::try_from(index_value) {
+                    Ok(index_value) => index_value >= len,
+                    Err(_) => true,
+                }
+            };
+            if out_of_bounds {
+                return Err(SemanticError::new(
+                    format!("array index {index_value} is out of bounds for length {len}"),
+                    index.span,
+                ));
+            }
+        }
 
         if !element.is_copy() {
             return Err(SemanticError::new(
@@ -2355,6 +2372,17 @@ fn direct_local_place(expr: &Expr, message: &'static str) -> Result<BorrowPlace,
             Ok(place)
         }
         _ => Err(SemanticError::new(message, expr.span)),
+    }
+}
+
+fn const_int_expr(expr: &Expr) -> Option<i64> {
+    match &expr.kind {
+        ExprKind::Int(value) => Some(*value),
+        ExprKind::Unary {
+            op: UnaryOp::Negate,
+            expr,
+        } => const_int_expr(expr)?.checked_neg(),
+        _ => None,
     }
 }
 
@@ -3662,6 +3690,36 @@ func main() {
         assert!(error
             .message
             .contains("array index must have type `int`, got `string`"));
+    }
+
+    #[test]
+    fn rejects_literal_array_index_out_of_bounds() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    first := values[3]
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array index 3 is out of bounds for length 3"));
+    }
+
+    #[test]
+    fn rejects_negative_literal_array_index_out_of_bounds() {
+        let error = check_error(
+            r#"
+func main() {
+    values := [3]int{1, 2, 3}
+    first := values[-1]
+}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("array index -1 is out of bounds for length 3"));
     }
 
     #[test]

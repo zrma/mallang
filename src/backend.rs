@@ -68,6 +68,7 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdbool.h>\n");
         output.push_str("#include <stdint.h>\n");
         output.push_str("#include <stdio.h>\n");
+        output.push_str("#include <stdlib.h>\n");
         output.push_str("#include <string.h>\n\n");
 
         let defined_types = self.collect_defined_types();
@@ -758,16 +759,7 @@ impl<'a> CGenerator<'a> {
                     code: format!("({}).{}", code, c_field(field)),
                 })
             }
-            IrExprKind::Index { base, index } => {
-                let base = self.emit_stmt_expr_with_env(base, env)?;
-                let index = self.emit_stmt_expr_with_env(index, env)?;
-                let mut prelude = base.prelude;
-                prelude.extend(index.prelude);
-                Ok(CExpr {
-                    prelude,
-                    code: format!("({}).mlg_data[{}]", base.code, index.code),
-                })
-            }
+            IrExprKind::Index { base, index } => self.emit_index_stmt_expr(expr, base, index, env),
             IrExprKind::ArrayLen { array } => self.emit_array_len_stmt_expr(array, env),
             IrExprKind::Call { callee, args } => {
                 if callee == "print" {
@@ -807,6 +799,39 @@ impl<'a> CGenerator<'a> {
                 })
             }
         }
+    }
+
+    fn emit_index_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        base: &IrExpr,
+        index: &IrExpr,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Array { len, .. } = &base.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: index base must be an array",
+            ));
+        };
+        let source_ty = base.ty.c_name();
+
+        let base = self.emit_stmt_expr_with_env(base, env)?;
+        let index = self.emit_stmt_expr_with_env(index, env)?;
+        let source_temp = index_source_temp_name(expr);
+        let index_temp = index_value_temp_name(expr);
+
+        let mut prelude = base.prelude;
+        prelude.push(format!("{source_ty} {source_temp} = {};", base.code));
+        prelude.extend(index.prelude);
+        prelude.push(format!("int64_t {index_temp} = {};", index.code));
+        prelude.push(format!(
+            "if ({index_temp} < 0 || {index_temp} >= {len}) {{\n    fprintf(stderr, \"mallang runtime error: array index out of bounds\\n\");\n    exit(1);\n}}"
+        ));
+
+        Ok(CExpr {
+            prelude,
+            code: format!("({source_temp}).mlg_data[{index_temp}]"),
+        })
     }
 
     fn emit_array_len_stmt_expr(
@@ -1490,6 +1515,14 @@ fn match_expr_temp_name(expr: &IrExpr) -> String {
 
 fn print_temp_name(expr: &IrExpr) -> String {
     format!("mallang_print_tmp_{}", expr.span.start)
+}
+
+fn index_source_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_index_src_{}", expr.span.start)
+}
+
+fn index_value_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_index_value_{}", expr.span.start)
 }
 
 fn param_env(function: &IrFunction) -> HashMap<String, String> {
@@ -2213,9 +2246,14 @@ func main() {
         let ir = lower(&checked).unwrap();
         let c = generate_c_from_ir(&ir).unwrap();
 
-        assert!(c.contains("(mlg_values).mlg_data[1]"));
+        assert!(c.contains("#include <stdlib.h>"));
+        assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
+        assert!(c.contains("int64_t mallang_index_value_"));
+        assert!(c.contains("if (mallang_index_value_"));
+        assert!(c.contains("mallang runtime error: array index out of bounds"));
+        assert!(c.contains(".mlg_data[mallang_index_value_"));
         assert!(c.contains("(void)(mlg_values);"));
-        assert!(c.contains("int64_t mlg_total = ((mlg_values).mlg_data[1] + 3);"));
+        assert!(c.contains("int64_t mlg_total = ((mallang_index_src_"));
     }
 
     #[test]

@@ -87,6 +87,7 @@
 - [x] Generate native C loops for array-only `range`.
 - [x] Generate native C for fixed-size array indexing.
 - [x] Generate native C for fixed-size array `len`.
+- [x] Generate native C bounds checks for fixed-size array indexing.
 
 ## Later
 
