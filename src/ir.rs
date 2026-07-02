@@ -144,7 +144,9 @@ pub enum IrExprKind {
     If {
         condition: Box<IrExpr>,
         then_branch: Box<IrExpr>,
+        then_cleanup: Vec<IrStmt>,
         else_branch: Box<IrExpr>,
+        else_cleanup: Vec<IrStmt>,
     },
     AdtConstructor {
         constructor: IrAdtConstructor,
@@ -206,6 +208,7 @@ pub struct IrFieldValue {
 pub struct IrMatchArm {
     pub pattern: IrMatchPattern,
     pub expr: IrExpr,
+    pub cleanup: Vec<IrStmt>,
     pub span: Span,
 }
 
@@ -930,7 +933,9 @@ impl<'a> Lowerer<'a> {
             IrExprKind::If {
                 condition: Box::new(condition),
                 then_branch: Box::new(then_branch),
+                then_cleanup: Vec::new(),
                 else_branch: Box::new(else_branch),
+                else_cleanup: Vec::new(),
             },
             ty,
         ))
@@ -1477,6 +1482,7 @@ impl<'a> Lowerer<'a> {
         Ok(IrMatchArm {
             pattern: arm.pattern.clone(),
             expr: self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?,
+            cleanup: Vec::new(),
             span: arm.expr.span,
         })
     }
@@ -1896,6 +1902,12 @@ struct CleanupInsertion {
     continues: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExprCleanupInsertion {
+    expr: IrExpr,
+    moved_roots: HashSet<String>,
+}
+
 fn insert_straight_line_cleanup_drops(
     body: Vec<IrStmt>,
     params: &[IrParam],
@@ -1942,8 +1954,9 @@ fn insert_cleanup_drops(
             break_excluded_roots,
             continue_excluded_roots,
         );
-        if let IrStmtKind::Return { expr } = &stmt.kind {
-            let returned_roots = cleanup_moved_roots_in_expr(expr);
+        let (stmt, stmt_moved_roots) = insert_cleanup_drops_in_stmt_exprs(stmt, &active);
+        if let IrStmtKind::Return { expr: _ } = &stmt.kind {
+            let returned_roots = stmt_moved_roots;
             moved_in_body.extend(returned_roots.iter().cloned());
             push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
             output.push(stmt);
@@ -1974,8 +1987,7 @@ fn insert_cleanup_drops(
             };
         }
 
-        let moved_roots = cleanup_moved_roots_in_stmt(&stmt);
-        let moved_roots = moved_roots
+        let moved_roots = stmt_moved_roots
             .into_iter()
             .chain(branch_moved_roots)
             .collect::<HashSet<_>>();
@@ -2014,6 +2026,90 @@ fn insert_cleanup_drops(
     }
 }
 
+fn insert_cleanup_drops_in_stmt_exprs(
+    mut stmt: IrStmt,
+    active: &[CleanupBinding],
+) -> (IrStmt, HashSet<String>) {
+    let moved_roots = match stmt.kind {
+        IrStmtKind::Let {
+            mutable,
+            name,
+            ty,
+            expr,
+        } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Let {
+                mutable,
+                name,
+                ty,
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::Assign { name, expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Assign {
+                name,
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::FieldAssign { base, field, expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::FieldAssign {
+                base,
+                field,
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::IndexAssign { base, index, expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::IndexAssign {
+                base,
+                index,
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::Return { expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Return {
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::Drop { expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Drop {
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::Expr { expr } => {
+            let insertion = insert_expr_cleanup_drops(expr, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Expr {
+                expr: insertion.expr,
+            };
+            moved_roots
+        }
+        IrStmtKind::If { .. }
+        | IrStmtKind::For { .. }
+        | IrStmtKind::RangeFor { .. }
+        | IrStmtKind::Break
+        | IrStmtKind::Continue
+        | IrStmtKind::Match { .. } => HashSet::new(),
+    };
+    (stmt, moved_roots)
+}
+
 fn insert_branch_cleanup_drops(
     mut stmt: IrStmt,
     active: &[CleanupBinding],
@@ -2029,7 +2125,8 @@ fn insert_branch_cleanup_drops(
             then_body,
             else_body,
         } => {
-            let condition_moved_roots = cleanup_moved_roots_in_expr(&condition);
+            let condition_insertion = insert_expr_cleanup_drops(condition, active);
+            let condition_moved_roots = condition_insertion.moved_roots;
             let branch_active = cleanup_bindings_after_moved_roots(active, &condition_moved_roots);
             let tail_excluded_roots = cleanup_binding_names(&branch_active);
 
@@ -2073,7 +2170,7 @@ fn insert_branch_cleanup_drops(
             moved_roots.extend(branch_moved_roots);
 
             IrStmtKind::If {
-                condition,
+                condition: condition_insertion.expr,
                 then_body: then_insertion.body,
                 else_body: else_insertion.body,
             }
@@ -2148,7 +2245,8 @@ fn insert_branch_cleanup_drops(
             }
         }
         IrStmtKind::Match { scrutinee, arms } => {
-            let scrutinee_moved_roots = cleanup_moved_roots_in_expr(&scrutinee);
+            let scrutinee_insertion = insert_expr_cleanup_drops(scrutinee, active);
+            let scrutinee_moved_roots = scrutinee_insertion.moved_roots;
             let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee_moved_roots);
             let tail_excluded_roots = cleanup_binding_names(&arm_active);
             let mut arms = arms
@@ -2183,7 +2281,7 @@ fn insert_branch_cleanup_drops(
             moved_roots.extend(arm_moved_roots);
 
             IrStmtKind::Match {
-                scrutinee,
+                scrutinee: scrutinee_insertion.expr,
                 arms: arms
                     .into_iter()
                     .map(|(pattern, insertion, span)| IrMatchBlockArm {
@@ -2232,6 +2330,24 @@ fn merged_cleanup_roots<'a>(
     moved_roots
 }
 
+fn merged_cleanup_expr_roots<'a>(
+    active: &[CleanupBinding],
+    insertions: impl IntoIterator<Item = &'a ExprCleanupInsertion>,
+) -> HashSet<String> {
+    let active_names = cleanup_binding_names(active);
+    let mut moved_roots = HashSet::new();
+    for insertion in insertions {
+        moved_roots.extend(
+            insertion
+                .moved_roots
+                .iter()
+                .filter(|root| active_names.contains(*root))
+                .cloned(),
+        );
+    }
+    moved_roots
+}
+
 fn push_branch_merge_cleanup_drops(
     body: &mut Vec<IrStmt>,
     active: &[CleanupBinding],
@@ -2248,6 +2364,275 @@ fn push_branch_merge_cleanup_drops(
         {
             push_cleanup_drop(body, binding, span);
         }
+    }
+}
+
+fn push_expr_branch_cleanup_drops(
+    cleanup: &mut Vec<IrStmt>,
+    active: &[CleanupBinding],
+    merged_moved_roots: &HashSet<String>,
+    branch_moved_roots: &HashSet<String>,
+    span: Span,
+) {
+    for binding in active.iter().rev() {
+        if merged_moved_roots.contains(&binding.name) && !branch_moved_roots.contains(&binding.name)
+        {
+            push_cleanup_drop(cleanup, binding, span);
+        }
+    }
+}
+
+fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCleanupInsertion {
+    let ty = expr.ty;
+    let span = expr.span;
+    let mut moved_roots = HashSet::new();
+
+    let kind = match expr.kind {
+        IrExprKind::Var(name) => {
+            if ty.needs_cleanup() {
+                moved_roots.insert(name.clone());
+            }
+            IrExprKind::Var(name)
+        }
+        IrExprKind::If {
+            condition,
+            then_branch,
+            mut then_cleanup,
+            else_branch,
+            mut else_cleanup,
+        } => {
+            let condition = insert_expr_cleanup_drops(*condition, active);
+            let branch_active = cleanup_bindings_after_moved_roots(active, &condition.moved_roots);
+            let then_branch = insert_expr_cleanup_drops(*then_branch, &branch_active);
+            let else_branch = insert_expr_cleanup_drops(*else_branch, &branch_active);
+            let branch_moved_roots =
+                merged_cleanup_expr_roots(&branch_active, [&then_branch, &else_branch]);
+
+            push_expr_branch_cleanup_drops(
+                &mut then_cleanup,
+                &branch_active,
+                &branch_moved_roots,
+                &then_branch.moved_roots,
+                span,
+            );
+            push_expr_branch_cleanup_drops(
+                &mut else_cleanup,
+                &branch_active,
+                &branch_moved_roots,
+                &else_branch.moved_roots,
+                span,
+            );
+
+            moved_roots.extend(condition.moved_roots);
+            moved_roots.extend(branch_moved_roots);
+
+            IrExprKind::If {
+                condition: Box::new(condition.expr),
+                then_branch: Box::new(then_branch.expr),
+                then_cleanup,
+                else_branch: Box::new(else_branch.expr),
+                else_cleanup,
+            }
+        }
+        IrExprKind::AdtConstructor {
+            constructor,
+            payload,
+        } => {
+            let payload = payload.map(|payload| {
+                let insertion = insert_expr_cleanup_drops(*payload, active);
+                moved_roots.extend(insertion.moved_roots);
+                Box::new(insertion.expr)
+            });
+            IrExprKind::AdtConstructor {
+                constructor,
+                payload,
+            }
+        }
+        IrExprKind::Match { scrutinee, arms } => {
+            let scrutinee = insert_expr_cleanup_drops(*scrutinee, active);
+            let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee.moved_roots);
+            let mut arms = arms
+                .into_iter()
+                .map(|arm| {
+                    let expr = insert_expr_cleanup_drops(arm.expr, &arm_active);
+                    (arm.pattern, expr, arm.cleanup, arm.span)
+                })
+                .collect::<Vec<_>>();
+            let arm_moved_roots =
+                merged_cleanup_expr_roots(&arm_active, arms.iter().map(|(_, expr, _, _)| expr));
+
+            for (_, expr, cleanup, span) in &mut arms {
+                push_expr_branch_cleanup_drops(
+                    cleanup,
+                    &arm_active,
+                    &arm_moved_roots,
+                    &expr.moved_roots,
+                    *span,
+                );
+            }
+
+            moved_roots.extend(scrutinee.moved_roots);
+            moved_roots.extend(arm_moved_roots);
+
+            IrExprKind::Match {
+                scrutinee: Box::new(scrutinee.expr),
+                arms: arms
+                    .into_iter()
+                    .map(|(pattern, expr, cleanup, span)| IrMatchArm {
+                        pattern,
+                        expr: expr.expr,
+                        cleanup,
+                        span,
+                    })
+                    .collect(),
+            }
+        }
+        IrExprKind::StructLiteral { type_name, fields } => {
+            let mut active = active.to_vec();
+            let fields = fields
+                .into_iter()
+                .map(|field| {
+                    let insertion = insert_expr_cleanup_drops(field.expr, &active);
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    IrFieldValue {
+                        name: field.name,
+                        expr: insertion.expr,
+                        span: field.span,
+                    }
+                })
+                .collect();
+            IrExprKind::StructLiteral { type_name, fields }
+        }
+        IrExprKind::ArrayLiteral { elements } => {
+            let mut active = active.to_vec();
+            let elements = elements
+                .into_iter()
+                .map(|element| {
+                    let insertion = insert_expr_cleanup_drops(element, &active);
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    insertion.expr
+                })
+                .collect();
+            IrExprKind::ArrayLiteral { elements }
+        }
+        IrExprKind::FieldAccess { base, field } => {
+            let base = insert_place_expr_cleanup_drops(*base, active);
+            moved_roots.extend(base.moved_roots);
+            IrExprKind::FieldAccess {
+                base: Box::new(base.expr),
+                field,
+            }
+        }
+        IrExprKind::Index { base, index } => {
+            let base = insert_place_expr_cleanup_drops(*base, active);
+            let active_after_base = cleanup_bindings_after_moved_roots(active, &base.moved_roots);
+            let index = insert_expr_cleanup_drops(*index, &active_after_base);
+            moved_roots.extend(base.moved_roots);
+            moved_roots.extend(index.moved_roots);
+            IrExprKind::Index {
+                base: Box::new(base.expr),
+                index: Box::new(index.expr),
+            }
+        }
+        IrExprKind::ArrayLen { array } => {
+            let array = insert_place_expr_cleanup_drops(*array, active);
+            moved_roots.extend(array.moved_roots);
+            IrExprKind::ArrayLen {
+                array: Box::new(array.expr),
+            }
+        }
+        IrExprKind::Call { callee, args } => {
+            let mut active = active.to_vec();
+            let args = args
+                .into_iter()
+                .map(|arg| {
+                    let insertion = if arg.mode == ArgMode::Owned {
+                        insert_expr_cleanup_drops(arg.expr, &active)
+                    } else {
+                        insert_place_expr_cleanup_drops(arg.expr, &active)
+                    };
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    IrArg {
+                        mode: arg.mode,
+                        expr: insertion.expr,
+                        span: arg.span,
+                    }
+                })
+                .collect();
+            IrExprKind::Call { callee, args }
+        }
+        IrExprKind::Unary { op, expr } => {
+            let expr = insert_expr_cleanup_drops(*expr, active);
+            moved_roots.extend(expr.moved_roots);
+            IrExprKind::Unary {
+                op,
+                expr: Box::new(expr.expr),
+            }
+        }
+        IrExprKind::Binary { op, left, right } => {
+            let left = insert_expr_cleanup_drops(*left, active);
+            let active_after_left = cleanup_bindings_after_moved_roots(active, &left.moved_roots);
+            let right = insert_expr_cleanup_drops(*right, &active_after_left);
+            moved_roots.extend(left.moved_roots);
+            moved_roots.extend(right.moved_roots);
+            IrExprKind::Binary {
+                op,
+                left: Box::new(left.expr),
+                right: Box::new(right.expr),
+            }
+        }
+        IrExprKind::Int(value) => IrExprKind::Int(value),
+        IrExprKind::String(value) => IrExprKind::String(value),
+        IrExprKind::Bool(value) => IrExprKind::Bool(value),
+    };
+
+    ExprCleanupInsertion {
+        expr: IrExpr { kind, ty, span },
+        moved_roots,
+    }
+}
+
+fn insert_place_expr_cleanup_drops(
+    expr: IrExpr,
+    active: &[CleanupBinding],
+) -> ExprCleanupInsertion {
+    let ty = expr.ty;
+    let span = expr.span;
+    let mut moved_roots = HashSet::new();
+
+    let kind = match expr.kind {
+        IrExprKind::Var(name) => IrExprKind::Var(name),
+        IrExprKind::FieldAccess { base, field } => {
+            let base = insert_place_expr_cleanup_drops(*base, active);
+            moved_roots.extend(base.moved_roots);
+            IrExprKind::FieldAccess {
+                base: Box::new(base.expr),
+                field,
+            }
+        }
+        IrExprKind::Index { base, index } => {
+            let base = insert_place_expr_cleanup_drops(*base, active);
+            let active_after_base = cleanup_bindings_after_moved_roots(active, &base.moved_roots);
+            let index = insert_expr_cleanup_drops(*index, &active_after_base);
+            moved_roots.extend(base.moved_roots);
+            moved_roots.extend(index.moved_roots);
+            IrExprKind::Index {
+                base: Box::new(base.expr),
+                index: Box::new(index.expr),
+            }
+        }
+        kind => {
+            let insertion = insert_expr_cleanup_drops(IrExpr { kind, ty, span }, active);
+            return insertion;
+        }
+    };
+
+    ExprCleanupInsertion {
+        expr: IrExpr { kind, ty, span },
+        moved_roots,
     }
 }
 
@@ -2448,14 +2833,38 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
                 }
             }
         }
+        IrExprKind::If {
+            condition,
+            then_branch,
+            then_cleanup,
+            else_branch,
+            else_cleanup,
+        } => {
+            collect_cleanup_moved_roots(condition, roots);
+            collect_cleanup_moved_roots(then_branch, roots);
+            for stmt in then_cleanup {
+                roots.extend(cleanup_moved_roots_in_stmt(stmt));
+            }
+            collect_cleanup_moved_roots(else_branch, roots);
+            for stmt in else_cleanup {
+                roots.extend(cleanup_moved_roots_in_stmt(stmt));
+            }
+        }
+        IrExprKind::Match { scrutinee, arms } => {
+            collect_cleanup_moved_roots(scrutinee, roots);
+            for arm in arms {
+                collect_cleanup_moved_roots(&arm.expr, roots);
+                for stmt in &arm.cleanup {
+                    roots.extend(cleanup_moved_roots_in_stmt(stmt));
+                }
+            }
+        }
         IrExprKind::Unary { expr, .. } => collect_cleanup_moved_roots(expr, roots),
         IrExprKind::Binary { left, right, .. } => {
             collect_cleanup_moved_roots(left, roots);
             collect_cleanup_moved_roots(right, roots);
         }
-        IrExprKind::If { .. }
-        | IrExprKind::Match { .. }
-        | IrExprKind::FieldAccess { .. }
+        IrExprKind::FieldAccess { .. }
         | IrExprKind::Index { .. }
         | IrExprKind::ArrayLen { .. }
         | IrExprKind::Int(_)
@@ -2808,6 +3217,124 @@ func add(a int, b int) int {
         assert_eq!(body.len(), 2);
         assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
         assert_drop_of(&body[1], "values");
+    }
+
+    #[test]
+    fn normalizes_cleanup_if_expression_branch_moves() {
+        let slice_ty = test_slice_ty();
+        let params = vec![
+            IrParam {
+                name: "values".to_string(),
+                mode: ParamMode::Owned,
+                ty: slice_ty.clone(),
+            },
+            IrParam {
+                name: "replacement".to_string(),
+                mode: ParamMode::Owned,
+                ty: slice_ty.clone(),
+            },
+        ];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Let {
+                mutable: false,
+                name: "result".to_string(),
+                ty: slice_ty.clone(),
+                expr: IrExpr {
+                    kind: IrExprKind::If {
+                        condition: Box::new(test_bool(true)),
+                        then_branch: Box::new(test_var("values", slice_ty.clone())),
+                        then_cleanup: Vec::new(),
+                        else_branch: Box::new(test_var("replacement", slice_ty)),
+                        else_cleanup: Vec::new(),
+                    },
+                    ty: test_slice_ty(),
+                    span: test_span(),
+                },
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        let IrStmtKind::Let { expr, .. } = &body[0].kind else {
+            panic!("expected result let");
+        };
+        let IrExprKind::If {
+            then_cleanup,
+            else_cleanup,
+            ..
+        } = &expr.kind
+        else {
+            panic!("expected if expression");
+        };
+        assert_eq!(then_cleanup.len(), 1);
+        assert_drop_of(&then_cleanup[0], "replacement");
+        assert_eq!(else_cleanup.len(), 1);
+        assert_drop_of(&else_cleanup[0], "values");
+        assert_drop_of(&body[1], "result");
+    }
+
+    #[test]
+    fn normalizes_cleanup_match_expression_arm_moves() {
+        let slice_ty = test_slice_ty();
+        let option_slice_ty = Type::Option(Box::new(slice_ty.clone()));
+        let params = vec![
+            IrParam {
+                name: "source".to_string(),
+                mode: ParamMode::Owned,
+                ty: option_slice_ty.clone(),
+            },
+            IrParam {
+                name: "fallback".to_string(),
+                mode: ParamMode::Owned,
+                ty: slice_ty.clone(),
+            },
+        ];
+        let body = vec![IrStmt {
+            kind: IrStmtKind::Let {
+                mutable: false,
+                name: "result".to_string(),
+                ty: slice_ty.clone(),
+                expr: IrExpr {
+                    kind: IrExprKind::Match {
+                        scrutinee: Box::new(test_var("source", option_slice_ty)),
+                        arms: vec![
+                            IrMatchArm {
+                                pattern: IrMatchPattern::Some("value".to_string()),
+                                expr: test_var("value", slice_ty.clone()),
+                                cleanup: Vec::new(),
+                                span: test_span(),
+                            },
+                            IrMatchArm {
+                                pattern: IrMatchPattern::None,
+                                expr: test_var("fallback", slice_ty),
+                                cleanup: Vec::new(),
+                                span: test_span(),
+                            },
+                        ],
+                    },
+                    ty: test_slice_ty(),
+                    span: test_span(),
+                },
+            },
+            span: test_span(),
+        }];
+
+        let body = insert_straight_line_cleanup_drops(body, &params, test_span());
+
+        assert_eq!(body.len(), 2);
+        let IrStmtKind::Let { expr, .. } = &body[0].kind else {
+            panic!("expected result let");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].cleanup.len(), 1);
+        assert_drop_of(&arms[0].cleanup[0], "fallback");
+        assert!(arms[1].cleanup.is_empty());
+        assert_drop_of(&body[1], "result");
     }
 
     #[test]

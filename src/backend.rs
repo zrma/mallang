@@ -852,12 +852,18 @@ impl<'a> CGenerator<'a> {
             IrExprKind::If {
                 condition,
                 then_branch,
+                then_cleanup,
                 else_branch,
+                else_cleanup,
             } => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
                 let then_expr = self.emit_stmt_expr_with_env(then_branch, env)?;
                 let else_expr = self.emit_stmt_expr_with_env(else_branch, env)?;
-                if then_expr.prelude.is_empty() && else_expr.prelude.is_empty() {
+                if then_expr.prelude.is_empty()
+                    && else_expr.prelude.is_empty()
+                    && then_cleanup.is_empty()
+                    && else_cleanup.is_empty()
+                {
                     return Ok(CExpr {
                         prelude,
                         code: format!("(({}) ? ({}) : ({}))", code, then_expr.code, else_expr.code),
@@ -866,8 +872,17 @@ impl<'a> CGenerator<'a> {
 
                 let temp = if_expr_temp_name(expr);
                 let mut prelude = prelude;
+                let then_cleanup = self.emit_cleanup_stmts(then_cleanup, env)?;
+                let else_cleanup = self.emit_cleanup_stmts(else_cleanup, env)?;
                 prelude.push(format!("{} {temp};", expr.ty.c_name()));
-                prelude.push(if_expr_temp_block(&code, &temp, then_expr, else_expr));
+                prelude.push(if_expr_temp_block(
+                    &code,
+                    &temp,
+                    then_expr,
+                    then_cleanup,
+                    else_expr,
+                    else_cleanup,
+                ));
                 Ok(CExpr {
                     prelude,
                     code: temp,
@@ -924,6 +939,17 @@ impl<'a> CGenerator<'a> {
                 self.emit_binary_stmt_expr(expr, *op, left, right, &operand_ty, env)
             }
         }
+    }
+
+    fn emit_cleanup_stmts(
+        &self,
+        cleanup: &[IrStmt],
+        env: &HashMap<String, String>,
+    ) -> Result<Vec<String>, CompileError> {
+        cleanup
+            .iter()
+            .map(|stmt| self.emit_stmt_with_env(stmt, env))
+            .collect()
     }
 
     fn emit_unary_stmt_expr(
@@ -1288,24 +1314,25 @@ impl<'a> CGenerator<'a> {
         let some_arm = arms
             .iter()
             .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Some(binding) => Some((binding, &arm.expr)),
+                IrMatchPattern::Some(binding) => Some((binding, arm)),
                 _ => None,
             })
             .ok_or_else(|| CompileError::new("IR invariant violation: missing Some arm"))?;
-        let none_expr = arms
+        let none_arm = arms
             .iter()
-            .find_map(|arm| match arm.pattern {
-                IrMatchPattern::None => Some(&arm.expr),
-                _ => None,
-            })
+            .find(|arm| matches!(arm.pattern, IrMatchPattern::None))
             .ok_or_else(|| CompileError::new("IR invariant violation: missing None arm"))?;
 
         let mut some_env = env.clone();
         some_env.insert(some_arm.0.clone(), format!("({scrutinee}).some"));
-        let some_expr = self.emit_stmt_expr_with_env(some_arm.1, &some_env)?;
-        let none_expr = self.emit_stmt_expr_with_env(none_expr, env)?;
+        let some_expr = self.emit_stmt_expr_with_env(&some_arm.1.expr, &some_env)?;
+        let none_expr = self.emit_stmt_expr_with_env(&none_arm.expr, env)?;
 
-        if some_expr.prelude.is_empty() && none_expr.prelude.is_empty() {
+        if some_expr.prelude.is_empty()
+            && none_expr.prelude.is_empty()
+            && some_arm.1.cleanup.is_empty()
+            && none_arm.cleanup.is_empty()
+        {
             return Ok(CExpr {
                 prelude,
                 code: format!(
@@ -1316,12 +1343,16 @@ impl<'a> CGenerator<'a> {
         }
 
         let temp = match_expr_temp_name(expr);
+        let some_cleanup = self.emit_cleanup_stmts(&some_arm.1.cleanup, &some_env)?;
+        let none_cleanup = self.emit_cleanup_stmts(&none_arm.cleanup, env)?;
         prelude.push(format!("{} {temp};", expr.ty.c_name()));
-        prelude.push(match_expr_temp_block(
+        prelude.push(if_expr_temp_block(
             &format!("({scrutinee}).tag == 1"),
             &temp,
             some_expr,
+            some_cleanup,
             none_expr,
+            none_cleanup,
         ));
         Ok(CExpr {
             prelude,
@@ -1340,14 +1371,14 @@ impl<'a> CGenerator<'a> {
         let ok_arm = arms
             .iter()
             .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Ok(binding) => Some((binding, &arm.expr)),
+                IrMatchPattern::Ok(binding) => Some((binding, arm)),
                 _ => None,
             })
             .ok_or_else(|| CompileError::new("IR invariant violation: missing Ok arm"))?;
         let err_arm = arms
             .iter()
             .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Err(binding) => Some((binding, &arm.expr)),
+                IrMatchPattern::Err(binding) => Some((binding, arm)),
                 _ => None,
             })
             .ok_or_else(|| CompileError::new("IR invariant violation: missing Err arm"))?;
@@ -1356,10 +1387,14 @@ impl<'a> CGenerator<'a> {
         ok_env.insert(ok_arm.0.clone(), format!("({scrutinee}).ok"));
         let mut err_env = env.clone();
         err_env.insert(err_arm.0.clone(), format!("({scrutinee}).err"));
-        let ok_expr = self.emit_stmt_expr_with_env(ok_arm.1, &ok_env)?;
-        let err_expr = self.emit_stmt_expr_with_env(err_arm.1, &err_env)?;
+        let ok_expr = self.emit_stmt_expr_with_env(&ok_arm.1.expr, &ok_env)?;
+        let err_expr = self.emit_stmt_expr_with_env(&err_arm.1.expr, &err_env)?;
 
-        if ok_expr.prelude.is_empty() && err_expr.prelude.is_empty() {
+        if ok_expr.prelude.is_empty()
+            && err_expr.prelude.is_empty()
+            && ok_arm.1.cleanup.is_empty()
+            && err_arm.1.cleanup.is_empty()
+        {
             return Ok(CExpr {
                 prelude,
                 code: format!(
@@ -1370,12 +1405,16 @@ impl<'a> CGenerator<'a> {
         }
 
         let temp = match_expr_temp_name(expr);
+        let ok_cleanup = self.emit_cleanup_stmts(&ok_arm.1.cleanup, &ok_env)?;
+        let err_cleanup = self.emit_cleanup_stmts(&err_arm.1.cleanup, &err_env)?;
         prelude.push(format!("{} {temp};", expr.ty.c_name()));
-        prelude.push(match_expr_temp_block(
+        prelude.push(if_expr_temp_block(
             &format!("({scrutinee}).tag == 0"),
             &temp,
             ok_expr,
+            ok_cleanup,
             err_expr,
+            err_cleanup,
         ));
         Ok(CExpr {
             prelude,
@@ -1571,11 +1610,19 @@ impl<'a> CGenerator<'a> {
             IrExprKind::If {
                 condition,
                 then_branch,
+                then_cleanup,
                 else_branch,
+                else_cleanup,
             } => {
                 self.collect_expr_types(condition, types);
                 self.collect_expr_types(then_branch, types);
+                for stmt in then_cleanup {
+                    self.collect_stmt_types(stmt, types);
+                }
                 self.collect_expr_types(else_branch, types);
+                for stmt in else_cleanup {
+                    self.collect_stmt_types(stmt, types);
+                }
             }
             IrExprKind::AdtConstructor { payload, .. } => {
                 if let Some(payload) = payload {
@@ -1586,6 +1633,9 @@ impl<'a> CGenerator<'a> {
                 self.collect_expr_types(scrutinee, types);
                 for arm in arms {
                     self.collect_expr_types(&arm.expr, types);
+                    for stmt in &arm.cleanup {
+                        self.collect_stmt_types(stmt, types);
+                    }
                 }
             }
             IrExprKind::StructLiteral { fields, .. } => {
@@ -1916,33 +1966,37 @@ fn finish_with_prelude(prelude: Vec<String>, body: String) -> String {
     output
 }
 
-fn if_expr_temp_block(condition: &str, temp: &str, then_expr: CExpr, else_expr: CExpr) -> String {
+fn if_expr_temp_block(
+    condition: &str,
+    temp: &str,
+    then_expr: CExpr,
+    then_cleanup: Vec<String>,
+    else_expr: CExpr,
+    else_cleanup: Vec<String>,
+) -> String {
     let mut output = String::new();
     output.push_str(&format!("if ({}) {{\n", c_condition(condition)));
     for line in then_expr.prelude {
         push_indented_lines(&mut output, &line, 1);
     }
     push_indented_lines(&mut output, &format!("{temp} = {};", then_expr.code), 1);
+    for stmt in then_cleanup {
+        push_indented_lines(&mut output, &stmt, 1);
+    }
     output.push_str("} else {\n");
     for line in else_expr.prelude {
         push_indented_lines(&mut output, &line, 1);
     }
     push_indented_lines(&mut output, &format!("{temp} = {};", else_expr.code), 1);
+    for stmt in else_cleanup {
+        push_indented_lines(&mut output, &stmt, 1);
+    }
     output.push('}');
     output
 }
 
 fn if_expr_temp_name(expr: &IrExpr) -> String {
     format!("mallang_if_tmp_{}", expr.span.start)
-}
-
-fn match_expr_temp_block(
-    condition: &str,
-    temp: &str,
-    then_expr: CExpr,
-    else_expr: CExpr,
-) -> String {
-    if_expr_temp_block(condition, temp, then_expr, else_expr)
 }
 
 fn match_expr_temp_name(expr: &IrExpr) -> String {
@@ -2814,6 +2868,92 @@ func maybe(flag bool) Option[int] {
         assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
         assert!(c.contains("mallang_if_tmp_"));
         assert!(c.contains("return mallang_if_tmp_"));
+    }
+
+    #[test]
+    fn generates_c_for_if_expression_cleanup_trailer() {
+        let slice_ty = Type::Slice(Box::new(Type::Int));
+        let span = crate::token::Span { start: 0, end: 0 };
+        let program = IrProgram {
+            structs: Vec::new(),
+            functions: vec![
+                IrFunction {
+                    name: "pick".to_string(),
+                    params: vec![
+                        crate::ir::IrParam {
+                            name: "values".to_string(),
+                            mode: ParamMode::Owned,
+                            ty: slice_ty.clone(),
+                        },
+                        crate::ir::IrParam {
+                            name: "replacement".to_string(),
+                            mode: ParamMode::Owned,
+                            ty: slice_ty.clone(),
+                        },
+                    ],
+                    return_type: slice_ty.clone(),
+                    body: vec![IrStmt {
+                        kind: IrStmtKind::Return {
+                            expr: IrExpr {
+                                kind: IrExprKind::If {
+                                    condition: Box::new(IrExpr {
+                                        kind: IrExprKind::Bool(true),
+                                        ty: Type::Bool,
+                                        span,
+                                    }),
+                                    then_branch: Box::new(IrExpr {
+                                        kind: IrExprKind::Var("values".to_string()),
+                                        ty: slice_ty.clone(),
+                                        span,
+                                    }),
+                                    then_cleanup: vec![IrStmt {
+                                        kind: IrStmtKind::Drop {
+                                            expr: IrExpr {
+                                                kind: IrExprKind::Var("replacement".to_string()),
+                                                ty: slice_ty.clone(),
+                                                span,
+                                            },
+                                        },
+                                        span,
+                                    }],
+                                    else_branch: Box::new(IrExpr {
+                                        kind: IrExprKind::Var("replacement".to_string()),
+                                        ty: slice_ty.clone(),
+                                        span,
+                                    }),
+                                    else_cleanup: vec![IrStmt {
+                                        kind: IrStmtKind::Drop {
+                                            expr: IrExpr {
+                                                kind: IrExprKind::Var("values".to_string()),
+                                                ty: slice_ty.clone(),
+                                                span,
+                                            },
+                                        },
+                                        span,
+                                    }],
+                                },
+                                ty: slice_ty,
+                                span,
+                            },
+                        },
+                        span,
+                    }],
+                },
+                IrFunction {
+                    name: "main".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+            ],
+        };
+
+        let c = generate_c_from_ir(&program).unwrap();
+
+        assert!(c.contains("mlg_Slice_int mallang_if_tmp_0;"));
+        assert!(c.contains(
+            "if (true) {\n        mallang_if_tmp_0 = mlg_values;\n        mlg_drop_Slice_int(&(mlg_replacement));\n    } else {\n        mallang_if_tmp_0 = mlg_replacement;\n        mlg_drop_Slice_int(&(mlg_values));\n    }\n    return mallang_if_tmp_0;"
+        ));
     }
 
     #[test]

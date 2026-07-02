@@ -382,3 +382,11 @@
 - [x] cleanup type field assignment에서 RHS temp 평가를 old field drop보다 먼저 삽입
 - [x] cleanup type fixed-array element assignment에서 RHS temp 평가를 old element drop보다 먼저 삽입
 - [x] source-level slice surface는 reserved 상태 유지
+
+## P46: Expression Branch Cleanup Normalization
+
+- [x] expression-form `if` branch cleanup trailer 추가
+- [x] expression-form `match` arm cleanup trailer 추가
+- [x] expression branch별 cleanup root move merge/drop normalization 추가
+- [x] C backend에서 expression cleanup trailer를 temp block으로 lowering
+- [x] source-level slice surface는 reserved 상태 유지
