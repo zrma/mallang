@@ -32,6 +32,7 @@ The current executable can lex, parse, check, and build the first native subset.
 cargo run --bin mlg -- lex examples/hello.mlg
 cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- ir examples/adt.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if

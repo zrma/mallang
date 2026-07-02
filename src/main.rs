@@ -4,7 +4,7 @@ use std::{
     process::{self, Command},
 };
 
-use mallang::{check, generate_c, lex, parse};
+use mallang::{check, generate_c, lex, lower, parse};
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
@@ -28,6 +28,10 @@ fn main() {
             args.remove(0);
             run_check(&program, &args)
         }
+        "ir" => {
+            args.remove(0);
+            run_ir(&program, &args)
+        }
         "build" => {
             args.remove(0);
             run_build(&program, &args)
@@ -50,6 +54,7 @@ fn usage(program: &str) {
     eprintln!("  {program} lex <source-file>");
     eprintln!("  {program} parse <source-file>");
     eprintln!("  {program} check <source-file>");
+    eprintln!("  {program} ir <source-file>");
     eprintln!("  {program} build <source-file> [-o <output>]");
     eprintln!("  {program} <source-file>  # alias for lex");
 }
@@ -86,6 +91,16 @@ fn run_check(program: &str, args: &[String]) -> Result<(), String> {
     let program_ast = parse(&source).map_err(|error| format!("{path}: {error}"))?;
     check(&program_ast).map_err(|error| format!("{path}: {error}"))?;
     println!("{path}: ok");
+    Ok(())
+}
+
+fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
+    let path = single_source_arg(program, "ir", args)?;
+    let source = read_source(path)?;
+    let program_ast = parse(&source).map_err(|error| format!("{path}: {error}"))?;
+    let checked = check(&program_ast).map_err(|error| format!("{path}: {error}"))?;
+    let ir = lower(&checked).map_err(|error| format!("{path}: {error}"))?;
+    println!("{ir:#?}");
     Ok(())
 }
 
