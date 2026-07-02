@@ -47,6 +47,8 @@ cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/if-statement.mlg -o target/mallang/if-statement
 target/mallang/if-statement
+cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
+target/mallang/string-equality
 cargo run --bin mlg -- build examples/adt.mlg -o target/mallang/adt
 target/mallang/adt
 cargo run --bin mlg -- build examples/match-temp.mlg -o target/mallang/match-temp
@@ -86,6 +88,7 @@ scripts/check.sh
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/if-statement.mlg`: native smoke for statement-form `if`.
+- `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/structs.mlg`: native smoke for struct declarations, literals, and field access.
@@ -121,7 +124,7 @@ func add(a int, b int) int {
 }
 ```
 
-Current status: implemented for the first `int`, `bool`, `string`,
+Current status: implemented for the first `int`, `bool`, `string`, string equality,
 statement/expression `if`, `else if` sugar, branch-aware returns,
 struct/method/nested-field, and built-in ADT expression/statement `match`
 subset via C source generation and `clang`.

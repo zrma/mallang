@@ -21,6 +21,7 @@
 
 - [x] first native subset용 name resolver 추가
 - [x] first native subset용 primitive type checker 추가
+- [x] `string` equality semantic/backend/native smoke 추가
 - [x] first native subset용 function signature checker 추가
 - [x] immutable binding reassignment reject
 - [x] `if` expression type checking 추가

@@ -22,6 +22,7 @@
 
 - [x] Add first-subset name resolution for local variables and direct function calls.
 - [x] Add first-subset primitive type checking for `int`, `bool`, `string`, and `unit`.
+- [x] Support `string` equality without moving compared values.
 - [x] Add first-subset function signature checking.
 - [x] Reject `nil`, pointer-like syntax, and unresolved identifiers.
 - [x] Reject immutable binding reassignment.

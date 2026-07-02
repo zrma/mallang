@@ -50,6 +50,13 @@ if [[ "$if_statement_output" != "then" ]]; then
   echo "if statement native build smoke failed: expected then, got '$if_statement_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/string-equality.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality >/dev/null
+string_equality_output="$(target/mallang/string-equality)"
+if [[ "$string_equality_output" != $'same\nmallang' ]]; then
+  echo "string equality native build smoke failed: expected same and mallang, got '$string_equality_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- check examples/adt.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- ir examples/adt.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/adt.mlg -o target/mallang/adt >/dev/null

@@ -1,0 +1,14 @@
+func main() {
+    word := "mallang"
+    if word == "mallang" {
+        print("same")
+    } else {
+        print("miss")
+    }
+
+    if word != "rust" {
+        print(word)
+    } else {
+        print("miss")
+    }
+}

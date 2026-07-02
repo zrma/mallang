@@ -1705,8 +1705,12 @@ impl<'a> Checker<'a> {
         right: &Expr,
         locals: &mut HashMap<String, Local>,
     ) -> Result<Type, SemanticError> {
-        let left_ty = self.check_expr(left, locals, ValueUse::Owned)?;
-        let right_ty = self.check_expr(right, locals, ValueUse::Owned)?;
+        let value_use = match op {
+            BinaryOp::Equal | BinaryOp::NotEqual => ValueUse::Borrow,
+            _ => ValueUse::Owned,
+        };
+        let left_ty = self.check_expr(left, locals, value_use)?;
+        let right_ty = self.check_expr(right, locals, value_use)?;
         if left_ty != right_ty {
             return Err(SemanticError::new(
                 "binary operands must have the same type",
@@ -1730,11 +1734,11 @@ impl<'a> Checker<'a> {
                 }
             }
             BinaryOp::Equal | BinaryOp::NotEqual => {
-                if matches!(left_ty, Type::Int | Type::Bool) {
+                if matches!(left_ty, Type::Int | Type::Bool | Type::String) {
                     Ok(Type::Bool)
                 } else {
                     Err(SemanticError::new(
-                        "equality currently supports `int` and `bool` operands",
+                        "equality currently supports `int`, `bool`, and `string` operands",
                         left.span.join(right.span),
                     ))
                 }
@@ -2898,6 +2902,23 @@ func main() {}
     #[test]
     fn allows_mutable_assignment() {
         check_ok("func main() { mut x := 1 x = 2 print(x) }");
+    }
+
+    #[test]
+    fn allows_string_equality_without_move() {
+        check_ok(
+            r#"
+func main() {
+    word := "mallang"
+    if word == "mallang" {
+        print(word)
+    }
+    if word != "rust" {
+        print(word)
+    }
+}
+"#,
+        );
     }
 
     #[test]

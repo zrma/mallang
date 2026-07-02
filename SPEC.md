@@ -57,6 +57,8 @@ func greet(name in string) string {
 - Line comments start with `//`.
 - String literals use double quotes.
 - Integer literals are base-10 in v0.
+- Equality operators `==` and `!=` support `int`, `bool`, and `string`. String
+  equality compares contents and does not move the compared values.
 
 Reserved words:
 

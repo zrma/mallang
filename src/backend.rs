@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use crate::{
-    ast::{ArgMode, ParamMode, Program},
+    ast::{ArgMode, BinaryOp, ParamMode, Program},
     ir::{
         lower, IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrFunction, IrMatchArm,
         IrMatchBlockArm, IrMatchPattern, IrProgram, IrStmt, IrStmtKind,
@@ -67,7 +67,8 @@ impl<'a> CGenerator<'a> {
         let mut output = String::new();
         output.push_str("#include <stdbool.h>\n");
         output.push_str("#include <stdint.h>\n");
-        output.push_str("#include <stdio.h>\n\n");
+        output.push_str("#include <stdio.h>\n");
+        output.push_str("#include <string.h>\n\n");
 
         let defined_types = self.collect_defined_types();
         let mut emitted_types = Vec::new();
@@ -448,13 +449,14 @@ impl<'a> CGenerator<'a> {
                 })
             }
             IrExprKind::Binary { op, left, right } => {
+                let operand_ty = left.ty.clone();
                 let left = self.emit_stmt_expr_with_env(left, env)?;
                 let right = self.emit_stmt_expr_with_env(right, env)?;
                 let mut prelude = left.prelude;
                 prelude.extend(right.prelude);
                 Ok(CExpr {
                     prelude,
-                    code: format!("({} {} {})", left.code, op.c_operator(), right.code),
+                    code: c_binary_expr(*op, &expr.ty, &operand_ty, left.code, right.code),
                 })
             }
         }
@@ -510,11 +512,12 @@ impl<'a> CGenerator<'a> {
                 op.c_operator(),
                 self.emit_expr_with_env(expr, env)?
             )),
-            IrExprKind::Binary { op, left, right } => Ok(format!(
-                "({} {} {})",
+            IrExprKind::Binary { op, left, right } => Ok(c_binary_expr(
+                *op,
+                &expr.ty,
+                &left.ty,
                 self.emit_expr_with_env(left, env)?,
-                op.c_operator(),
-                self.emit_expr_with_env(right, env)?
+                self.emit_expr_with_env(right, env)?,
             )),
         }
     }
@@ -1089,6 +1092,26 @@ fn c_arg_code(mode: ArgMode, code: String) -> String {
     }
 }
 
+fn c_binary_expr(
+    op: BinaryOp,
+    result_ty: &Type,
+    operand_ty: &Type,
+    left: String,
+    right: String,
+) -> String {
+    if matches!(operand_ty, Type::String) && matches!(op, BinaryOp::Equal | BinaryOp::NotEqual) {
+        let comparison = match op {
+            BinaryOp::Equal => "==",
+            BinaryOp::NotEqual => "!=",
+            _ => unreachable!("string comparison only supports equality operators"),
+        };
+        return format!("(strcmp({left}, {right}) {comparison} 0)");
+    }
+
+    debug_assert!(!matches!(result_ty, Type::String));
+    format!("({left} {} {right})", op.c_operator())
+}
+
 fn push_indented_lines(output: &mut String, code: &str, level: usize) {
     let indent = "    ".repeat(level);
     for line in code.lines() {
@@ -1457,6 +1480,27 @@ func main() {
 
         assert!(c.contains("(mlg_user).mlg_age = 31;"));
         assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
+    }
+
+    #[test]
+    fn generates_c_for_string_equality() {
+        let program = parse(
+            r#"
+func main() {
+    word := "mallang"
+    print(word == "mallang")
+    print(word != "rust")
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert!(c.contains("#include <string.h>"));
+        assert!(c.contains("strcmp(mlg_word, \"mallang\") == 0"));
+        assert!(c.contains("strcmp(mlg_word, \"rust\") != 0"));
     }
 
     #[test]
