@@ -34,6 +34,12 @@ if [[ "$check_output" != "examples/first.mlg: ok" ]]; then
   exit 1
 fi
 
+run_command_output="$("$RELEASE_BIN" run examples/first.mlg)"
+if [[ "$run_command_output" != "30" ]]; then
+  echo "release binary run smoke failed: $run_command_output" >&2
+  exit 1
+fi
+
 "$RELEASE_BIN" build examples/first.mlg -o "$SMOKE_BIN"
 run_output="$("$SMOKE_BIN")"
 if [[ "$run_output" != "30" ]]; then

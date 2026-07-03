@@ -61,6 +61,9 @@ Release binary smoke:
 scripts/check-release-binary.sh
 ```
 
+This smoke covers release `--version`, `--help`, `check`, `run`, `build`, and
+the native binary produced by `build`.
+
 Fast local rerun when generated C sanitizer artifacts are not required:
 
 ```sh

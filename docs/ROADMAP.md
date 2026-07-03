@@ -758,3 +758,9 @@
 - [x] `cargo build --release --bin mlg` 후 `target/release/mlg --version`/`--help` 검증
 - [x] release binary로 `check examples/first.mlg`와 native `build`/run smoke 검증
 - [x] `scripts/verify-v0-rc.sh`에 release binary smoke 연결
+
+## P97: Release Binary Run Smoke
+
+- [x] `scripts/check-release-binary.sh`가 `target/release/mlg run examples/first.mlg`를 직접 검증
+- [x] release `mlg run` stdout이 `30`인지 확인
+- [x] 기존 `scripts/verify-v0-rc.sh` release binary smoke 경로로 P97 검증 포함
