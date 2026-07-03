@@ -287,20 +287,21 @@ Indexing and length rules:
 - Slice fields in structs are supported. Struct drop helpers recursively clean up
   fields that own cleanup resources.
 
-Future v0 slice rules:
+Implemented slice cleanup model:
+
+- The backend emits internal drop helper shells for cleanup types.
+- The typed IR can carry explicit internal drop statements.
+- Automatic drop insertion covers straight-line owned cleanup parameters,
+  locals, local reassignment, `if`/`match` branch-local cleanup roots,
+  `if`/`match` outer cleanup root branch moves, expression branch cleanup,
+  `for`/`range` body-local cleanup roots, and `for` init cleanup roots via a
+  loop-exit cleanup trailer.
+
+Deferred slice and borrow rules:
 
 - Mutable range values and by-reference iteration remain deferred.
 - Borrowed slice views, first-class references, and sharing a backing buffer
   across multiple owned slice values are deferred beyond this v0 direction.
-- The backend may also emit internal drop helper shells for cleanup types before
-  automatic scope-exit drop insertion is implemented.
-- The typed IR may carry explicit internal drop statements before semantic
-  lowering inserts them automatically.
-- Initial automatic drop insertion may cover straight-line owned cleanup
-  parameters, locals, local reassignment, `if`/`match` branch-local cleanup
-  roots, `if`/`match` outer cleanup root branch moves, and `for`/`range`
-  body-local cleanup roots. `for` init cleanup roots may use a loop-exit
-  cleanup trailer before full loop cleanup state tracking is complete.
 
 `unit` is the implicit return type of functions that do not return a value.
 

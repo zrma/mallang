@@ -629,3 +629,9 @@
 - [x] `name in T` suffix read-borrow parameter form을 계속 reject하도록 parser regression 추가
 - [x] `name mut T` suffix mutable-borrow parameter form을 계속 reject하도록 parser regression 추가
 - [x] `in expr` call-site borrow alias를 열지 않도록 parser regression 추가
+
+## P78: Slice Cleanup Spec Refresh
+
+- [x] `SPEC.md`의 slice cleanup 설명을 future staging 문구에서 current implemented model로 갱신
+- [x] deferred slice/borrow rules와 implemented cleanup model을 분리
+- [x] ROADMAP에 v0 freeze 문서 정리 항목 기록
