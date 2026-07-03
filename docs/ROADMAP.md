@@ -617,3 +617,9 @@
 - [x] non-empty native slice literal lowering에 `UINT64_MAX / sizeof(T)` allocation-size guard 추가
 - [x] slice literal allocation-size overflow와 allocation failure가 모두 `mallang_runtime_error(...)` helper로 실패하는지 backend regression 추가
 - [x] SPEC에서 native slice literal과 `append` allocation failure/overflow policy를 같은 runtime-error policy로 고정
+
+## P76: Indexed Slice Field Append-Take Regression
+
+- [x] `append(store.bags[i].values, item)` C lowering이 indexed field source를 temp slice header로 copy하는지 고정
+- [x] consumed indexed source field를 empty slice header로 reset하는 codegen regression 추가
+- [x] append result와 owning store cleanup ownership이 유지되는지 backend assertion 추가

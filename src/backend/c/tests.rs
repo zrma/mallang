@@ -1464,6 +1464,44 @@ print(len(bag.values))
 }
 
 #[test]
+fn generates_c_for_indexed_slice_field_append_take_source() {
+    let program = parse(
+        r#"
+type Bag struct {
+values []int
+}
+
+type Store struct {
+bags []Bag
+}
+
+func main() {
+mut store := Store{bags: []Bag{Bag{values: []int{1}}, Bag{values: []int{2, 3}}}}
+i := 1
+moved := append(store.bags[i].values, 4)
+print(len(moved))
+print(len(store.bags[i].values))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("mlg_Slice_int mallang_slice_append_tmp_"));
+    assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
+    assert!(c.contains(" = (((mlg_store).mlg_bags).mlg_data[mallang_index_value_"));
+    assert!(c.contains("]).mlg_values;"));
+    assert!(c.contains(
+        "]).mlg_values = (mlg_Slice_int){ .mlg_data = NULL, .mlg_len = 0, .mlg_cap = 0 };"
+    ));
+    assert!(c.contains("mlg_Slice_int mlg_moved = mallang_slice_append_tmp_"));
+    assert!(c.contains("mlg_drop_Slice_int(&(mlg_moved));"));
+    assert!(c.contains("mlg_drop_Struct_Store(&(mlg_store));"));
+}
+
+#[test]
 fn generates_c_for_owned_slice_field_take_expression() {
     let program = parse(
         r#"
