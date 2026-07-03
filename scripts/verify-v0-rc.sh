@@ -91,6 +91,7 @@ PYVERIFY
 
 scripts/check-release-helpers.sh
 scripts/check.sh
+scripts/check-release-binary.sh
 if [[ "$VERIFY_DEEP" -eq 1 ]]; then
   scripts/check-generated-c-sanitizers.sh --assume-generated
 fi

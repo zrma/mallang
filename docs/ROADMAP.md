@@ -751,3 +751,10 @@
 - [x] push 후 `origin`을 다시 fetch하고 remote bookmark가 publish target을 가리키는지 비교
 - [x] remote bookmark mismatch는 명확한 diagnostic과 non-zero exit로 처리
 - [x] release helper contract check가 post-push verification wiring을 검증
+
+## P96: Release Binary Smoke
+
+- [x] `scripts/check-release-binary.sh` 추가
+- [x] `cargo build --release --bin mlg` 후 `target/release/mlg --version`/`--help` 검증
+- [x] release binary로 `check examples/first.mlg`와 native `build`/run smoke 검증
+- [x] `scripts/verify-v0-rc.sh`에 release binary smoke 연결

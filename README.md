@@ -184,6 +184,12 @@ Run the lightweight release helper contract check:
 scripts/check-release-helpers.sh
 ```
 
+Run the release binary smoke:
+
+```sh
+scripts/check-release-binary.sh
+```
+
 After explicit approval to publish, run the finalizer:
 
 ```sh

@@ -232,6 +232,7 @@
 - [x] Publish finalizer no-push dry run remote freshness checks.
 - [x] Publish finalizer missing option value diagnostics.
 - [x] Publish finalizer post-push remote bookmark verification.
+- [x] Release binary smoke wired into v0 RC verification.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

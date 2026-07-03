@@ -55,6 +55,7 @@ check_shell_syntax() {
 
 check_shell_syntax \
   scripts/check-generated-c-sanitizers.sh \
+  scripts/check-release-binary.sh \
   scripts/check-release-helpers.sh \
   scripts/check.sh \
   scripts/finalize-and-push.sh \

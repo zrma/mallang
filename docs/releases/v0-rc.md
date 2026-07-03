@@ -55,6 +55,12 @@ Primary local gate:
 scripts/verify-v0-rc.sh
 ```
 
+Release binary smoke:
+
+```sh
+scripts/check-release-binary.sh
+```
+
 Fast local rerun when generated C sanitizer artifacts are not required:
 
 ```sh
