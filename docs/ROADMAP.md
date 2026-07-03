@@ -778,3 +778,10 @@
 - [x] release binary `check`가 borrowed non-copy escape source를 reject하는지 검증
 - [x] release binary `check`가 same-call overlapping borrow source를 reject하는지 검증
 - [x] failure stdout은 비어 있고 stderr에 안정적인 safety diagnostic이 있는지 검증
+
+## P100: Release Binary CLI Error Smoke
+
+- [x] `target/release/mlg` no-args invocation이 stderr usage와 non-zero exit를 내는지 검증
+- [x] `target/release/mlg nope` unknown subcommand diagnostic과 non-zero exit를 검증
+- [x] release CLI failure stdout이 비어 있는지 검증
+- [x] 기존 safety rejection smoke도 공통 failure helper로 정리

@@ -15,14 +15,15 @@ NEGATIVE_DIR="target/mallang/release-binary-negative"
 
 mkdir -p target/mallang "$NEGATIVE_DIR"
 
-expect_release_check_failure() {
+expect_release_command_failure() {
   local label="$1"
   local expected_stderr="$2"
-  local source="$NEGATIVE_DIR/$label.mlg"
+  shift 2
+
   local stdout="$NEGATIVE_DIR/$label.stdout"
   local stderr="$NEGATIVE_DIR/$label.stderr"
 
-  if "$RELEASE_BIN" check "$source" >"$stdout" 2>"$stderr"; then
+  if "$@" >"$stdout" 2>"$stderr"; then
     echo "release binary $label failure smoke failed: expected non-zero exit" >&2
     exit 1
   fi
@@ -41,6 +42,14 @@ expect_release_check_failure() {
   fi
 }
 
+expect_release_check_failure() {
+  local label="$1"
+  local expected_stderr="$2"
+  local source="$NEGATIVE_DIR/$label.mlg"
+
+  expect_release_command_failure "$label" "$expected_stderr" "$RELEASE_BIN" check "$source"
+}
+
 "${CARGO[@]}" build --release --bin mlg
 
 crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
@@ -49,6 +58,9 @@ if [[ "$version_output" != "mlg $crate_version" ]]; then
   echo "release binary version smoke failed: expected mlg $crate_version, got '$version_output'" >&2
   exit 1
 fi
+
+expect_release_command_failure "no-args" "usage:" "$RELEASE_BIN"
+expect_release_command_failure "unknown-command" 'unknown subcommand `nope`' "$RELEASE_BIN" nope
 
 help_output="$("$RELEASE_BIN" --help)"
 if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <source-file>"* || "$help_output" != *"$RELEASE_BIN --version"* ]]; then
