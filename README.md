@@ -172,6 +172,12 @@ Run the heavier generated C sanitizer sweep before publication:
 scripts/check-generated-c-sanitizers.sh
 ```
 
+Run the complete local v0 release-candidate gate:
+
+```sh
+scripts/verify-v0-rc.sh
+```
+
 ## Layout
 
 - `SPEC.md`: v0 language specification.

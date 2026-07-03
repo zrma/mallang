@@ -13,6 +13,7 @@
 ```sh
 scripts/check.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
+scripts/verify-v0-rc.sh
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg

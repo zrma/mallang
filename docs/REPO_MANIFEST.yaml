@@ -9,6 +9,7 @@ primary_entrypoints:
 commands:
   check: scripts/check.sh
   deep_generated_c_sanitizers: scripts/check-generated-c-sanitizers.sh
+  verify_v0_rc: scripts/verify-v0-rc.sh
   format: cargo fmt --all --check
   test: cargo test --workspace
   clippy: cargo clippy --workspace --all-targets -- -D warnings

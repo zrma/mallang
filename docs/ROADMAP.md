@@ -680,3 +680,10 @@
 - [x] conservative drop helper emission이 unused-function warning을 만들지 않도록 `MLG_UNUSED` 적용
 - [x] range source/value temp가 source-level 미사용 binding 때문에 warning을 만들지 않도록 처리
 - [x] `scripts/check.sh` default gate에서 전체 generated C를 `clang -std=c11 -Wall -Wextra -Werror`로 검증
+
+## P86: V0 RC Pre-Publish Verification
+
+- [x] remote publish 전 로컬 v0 RC 검증 명령 `scripts/verify-v0-rc.sh` 추가
+- [x] normal smoke, deep generated C sanitizer, roadmap completion, local stack, attribution을 한 번에 확인
+- [x] `--skip-deep-sanitizers` fast rerun 경로 추가
+- [x] remote publish는 사용자 승인 필요 gate로 유지
