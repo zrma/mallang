@@ -12,6 +12,7 @@ user-facing command: mlg
 build command: mlg build
 run command: mlg run
 check command: mlg check
+version command: mlg --version
 ```
 
 `mallang` is reserved for documentation, package names, and searchability. The

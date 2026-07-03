@@ -46,6 +46,12 @@ expect_native_runtime_failure() {
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
+crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+version_output="$("${CARGO[@]}" run --quiet --bin mlg -- --version)"
+if [[ "$version_output" != "mlg $crate_version" ]]; then
+  echo "version smoke failed: expected mlg $crate_version, got '$version_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

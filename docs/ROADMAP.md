@@ -635,3 +635,9 @@
 - [x] `SPEC.md`의 slice cleanup 설명을 future staging 문구에서 current implemented model로 갱신
 - [x] deferred slice/borrow rules와 implemented cleanup model을 분리
 - [x] ROADMAP에 v0 freeze 문서 정리 항목 기록
+
+## P79: CLI Version Smoke
+
+- [x] `mlg --version`이 Cargo package version을 출력하도록 추가
+- [x] usage output에 `--version` form 추가
+- [x] `scripts/check.sh`에서 `Cargo.toml` version과 CLI 출력 일치 smoke 추가

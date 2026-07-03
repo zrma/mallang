@@ -40,6 +40,10 @@ fn main() {
             args.remove(0);
             run_run(&program, &args)
         }
+        "-V" | "--version" => {
+            println!("mlg {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         "-h" | "--help" => {
             usage(&program);
             Ok(())
@@ -63,6 +67,7 @@ fn usage(program: &str) {
     eprintln!("  {program} ir <source-file>");
     eprintln!("  {program} build <source-file> [-o <output>]");
     eprintln!("  {program} run <source-file>");
+    eprintln!("  {program} --version");
 }
 
 fn run_lex(program: &str, args: &[String]) -> Result<(), String> {

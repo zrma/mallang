@@ -102,6 +102,7 @@
 - [x] Expose compilation through `mlg build` rather than a separate long compiler
   command.
 - [x] Expose compile-and-execute through `mlg run`.
+- [x] Expose crate version through `mlg --version`.
 - [x] Generate native C blocks for statement-form `if`.
 - [x] Lower `con`/`mut` parameters to a hidden-reference C ABI.
 - [x] Generate C temps for `if` expression branches that need prelude statements.
@@ -210,6 +211,7 @@
 - [x] C backend IR invariant regression coverage.
 - [x] Native slice literal allocation-size overflow guard.
 - [x] Indexed slice field append-take C lowering regression.
+- [x] `mlg --version` CLI smoke.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.
