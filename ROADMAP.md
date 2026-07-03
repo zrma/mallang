@@ -235,6 +235,7 @@
 - [x] Release binary smoke wired into v0 RC verification.
 - [x] Release binary run command smoke wired into v0 RC verification.
 - [x] Release binary frontend and IR smoke wired into v0 RC verification.
+- [x] Release binary safety rejection smoke wired into v0 RC verification.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

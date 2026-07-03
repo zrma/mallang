@@ -11,6 +11,35 @@ fi
 
 RELEASE_BIN="target/release/mlg"
 SMOKE_BIN="target/mallang/release-binary-first"
+NEGATIVE_DIR="target/mallang/release-binary-negative"
+
+mkdir -p target/mallang "$NEGATIVE_DIR"
+
+expect_release_check_failure() {
+  local label="$1"
+  local expected_stderr="$2"
+  local source="$NEGATIVE_DIR/$label.mlg"
+  local stdout="$NEGATIVE_DIR/$label.stdout"
+  local stderr="$NEGATIVE_DIR/$label.stderr"
+
+  if "$RELEASE_BIN" check "$source" >"$stdout" 2>"$stderr"; then
+    echo "release binary $label failure smoke failed: expected non-zero exit" >&2
+    exit 1
+  fi
+
+  if [[ -s "$stdout" ]]; then
+    echo "release binary $label failure smoke failed: expected empty stdout" >&2
+    cat "$stdout" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "$expected_stderr" "$stderr"; then
+    echo "release binary $label failure smoke failed: expected stderr containing '$expected_stderr'" >&2
+    echo "stderr was:" >&2
+    cat "$stderr" >&2
+    exit 1
+  fi
+}
 
 "${CARGO[@]}" build --release --bin mlg
 
@@ -47,6 +76,44 @@ if [[ "$check_output" != "examples/first.mlg: ok" ]]; then
   echo "release binary check smoke failed: $check_output" >&2
   exit 1
 fi
+
+cat >"$NEGATIVE_DIR/use-after-move.mlg" <<'MLG'
+func main() {
+    name := "kim"
+    moved := name
+    print(name)
+}
+MLG
+expect_release_check_failure "use-after-move" 'use of moved value `name`'
+
+cat >"$NEGATIVE_DIR/borrow-escape.mlg" <<'MLG'
+func main() {
+    name := "kim"
+    print(take(con name))
+}
+
+func take(con name string) string {
+    return name
+}
+MLG
+expect_release_check_failure "borrow-escape" 'cannot move borrowed value `name`'
+
+cat >"$NEGATIVE_DIR/overlap-borrow.mlg" <<'MLG'
+type User struct {
+    name string
+    age int
+}
+
+func main() {
+    mut user := User{name: "kim", age: 30}
+    touch(mut user, con user)
+}
+
+func touch(mut left User, con right User) {
+    left.age = right.age
+}
+MLG
+expect_release_check_failure "overlap-borrow" 'borrow of `user` overlaps with an active borrow in this call'
 
 ir_output="$("$RELEASE_BIN" ir examples/first.mlg)"
 if [[ "$ir_output" != *"IrProgram {"* || "$ir_output" != *"IrFunction {"* || "$ir_output" != *"return_type: Unit"* ]]; then

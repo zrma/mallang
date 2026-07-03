@@ -771,3 +771,10 @@
 - [x] `target/release/mlg parse examples/first.mlg` smoke 추가
 - [x] `target/release/mlg ir examples/first.mlg` smoke 추가
 - [x] 기존 `scripts/verify-v0-rc.sh` release binary smoke 경로로 P98 검증 포함
+
+## P99: Release Binary Safety Rejection Smoke
+
+- [x] release binary `check`가 use-after-move source를 reject하는지 검증
+- [x] release binary `check`가 borrowed non-copy escape source를 reject하는지 검증
+- [x] release binary `check`가 same-call overlapping borrow source를 reject하는지 검증
+- [x] failure stdout은 비어 있고 stderr에 안정적인 safety diagnostic이 있는지 검증
