@@ -231,6 +231,7 @@ impl<'a> CGenerator<'a> {
             output.push('\n');
         }
         output.push_str(&format!("{} {source_temp} = {code};\n", source.ty.c_name()));
+        output.push_str(&format!("(void)&{source_temp};\n"));
         output.push_str(&format!(
             "for (int64_t {index_ident} = 0; {index_ident} < {range_len}; {index_ident} = ({index_ident} + 1)) {{\n"
         ));
@@ -252,6 +253,7 @@ impl<'a> CGenerator<'a> {
                     1,
                 );
             }
+            push_indented_lines(&mut output, &format!("(void)&{value_ident};"), 1);
         }
 
         let mut body_env = env.clone();

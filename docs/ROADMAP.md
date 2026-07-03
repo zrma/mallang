@@ -673,3 +673,10 @@
 - [x] 전체 정상 generated C 예제를 ASan/UBSan으로 재컴파일하고 실행
 - [x] sanitizer 실행 stdout을 normal native binary stdout과 비교
 - [x] default smoke와 분리된 explicit pre-publication gate로 문서화
+
+## P85: Full Generated C Warning Clean Gate
+
+- [x] `scripts/check.sh`의 정상 generated C 예제 label 전체를 warning-clean source of truth로 사용
+- [x] conservative drop helper emission이 unused-function warning을 만들지 않도록 `MLG_UNUSED` 적용
+- [x] range source/value temp가 source-level 미사용 binding 때문에 warning을 만들지 않도록 처리
+- [x] `scripts/check.sh` default gate에서 전체 generated C를 `clang -std=c11 -Wall -Wextra -Werror`로 검증

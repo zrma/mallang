@@ -426,7 +426,7 @@ impl<'a> TypeEmitter<'a> {
 
     fn drop_helper_for_type(&self, ty: &Type) -> Result<String, CompileError> {
         let mut output = format!(
-            "static void {}({} *mlg_value) {{\n",
+            "static void MLG_UNUSED {}({} *mlg_value) {{\n",
             drop_fn_name(ty),
             ty.c_name()
         );

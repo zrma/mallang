@@ -97,6 +97,18 @@ expect_warning_clean_generated_c() {
   fi
 }
 
+generated_c_smoke_labels() {
+  sed -nE 's#.*build examples/[^ ]+ -o target/mallang/([^ ]+).*#\1#p' scripts/check.sh |
+    sort -u
+}
+
+expect_all_warning_clean_generated_c() {
+  local label
+  while IFS= read -r label; do
+    expect_warning_clean_generated_c "$label" "target/mallang/${label}.c"
+  done < <(generated_c_smoke_labels)
+}
+
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
@@ -743,7 +755,4 @@ expect_sanitized_native_output \
   "indexed-slice-field-append" \
   "target/mallang/indexed-slice-field-append.c" \
   $'3\n8\n2\n5'
-expect_warning_clean_generated_c "adt" "target/mallang/adt.c"
-expect_warning_clean_generated_c "arrays" "target/mallang/arrays.c"
-expect_warning_clean_generated_c "array-for-post" "target/mallang/array-for-post.c"
-expect_warning_clean_generated_c "slice-field-take" "target/mallang/slice-field-take.c"
+expect_all_warning_clean_generated_c

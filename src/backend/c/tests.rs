@@ -126,13 +126,13 @@ fn generates_c_drop_helpers_for_internal_cleanup_types() {
     let c = generate_c_from_ir(&program).unwrap();
 
     assert!(c.contains(
-        "static void mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    free(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
+        "static void MLG_UNUSED mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    free(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
     ));
     assert!(c.contains(
-        "static void mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
+        "static void MLG_UNUSED mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
     ));
     assert!(c.contains(
-        "static void mlg_drop_Struct_Holder(mlg_struct_Holder *mlg_value) {\n    mlg_drop_Slice_int(&(mlg_value->mlg_values));\n}"
+        "static void MLG_UNUSED mlg_drop_Struct_Holder(mlg_struct_Holder *mlg_value) {\n    mlg_drop_Slice_int(&(mlg_value->mlg_values));\n}"
     ));
 }
 
@@ -1202,9 +1202,11 @@ print(total)
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("mlg_Array_3_int mallang_range_src_"));
+    assert!(c.contains("(void)&mallang_range_src_"));
     assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 3; mlg_i = (mlg_i + 1)) {"));
     assert!(c.contains("int64_t mlg_value = (mallang_range_src_"));
     assert!(c.contains(".mlg_data[mlg_i];"));
+    assert!(c.contains("(void)&mlg_value;"));
     assert!(c.contains("__builtin_add_overflow"));
     assert!(c.contains("mlg_total = mallang_checked_result_"));
 }
@@ -1296,6 +1298,7 @@ for _ := range users {
 
     assert!(c.contains("for (int64_t mlg_i = 0; mlg_i < 2; mlg_i = (mlg_i + 1)) {"));
     assert!(c.contains("for (int64_t mallang_range_index_"));
+    assert!(c.contains("(void)&mallang_range_src_"));
     assert!(!c.contains("mlg__"));
 }
 

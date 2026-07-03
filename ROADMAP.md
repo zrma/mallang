@@ -221,6 +221,7 @@
 - [x] Generated C memory/lifetime sanitizer smoke.
 - [x] Generated C strict warning smoke.
 - [x] Deep generated C sanitizer sweep command.
+- [x] Full generated C strict warning gate.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.
