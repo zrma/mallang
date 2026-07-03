@@ -228,6 +228,7 @@
 - [x] Publish readiness verify-only finalizer path.
 - [x] Release helper contract checks wired into v0 RC verification.
 - [x] Publish finalizer remote freshness guard.
+- [x] Publish finalizer preflight and final remote freshness gates.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

@@ -190,9 +190,9 @@ After explicit approval to publish, run the finalizer:
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
 ```
 
-The finalizer fetches `origin` before the real push, prefers Homebrew Git when
-available, and fails if the remote bookmark no longer matches the local
-bookmark base.
+The finalizer fetches `origin` before the expensive local verification and
+again before the real push, prefers Homebrew Git when available, and fails if
+the remote bookmark no longer matches the local bookmark base.
 
 For publish-readiness verification without changing the jj description, moving
 bookmarks, or pushing:

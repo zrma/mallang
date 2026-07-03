@@ -138,6 +138,6 @@ target/mallang/match-statement
 1. remote publish after user approval
 2. post-v0 syntax planning only after v0 local release-candidate snapshot is published
 
-Publish helper note: the real publish path fetches `origin` with Homebrew Git
-preferred when available, and refuses to move the bookmark if `main@origin` no
-longer matches the local `main` base.
+Publish helper note: the real publish path fetches `origin` before verification
+and again before bookmark movement, with Homebrew Git preferred when available,
+and refuses to publish if `main@origin` no longer matches the local `main` base.

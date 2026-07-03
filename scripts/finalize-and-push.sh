@@ -8,8 +8,8 @@ Usage:
   scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
 
 By default, writes a jj description with Codex attribution, runs the v0 RC
-verification gate, verifies that the remote bookmark did not move, moves the
-bookmark, and pushes it with jj.
+verification gate, verifies that the remote bookmark did not move before and
+after verification, moves the bookmark, and pushes it with jj.
 
 Use --no-push to run the same local finalization gate without moving bookmarks
 or pushing to any remote.
@@ -150,30 +150,35 @@ PYNORMALIZE
 }
 
 verify_remote_bookmark_fresh() {
+  local phase="$1"
   local local_commit=""
   local remote_commit=""
   local remote_ref="$BOOKMARK@$REMOTE"
 
   if ! local_commit="$(jj log -r "$BOOKMARK" --no-graph -T 'commit_id' 2>/dev/null)"; then
-    echo "bookmark freshness check failed: local bookmark not found: $BOOKMARK" >&2
+    echo "bookmark freshness check failed during $phase: local bookmark not found: $BOOKMARK" >&2
     exit 1
   fi
 
   run_jj_git fetch --remote "$REMOTE"
 
   if ! remote_commit="$(jj log -r "$remote_ref" --no-graph -T 'commit_id' 2>/dev/null)"; then
-    echo "bookmark freshness check failed: remote bookmark not found: $remote_ref" >&2
+    echo "bookmark freshness check failed during $phase: remote bookmark not found: $remote_ref" >&2
     exit 1
   fi
 
   if [[ "$local_commit" != "$remote_commit" ]]; then
-    echo "bookmark freshness check failed: $remote_ref moved since local $BOOKMARK" >&2
+    echo "bookmark freshness check failed during $phase: $remote_ref moved since local $BOOKMARK" >&2
     echo "local $BOOKMARK: $local_commit" >&2
     echo "$remote_ref: $remote_commit" >&2
     echo "fetch/reconcile the local stack before publishing" >&2
     exit 1
   fi
 }
+
+if [[ "$PUSH" -eq 1 ]]; then
+  verify_remote_bookmark_fresh "preflight"
+fi
 
 describe_with_attribution
 scripts/verify-v0-rc.sh
@@ -183,7 +188,7 @@ if [[ "$PUSH" -eq 0 ]]; then
   exit 0
 fi
 
-verify_remote_bookmark_fresh
+verify_remote_bookmark_fresh "final"
 jj bookmark set "$BOOKMARK" -r @
 run_jj_git push --remote "$REMOTE" --bookmark "$BOOKMARK"
 jj bookmark list --all-remotes

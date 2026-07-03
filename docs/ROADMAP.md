@@ -723,3 +723,10 @@
 - [x] fetch 후 `main@origin`이 local `main` base와 다르면 publish 중단
 - [x] `--verify-only`와 `--no-push`는 description/bookmark/remote side effect 없는 기존 경계 유지
 - [x] README/HANDOFF/release note에 stale remote guard 기록
+
+## P92: Publish Freshness Preflight
+
+- [x] real publish 경로에서 final description 작성 전 remote freshness preflight 실행
+- [x] full v0 RC verification 후 bookmark 이동 직전 remote freshness final check 유지
+- [x] stale remote이면 expensive verification이나 local description mutation 전에 먼저 중단
+- [x] release helper contract check가 preflight/final freshness wiring을 검증

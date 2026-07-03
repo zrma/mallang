@@ -67,6 +67,8 @@ expect_log_contains finalize_help "--no-push"
 expect_log_contains finalize_help "remote bookmark did not move"
 expect_file_contains scripts/finalize-and-push.sh 'PATH="/opt/homebrew/bin:$PATH" jj git "$@"'
 expect_file_contains scripts/finalize-and-push.sh 'run_jj_git fetch --remote "$REMOTE"'
+expect_file_contains scripts/finalize-and-push.sh 'verify_remote_bookmark_fresh "preflight"'
+expect_file_contains scripts/finalize-and-push.sh 'verify_remote_bookmark_fresh "final"'
 expect_file_contains scripts/finalize-and-push.sh 'run_jj_git push --remote "$REMOTE" --bookmark "$BOOKMARK"'
 
 expect_status verify_only_message 2 \
