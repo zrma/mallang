@@ -694,3 +694,10 @@
 - [x] remote publish 없이 finalization flow를 검증하는 `--no-push` 추가
 - [x] 실제 bookmark 이동과 remote push는 명시적 finalizer invocation에만 남김
 - [x] README/manifest/handoff에 approval-gated publish 경로 기록
+
+## P88: V0 RC Release Notes
+
+- [x] `docs/releases/v0-rc.md`에 v0 local release-candidate 범위 기록
+- [x] language surface, safety model, native backend gate, CLI, verification command 정리
+- [x] post-v0 deferred boundary와 approval-gated publish command 기록
+- [x] README/HANDOFF에서 release note를 찾을 수 있게 연결

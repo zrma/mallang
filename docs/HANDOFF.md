@@ -125,6 +125,7 @@ target/mallang/match-statement
 ## 주요 문서
 
 - `SPEC.md`: 언어 v0 설계 초안
+- `docs/releases/v0-rc.md`: v0 release-candidate notes
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
 - `docs/REPO_MANIFEST.yaml`: 검증 명령과 entrypoint 선언

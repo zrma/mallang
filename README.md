@@ -193,6 +193,7 @@ scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no
 ## Layout
 
 - `SPEC.md`: v0 language specification.
+- `docs/releases/v0-rc.md`: v0 release-candidate notes.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.
