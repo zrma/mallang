@@ -715,3 +715,11 @@
 - [x] release helper shell syntax/help/invalid option contract를 경량 검증
 - [x] `--verify-only`가 `--message`/`--bookmark`와 결합될 수 없음을 자동 검증
 - [x] `scripts/verify-v0-rc.sh`가 release helper contract check를 먼저 실행하도록 연결
+
+## P91: Publish Remote Freshness Guard
+
+- [x] real publish 경로에서 bookmark 이동 전 `jj git fetch --remote origin` 실행
+- [x] `jj git fetch/push` 경로에서 가능하면 Homebrew Git을 우선 사용
+- [x] fetch 후 `main@origin`이 local `main` base와 다르면 publish 중단
+- [x] `--verify-only`와 `--no-push`는 description/bookmark/remote side effect 없는 기존 경계 유지
+- [x] README/HANDOFF/release note에 stale remote guard 기록

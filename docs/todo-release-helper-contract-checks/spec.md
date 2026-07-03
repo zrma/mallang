@@ -12,12 +12,15 @@
 - Validate shell syntax for local project scripts.
 - Validate `scripts/finalize-and-push.sh` help output and rejected argument
   combinations that must not mutate jj state or remotes.
+- Validate that real fetch/push invocations stay routed through the Git-version
+  fallback wrapper.
 - Wire the release helper check into `scripts/verify-v0-rc.sh`.
 
 ## Checklist
 
 - [x] Add `scripts/check-release-helpers.sh`.
 - [x] Check finalize helper help output.
+- [x] Check finalize helper fetch/push wrapper wiring.
 - [x] Check invalid `--verify-only` combinations.
 - [x] Check invalid publish message and unknown option handling.
 - [x] Run release helper checks from `scripts/verify-v0-rc.sh`.

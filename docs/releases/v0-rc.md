@@ -94,3 +94,7 @@ After explicit user approval:
 ```sh
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
 ```
+
+The finalizer fetches `origin` before moving the bookmark, prefers Homebrew Git
+when available, and fails if `main@origin` no longer matches the local `main`
+base.

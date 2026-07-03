@@ -37,6 +37,15 @@ expect_log_contains() {
   fi
 }
 
+expect_file_contains() {
+  local path="$1"
+  local pattern="$2"
+  if ! grep -Fq -- "$pattern" "$path"; then
+    echo "$path failed: missing source pattern: $pattern" >&2
+    exit 1
+  fi
+}
+
 check_shell_syntax() {
   local script
   for script in "$@"; do
@@ -55,6 +64,10 @@ check_shell_syntax \
 expect_status finalize_help 0 scripts/finalize-and-push.sh --help
 expect_log_contains finalize_help "scripts/finalize-and-push.sh --verify-only"
 expect_log_contains finalize_help "--no-push"
+expect_log_contains finalize_help "remote bookmark did not move"
+expect_file_contains scripts/finalize-and-push.sh 'PATH="/opt/homebrew/bin:$PATH" jj git "$@"'
+expect_file_contains scripts/finalize-and-push.sh 'run_jj_git fetch --remote "$REMOTE"'
+expect_file_contains scripts/finalize-and-push.sh 'run_jj_git push --remote "$REMOTE" --bookmark "$BOOKMARK"'
 
 expect_status verify_only_message 2 \
   scripts/finalize-and-push.sh --verify-only --message "test: publish v0 release candidate"

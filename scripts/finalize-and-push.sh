@@ -8,7 +8,8 @@ Usage:
   scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
 
 By default, writes a jj description with Codex attribution, runs the v0 RC
-verification gate, moves the bookmark, and pushes it with jj.
+verification gate, verifies that the remote bookmark did not move, moves the
+bookmark, and pushes it with jj.
 
 Use --no-push to run the same local finalization gate without moving bookmarks
 or pushing to any remote.
@@ -21,6 +22,7 @@ USAGE
 MESSAGE=""
 BOOKMARK="main"
 BOOKMARK_SET=0
+REMOTE="origin"
 PUSH=1
 VERIFY_ONLY=0
 while [[ $# -gt 0 ]]; do
@@ -78,6 +80,15 @@ fi
 read_commit_attribution() {
   sed -nE 's/^[[:space:]]*commit_attribution[[:space:]]*=[[:space:]]*"([^"]*)"[[:space:]]*$/\1/p' \
     "$HOME/.codex/config.toml" | head -n 1
+}
+
+run_jj_git() {
+  if [[ -x /opt/homebrew/bin/git ]]; then
+    PATH="/opt/homebrew/bin:$PATH" jj git "$@"
+    return
+  fi
+
+  jj git "$@"
 }
 
 verify_description_attribution() {
@@ -138,6 +149,32 @@ PYNORMALIZE
   verify_description_attribution "$attribution"
 }
 
+verify_remote_bookmark_fresh() {
+  local local_commit=""
+  local remote_commit=""
+  local remote_ref="$BOOKMARK@$REMOTE"
+
+  if ! local_commit="$(jj log -r "$BOOKMARK" --no-graph -T 'commit_id' 2>/dev/null)"; then
+    echo "bookmark freshness check failed: local bookmark not found: $BOOKMARK" >&2
+    exit 1
+  fi
+
+  run_jj_git fetch --remote "$REMOTE"
+
+  if ! remote_commit="$(jj log -r "$remote_ref" --no-graph -T 'commit_id' 2>/dev/null)"; then
+    echo "bookmark freshness check failed: remote bookmark not found: $remote_ref" >&2
+    exit 1
+  fi
+
+  if [[ "$local_commit" != "$remote_commit" ]]; then
+    echo "bookmark freshness check failed: $remote_ref moved since local $BOOKMARK" >&2
+    echo "local $BOOKMARK: $local_commit" >&2
+    echo "$remote_ref: $remote_commit" >&2
+    echo "fetch/reconcile the local stack before publishing" >&2
+    exit 1
+  fi
+}
+
 describe_with_attribution
 scripts/verify-v0-rc.sh
 if [[ "$PUSH" -eq 0 ]]; then
@@ -146,7 +183,8 @@ if [[ "$PUSH" -eq 0 ]]; then
   exit 0
 fi
 
+verify_remote_bookmark_fresh
 jj bookmark set "$BOOKMARK" -r @
-jj git push --remote origin --bookmark "$BOOKMARK"
+run_jj_git push --remote "$REMOTE" --bookmark "$BOOKMARK"
 jj bookmark list --all-remotes
 jj status
