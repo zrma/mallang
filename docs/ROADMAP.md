@@ -604,3 +604,10 @@
 - [x] `scripts/check.sh` runtime failure smoke가 non-zero exit뿐 아니라 stderr message도 검증
 - [x] division/remainder, checked integer overflow, array bounds failure stderr를 `mallang runtime error: ...`로 고정
 - [x] compile-time negative smoke와 runtime negative smoke 검증 경계를 분리
+
+## P74: C Backend IR Invariant Regression
+
+- [x] malformed `print` call arity IR가 C emission 전에 invariant error로 실패하는지 고정
+- [x] non-array/slice `range` source IR가 invariant error로 실패하는지 고정
+- [x] Option match에 Result arm이 섞인 malformed IR를 invariant error로 고정
+- [x] `con`/`mut` borrow argument가 lvalue가 아닌 malformed IR를 invariant error로 고정

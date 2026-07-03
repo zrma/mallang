@@ -1,10 +1,10 @@
 use super::*;
 use crate::{
-    ast::ParamMode,
+    ast::{ArgMode, ParamMode},
     check,
     ir::{
-        lower, IrExpr, IrExprKind, IrForInit, IrFunction, IrProgram, IrStmt, IrStmtKind, IrStruct,
-        IrStructField,
+        lower, IrArg, IrExpr, IrExprKind, IrForInit, IrFunction, IrMatchBlockArm, IrMatchPattern,
+        IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
     },
     parse,
     semantic::Type,
@@ -349,6 +349,173 @@ fn rejects_explicit_internal_drop_for_non_cleanup_type() {
     assert!(error
         .message
         .contains("drop requested for non-cleanup type `int`"));
+}
+
+#[test]
+fn rejects_invalid_ir_print_arity() {
+    let span = crate::token::Span { start: 0, end: 0 };
+    let program = IrProgram {
+        structs: Vec::new(),
+        functions: vec![IrFunction {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: vec![IrStmt {
+                kind: IrStmtKind::Expr {
+                    expr: IrExpr {
+                        kind: IrExprKind::Call {
+                            callee: "print".to_string(),
+                            args: Vec::new(),
+                        },
+                        ty: Type::Unit,
+                        span,
+                    },
+                },
+                span,
+            }],
+        }],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert!(error
+        .message
+        .contains("IR invariant violation: print arity"));
+}
+
+#[test]
+fn rejects_invalid_ir_range_source_type() {
+    let span = crate::token::Span { start: 0, end: 0 };
+    let program = IrProgram {
+        structs: Vec::new(),
+        functions: vec![IrFunction {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: vec![IrStmt {
+                kind: IrStmtKind::RangeFor {
+                    index_name: "index".to_string(),
+                    value_name: "value".to_string(),
+                    source: IrExpr {
+                        kind: IrExprKind::Var("not_rangeable".to_string()),
+                        ty: Type::Int,
+                        span,
+                    },
+                    element_ty: Type::Int,
+                    body: Vec::new(),
+                },
+                span,
+            }],
+        }],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert!(error
+        .message
+        .contains("IR invariant violation: range source must be an array or slice"));
+}
+
+#[test]
+fn rejects_invalid_ir_option_match_arm() {
+    let span = crate::token::Span { start: 0, end: 0 };
+    let option_int = Type::Option(Box::new(Type::Int));
+    let program = IrProgram {
+        structs: Vec::new(),
+        functions: vec![IrFunction {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: vec![IrStmt {
+                kind: IrStmtKind::Match {
+                    scrutinee: IrExpr {
+                        kind: IrExprKind::AdtConstructor {
+                            constructor: crate::ir::IrAdtConstructor::None,
+                            payload: None,
+                        },
+                        ty: option_int,
+                        span,
+                    },
+                    arms: vec![IrMatchBlockArm {
+                        pattern: IrMatchPattern::Ok("value".to_string()),
+                        body: Vec::new(),
+                        span,
+                    }],
+                },
+                span,
+            }],
+        }],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert!(error
+        .message
+        .contains("IR invariant violation: invalid Option match arm"));
+}
+
+#[test]
+fn rejects_invalid_ir_borrow_argument_expression() {
+    let span = crate::token::Span { start: 0, end: 0 };
+    let program = IrProgram {
+        structs: Vec::new(),
+        functions: vec![
+            IrFunction {
+                name: "inspect".to_string(),
+                params: vec![crate::ir::IrParam {
+                    name: "value".to_string(),
+                    mode: ParamMode::Con,
+                    ty: Type::Int,
+                }],
+                return_type: Type::Unit,
+                body: Vec::new(),
+            },
+            IrFunction {
+                name: "main".to_string(),
+                params: Vec::new(),
+                return_type: Type::Unit,
+                body: vec![IrStmt {
+                    kind: IrStmtKind::Expr {
+                        expr: IrExpr {
+                            kind: IrExprKind::Call {
+                                callee: "inspect".to_string(),
+                                args: vec![IrArg {
+                                    mode: ArgMode::Con,
+                                    expr: IrExpr {
+                                        kind: IrExprKind::Binary {
+                                            op: crate::ast::BinaryOp::Add,
+                                            left: Box::new(IrExpr {
+                                                kind: IrExprKind::Int(1),
+                                                ty: Type::Int,
+                                                span,
+                                            }),
+                                            right: Box::new(IrExpr {
+                                                kind: IrExprKind::Int(2),
+                                                ty: Type::Int,
+                                                span,
+                                            }),
+                                        },
+                                        ty: Type::Int,
+                                        span,
+                                    },
+                                    span,
+                                }],
+                            },
+                            ty: Type::Unit,
+                            span,
+                        },
+                    },
+                    span,
+                }],
+            },
+        ],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert!(error
+        .message
+        .contains("IR invariant violation: invalid borrow argument expression"));
 }
 
 #[test]
