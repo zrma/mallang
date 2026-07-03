@@ -701,3 +701,10 @@
 - [x] language surface, safety model, native backend gate, CLI, verification command 정리
 - [x] post-v0 deferred boundary와 approval-gated publish command 기록
 - [x] README/HANDOFF에서 release note를 찾을 수 있게 연결
+
+## P89: Publish Verify-Only Finalizer
+
+- [x] `scripts/finalize-and-push.sh --verify-only` 추가
+- [x] verify-only는 jj description, bookmark, remote를 변경하지 않고 v0 RC gate만 실행
+- [x] README/HANDOFF/release note/manifest에 side-effect-free publish readiness command 기록
+- [x] 기존 `--no-push`는 final jj description까지 쓰는 dry-run 경로로 명확히 문서화

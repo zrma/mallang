@@ -184,7 +184,15 @@ After explicit approval to publish, run the finalizer:
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
 ```
 
-For a local dry run without moving bookmarks or pushing:
+For publish-readiness verification without changing the jj description, moving
+bookmarks, or pushing:
+
+```sh
+scripts/finalize-and-push.sh --verify-only
+```
+
+For a local dry run that also writes the final jj description but still does not
+move bookmarks or push:
 
 ```sh
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push

@@ -3,19 +3,26 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
+Usage:
+  scripts/finalize-and-push.sh --verify-only
+  scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
 
-Writes a jj description with Codex attribution, runs the v0 RC verification
-gate, moves the bookmark, and pushes it with jj.
+By default, writes a jj description with Codex attribution, runs the v0 RC
+verification gate, moves the bookmark, and pushes it with jj.
 
 Use --no-push to run the same local finalization gate without moving bookmarks
 or pushing to any remote.
+
+Use --verify-only to run the v0 RC verification gate without changing the jj
+description, moving bookmarks, or pushing to any remote.
 USAGE
 }
 
 MESSAGE=""
 BOOKMARK="main"
+BOOKMARK_SET=0
 PUSH=1
+VERIFY_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --message)
@@ -24,9 +31,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --bookmark)
       BOOKMARK="${2:-}"
+      BOOKMARK_SET=1
       shift 2
       ;;
     --no-push)
+      PUSH=0
+      shift
+      ;;
+    --verify-only)
+      VERIFY_ONLY=1
       PUSH=0
       shift
       ;;
@@ -41,6 +54,21 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+  if [[ -n "$MESSAGE" ]]; then
+    echo "--verify-only cannot be combined with --message" >&2
+    exit 2
+  fi
+  if [[ "$BOOKMARK_SET" -eq 1 ]]; then
+    echo "--verify-only cannot be combined with --bookmark" >&2
+    exit 2
+  fi
+  scripts/verify-v0-rc.sh
+  echo "finalize-and-push verify-only gate passed; no description, bookmarks, or remotes changed"
+  jj status
+  exit 0
+fi
 
 if [[ ! "$MESSAGE" =~ ^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert):\ .+ ]]; then
   echo "invalid --message: expected '<type>: <summary>'" >&2

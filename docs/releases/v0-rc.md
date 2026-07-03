@@ -61,7 +61,15 @@ Fast local rerun when generated C sanitizer artifacts are not required:
 scripts/verify-v0-rc.sh --skip-deep-sanitizers
 ```
 
-Approval-gated finalizer dry run:
+Publish-readiness verification without changing the jj description, moving
+bookmarks, or pushing:
+
+```sh
+scripts/finalize-and-push.sh --verify-only
+```
+
+Approval-gated finalizer dry run that writes the final jj description but does
+not move bookmarks or push:
 
 ```sh
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push

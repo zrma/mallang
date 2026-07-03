@@ -225,6 +225,7 @@
 - [x] v0 release-candidate pre-publish verification command.
 - [x] Publish finalizer wired to v0 RC verification gate.
 - [x] v0 release-candidate notes.
+- [x] Publish readiness verify-only finalizer path.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.
