@@ -785,3 +785,10 @@
 - [x] `target/release/mlg nope` unknown subcommand diagnostic과 non-zero exit를 검증
 - [x] release CLI failure stdout이 비어 있는지 검증
 - [x] 기존 safety rejection smoke도 공통 failure helper로 정리
+
+## P101: Release Binary Build Argument Error Smoke
+
+- [x] `target/release/mlg build examples/first.mlg -o`가 missing output diagnostic을 내는지 검증
+- [x] `target/release/mlg build examples/first.mlg --wat`가 unknown build argument diagnostic을 내는지 검증
+- [x] release build argument failure stdout이 비어 있는지 검증
+- [x] 기존 release CLI failure helper를 재사용

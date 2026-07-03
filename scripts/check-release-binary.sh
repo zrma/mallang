@@ -61,6 +61,14 @@ fi
 
 expect_release_command_failure "no-args" "usage:" "$RELEASE_BIN"
 expect_release_command_failure "unknown-command" 'unknown subcommand `nope`' "$RELEASE_BIN" nope
+expect_release_command_failure \
+  "build-missing-output" \
+  "missing value for -o/--output" \
+  "$RELEASE_BIN" build examples/first.mlg -o
+expect_release_command_failure \
+  "build-unknown-argument" \
+  'unknown build argument `--wat`' \
+  "$RELEASE_BIN" build examples/first.mlg --wat
 
 help_output="$("$RELEASE_BIN" --help)"
 if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <source-file>"* || "$help_output" != *"$RELEASE_BIN --version"* ]]; then

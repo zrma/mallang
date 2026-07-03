@@ -64,7 +64,7 @@ scripts/check-release-binary.sh
 This smoke covers release `--version`, `--help`, `lex`, `parse`, `check`,
 `ir`, `run`, `build`, and the native binary produced by `build`.
 It verifies release CLI error streams for no-argument and unknown-subcommand
-invocations.
+invocations, plus malformed `build` arguments.
 It also verifies release `check` rejects representative v0 safety violations:
 use-after-move, borrowed non-copy escape, and same-call overlapping borrows.
 
