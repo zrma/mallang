@@ -103,6 +103,7 @@
   command.
 - [x] Expose compile-and-execute through `mlg run`.
 - [x] Expose crate version through `mlg --version`.
+- [x] Keep CLI help/error streams covered by smoke checks.
 - [x] Generate native C blocks for statement-form `if`.
 - [x] Lower `con`/`mut` parameters to a hidden-reference C ABI.
 - [x] Generate C temps for `if` expression branches that need prelude statements.
@@ -152,6 +153,8 @@
 - [x] Add C backend IR invariant regression coverage.
 - [x] Guard native slice literal allocation-size overflow.
 - [x] Cover indexed slice field append-take C lowering.
+- [x] Keep every checked-in example connected to the smoke gate.
+- [x] Run cleanup-heavy generated C through sanitizer smoke.
 
 ## Later
 
@@ -212,6 +215,9 @@
 - [x] Native slice literal allocation-size overflow guard.
 - [x] Indexed slice field append-take C lowering regression.
 - [x] `mlg --version` CLI smoke.
+- [x] `mlg --help` and CLI error stream smoke.
+- [x] v0 release-candidate audit and example smoke coverage guard.
+- [x] Generated C memory/lifetime sanitizer smoke.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

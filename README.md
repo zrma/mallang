@@ -12,6 +12,7 @@ This repository is the Mallang language PoC workspace.
 - Compiler command shape: `mlg build`, not a separate long `mallangc` command
 - Run command shape: `mlg run`
 - Version command shape: `mlg --version`
+- Help command shape: `mlg --help`
 - Internal compiler crate or binary name, if needed later: `mlgc`
 
 ## Current Scope
@@ -72,6 +73,7 @@ The current executable can lex, parse, check, build, and run the first native su
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
 cargo run --bin mlg -- --version
+cargo run --bin mlg -- --help
 cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- ir examples/adt.mlg

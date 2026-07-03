@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     process::{self, Command},
 };
@@ -10,7 +11,8 @@ fn main() {
     let mut args: Vec<String> = env::args().collect();
     let program = args.first().cloned().unwrap_or_else(|| "mlg".to_string());
     if args.len() < 2 {
-        usage(&program);
+        let mut stderr = io::stderr().lock();
+        let _ = write_usage(&mut stderr, &program);
         process::exit(2);
     }
     args.remove(0);
@@ -45,8 +47,9 @@ fn main() {
             Ok(())
         }
         "-h" | "--help" => {
-            usage(&program);
-            Ok(())
+            let mut stdout = io::stdout().lock();
+            write_usage(&mut stdout, &program)
+                .map_err(|error| format!("failed to write usage: {error}"))
         }
         command => Err(format!(
             "unknown subcommand `{command}`; run `{program} --help` for usage"
@@ -59,15 +62,15 @@ fn main() {
     }
 }
 
-fn usage(program: &str) {
-    eprintln!("usage:");
-    eprintln!("  {program} lex <source-file>");
-    eprintln!("  {program} parse <source-file>");
-    eprintln!("  {program} check <source-file>");
-    eprintln!("  {program} ir <source-file>");
-    eprintln!("  {program} build <source-file> [-o <output>]");
-    eprintln!("  {program} run <source-file>");
-    eprintln!("  {program} --version");
+fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
+    writeln!(output, "usage:")?;
+    writeln!(output, "  {program} lex <source-file>")?;
+    writeln!(output, "  {program} parse <source-file>")?;
+    writeln!(output, "  {program} check <source-file>")?;
+    writeln!(output, "  {program} ir <source-file>")?;
+    writeln!(output, "  {program} build <source-file> [-o <output>]")?;
+    writeln!(output, "  {program} run <source-file>")?;
+    writeln!(output, "  {program} --version")
 }
 
 fn run_lex(program: &str, args: &[String]) -> Result<(), String> {

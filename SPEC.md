@@ -13,6 +13,7 @@ build command: mlg build
 run command: mlg run
 check command: mlg check
 version command: mlg --version
+help command: mlg --help
 ```
 
 `mallang` is reserved for documentation, package names, and searchability. The

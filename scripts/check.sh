@@ -23,6 +23,7 @@ else
   export PATH="$TOOLCHAIN_BIN:$PATH"
   CARGO=("$TOOLCHAIN_BIN/cargo")
 fi
+CLANG_BIN="${CLANG:-clang}"
 
 expect_native_runtime_failure() {
   local label="$1"
@@ -43,6 +44,41 @@ expect_native_runtime_failure() {
   fi
 }
 
+expect_sanitized_native_output() {
+  local label="$1"
+  local c_source="$2"
+  local expected_stdout="$3"
+  local binary_path="target/mallang/${label}-san"
+  local stderr_path="target/mallang/${label}-san.stderr"
+  local output
+
+  if ! "$CLANG_BIN" -fsanitize=address,undefined -fno-omit-frame-pointer "$c_source" -o "$binary_path" 2>"$stderr_path"; then
+    echo "sanitizer $label compile failed" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+  if [[ -s "$stderr_path" ]]; then
+    echo "sanitizer $label compile emitted stderr" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+
+  if ! output="$("$binary_path" 2>"$stderr_path")"; then
+    echo "sanitizer $label run failed" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+  if [[ "$output" != "$expected_stdout" ]]; then
+    echo "sanitizer $label output mismatch: expected '$expected_stdout', got '$output'" >&2
+    exit 1
+  fi
+  if [[ -s "$stderr_path" ]]; then
+    echo "sanitizer $label emitted stderr" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+}
+
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
@@ -50,6 +86,48 @@ crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
 version_output="$("${CARGO[@]}" run --quiet --bin mlg -- --version)"
 if [[ "$version_output" != "mlg $crate_version" ]]; then
   echo "version smoke failed: expected mlg $crate_version, got '$version_output'" >&2
+  exit 1
+fi
+mkdir -p target/mallang
+help_stderr="target/mallang/help.stderr"
+help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
+if [[ "$help_output" != *"usage:"* || "$help_output" != *"target/debug/mlg check <source-file>"* || "$help_output" != *"target/debug/mlg --version"* ]]; then
+  echo "help smoke failed: unexpected help output '$help_output'" >&2
+  exit 1
+fi
+if [[ -s "$help_stderr" ]]; then
+  echo "help smoke failed: expected empty stderr" >&2
+  cat "$help_stderr" >&2
+  exit 1
+fi
+no_args_stdout="target/mallang/no-args.stdout"
+no_args_stderr="target/mallang/no-args.stderr"
+if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then
+  echo "no-args smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+if [[ -s "$no_args_stdout" || ! -s "$no_args_stderr" ]]; then
+  echo "no-args smoke failed: expected usage on stderr only" >&2
+  exit 1
+fi
+unknown_stdout="target/mallang/unknown-command.stdout"
+unknown_stderr="target/mallang/unknown-command.stderr"
+if "${CARGO[@]}" run --quiet --bin mlg -- nope >"$unknown_stdout" 2>"$unknown_stderr"; then
+  echo "unknown-command smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+if [[ -s "$unknown_stdout" ]] || ! grep -Fq 'unknown subcommand `nope`' "$unknown_stderr"; then
+  echo "unknown-command smoke failed: expected diagnostic on stderr only" >&2
+  exit 1
+fi
+missing_example_smokes="$(
+  comm -23 \
+    <(find examples -maxdepth 1 -type f -name '*.mlg' | sort) \
+    <(grep -Eo 'examples/[A-Za-z0-9_.-]+\.mlg' scripts/check.sh | sort -u)
+)"
+if [[ -n "$missing_example_smokes" ]]; then
+  echo "example smoke coverage failed: examples missing from scripts/check.sh" >&2
+  echo "$missing_example_smokes" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
@@ -631,3 +709,19 @@ if [[ "$match_statement_output" != $'7\n0' ]]; then
   echo "match statement native build smoke failed: expected 7 and 0, got '$match_statement_output'" >&2
   exit 1
 fi
+expect_sanitized_native_output \
+  "struct-slice-field" \
+  "target/mallang/struct-slice-field.c" \
+  $'2\n1'
+expect_sanitized_native_output \
+  "slice-field-take" \
+  "target/mallang/slice-field-take.c" \
+  $'2\n2\n0\n0\n0\n2\n5\n0'
+expect_sanitized_native_output \
+  "slice-field-take-append" \
+  "target/mallang/slice-field-take-append.c" \
+  $'3\n7\n0\n3\n8\n0'
+expect_sanitized_native_output \
+  "indexed-slice-field-append" \
+  "target/mallang/indexed-slice-field-append.c" \
+  $'3\n8\n2\n5'

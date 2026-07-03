@@ -641,3 +641,21 @@
 - [x] `mlg --version`이 Cargo package version을 출력하도록 추가
 - [x] usage output에 `--version` form 추가
 - [x] `scripts/check.sh`에서 `Cargo.toml` version과 CLI 출력 일치 smoke 추가
+
+## P80: CLI Help and Error Stream Smoke
+
+- [x] `mlg --help`가 성공 help를 stdout으로 출력하도록 정리
+- [x] no-args usage는 stderr와 non-zero exit로 유지
+- [x] unknown subcommand diagnostic을 stderr와 non-zero exit로 smoke 추가
+
+## P81: V0 Release Candidate Audit
+
+- [x] `examples/*.mlg` 전체가 `scripts/check.sh` smoke에 연결되어 있는지 확인
+- [x] 새 예제가 smoke 밖으로 빠지면 `scripts/check.sh`가 실패하도록 guard 추가
+- [x] v0 완료 범위와 post-v0 deferred boundary를 audit spec으로 고정
+
+## P82: Generated C Sanitizer Smoke
+
+- [x] cleanup-heavy generated C 예제를 ASan/UBSan으로 재컴파일
+- [x] sanitizer 실행 stdout을 기존 native smoke 기대값과 맞춰 검증
+- [x] sanitizer stderr가 비어 있어야 통과하도록 고정
