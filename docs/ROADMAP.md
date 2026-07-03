@@ -764,3 +764,10 @@
 - [x] `scripts/check-release-binary.sh`가 `target/release/mlg run examples/first.mlg`를 직접 검증
 - [x] release `mlg run` stdout이 `30`인지 확인
 - [x] 기존 `scripts/verify-v0-rc.sh` release binary smoke 경로로 P97 검증 포함
+
+## P98: Release Binary Frontend Smoke
+
+- [x] `target/release/mlg lex examples/first.mlg` smoke 추가
+- [x] `target/release/mlg parse examples/first.mlg` smoke 추가
+- [x] `target/release/mlg ir examples/first.mlg` smoke 추가
+- [x] 기존 `scripts/verify-v0-rc.sh` release binary smoke 경로로 P98 검증 포함

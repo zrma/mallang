@@ -28,9 +28,30 @@ if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <so
   exit 1
 fi
 
+lex_output="$("$RELEASE_BIN" lex examples/first.mlg)"
+if [[ "$lex_output" != *"Keyword(Func) @ 0..4"* || "$lex_output" != *'Ident("add")'* ]]; then
+  echo "release binary lex smoke failed" >&2
+  echo "$lex_output" >&2
+  exit 1
+fi
+
+parse_output="$("$RELEASE_BIN" parse examples/first.mlg)"
+if [[ "$parse_output" != *"Program {"* || "$parse_output" != *'name: "main"'* || "$parse_output" != *"Function {"* ]]; then
+  echo "release binary parse smoke failed" >&2
+  echo "$parse_output" >&2
+  exit 1
+fi
+
 check_output="$("$RELEASE_BIN" check examples/first.mlg)"
 if [[ "$check_output" != "examples/first.mlg: ok" ]]; then
   echo "release binary check smoke failed: $check_output" >&2
+  exit 1
+fi
+
+ir_output="$("$RELEASE_BIN" ir examples/first.mlg)"
+if [[ "$ir_output" != *"IrProgram {"* || "$ir_output" != *"IrFunction {"* || "$ir_output" != *"return_type: Unit"* ]]; then
+  echo "release binary ir smoke failed" >&2
+  echo "$ir_output" >&2
   exit 1
 fi
 
