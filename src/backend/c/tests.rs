@@ -50,7 +50,7 @@ print(values[0])
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("static void mallang_runtime_error(const char *message)"));
+    assert!(c.contains("static void MLG_UNUSED mallang_runtime_error(const char *message)"));
     assert_eq!(c.matches("fprintf(stderr").count(), 1);
     assert!(c.contains("mallang_runtime_error(\"array index out of bounds\")"));
 }
@@ -174,7 +174,7 @@ fn generates_c_for_explicit_internal_drop_statement() {
     let c = generate_c_from_ir(&program).unwrap();
 
     assert!(c.contains(
-        "void mlg_consume(mlg_Slice_int mlg_values) {\n    mlg_drop_Slice_int(&(mlg_values));\n}"
+        "void mlg_consume(mlg_Slice_int mlg_values) {\n    (void)mlg_values;\n    mlg_drop_Slice_int(&(mlg_values));\n}"
     ));
 }
 
@@ -695,7 +695,7 @@ for mut i := 0; i < 3; i = i + 1 {
     assert!(c.contains("int64_t mlg_i = 0;"));
     assert!(c.contains("while (true) {"));
     assert!(c.contains("if (!(mlg_i < 3)) {"));
-    assert!(c.contains("mallang_for_post_"));
+    assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("__builtin_add_overflow"));
     assert!(c.contains("mlg_i = mallang_checked_result_"));
 }
@@ -719,7 +719,7 @@ for ; i < 3; i = i + 1 {
 
     assert!(c.contains("while (true) {"));
     assert!(c.contains("if (!(mlg_i < 3)) {"));
-    assert!(c.contains("mallang_for_post_"));
+    assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("__builtin_add_overflow"));
     assert!(c.contains("mlg_i = mallang_checked_result_"));
 }
@@ -744,9 +744,34 @@ for ; ; i = i + 1 {
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("while (true) {"));
-    assert!(c.contains("mallang_for_post_"));
+    assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("__builtin_add_overflow"));
     assert!(c.contains("mlg_i = mallang_checked_result_"));
+}
+
+#[test]
+fn generates_c_for_for_clause_continue_to_post_label() {
+    let program = parse(
+        r#"
+func main() {
+mut i := 0
+for ; i < 3; i = i + 1 {
+    if i == 1 {
+        continue
+    }
+    print(i)
+}
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("goto mallang_for_post_"));
+    assert!(c.contains("mallang_for_post_"));
+    assert!(c.contains("__builtin_add_overflow"));
 }
 
 #[test]
@@ -1750,9 +1775,9 @@ print(values[0] + values[1] + values[2])
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("static int64_t mallang_check_index"));
+    assert!(c.contains("static int64_t MLG_UNUSED mallang_check_index"));
     assert!(c.contains("while (true) {"));
-    assert!(c.contains("mallang_for_post_"));
+    assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("(mlg_values).mlg_data[mallang_check_index(mlg_slot, 3)] = mlg_i;"));
 }
 
@@ -1780,7 +1805,7 @@ print(total)
 
     assert!(c.contains("(void)(mlg_values);"));
     assert!(c.contains("if (!(mlg_i < 3)) {"));
-    assert!(c.contains("mallang_for_post_"));
+    assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
     assert!(c.contains("int64_t mallang_index_value_"));
     assert!(c.contains("__builtin_add_overflow"));

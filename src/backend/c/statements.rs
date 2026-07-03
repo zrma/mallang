@@ -291,7 +291,9 @@ impl<'a> CGenerator<'a> {
             push_indented_lines(&mut output, &format!("{code};"), 1);
         }
 
-        let continue_label = post.map(for_post_label);
+        let continue_label = post
+            .filter(|_| contains_outer_continue(body))
+            .map(for_post_label);
         output.push_str("    while (true) {\n");
         if let Some(condition) = condition {
             let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
@@ -316,10 +318,11 @@ impl<'a> CGenerator<'a> {
         push_indented_lines(&mut output, "}", 2);
 
         if let Some(post) = post {
-            let label = continue_label
-                .as_deref()
-                .expect("for post label must exist when post exists");
-            push_indented_lines(&mut output, &format!("{label}: {{"), 2);
+            if let Some(label) = continue_label.as_deref() {
+                push_indented_lines(&mut output, &format!("{label}: {{"), 2);
+            } else {
+                push_indented_lines(&mut output, "{", 2);
+            }
             let code = self.emit_for_post_stmt(post, env)?;
             push_indented_lines(&mut output, &code, 3);
             push_indented_lines(&mut output, "}", 2);
@@ -768,5 +771,31 @@ impl<'a> CGenerator<'a> {
             prelude,
             format!("{}(&({code}));", drop_fn_name(&expr.ty)),
         ))
+    }
+}
+
+fn contains_outer_continue(stmts: &[IrStmt]) -> bool {
+    stmts.iter().any(stmt_contains_outer_continue)
+}
+
+fn stmt_contains_outer_continue(stmt: &IrStmt) -> bool {
+    match &stmt.kind {
+        IrStmtKind::Continue => true,
+        IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } => contains_outer_continue(then_body) || contains_outer_continue(else_body),
+        IrStmtKind::Match { arms, .. } => arms.iter().any(|arm| contains_outer_continue(&arm.body)),
+        IrStmtKind::Let { .. }
+        | IrStmtKind::Assign { .. }
+        | IrStmtKind::FieldAssign { .. }
+        | IrStmtKind::IndexAssign { .. }
+        | IrStmtKind::Return { .. }
+        | IrStmtKind::For { .. }
+        | IrStmtKind::RangeFor { .. }
+        | IrStmtKind::Drop { .. }
+        | IrStmtKind::Break
+        | IrStmtKind::Expr { .. } => false,
     }
 }

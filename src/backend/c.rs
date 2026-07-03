@@ -83,11 +83,18 @@ impl<'a> CGenerator<'a> {
         output.push_str("#include <stdio.h>\n");
         output.push_str("#include <stdlib.h>\n");
         output.push_str("#include <string.h>\n\n");
-        output.push_str("static void mallang_runtime_error(const char *message) {\n");
+        output.push_str("#if defined(__GNUC__) || defined(__clang__)\n");
+        output.push_str("#define MLG_UNUSED __attribute__((unused))\n");
+        output.push_str("#else\n");
+        output.push_str("#define MLG_UNUSED\n");
+        output.push_str("#endif\n\n");
+        output.push_str("static void MLG_UNUSED mallang_runtime_error(const char *message) {\n");
         output.push_str("    fprintf(stderr, \"mallang runtime error: %s\\n\", message);\n");
         output.push_str("    exit(1);\n");
         output.push_str("}\n\n");
-        output.push_str("static int64_t mallang_check_index(int64_t index, int64_t len) {\n");
+        output.push_str(
+            "static int64_t MLG_UNUSED mallang_check_index(int64_t index, int64_t len) {\n",
+        );
         output.push_str("    if (index < 0 || index >= len) {\n");
         push_indented_lines(
             &mut output,
@@ -156,6 +163,10 @@ impl<'a> CGenerator<'a> {
         output.push_str(&self.prototype(function)?);
         output.push_str(" {\n");
         let env = param_env(function);
+
+        for param in &function.params {
+            output.push_str(&format!("    (void){};\n", c_ident(&param.name)));
+        }
 
         for stmt in &function.body {
             let line = self.emit_stmt_with_env(stmt, &env)?;

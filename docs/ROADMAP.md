@@ -659,3 +659,10 @@
 - [x] cleanup-heavy generated C 예제를 ASan/UBSan으로 재컴파일
 - [x] sanitizer 실행 stdout을 기존 native smoke 기대값과 맞춰 검증
 - [x] sanitizer stderr가 비어 있어야 통과하도록 고정
+
+## P83: Generated C Warning Clean Smoke
+
+- [x] generated C runtime helper를 maybe-unused로 표시해 unused-function warning 제거
+- [x] source-level unused parameter가 C warning이 되지 않도록 `(void)param;` emit
+- [x] `continue`가 없는 `for` post loop에서는 unused label을 emit하지 않음
+- [x] 대표 generated C 파일을 `clang -std=c11 -Wall -Wextra -Werror`로 검증

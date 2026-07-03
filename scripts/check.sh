@@ -79,6 +79,24 @@ expect_sanitized_native_output() {
   fi
 }
 
+expect_warning_clean_generated_c() {
+  local label="$1"
+  local c_source="$2"
+  local binary_path="target/mallang/${label}-warn"
+  local stderr_path="target/mallang/${label}-warn.stderr"
+
+  if ! "$CLANG_BIN" -std=c11 -Wall -Wextra -Werror "$c_source" -o "$binary_path" 2>"$stderr_path"; then
+    echo "warning-clean $label compile failed" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+  if [[ -s "$stderr_path" ]]; then
+    echo "warning-clean $label compile emitted stderr" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+}
+
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
@@ -725,3 +743,7 @@ expect_sanitized_native_output \
   "indexed-slice-field-append" \
   "target/mallang/indexed-slice-field-append.c" \
   $'3\n8\n2\n5'
+expect_warning_clean_generated_c "adt" "target/mallang/adt.c"
+expect_warning_clean_generated_c "arrays" "target/mallang/arrays.c"
+expect_warning_clean_generated_c "array-for-post" "target/mallang/array-for-post.c"
+expect_warning_clean_generated_c "slice-field-take" "target/mallang/slice-field-take.c"

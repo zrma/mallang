@@ -155,6 +155,7 @@
 - [x] Cover indexed slice field append-take C lowering.
 - [x] Keep every checked-in example connected to the smoke gate.
 - [x] Run cleanup-heavy generated C through sanitizer smoke.
+- [x] Keep representative generated C warning-clean under strict clang flags.
 
 ## Later
 
@@ -218,6 +219,7 @@
 - [x] `mlg --help` and CLI error stream smoke.
 - [x] v0 release-candidate audit and example smoke coverage guard.
 - [x] Generated C memory/lifetime sanitizer smoke.
+- [x] Generated C strict warning smoke.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.
