@@ -623,3 +623,9 @@
 - [x] `append(store.bags[i].values, item)` C lowering이 indexed field source를 temp slice header로 copy하는지 고정
 - [x] consumed indexed source field를 empty slice header로 reset하는 codegen regression 추가
 - [x] append result와 owning store cleanup ownership이 유지되는지 backend assertion 추가
+
+## P77: Borrow Mode Alias Rejection Regression
+
+- [x] `name in T` suffix read-borrow parameter form을 계속 reject하도록 parser regression 추가
+- [x] `name mut T` suffix mutable-borrow parameter form을 계속 reject하도록 parser regression 추가
+- [x] `in expr` call-site borrow alias를 열지 않도록 parser regression 추가

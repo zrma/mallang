@@ -144,6 +144,7 @@
 - [x] Keep by-reference range iteration syntax deferred with parser regression coverage.
 - [x] Keep general non-slice field partial moves deferred with semantic regression coverage.
 - [x] Keep statement-spanning borrow syntax deferred with parser regression coverage.
+- [x] Keep legacy borrow alias syntax out with parser regression coverage.
 - [x] Centralize generated C runtime failures through a single helper.
 - [x] Verify native runtime failure stderr in smoke checks.
 - [x] Add C backend IR invariant regression coverage.
@@ -201,6 +202,7 @@
 - [x] By-reference range iteration deferred with explicit regression coverage.
 - [x] General non-slice field partial moves deferred with explicit regression coverage.
 - [x] Statement-spanning borrow syntax deferred with explicit regression coverage.
+- [x] Legacy borrow alias syntax rejected with explicit regression coverage.
 - [x] Generated C runtime failure helper centralization.
 - [x] Native runtime failure stderr smoke coverage.
 - [x] C backend IR invariant regression coverage.

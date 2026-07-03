@@ -1516,6 +1516,55 @@ func rename(mut name string) {
     }
 
     #[test]
+    fn rejects_legacy_suffix_read_borrow_parameter_mode() {
+        let error = parse(
+            r#"
+func read(name in string) {
+    print(name)
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error
+            .message
+            .contains("expected `)` after function parameters"));
+    }
+
+    #[test]
+    fn rejects_legacy_suffix_mut_borrow_parameter_mode() {
+        let error = parse(
+            r#"
+func rename(name mut string) {
+    print(name)
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("expected type name"));
+    }
+
+    #[test]
+    fn rejects_legacy_in_call_borrow_mode() {
+        let error = parse(
+            r#"
+func read(con name string) {
+    print(name)
+}
+
+func main() {
+    name := "kim"
+    read(in name)
+}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.message.contains("expected `)` after call arguments"));
+    }
+
+    #[test]
     fn rejects_con_borrow_marker_in_let_value_position() {
         let error = parse(
             r#"
