@@ -97,4 +97,5 @@ scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
 
 The finalizer fetches `origin` before the expensive local verification and
 again before moving the bookmark, prefers Homebrew Git when available, and
-fails if `main@origin` no longer matches the local `main` base.
+fails if `main@origin` no longer matches the local `main` base. After pushing,
+it fetches again and verifies `main@origin` points at the published commit.

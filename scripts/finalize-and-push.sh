@@ -9,7 +9,8 @@ Usage:
 
 By default, writes a jj description with Codex attribution, runs the v0 RC
 verification gate, verifies that the remote bookmark did not move before and
-after verification, moves the bookmark, and pushes it with jj.
+after verification, moves the bookmark, pushes it with jj, and verifies the
+remote bookmark points at the published commit.
 
 Use --no-push to run the same local finalization gate, including remote
 freshness checks, without moving bookmarks or pushing to any remote.
@@ -188,6 +189,26 @@ verify_remote_bookmark_fresh() {
   fi
 }
 
+verify_remote_bookmark_published() {
+  local expected_commit="$1"
+  local remote_commit=""
+  local remote_ref="$BOOKMARK@$REMOTE"
+
+  run_jj_git fetch --remote "$REMOTE"
+
+  if ! remote_commit="$(jj log -r "$remote_ref" --no-graph -T 'commit_id' 2>/dev/null)"; then
+    echo "publish verification failed: remote bookmark not found: $remote_ref" >&2
+    exit 1
+  fi
+
+  if [[ "$remote_commit" != "$expected_commit" ]]; then
+    echo "publish verification failed: $remote_ref does not point at published commit" >&2
+    echo "expected: $expected_commit" >&2
+    echo "$remote_ref: $remote_commit" >&2
+    exit 1
+  fi
+}
+
 if [[ "$CHECK_REMOTE_FRESHNESS" -eq 1 ]]; then
   verify_remote_bookmark_fresh "preflight"
 fi
@@ -204,7 +225,9 @@ if [[ "$PUSH" -eq 0 ]]; then
 fi
 
 verify_remote_bookmark_fresh "final"
+publish_target_commit="$(jj log -r @ --no-graph -T 'commit_id')"
 jj bookmark set "$BOOKMARK" -r @
 run_jj_git push --remote "$REMOTE" --bookmark "$BOOKMARK"
+verify_remote_bookmark_published "$publish_target_commit"
 jj bookmark list --all-remotes
 jj status

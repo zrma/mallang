@@ -744,3 +744,10 @@
 - [x] `--bookmark` 값 누락/빈 값을 exit 2와 명확한 usage로 거부
 - [x] release helper contract check가 missing/empty option value failure를 검증
 - [x] 기존 invalid message format failure와 publish approval gate 유지
+
+## P95: Publish Post-Push Verification
+
+- [x] real publish 경로에서 bookmark 이동 전 `@` commit을 publish target으로 저장
+- [x] push 후 `origin`을 다시 fetch하고 remote bookmark가 publish target을 가리키는지 비교
+- [x] remote bookmark mismatch는 명확한 diagnostic과 non-zero exit로 처리
+- [x] release helper contract check가 post-push verification wiring을 검증

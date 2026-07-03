@@ -231,6 +231,7 @@
 - [x] Publish finalizer preflight and final remote freshness gates.
 - [x] Publish finalizer no-push dry run remote freshness checks.
 - [x] Publish finalizer missing option value diagnostics.
+- [x] Publish finalizer post-push remote bookmark verification.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

@@ -142,4 +142,5 @@ Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
 and refuses to publish if `main@origin` no longer matches the local `main` base.
 The `--no-push` dry run exercises the same freshness checks but stops before
-bookmark movement and push.
+bookmark movement and push. After real push, the helper fetches again and
+verifies `main@origin` points at the published commit.
