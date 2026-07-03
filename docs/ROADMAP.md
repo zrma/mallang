@@ -666,3 +666,10 @@
 - [x] source-level unused parameter가 C warning이 되지 않도록 `(void)param;` emit
 - [x] `continue`가 없는 `for` post loop에서는 unused label을 emit하지 않음
 - [x] 대표 generated C 파일을 `clang -std=c11 -Wall -Wextra -Werror`로 검증
+
+## P84: Deep Generated C Sanitizer Sweep
+
+- [x] `scripts/check.sh`의 정상 generated C 예제 label을 source of truth로 재사용
+- [x] 전체 정상 generated C 예제를 ASan/UBSan으로 재컴파일하고 실행
+- [x] sanitizer 실행 stdout을 normal native binary stdout과 비교
+- [x] default smoke와 분리된 explicit pre-publication gate로 문서화

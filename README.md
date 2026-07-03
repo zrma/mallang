@@ -166,6 +166,12 @@ Run the full local gate:
 scripts/check.sh
 ```
 
+Run the heavier generated C sanitizer sweep before publication:
+
+```sh
+scripts/check-generated-c-sanitizers.sh
+```
+
 ## Layout
 
 - `SPEC.md`: v0 language specification.
