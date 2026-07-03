@@ -25,4 +25,4 @@
 | ID | Status | Command | Notes |
 | --- | --- | --- | --- |
 | C1 | done | `scripts/verify-v0-rc.sh --skip-deep-sanitizers` | local RC gate remains green |
-| C2 | done | `bash -n scripts/finalize-and-push.sh scripts/verify-v0-rc.sh` | release helper syntax remains valid |
+| C2 | done | `scripts/check-release-helpers.sh` | release helper syntax remains valid |

@@ -12,6 +12,7 @@
 
 ```sh
 scripts/check.sh
+scripts/check-release-helpers.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
 scripts/verify-v0-rc.sh
 scripts/finalize-and-push.sh --verify-only

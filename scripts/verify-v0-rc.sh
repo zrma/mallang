@@ -89,6 +89,7 @@ PYVERIFY
   done < <(jj log -r 'main..@' --no-graph -T 'change_id.short() ++ "\n"')
 }
 
+scripts/check-release-helpers.sh
 scripts/check.sh
 if [[ "$VERIFY_DEEP" -eq 1 ]]; then
   scripts/check-generated-c-sanitizers.sh --assume-generated

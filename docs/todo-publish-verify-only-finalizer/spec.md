@@ -25,6 +25,6 @@
 
 | ID | Status | Command | Notes |
 | --- | --- | --- | --- |
-| C1 | done | `bash -n scripts/finalize-and-push.sh scripts/verify-v0-rc.sh` | shell syntax gate |
+| C1 | done | `scripts/check-release-helpers.sh` | release helper syntax and argument-contract gate |
 | C2 | done | `scripts/finalize-and-push.sh --verify-only` | full v0 RC gate without publish side effects |
 | C3 | done | `scripts/finalize-and-push.sh --verify-only --message "test: publish v0 release candidate"` | rejects message mutation in verify-only mode |

@@ -708,3 +708,10 @@
 - [x] verify-only는 jj description, bookmark, remote를 변경하지 않고 v0 RC gate만 실행
 - [x] README/HANDOFF/release note/manifest에 side-effect-free publish readiness command 기록
 - [x] 기존 `--no-push`는 final jj description까지 쓰는 dry-run 경로로 명확히 문서화
+
+## P90: Release Helper Contract Checks
+
+- [x] `scripts/check-release-helpers.sh` 추가
+- [x] release helper shell syntax/help/invalid option contract를 경량 검증
+- [x] `--verify-only`가 `--message`/`--bookmark`와 결합될 수 없음을 자동 검증
+- [x] `scripts/verify-v0-rc.sh`가 release helper contract check를 먼저 실행하도록 연결

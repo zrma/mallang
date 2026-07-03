@@ -178,6 +178,12 @@ Run the complete local v0 release-candidate gate:
 scripts/verify-v0-rc.sh
 ```
 
+Run the lightweight release helper contract check:
+
+```sh
+scripts/check-release-helpers.sh
+```
+
 After explicit approval to publish, run the finalizer:
 
 ```sh

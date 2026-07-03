@@ -8,6 +8,7 @@ primary_entrypoints:
   - docs/ROADMAP.md
 commands:
   check: scripts/check.sh
+  check_release_helpers: scripts/check-release-helpers.sh
   deep_generated_c_sanitizers: scripts/check-generated-c-sanitizers.sh
   verify_v0_rc: scripts/verify-v0-rc.sh
   verify_publish_readiness: scripts/finalize-and-push.sh --verify-only
