@@ -598,3 +598,9 @@
 - [x] generated C에 `mallang_runtime_error(const char *message)` helper 추가
 - [x] integer/index/slice allocation runtime guard emission을 helper 호출로 통합
 - [x] generated C에 direct `fprintf(stderr, ...)` runtime failure emission이 helper 하나로 모였는지 regression 추가
+
+## P73: Native Runtime Failure Stderr Smoke
+
+- [x] `scripts/check.sh` runtime failure smoke가 non-zero exit뿐 아니라 stderr message도 검증
+- [x] division/remainder, checked integer overflow, array bounds failure stderr를 `mallang runtime error: ...`로 고정
+- [x] compile-time negative smoke와 runtime negative smoke 검증 경계를 분리

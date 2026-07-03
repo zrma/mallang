@@ -24,6 +24,25 @@ else
   CARGO=("$TOOLCHAIN_BIN/cargo")
 fi
 
+expect_native_runtime_failure() {
+  local label="$1"
+  local source="$2"
+  local expected_stderr="$3"
+  local stderr_path="target/mallang/${label}.stderr"
+
+  if "${CARGO[@]}" run --bin mlg -- run "$source" >/dev/null 2>"$stderr_path"; then
+    echo "native $label failure smoke failed: expected non-zero exit" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "$expected_stderr" "$stderr_path"; then
+    echo "native $label failure smoke failed: expected stderr containing '$expected_stderr'" >&2
+    echo "stderr was:" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+}
+
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
@@ -58,10 +77,10 @@ func main() {
     print(value / divisor)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$division_fail_source" >/dev/null 2>&1; then
-  echo "native division failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "division" \
+  "$division_fail_source" \
+  "mallang runtime error: division by zero"
 remainder_fail_source="target/mallang/run-remainder-fail.mlg"
 cat >"$remainder_fail_source" <<'MLG'
 func main() {
@@ -70,10 +89,10 @@ func main() {
     print(value % divisor)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$remainder_fail_source" >/dev/null 2>&1; then
-  echo "native remainder failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "remainder" \
+  "$remainder_fail_source" \
+  "mallang runtime error: division by zero"
 "${CARGO[@]}" run --bin mlg -- check examples/checked-arithmetic.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/checked-arithmetic.mlg -o target/mallang/checked-arithmetic >/dev/null
 checked_arithmetic_output="$(target/mallang/checked-arithmetic)"
@@ -89,10 +108,10 @@ func main() {
     print(value + one)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_add_fail_source" >/dev/null 2>&1; then
-  echo "native checked add failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-add" \
+  "$checked_add_fail_source" \
+  "mallang runtime error: integer overflow"
 checked_sub_fail_source="target/mallang/run-checked-sub-fail.mlg"
 cat >"$checked_sub_fail_source" <<'MLG'
 func main() {
@@ -101,10 +120,10 @@ func main() {
     print(value - two)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_sub_fail_source" >/dev/null 2>&1; then
-  echo "native checked subtract failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-subtract" \
+  "$checked_sub_fail_source" \
+  "mallang runtime error: integer overflow"
 checked_mul_fail_source="target/mallang/run-checked-mul-fail.mlg"
 cat >"$checked_mul_fail_source" <<'MLG'
 func main() {
@@ -112,10 +131,10 @@ func main() {
     print(value * value)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_mul_fail_source" >/dev/null 2>&1; then
-  echo "native checked multiply failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-multiply" \
+  "$checked_mul_fail_source" \
+  "mallang runtime error: integer overflow"
 checked_neg_fail_source="target/mallang/run-checked-neg-fail.mlg"
 cat >"$checked_neg_fail_source" <<'MLG'
 func main() {
@@ -123,10 +142,10 @@ func main() {
     print(-value)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_neg_fail_source" >/dev/null 2>&1; then
-  echo "native checked negation failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-negation" \
+  "$checked_neg_fail_source" \
+  "mallang runtime error: integer overflow"
 checked_div_fail_source="target/mallang/run-checked-div-fail.mlg"
 cat >"$checked_div_fail_source" <<'MLG'
 func main() {
@@ -135,10 +154,10 @@ func main() {
     print(value / divisor)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_div_fail_source" >/dev/null 2>&1; then
-  echo "native checked division overflow failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-division-overflow" \
+  "$checked_div_fail_source" \
+  "mallang runtime error: integer overflow"
 checked_rem_fail_source="target/mallang/run-checked-rem-fail.mlg"
 cat >"$checked_rem_fail_source" <<'MLG'
 func main() {
@@ -147,10 +166,10 @@ func main() {
     print(value % divisor)
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$checked_rem_fail_source" >/dev/null 2>&1; then
-  echo "native checked remainder overflow failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "checked-remainder-overflow" \
+  "$checked_rem_fail_source" \
+  "mallang runtime error: integer overflow"
 recursive_struct_fail_source="target/mallang/check-recursive-struct-fail.mlg"
 cat >"$recursive_struct_fail_source" <<'MLG'
 type Node struct {
@@ -447,10 +466,10 @@ func main() {
     print(values[i])
 }
 MLG
-if "${CARGO[@]}" run --bin mlg -- run "$runtime_fail_source" >/dev/null 2>&1; then
-  echo "native run failure smoke failed: expected non-zero exit" >&2
-  exit 1
-fi
+expect_native_runtime_failure \
+  "array-bounds" \
+  "$runtime_fail_source" \
+  "mallang runtime error: array index out of bounds"
 "${CARGO[@]}" run --bin mlg -- check examples/non-copy-array-assignment.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/non-copy-array-assignment.mlg -o target/mallang/non-copy-array-assignment >/dev/null
 non_copy_array_assignment_output="$(target/mallang/non-copy-array-assignment)"

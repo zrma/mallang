@@ -145,6 +145,7 @@
 - [x] Keep general non-slice field partial moves deferred with semantic regression coverage.
 - [x] Keep statement-spanning borrow syntax deferred with parser regression coverage.
 - [x] Centralize generated C runtime failures through a single helper.
+- [x] Verify native runtime failure stderr in smoke checks.
 
 ## Later
 
@@ -198,6 +199,7 @@
 - [x] General non-slice field partial moves deferred with explicit regression coverage.
 - [x] Statement-spanning borrow syntax deferred with explicit regression coverage.
 - [x] Generated C runtime failure helper centralization.
+- [x] Native runtime failure stderr smoke coverage.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.
