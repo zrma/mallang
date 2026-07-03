@@ -201,8 +201,8 @@ bookmarks, or pushing:
 scripts/finalize-and-push.sh --verify-only
 ```
 
-For a local dry run that also writes the final jj description but still does not
-move bookmarks or push:
+For a local dry run that also writes the final jj description and runs remote
+freshness checks but still does not move bookmarks or push:
 
 ```sh
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push

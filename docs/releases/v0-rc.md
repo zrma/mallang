@@ -68,8 +68,8 @@ bookmarks, or pushing:
 scripts/finalize-and-push.sh --verify-only
 ```
 
-Approval-gated finalizer dry run that writes the final jj description but does
-not move bookmarks or push:
+Approval-gated finalizer dry run that writes the final jj description and runs
+remote freshness checks but does not move bookmarks or push:
 
 ```sh
 scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push

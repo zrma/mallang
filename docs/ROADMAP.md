@@ -730,3 +730,10 @@
 - [x] full v0 RC verification 후 bookmark 이동 직전 remote freshness final check 유지
 - [x] stale remote이면 expensive verification이나 local description mutation 전에 먼저 중단
 - [x] release helper contract check가 preflight/final freshness wiring을 검증
+
+## P93: No-Push Freshness Dry Run
+
+- [x] `--no-push` finalization dry run에서 remote freshness preflight/final check 실행
+- [x] `--no-push`는 final jj description과 v0 RC gate를 검증하되 bookmark 이동/push는 계속 생략
+- [x] `--verify-only`는 description/bookmark/remote freshness side effect 없는 readiness gate로 유지
+- [x] release helper contract check가 freshness flag wiring을 검증

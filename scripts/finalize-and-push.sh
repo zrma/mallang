@@ -11,8 +11,8 @@ By default, writes a jj description with Codex attribution, runs the v0 RC
 verification gate, verifies that the remote bookmark did not move before and
 after verification, moves the bookmark, and pushes it with jj.
 
-Use --no-push to run the same local finalization gate without moving bookmarks
-or pushing to any remote.
+Use --no-push to run the same local finalization gate, including remote
+freshness checks, without moving bookmarks or pushing to any remote.
 
 Use --verify-only to run the v0 RC verification gate without changing the jj
 description, moving bookmarks, or pushing to any remote.
@@ -24,6 +24,7 @@ BOOKMARK="main"
 BOOKMARK_SET=0
 REMOTE="origin"
 PUSH=1
+CHECK_REMOTE_FRESHNESS=1
 VERIFY_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --verify-only)
       VERIFY_ONLY=1
       PUSH=0
+      CHECK_REMOTE_FRESHNESS=0
       shift
       ;;
     -h|--help)
@@ -176,13 +178,16 @@ verify_remote_bookmark_fresh() {
   fi
 }
 
-if [[ "$PUSH" -eq 1 ]]; then
+if [[ "$CHECK_REMOTE_FRESHNESS" -eq 1 ]]; then
   verify_remote_bookmark_fresh "preflight"
 fi
 
 describe_with_attribution
 scripts/verify-v0-rc.sh
 if [[ "$PUSH" -eq 0 ]]; then
+  if [[ "$CHECK_REMOTE_FRESHNESS" -eq 1 ]]; then
+    verify_remote_bookmark_fresh "final"
+  fi
   echo "finalize-and-push local gate passed; --no-push requested"
   jj status
   exit 0
