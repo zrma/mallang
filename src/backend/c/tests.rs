@@ -1319,7 +1319,10 @@ print(total)
 
     assert!(c.contains("typedef struct {\n    int64_t *mlg_data;\n    int64_t mlg_len;\n    int64_t mlg_cap;\n} mlg_Slice_int;"));
     assert!(c.contains("mlg_Slice_int mallang_slice_tmp_"));
+    assert!(c.contains("UINT64_MAX / sizeof(int64_t)"));
+    assert!(c.contains("mallang_runtime_error(\"slice allocation size overflow\")"));
     assert!(c.contains(".mlg_data = malloc(sizeof(int64_t) * 3);"));
+    assert!(c.contains("mallang_runtime_error(\"slice allocation failed\")"));
     assert!(c.contains(".mlg_len = 3;"));
     assert!(c.contains(".mlg_cap = 3;"));
     assert!(c.contains(".mlg_data[0] = 1;"));

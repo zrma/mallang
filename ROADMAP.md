@@ -147,6 +147,7 @@
 - [x] Centralize generated C runtime failures through a single helper.
 - [x] Verify native runtime failure stderr in smoke checks.
 - [x] Add C backend IR invariant regression coverage.
+- [x] Guard native slice literal allocation-size overflow.
 
 ## Later
 
@@ -202,6 +203,7 @@
 - [x] Generated C runtime failure helper centralization.
 - [x] Native runtime failure stderr smoke coverage.
 - [x] C backend IR invariant regression coverage.
+- [x] Native slice literal allocation-size overflow guard.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
 - Statement-spanning borrow lifetimes for future first-class reference values.

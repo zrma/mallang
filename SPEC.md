@@ -276,9 +276,10 @@ Indexing and length rules:
   `match`, and literals that allocate cleanup resources are not stable index
   expressions for this rule.
 - `append` arguments do not take `con` or `mut` mode markers.
-- Native `append` grows capacity with compiler-owned allocation. Allocation
-  failure, length overflow, and allocation-size overflow terminate the program
-  with a Mallang runtime error instead of unchecked C behavior.
+- Native slice literals and `append` use compiler-owned allocation. Allocation
+  failure and allocation-size overflow terminate the program with a Mallang
+  runtime error instead of unchecked C behavior. `append` also terminates on
+  length overflow.
 - The native ABI uses an internal header equivalent to `{ data, len, cap }` with
   compiler-owned allocation and cleanup.
 - Copying a slice header is not a language operation. Assigning, passing, or

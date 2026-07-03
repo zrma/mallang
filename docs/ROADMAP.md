@@ -611,3 +611,9 @@
 - [x] non-array/slice `range` source IR가 invariant error로 실패하는지 고정
 - [x] Option match에 Result arm이 섞인 malformed IR를 invariant error로 고정
 - [x] `con`/`mut` borrow argument가 lvalue가 아닌 malformed IR를 invariant error로 고정
+
+## P75: Slice Literal Allocation-Size Guard
+
+- [x] non-empty native slice literal lowering에 `UINT64_MAX / sizeof(T)` allocation-size guard 추가
+- [x] slice literal allocation-size overflow와 allocation failure가 모두 `mallang_runtime_error(...)` helper로 실패하는지 backend regression 추가
+- [x] SPEC에서 native slice literal과 `append` allocation failure/overflow policy를 같은 runtime-error policy로 고정

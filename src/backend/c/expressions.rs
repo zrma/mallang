@@ -605,37 +605,40 @@ impl<'a> CGenerator<'a> {
             Type::Slice(element) => {
                 let temp = slice_literal_temp_name(expr);
                 let mut prelude = vec![format!("{} {temp};", ty.c_name())];
+                let data_field = c_field("data");
+                let len_field = c_field("len");
+                let cap_field = c_field("cap");
                 if elements.is_empty() {
-                    prelude.push(format!("{temp}.{} = NULL;", c_field("data")));
-                    prelude.push(format!("{temp}.{} = 0;", c_field("len")));
-                    prelude.push(format!("{temp}.{} = 0;", c_field("cap")));
+                    prelude.push(format!("{temp}.{data_field} = NULL;"));
+                    prelude.push(format!("{temp}.{len_field} = 0;"));
+                    prelude.push(format!("{temp}.{cap_field} = 0;"));
                     return Ok(CExpr {
                         prelude,
                         code: temp,
                     });
                 }
 
+                let element_ty = element.c_name();
                 prelude.push(format!(
-                    "{temp}.{} = malloc(sizeof({}) * {});",
-                    c_field("data"),
-                    element.c_name(),
+                    "if ((uint64_t){} > UINT64_MAX / sizeof({element_ty})) {{\n    {allocation_size_error}\n}}",
+                    elements.len(),
+                    allocation_size_error = runtime_error_call("slice allocation size overflow"),
+                ));
+                prelude.push(format!(
+                    "{temp}.{data_field} = malloc(sizeof({element_ty}) * {});",
                     elements.len()
                 ));
                 prelude.push(runtime_guard(
-                    format!("{temp}.{} == NULL", c_field("data")),
+                    format!("{temp}.{data_field} == NULL"),
                     "slice allocation failed",
                 ));
-                prelude.push(format!("{temp}.{} = {};", c_field("len"), elements.len()));
-                prelude.push(format!("{temp}.{} = {};", c_field("cap"), elements.len()));
+                prelude.push(format!("{temp}.{len_field} = {};", elements.len()));
+                prelude.push(format!("{temp}.{cap_field} = {};", elements.len()));
 
                 for (index, element) in elements.iter().enumerate() {
                     let emitted = self.emit_stmt_expr_with_env(element, env)?;
                     prelude.extend(emitted.prelude);
-                    prelude.push(format!(
-                        "{temp}.{}[{index}] = {};",
-                        c_field("data"),
-                        emitted.code
-                    ));
+                    prelude.push(format!("{temp}.{data_field}[{index}] = {};", emitted.code));
                 }
 
                 Ok(CExpr {
