@@ -737,3 +737,10 @@
 - [x] `--no-push`는 final jj description과 v0 RC gate를 검증하되 bookmark 이동/push는 계속 생략
 - [x] `--verify-only`는 description/bookmark/remote freshness side effect 없는 readiness gate로 유지
 - [x] release helper contract check가 freshness flag wiring을 검증
+
+## P94: Finalizer Option Value Diagnostics
+
+- [x] `--message` 값 누락/빈 값/다음 옵션 토큰을 exit 2와 명확한 usage로 거부
+- [x] `--bookmark` 값 누락/빈 값을 exit 2와 명확한 usage로 거부
+- [x] release helper contract check가 missing/empty option value failure를 검증
+- [x] 기존 invalid message format failure와 publish approval gate 유지

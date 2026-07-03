@@ -29,10 +29,20 @@ VERIFY_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --message)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "--message requires a value" >&2
+        usage >&2
+        exit 2
+      fi
       MESSAGE="${2:-}"
       shift 2
       ;;
     --bookmark)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "--bookmark requires a value" >&2
+        usage >&2
+        exit 2
+      fi
       BOOKMARK="${2:-}"
       BOOKMARK_SET=1
       shift 2

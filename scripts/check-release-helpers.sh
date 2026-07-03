@@ -83,6 +83,24 @@ expect_status verify_only_bookmark 2 \
   scripts/finalize-and-push.sh --verify-only --bookmark main
 expect_log_contains verify_only_bookmark "--verify-only cannot be combined with --bookmark"
 
+expect_status missing_message 2 scripts/finalize-and-push.sh --message
+expect_log_contains missing_message "--message requires a value"
+
+expect_status empty_message 2 scripts/finalize-and-push.sh --message ""
+expect_log_contains empty_message "--message requires a value"
+
+expect_status message_next_option 2 scripts/finalize-and-push.sh --message --no-push
+expect_log_contains message_next_option "--message requires a value"
+
+expect_status missing_bookmark 2 scripts/finalize-and-push.sh --bookmark
+expect_log_contains missing_bookmark "--bookmark requires a value"
+
+expect_status empty_bookmark 2 scripts/finalize-and-push.sh --bookmark ""
+expect_log_contains empty_bookmark "--bookmark requires a value"
+
+expect_status bookmark_next_option 2 scripts/finalize-and-push.sh --bookmark --no-push
+expect_log_contains bookmark_next_option "--bookmark requires a value"
+
 expect_status invalid_message 1 scripts/finalize-and-push.sh --message "publish v0"
 expect_log_contains invalid_message "invalid --message"
 
