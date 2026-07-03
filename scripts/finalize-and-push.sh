@@ -3,15 +3,19 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main]
+Usage: scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
 
-Runs checks, writes a jj description with Codex attribution, moves the bookmark,
-and pushes it with jj.
+Writes a jj description with Codex attribution, runs the v0 RC verification
+gate, moves the bookmark, and pushes it with jj.
+
+Use --no-push to run the same local finalization gate without moving bookmarks
+or pushing to any remote.
 USAGE
 }
 
 MESSAGE=""
 BOOKMARK="main"
+PUSH=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --message)
@@ -21,6 +25,10 @@ while [[ $# -gt 0 ]]; do
     --bookmark)
       BOOKMARK="${2:-}"
       shift 2
+      ;;
+    --no-push)
+      PUSH=0
+      shift
       ;;
     -h|--help)
       usage
@@ -102,8 +110,14 @@ PYNORMALIZE
   verify_description_attribution "$attribution"
 }
 
-scripts/check.sh
 describe_with_attribution
+scripts/verify-v0-rc.sh
+if [[ "$PUSH" -eq 0 ]]; then
+  echo "finalize-and-push local gate passed; --no-push requested"
+  jj status
+  exit 0
+fi
+
 jj bookmark set "$BOOKMARK" -r @
 jj git push --remote origin --bookmark "$BOOKMARK"
 jj bookmark list --all-remotes

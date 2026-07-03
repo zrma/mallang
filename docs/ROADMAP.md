@@ -687,3 +687,10 @@
 - [x] normal smoke, deep generated C sanitizer, roadmap completion, local stack, attribution을 한 번에 확인
 - [x] `--skip-deep-sanitizers` fast rerun 경로 추가
 - [x] remote publish는 사용자 승인 필요 gate로 유지
+
+## P87: Publish Finalizer RC Gate
+
+- [x] `scripts/finalize-and-push.sh`가 bookmark 이동 전 `scripts/verify-v0-rc.sh`를 실행하도록 연결
+- [x] remote publish 없이 finalization flow를 검증하는 `--no-push` 추가
+- [x] 실제 bookmark 이동과 remote push는 명시적 finalizer invocation에만 남김
+- [x] README/manifest/handoff에 approval-gated publish 경로 기록

@@ -178,6 +178,18 @@ Run the complete local v0 release-candidate gate:
 scripts/verify-v0-rc.sh
 ```
 
+After explicit approval to publish, run the finalizer:
+
+```sh
+scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
+```
+
+For a local dry run without moving bookmarks or pushing:
+
+```sh
+scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push
+```
+
 ## Layout
 
 - `SPEC.md`: v0 language specification.

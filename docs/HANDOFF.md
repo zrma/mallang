@@ -14,6 +14,7 @@
 scripts/check.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
 scripts/verify-v0-rc.sh
+scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
