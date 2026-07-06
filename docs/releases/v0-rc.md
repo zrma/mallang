@@ -1,11 +1,14 @@
-# Mallang v0 Release Candidate Notes
+# Mallang v0.1.0 Release Notes
 
 ## Status
 
-This is the local v0 release-candidate snapshot for Mallang.
+Mallang 0.1.0 is published as a GitHub source release:
 
-Remote publication is intentionally gated on explicit user approval because it
-moves the `main` bookmark and pushes to GitHub.
+```text
+https://github.com/zrma/mallang/releases/tag/v0.1.0
+```
+
+The release commit is `51e19f27393ef1410d1874487918621ed6e35d05`.
 
 ## Language Surface
 
@@ -85,7 +88,7 @@ Approval-gated finalizer dry run that writes the final jj description and runs
 remote freshness checks but does not move bookmarks or push:
 
 ```sh
-scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push
+scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 ```
 
 ## Deferred Beyond v0
@@ -100,12 +103,12 @@ scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no
 - C interop boundary.
 - LLVM or Cranelift backend.
 
-## Publish
+## Published
 
-After explicit user approval:
+0.1.0 was published with:
 
 ```sh
-scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
+scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0"
 ```
 
 The finalizer fetches `origin` before the expensive local verification and

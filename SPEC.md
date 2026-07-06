@@ -1,6 +1,7 @@
-# Mallang Specification Draft
+# Mallang v0.1 Specification
 
-This is the v0 design target for the PoC. Syntax and names are provisional.
+This is the Mallang v0.1 language specification published with the 0.1.0
+source release.
 
 ## Naming
 
@@ -32,7 +33,7 @@ day-to-day command is intentionally short.
 
 - No goroutines.
 - No interfaces.
-- No generics beyond built-in `Option[T]` and `Result[T, E]` planning.
+- No user-defined generics beyond built-in `Option[T]` and `Result[T, E]`.
 - No closures.
 - No user-visible lifetimes.
 - No garbage collector.
@@ -140,9 +141,8 @@ Move types:
 string struct
 ```
 
-Fixed-size arrays use Go-like `[N]T` type syntax. The first v0 implementation
-slice will support compile-time integer lengths and element types that already
-work in the native backend.
+Fixed-size arrays use Go-like `[N]T` type syntax. v0 supports compile-time
+integer lengths and element types that already work in the native backend.
 
 ```go
 values := [3]int{1, 2, 3}

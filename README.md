@@ -190,10 +190,11 @@ Run the release binary smoke:
 scripts/check-release-binary.sh
 ```
 
-After explicit approval to publish, run the finalizer:
+For a future approved source release, run the finalizer with the release
+message:
 
 ```sh
-scripts/finalize-and-push.sh --message "test: publish v0 release candidate"
+scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0"
 ```
 
 The finalizer fetches `origin` before the expensive local verification and
@@ -213,13 +214,13 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push
+scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 ```
 
 ## Layout
 
 - `SPEC.md`: v0 language specification.
-- `docs/releases/v0-rc.md`: v0 release-candidate notes.
+- `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/if.mlg`: native smoke for `if` expressions.

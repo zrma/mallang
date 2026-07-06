@@ -17,7 +17,7 @@ scripts/check-release-helpers.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
 scripts/verify-v0-rc.sh
 scripts/finalize-and-push.sh --verify-only
-scripts/finalize-and-push.sh --message "test: publish v0 release candidate" --no-push
+scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
@@ -127,8 +127,8 @@ target/mallang/match-statement
 
 ## 주요 문서
 
-- `SPEC.md`: 언어 v0 설계 초안
-- `docs/releases/v0-rc.md`: v0 release-candidate notes
+- `SPEC.md`: 언어 v0.1 스펙
+- `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
 - `docs/REPO_MANIFEST.yaml`: 검증 명령과 entrypoint 선언
@@ -136,8 +136,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. remote publish after user approval
-2. post-v0 syntax planning only after v0 local release-candidate snapshot is published
+1. post-v0 syntax planning for the next public milestone
+2. decide whether v0.2 should focus on modules, closures, interfaces, or
+   first-class references
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
