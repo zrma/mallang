@@ -10,8 +10,27 @@
 
 - 에이전트는 사용자에게 세부 지시를 요구하지 않고, 현재 문서/스크립트/테스트 기준으로 목표 달성까지 진행한다.
 - 비사소한 작업은 `docs/todo-<work-id>/`에 `spec.md`와 `open-questions.md`를 먼저 고정한다.
-- 미결 질문이 없고 검증 경로가 명확하면 구현, 검증, 문서 갱신, `jj` change 정리, push까지 같은 작업 단위에서 닫는다.
+- 미결 질문이 없고 검증 경로가 명확하면 구현, 검증, 문서 갱신, `jj` change 정리까지 같은 작업 단위에서 닫는다. push는 사용자 요청이 명시적으로 권한을 부여한 경우에만 수행한다.
 - 사용자 호출은 `docs/ESCALATION_POLICY.md`의 조건에 해당하거나 제품/언어 설계 결정이 여러 방향으로 갈리는 경우로 제한한다.
+
+<!-- agent-harness-baseline:start -->
+## Agent Harness Baseline (GPT-5.6)
+
+Baseline ID: `openai-gpt-5.6-2026-07-10`.
+
+- Source of truth: use the `openai-docs` skill and the official [latest model guide](https://developers.openai.com/api/docs/guides/latest-model) plus [prompting best practices](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices) before changing OpenAI model, API, prompt, or agent guidance.
+- Model target: when the task asks for the current or latest OpenAI baseline, use `gpt-5.6`. This is harness guidance, not proof that the application calls OpenAI; change runtime model strings only at an existing OpenAI integration point.
+- Prompt budget: start with the smallest prompt and task-relevant tool set that reliably completes the work. Preserve project-specific constraints, remove redundant generic instructions, and add examples only for an observed failure.
+- Request modes: for answer, explain, review, diagnose, or plan requests, inspect and report without implementation. For change, build, or fix requests, make the requested in-scope local changes and run relevant non-destructive validation.
+- Permissions: reading, searching, editing in-scope files, and running non-destructive checks are pre-authorized for change tasks. Require confirmation for external writes not explicitly requested, destructive or irreversible actions, purchases or cost, secrets, or material scope expansion.
+- Persistence: continue until the requested outcome is complete; do not stop after only analysis, a partial patch, or an intermediate tool success. Stop and escalate only at a real permission, product-decision, or external-state boundary.
+- Verification: treat tool and patch success as provisional. Re-read the diff and verify the user-visible or runtime outcome with the narrowest meaningful checks, then broaden only when risk warrants it.
+- Output: lead with the conclusion. Include required evidence, material caveats, and the next action; trim introductions, repetition, generic reassurance, and optional background before trimming required content.
+- Structure: use a lightweight task-specific plan or output shape. Do not impose a global template or long process narration when the repository already supplies the necessary workflow.
+- Modes and orchestration: configure Pro mode in the API or runtime rather than asking the model to “think harder.” Use Programmatic Tool Calling only for bounded reduction stages with explicit schemas, limits, and no approval-sensitive side effects; keep semantic decisions and final validation direct.
+- Evaluation: add or retain harness instructions only when repository checks or representative tasks show they improve final-answer completeness, evidence quality, reliability, latency, or cost. Evaluate the final result, not just tool-call count.
+- Project overlay: the remaining sections of this file and the linked project docs define domain-specific architecture, tests, safety boundaries, escalation rules, and publish gates. They may specialize this baseline but must not silently weaken its permission or evidence requirements.
+<!-- agent-harness-baseline:end -->
 
 ## 작업 단위
 
