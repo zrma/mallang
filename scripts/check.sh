@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+scripts/check-agent-harness-interface.sh
+
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)
 elif command -v rustup >/dev/null 2>&1; then

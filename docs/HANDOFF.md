@@ -11,6 +11,7 @@
 ## 빠른 시작
 
 ```sh
+scripts/check-agent-harness-interface.sh
 scripts/check.sh
 scripts/check-release-binary.sh
 scripts/check-release-helpers.sh
@@ -127,6 +128,7 @@ target/mallang/match-statement
 
 ## 주요 문서
 
+- `docs/agent-harness.md`: 이 저장소의 canonical 하네스 구조와 Mallang overlay
 - `SPEC.md`: 언어 v0.1 스펙
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone

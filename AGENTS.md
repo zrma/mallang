@@ -54,5 +54,5 @@ Baseline ID: `openai-gpt-5.6-2026-07-10`.
 
 ## 무컨텍스트 다음 순서
 
-- 새 작업은 `docs/HANDOFF.md` -> `docs/ROADMAP.md` -> `docs/REPO_MANIFEST.yaml` -> `scripts/check.sh` 순서로 현재 상태를 확인한다.
+- 새 작업은 `docs/agent-harness.md` -> `docs/HANDOFF.md` -> `docs/ROADMAP.md` -> `docs/REPO_MANIFEST.yaml` -> `scripts/check.sh` 순서로 현재 상태를 확인한다.
 - 활성 `docs/todo-*`가 있으면 그 spec을 우선한다.
