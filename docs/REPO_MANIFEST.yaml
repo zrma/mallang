@@ -4,9 +4,11 @@ primary_entrypoints:
   - README.md
   - SPEC.md
   - ROADMAP.md
+  - docs/agent-harness.md
   - docs/HANDOFF.md
   - docs/ROADMAP.md
 commands:
+  check_agent_harness: scripts/check-agent-harness-interface.sh
   check: scripts/check.sh
   check_release_binary: scripts/check-release-binary.sh
   check_release_helpers: scripts/check-release-helpers.sh
