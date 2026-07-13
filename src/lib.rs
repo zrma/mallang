@@ -4,6 +4,7 @@ pub mod compiler;
 pub mod frontend;
 pub mod ir;
 pub mod lexer;
+pub mod package;
 pub mod parser;
 pub mod project;
 pub mod semantic;
@@ -17,6 +18,10 @@ pub use compiler::{
 pub use frontend::{parse_sources, FrontendError};
 pub use ir::{lower, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
+pub use package::{
+    build_package_graph, Package, PackageDeclaration, PackageDeclarationKind, PackageError,
+    PackageGraph, PackageImport,
+};
 pub use parser::{parse, parse_with_source, ParseError, Parser};
 pub use project::{
     discover_project, Project, ProjectError, ProjectManifest, ProjectMetadata, MANIFEST_FILE,

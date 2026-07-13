@@ -84,7 +84,7 @@ pub func Print() {
 4. 명시적 source file 목록 loader를 compiler pipeline 앞에 연결한다. (완료)
 5. manifest와 project discovery model을 구현한다. (완료)
 6. 승인된 package/import/visibility token과 AST를 추가한다. (완료)
-7. package별 declaration table과 import graph를 만든다.
+7. package별 declaration table과 import graph를 만든다. (완료)
 8. cross-package semantic resolution과 visibility 검사를 연결한다.
 9. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
 
