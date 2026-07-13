@@ -6,8 +6,8 @@ use std::{
 };
 
 use mallang::{
-    check, generate_c_from_ir, lex_with_source, lower, parse_sources, FrontendError, SourceId,
-    SourceMap,
+    check_sources, generate_c_sources, lex_with_source, lower_sources, parse_sources,
+    CompilerError, FrontendError, SourceId, SourceMap,
 };
 
 fn main() {
@@ -106,8 +106,8 @@ fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
 fn run_check(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "check", args)?;
     let (sources, source_id) = load_source(path)?;
-    let program_ast = parse_loaded_source(&sources, source_id)?;
-    check(&program_ast).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
+    check_sources(&sources, &[source_id])
+        .map_err(|error| format_compiler_error(&sources, path, error))?;
     println!("{path}: ok");
     Ok(())
 }
@@ -115,11 +115,8 @@ fn run_check(program: &str, args: &[String]) -> Result<(), String> {
 fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "ir", args)?;
     let (sources, source_id) = load_source(path)?;
-    let program_ast = parse_loaded_source(&sources, source_id)?;
-    let checked = check(&program_ast)
-        .map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
-    let ir =
-        lower(&checked).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
+    let ir = lower_sources(&sources, &[source_id])
+        .map_err(|error| format_compiler_error(&sources, path, error))?;
     println!("{ir:#?}");
     Ok(())
 }
@@ -173,12 +170,8 @@ fn run_run(program: &str, args: &[String]) -> Result<(), String> {
 
 fn compile_source(source_path: &str, output_path: Option<PathBuf>) -> Result<PathBuf, String> {
     let (sources, source_id) = load_source(source_path)?;
-    let program_ast = parse_loaded_source(&sources, source_id)?;
-    let checked = check(&program_ast)
-        .map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
-    let ir =
-        lower(&checked).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
-    let c_source = generate_c_from_ir(&ir).map_err(|error| format!("{source_path}: {error}"))?;
+    let c_source = generate_c_sources(&sources, &[source_id])
+        .map_err(|error| format_compiler_error(&sources, source_path, error))?;
 
     let source_stem = source_stem(source_path);
     let build_dir = PathBuf::from("target/mallang");
@@ -253,5 +246,12 @@ fn format_frontend_error(sources: &SourceMap, error: FrontendError) -> String {
     match error.span {
         Some(span) => sources.format_diagnostic(&error.message, span),
         None => error.message,
+    }
+}
+
+fn format_compiler_error(sources: &SourceMap, fallback_path: &str, error: CompilerError) -> String {
+    match error.span {
+        Some(span) => sources.format_diagnostic(&error.message, span),
+        None => format!("{fallback_path}: {}", error.message),
     }
 }

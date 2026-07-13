@@ -22,6 +22,8 @@
 - `SourceMap`이 여러 source file의 path, text, line start를 소유한다.
 - `parse_sources`가 여러 파일의 declaration을 입력 순서대로 하나의 compilation
   unit으로 합치고 원본 파일별 span을 보존한다.
+- `check_sources`, `lower_sources`, `generate_c_sources`가 같은 source 집합을
+  semantic, IR, C backend까지 전달하고 stage별 error를 보존한다.
 - CLI frontend diagnostic은 source path와 1-based line/column을 출력한다.
 - 기존 `lex`와 `parse` API는 anonymous source를 사용하는 compatibility wrapper로
   유지된다.
@@ -77,11 +79,12 @@ pub func Print() {
 
 1. file-aware source identity와 location diagnostics를 추가한다. (완료)
 2. 여러 source file을 하나의 semantic/backend compilation unit으로 합친다. (완료)
-3. manifest와 project discovery model을 구현한다.
-4. 승인된 package/import/visibility token과 AST를 추가한다.
-5. package별 declaration table과 import graph를 만든다.
-6. cross-package semantic resolution과 visibility 검사를 연결한다.
-7. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
+3. multi-source compiler pipeline을 semantic, IR, C backend까지 연결한다. (완료)
+4. manifest와 project discovery model을 구현한다.
+5. 승인된 package/import/visibility token과 AST를 추가한다.
+6. package별 declaration table과 import graph를 만든다.
+7. cross-package semantic resolution과 visibility 검사를 연결한다.
+8. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
 
 ## 제외
 
@@ -97,7 +100,7 @@ pub func Print() {
 | --- | --- | --- | --- |
 | C1 | pending | 사용자 decision | package/import/visibility surface 확정 |
 | C2 | pending | 사용자 decision | manifest와 source layout 확정 |
-| C3 | done | frontend/source tests | multi-file span, aggregation, cross-file error 구분 |
+| C3 | done | compiler/frontend tests | multi-file span, pipeline, cross-file error 구분 |
 | C4 | pending | parser tests | package/import/`pub` syntax |
 | C5 | pending | semantic rejection tests | unresolved import, visibility, cycle 진단 |
 | C6 | pending | native project smoke | 두 package의 function/struct/method 호출 |

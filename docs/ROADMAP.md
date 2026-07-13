@@ -823,3 +823,10 @@
 - [x] 기존 single-file CLI parsing을 multi-source frontend entrypoint로 통합
 - [x] cross-file function call semantic/C backend regression 추가
 - [x] 다른 파일의 parse/duplicate declaration error source identity regression 추가
+
+## P106: Multi-Source Compiler Pipeline
+
+- [x] multi-source `check_sources`, `lower_sources`, `generate_c_sources` API 추가
+- [x] frontend, semantic, IR, backend stage를 보존하는 compiler error model 추가
+- [x] 기존 single-file CLI check/ir/build/run을 compiler pipeline으로 통합
+- [x] cross-file semantic, IR, C backend와 stage/source identity regression 추가
