@@ -46,6 +46,60 @@ pub fn link_project(
     linker.link(program)
 }
 
+pub fn display_linked_message(message: &str) -> String {
+    const PREFIX: &str = "__mlg_pkg_";
+
+    let mut output = String::with_capacity(message.len());
+    let mut remaining = message;
+    while let Some(start) = remaining.find(PREFIX) {
+        output.push_str(&remaining[..start]);
+        let symbol = &remaining[start + PREFIX.len()..];
+        let Some(separator) = symbol.find('_') else {
+            output.push_str(&remaining[start..]);
+            return output;
+        };
+        let encoded_path = &symbol[..separator];
+        let name_source = &symbol[separator + 1..];
+        let name_len = name_source
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+            .count();
+        let Some(package_path) = decode_package_path(encoded_path) else {
+            output.push_str(&remaining[start..start + PREFIX.len()]);
+            remaining = symbol;
+            continue;
+        };
+        if name_len == 0 {
+            output.push_str(&remaining[start..start + PREFIX.len()]);
+            remaining = symbol;
+            continue;
+        }
+
+        output.push_str(&package_path);
+        output.push('.');
+        output.push_str(&name_source[..name_len]);
+        remaining = &name_source[name_len..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn decode_package_path(encoded: &str) -> Option<String> {
+    if encoded.is_empty() || !encoded.len().is_multiple_of(2) {
+        return None;
+    }
+
+    let bytes = encoded
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let pair = std::str::from_utf8(pair).ok()?;
+            u8::from_str_radix(pair, 16).ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    String::from_utf8(bytes).ok()
+}
+
 #[derive(Debug, Clone)]
 struct FileContext {
     package_path: String,
@@ -691,6 +745,24 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn restores_internal_symbols_for_user_facing_diagnostics() {
+        let message = format!(
+            "expected `{}`, found `{}`",
+            internal_symbol("hello/greet", "Message"),
+            internal_symbol("hello", "User")
+        );
+
+        assert_eq!(
+            display_linked_message(&message),
+            "expected `hello/greet.Message`, found `hello.User`"
+        );
+        assert_eq!(
+            display_linked_message("plain diagnostic"),
+            "plain diagnostic"
+        );
+    }
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
