@@ -14,6 +14,8 @@
 
 Publication class는 현재 저장소 자체의 공개 경계만 선언한다. public gate는 다른 저장소의 inventory를 기록하지 않고 직접 식별자, checkout 경로, 외부 revision, local draft 상태를 차단하며 식별 불가능한 책임 경계는 허용한다.
 
+Tracked artifact contract: raw tool output와 정확한 로컬 환경 evidence는 local-only로 취급한다. 공개 가능한 기록에는 repository-owned 결정, 필요한 명령 이름, redacted 검증 판정만 남기고 경로·호스트·주소·클러스터 값은 placeholder로 바꾼다.
+
 ## Project Objective
 
 Go-like syntax, Rust-like safety, functional value style을 탐색하는 native language PoC를 작고 검증 가능한 compiler milestone로 발전시킨다.
