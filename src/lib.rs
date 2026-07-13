@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod backend;
+pub mod compiler;
 pub mod frontend;
 pub mod ir;
 pub mod lexer;
@@ -9,6 +10,9 @@ pub mod source;
 pub mod token;
 
 pub use backend::{generate_c, generate_c_from_ir, CompileError};
+pub use compiler::{
+    check_sources, generate_c_sources, lower_sources, CompilerError, CompilerStage,
+};
 pub use frontend::{parse_sources, FrontendError};
 pub use ir::{lower, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
