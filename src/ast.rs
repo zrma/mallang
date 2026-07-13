@@ -4,6 +4,7 @@ use crate::token::Span;
 pub struct Program {
     pub structs: Vec<StructDecl>,
     pub functions: Vec<Function>,
+    pub source_spans: Vec<Span>,
     pub span: Span,
 }
 

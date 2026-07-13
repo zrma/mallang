@@ -6,7 +6,8 @@ use std::{
 };
 
 use mallang::{
-    check, generate_c_from_ir, lex_with_source, lower, parse_with_source, SourceId, SourceMap,
+    check, generate_c_from_ir, lex_with_source, lower, parse_sources, FrontendError, SourceId,
+    SourceMap,
 };
 
 fn main() {
@@ -245,6 +246,12 @@ fn parse_loaded_source(
     sources: &SourceMap,
     source_id: SourceId,
 ) -> Result<mallang::ast::Program, String> {
-    parse_with_source(source_text(sources, source_id), source_id)
-        .map_err(|error| sources.format_diagnostic(&error.message, error.span))
+    parse_sources(sources, &[source_id]).map_err(|error| format_frontend_error(sources, error))
+}
+
+fn format_frontend_error(sources: &SourceMap, error: FrontendError) -> String {
+    match error.span {
+        Some(span) => sources.format_diagnostic(&error.message, span),
+        None => error.message,
+    }
 }

@@ -814,3 +814,12 @@
 - [x] 기존 single-file `lex`/`parse` compatibility API 유지
 - [x] CLI frontend diagnostic을 file/line/column 형식으로 연결
 - [x] multi-file identity, Unicode column, error propagation regression 추가
+
+## P105: Multi-Source Compilation Unit
+
+- [x] `Program`에 원본 파일별 source span 목록 보존
+- [x] 여러 `SourceId`의 declaration을 deterministic input order로 합치는
+  `parse_sources` 추가
+- [x] 기존 single-file CLI parsing을 multi-source frontend entrypoint로 통합
+- [x] cross-file function call semantic/C backend regression 추가
+- [x] 다른 파일의 parse/duplicate declaration error source identity regression 추가

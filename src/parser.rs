@@ -88,10 +88,12 @@ impl Parser {
         }
 
         let end = self.peek().span;
+        let span = start.join(end);
         Ok(Program {
             structs,
             functions,
-            span: start.join(end),
+            source_spans: vec![span],
+            span,
         })
     }
 
