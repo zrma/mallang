@@ -20,7 +20,10 @@
   project mode는 아직 연결하지 않았다. Project source에서 directory package와
   declaration table, import edge, dependency-first build order를 만들고 unresolved import,
   qualifier 충돌, package mismatch, 모든 import cycle을 거부하는 package graph API를
-  추가했다. Cross-package resolution은 아직 구현하지 않았다.
+  추가했다. Qualified function/type/struct literal을 package graph에서 충돌 없는 내부
+  symbol로 연결하고 imported function/type/method의 `pub`과 public API의 private type
+  노출을 검사한다. Linked project는 기존 ownership checker, typed IR, C backend를
+  그대로 사용한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -154,8 +157,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Cross-package name resolution과 visibility 검사를 compiler pipeline에 연결한다.
-2. Project-aware `check`, `build`, `run` CLI와 native smoke를 추가한다.
+1. Project-aware compiler pipeline과 `check`, `build`, `run` CLI를 연결한다.
+2. 두 package의 function/struct/method native smoke를 추가한다.
 3. Invalid project graph diagnostic의 file/line/column CLI smoke를 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification

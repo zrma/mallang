@@ -279,9 +279,16 @@ impl Parser {
             return self.parse_array_type_ref();
         }
 
-        let (name, start) = self.expect_ident("expected type name")?;
+        let (mut name, start) = self.expect_ident("expected type name")?;
         let mut args = Vec::new();
         let mut span = start;
+
+        if self.eat(TokenTag::Dot).is_some() {
+            let (selected, end) = self.expect_ident("expected type name after `.`")?;
+            name.push('.');
+            name.push_str(&selected);
+            span = start.join(end);
+        }
 
         if self.eat(TokenTag::LeftBracket).is_some() {
             if self.at(TokenTag::RightBracket) {
@@ -752,7 +759,15 @@ impl Parser {
                 span: token.span,
             }),
             TokenKind::Ident(name) => {
-                if self.allow_struct_literals && self.at(TokenTag::LeftBrace) {
+                if self.allow_struct_literals
+                    && self.at(TokenTag::Dot)
+                    && self.peek_next_is(TokenTag::Ident)
+                    && self.peek_n_is(2, TokenTag::LeftBrace)
+                {
+                    self.advance();
+                    let (selected, _) = self.expect_ident("expected struct type name after `.`")?;
+                    self.finish_struct_literal(format!("{name}.{selected}"), token.span)
+                } else if self.allow_struct_literals && self.at(TokenTag::LeftBrace) {
                     self.finish_struct_literal(name, token.span)
                 } else {
                     Ok(Expr {
@@ -1207,8 +1222,12 @@ impl Parser {
     }
 
     fn peek_next_is(&self, tag: TokenTag) -> bool {
+        self.peek_n_is(1, tag)
+    }
+
+    fn peek_n_is(&self, offset: usize, tag: TokenTag) -> bool {
         self.tokens
-            .get(self.cursor + 1)
+            .get(self.cursor + offset)
             .is_some_and(|token| tag.matches(&token.kind))
     }
 
@@ -1347,6 +1366,36 @@ func main() {
         assert_eq!(program.functions[0].visibility, Visibility::Public);
         assert!(program.functions[0].receiver.is_some());
         assert_eq!(program.functions[1].visibility, Visibility::Package);
+    }
+
+    #[test]
+    fn parses_qualified_types_and_struct_literals() {
+        let program = parse(
+            r#"
+package main
+import "hello/greet"
+
+func echo(message greet.Message) greet.Message {
+    return greet.Message{text: message.text}
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.functions[0].params[0].ty.name, "greet.Message");
+        assert_eq!(
+            program.functions[0].return_type.as_ref().unwrap().name,
+            "greet.Message"
+        );
+        let StmtKind::Return { expr } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected return statement");
+        };
+        assert!(matches!(
+            &expr.kind,
+            ExprKind::StructLiteral { type_name, .. } if type_name == "greet.Message"
+        ));
     }
 
     #[test]

@@ -16,9 +16,12 @@ without changing it:
 - Every project source declares `package <name>`. Files in the same directory
   form one package and must use the same package name.
 - `import "project/path"` imports a package. The final path segment is its
-  qualifier.
+  qualifier. Imported functions and types use that qualifier, such as
+  `greet.Print()` and `greet.Message`.
 - Top-level declarations are package-private by default and use explicit `pub`
-  when another package may access them.
+  when another package may access them. A public declaration cannot expose a
+  package-private type in its fields, parameters, receiver, or return type.
+- A receiver method may only be declared on a struct from the same package.
 - Directory and manifest inputs select project mode. A direct `.mlg` input
   continues to select manifest-free standalone mode, including inside a project.
 - Project source discovery and package graph processing are deterministic. Any

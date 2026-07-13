@@ -862,3 +862,13 @@
 - [x] unresolved/duplicate/conflicting import diagnostic 추가
 - [x] 모든 import cycle을 span과 함께 거부하고 dependency-first build order 생성
 - [x] 서로 다른 package의 같은 declaration 이름 허용
+
+## P111: Cross-Package Linking and Visibility
+
+- [x] qualified function call, type reference, struct literal parser surface 추가
+- [x] package-local declaration을 충돌 없는 internal symbol로 정규화
+- [x] imported function/type의 explicit `pub` visibility 검사
+- [x] cross-package method call visibility를 semantic receiver resolution에 연결
+- [x] public API의 package-private type 노출 거부
+- [x] 동명 package declaration과 import qualifier local shadowing 회귀 검증
+- [x] linked project를 기존 ownership, IR, C backend까지 전달
