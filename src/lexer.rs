@@ -283,6 +283,30 @@ mod tests {
     }
 
     #[test]
+    fn lexes_project_declaration_keywords() {
+        let tokens = lex("package main import \"hello/greet\" pub func Print() {}").unwrap();
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();
+
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Keyword(Keyword::Package),
+                TokenKind::Ident("main".to_string()),
+                TokenKind::Keyword(Keyword::Import),
+                TokenKind::String("hello/greet".to_string()),
+                TokenKind::Keyword(Keyword::Pub),
+                TokenKind::Keyword(Keyword::Func),
+                TokenKind::Ident("Print".to_string()),
+                TokenKind::LeftParen,
+                TokenKind::RightParen,
+                TokenKind::LeftBrace,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
     fn skips_line_comments() {
         let tokens = lex("x := 1 // ignored\n y := 2").unwrap();
         let kinds: Vec<TokenKind> = tokens.into_iter().map(|token| token.kind).collect();

@@ -2,6 +2,7 @@ use crate::token::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
+    pub source_units: Vec<SourceUnit>,
     pub structs: Vec<StructDecl>,
     pub functions: Vec<Function>,
     pub source_spans: Vec<Span>,
@@ -9,7 +10,33 @@ pub struct Program {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceUnit {
+    pub package: Option<PackageDecl>,
+    pub imports: Vec<ImportDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageDecl {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportDecl {
+    pub path: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    Package,
+    Public,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDecl {
+    pub visibility: Visibility,
     pub name: String,
     pub fields: Vec<FieldDecl>,
     pub span: Span,
@@ -24,6 +51,7 @@ pub struct FieldDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
+    pub visibility: Visibility,
     pub name: String,
     pub receiver: Option<Param>,
     pub params: Vec<Param>,

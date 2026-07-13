@@ -15,8 +15,9 @@
   CLI도 이 loader와 pipeline을 사용한다. 승인된 project model에 따라
   `mallang.toml`의 project name을 읽고 directory의 가장 가까운 manifest,
   `src/main.mlg`, 재귀적 `.mlg` source 목록을 deterministic order로 찾는 project
-  discovery API를 추가했다. CLI project mode와 package/import/visibility grammar는
-  아직 구현하지 않았다.
+  discovery API를 추가했다. Parser는 `package`, `import`, `pub`을 지원하고 file별
+  package/import metadata와 top-level declaration visibility를 AST에 보존한다. CLI
+  project mode, package graph, cross-package resolution은 아직 구현하지 않았다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -150,9 +151,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. 승인된 `package`, `import`, `pub` token과 file-level AST를 구현한다.
-2. directory package와 import graph를 만들고 cycle을 거부한다.
-3. cross-package name resolution과 visibility 검사를 compiler pipeline에 연결한다.
+1. Directory package와 import graph를 만들고 cycle을 거부한다.
+2. Cross-package name resolution과 visibility 검사를 compiler pipeline에 연결한다.
+3. Project-aware `check`, `build`, `run` CLI와 native smoke를 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -73,6 +73,7 @@ pub fn parse_sources(
         .next()
         .expect("non-empty source list must produce one parsed program");
     for mut program in programs {
+        merged.source_units.append(&mut program.source_units);
         merged.structs.append(&mut program.structs);
         merged.functions.append(&mut program.functions);
         merged.source_spans.append(&mut program.source_spans);
@@ -96,6 +97,7 @@ mod tests {
         );
 
         let program = parse_sources(&sources, &[main, math]).unwrap();
+        assert_eq!(program.source_units.len(), 2);
         assert_eq!(program.source_spans.len(), 2);
         assert_eq!(program.functions.len(), 2);
         assert_eq!(program.functions[0].span.source, main);
@@ -105,6 +107,44 @@ mod tests {
         let c_source = generate_c(&program).unwrap();
         assert!(c_source.contains("int64_t mlg_double(int64_t mlg_value);"));
         assert!(c_source.contains("mlg_double(21)"));
+    }
+
+    #[test]
+    fn preserves_package_and_import_metadata_for_each_source() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "src/main.mlg",
+            "package main\nimport \"hello/greet\"\nfunc main() { greet.Print() }\n",
+        );
+        let greet = sources.add_file(
+            "src/greet/greet.mlg",
+            "package greet\npub func Print() {}\n",
+        );
+
+        let program = parse_sources(&sources, &[main, greet]).unwrap();
+
+        assert_eq!(program.source_units.len(), 2);
+        assert_eq!(
+            program.source_units[0]
+                .package
+                .as_ref()
+                .map(|package| package.name.as_str()),
+            Some("main")
+        );
+        assert_eq!(program.source_units[0].imports[0].path, "hello/greet");
+        assert_eq!(
+            program.source_units[1]
+                .package
+                .as_ref()
+                .map(|package| package.name.as_str()),
+            Some("greet")
+        );
+        assert_eq!(
+            program.functions[1].visibility,
+            crate::ast::Visibility::Public
+        );
+        assert_eq!(program.source_units[0].span.source, main);
+        assert_eq!(program.source_units[1].span.source, greet);
     }
 
     #[test]
