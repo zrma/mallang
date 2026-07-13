@@ -888,3 +888,11 @@
 - [x] 두 package의 function/struct/method native build/run smoke 추가
 - [x] project import cycle file/line/column CLI diagnostic smoke 추가
 - [x] project generated C strict warning gate 추가
+
+## P114: v0.3 Functions and Closures Decision Gate
+
+- [x] function type과 closure literal 문법 선택지 기록
+- [x] owned capture와 escaping closure safety 추천안 기록
+- [x] mutable closure call effect와 exclusive access 추천안 기록
+- [x] callable C ABI와 cleanup 구현 순서 기록
+- [ ] 사용자 승인 뒤 v0.3 language surface 확정
