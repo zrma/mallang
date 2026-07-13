@@ -70,8 +70,8 @@ v1로 간주한다.
 
 범위:
 
-- module, import, export 또는 visibility의 최소 surface를 정의한다.
-- project root, source layout, entrypoint discovery와 manifest 필요 여부를 결정한다.
+- `package <name>`, `import "project/path"`, explicit `pub` surface를 구현한다.
+- `mallang.toml`, `src/main.mlg`, directory package layout을 구현한다.
 - 여러 source file의 declaration graph와 deterministic build order를 만든다.
 - file-aware source span과 cross-file diagnostics를 추가한다.
 - duplicate declaration, unresolved import, visibility violation, module cycle의 동작을

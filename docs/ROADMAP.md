@@ -805,7 +805,7 @@
 - [x] package/import/visibility, manifest, source layout 선택지와 추천안 기록
 - [x] standalone `.mlg` compatibility와 v0.2 제외 범위 기록
 - [x] hand-written parser 유지 조건 기록
-- [ ] 사용자 승인 뒤 language/project surface 확정
+- [x] 사용자 승인 뒤 language/project surface 확정
 
 ## P104: File-Aware Source Model
 
@@ -837,3 +837,11 @@
 - [x] loaded `SourceMap`과 ordered `SourceId`를 `SourceSet`으로 전달
 - [x] source read failure에 실패 path와 underlying I/O error 보존
 - [x] 기존 single-file CLI source loading을 공통 loader로 통합
+
+## P108: Project Manifest and Source Discovery
+
+- [x] strict `mallang.toml` project name parsing 추가
+- [x] directory에서 가장 가까운 상위 manifest 탐색
+- [x] `src/main.mlg` entry source와 recursive `.mlg` source discovery 추가
+- [x] project-relative path 기준 deterministic source order 보장
+- [x] direct `.mlg` 입력을 project discovery에서 제외해 standalone 경계 유지
