@@ -1,9 +1,13 @@
 use std::fmt;
 
-use crate::token::{Keyword, Span, Token, TokenKind};
+use crate::token::{Keyword, SourceId, Span, Token, TokenKind};
 
 pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
-    Lexer::new(source).lex_all()
+    lex_with_source(source, SourceId::default())
+}
+
+pub fn lex_with_source(source: &str, source_id: SourceId) -> Result<Vec<Token>, LexError> {
+    Lexer::new_with_source(source, source_id).lex_all()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,12 +30,21 @@ impl std::error::Error for LexError {}
 
 pub struct Lexer<'a> {
     source: &'a str,
+    source_id: SourceId,
     cursor: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, cursor: 0 }
+        Self::new_with_source(source, SourceId::default())
+    }
+
+    pub fn new_with_source(source: &'a str, source_id: SourceId) -> Self {
+        Self {
+            source,
+            source_id,
+            cursor: 0,
+        }
     }
 
     pub fn lex_all(mut self) -> Result<Vec<Token>, LexError> {
@@ -48,10 +61,7 @@ impl<'a> Lexer<'a> {
 
         tokens.push(Token {
             kind: TokenKind::Eof,
-            span: Span {
-                start: self.cursor,
-                end: self.cursor,
-            },
+            span: Span::new(self.source_id, self.cursor, self.cursor),
         });
 
         Ok(tokens)
@@ -62,7 +72,7 @@ impl<'a> Lexer<'a> {
         let Some(ch) = self.advance_char() else {
             return Ok(Token {
                 kind: TokenKind::Eof,
-                span: Span { start, end: start },
+                span: Span::new(self.source_id, start, start),
             });
         };
 
@@ -105,10 +115,7 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             kind,
-            span: Span {
-                start,
-                end: self.cursor,
-            },
+            span: Span::new(self.source_id, start, self.cursor),
         })
     }
 
@@ -187,7 +194,7 @@ impl<'a> Lexer<'a> {
     fn error(&self, start: usize, end: usize, message: impl Into<String>) -> LexError {
         LexError {
             message: message.into(),
-            span: Span { start, end },
+            span: Span::new(self.source_id, start, end),
         }
     }
 
@@ -310,5 +317,15 @@ mod tests {
                 TokenKind::Eof,
             ]
         );
+    }
+
+    #[test]
+    fn preserves_source_id_on_tokens_and_errors() {
+        let source_id = SourceId::new(7);
+        let tokens = lex_with_source("func main() {}", source_id).unwrap();
+        assert!(tokens.iter().all(|token| token.span.source == source_id));
+
+        let error = lex_with_source("@", source_id).unwrap_err();
+        assert_eq!(error.span.source, source_id);
     }
 }

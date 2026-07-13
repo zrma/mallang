@@ -6,12 +6,17 @@ use crate::{
         Function, MatchArm, MatchBlockArm, MatchPattern, Param, ParamMode, Program, Stmt, StmtKind,
         StructDecl, TypeRef, UnaryOp,
     },
-    lexer::{lex, LexError},
-    token::{Keyword, Span, Token, TokenKind},
+    lexer::{lex, lex_with_source, LexError},
+    token::{Keyword, SourceId, Span, Token, TokenKind},
 };
 
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     let tokens = lex(source).map_err(ParseError::from_lex)?;
+    Parser::new(tokens).parse_program()
+}
+
+pub fn parse_with_source(source: &str, source_id: SourceId) -> Result<Program, ParseError> {
+    let tokens = lex_with_source(source, source_id).map_err(ParseError::from_lex)?;
     Parser::new(tokens).parse_program()
 }
 
@@ -2231,5 +2236,16 @@ func main() {
         assert_eq!(arms.len(), 2);
         assert!(matches!(arms[0].pattern, MatchPattern::Some(_)));
         assert!(matches!(arms[1].pattern, MatchPattern::None));
+    }
+
+    #[test]
+    fn preserves_source_id_on_programs_and_errors() {
+        let source_id = SourceId::new(11);
+        let program = parse_with_source("func main() {}", source_id).unwrap();
+        assert_eq!(program.span.source, source_id);
+        assert_eq!(program.functions[0].span.source, source_id);
+
+        let error = parse_with_source("func main( {}", source_id).unwrap_err();
+        assert_eq!(error.span.source, source_id);
     }
 }
