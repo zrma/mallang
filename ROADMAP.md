@@ -240,8 +240,14 @@
 - [x] Release binary build argument error smoke wired into v0 RC verification.
 - [x] Blank identifiers in array-only `range` loops.
 - [x] One-variable array-only `range` loops.
-- Statement-spanning borrow lifetimes for future first-class reference values.
-- Modules/packages.
-- Closures and higher-order functions.
-- C interop boundary.
-- LLVM or Cranelift backend if the C backend starts limiting the design.
+
+## Post-v0 to v1
+
+- The nine planned release milestones from `v0.2.0` through `v1.0.0` are owned
+  by `docs/V1_ROADMAP.md`.
+- The next implementation milestone is `v0.2.0: Projects and Modules`.
+- Modules, closures, generic ADTs, ownership/runtime completion, standard
+  library, tooling, hardening, and language freeze must advance through the
+  acceptance gates in that document.
+- First-class references, interfaces/dynamic dispatch, C interop, and an
+  LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

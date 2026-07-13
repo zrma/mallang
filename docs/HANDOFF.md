@@ -130,6 +130,7 @@ target/mallang/match-statement
 
 - `docs/agent-harness.md`: 이 저장소의 canonical 하네스 구조와 Mallang overlay
 - `SPEC.md`: 언어 v0.1 스펙
+- `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -138,9 +139,10 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. post-v0 syntax planning for the next public milestone
-2. decide whether v0.2 should focus on modules, closures, interfaces, or
-   first-class references
+1. `docs/V1_ROADMAP.md`의 `v0.2.0: Projects and Modules` decision gate를 연다.
+2. module/import/visibility syntax, project root와 manifest 경계를 별도
+   `docs/todo-*/spec.md`에서 결정한다.
+3. multi-file source map과 cross-file diagnostic 기반을 먼저 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

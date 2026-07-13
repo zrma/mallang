@@ -5,7 +5,8 @@
 ## First Read
 
 - 공통 하네스 인터페이스와 compiler overlay: `docs/agent-harness.md`.
-- 현재 구현과 명령: `docs/HANDOFF.md`; 방향: `SPEC.md`, `docs/ROADMAP.md`.
+- 현재 구현과 명령: `docs/HANDOFF.md`; 방향: `SPEC.md`,
+  `docs/V1_ROADMAP.md`, `docs/ROADMAP.md`.
 - 현재 작업: 활성 `docs/todo-*/spec.md`와 `open-questions.md`.
 
 <!-- agent-harness-baseline:start -->

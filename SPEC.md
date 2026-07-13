@@ -3,6 +3,8 @@
 This is the Mallang v0.1 language specification published with the 0.1.0
 source release.
 
+Post-v0 milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
+
 ## Naming
 
 The language name is Mallang.

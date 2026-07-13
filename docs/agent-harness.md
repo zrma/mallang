@@ -22,7 +22,8 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 
 - 언어 동작: compiler source, tests, examples, generated C와 native smoke.
 - 현재 상태와 읽기 순서: `docs/HANDOFF.md`.
-- 방향과 planned/implemented 경계: `SPEC.md`, `docs/ROADMAP.md`.
+- 방향과 planned/implemented 경계: `SPEC.md`, `docs/V1_ROADMAP.md`,
+  `docs/ROADMAP.md`.
 - 현재 작업 계약: 활성 `docs/todo-*/spec.md`와 `open-questions.md`.
 
 ## Autonomy And Permissions
@@ -81,6 +82,7 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 ## Related Documents
 
 - Navigation and status: `docs/HANDOFF.md`.
-- Language direction: `SPEC.md`, `docs/ROADMAP.md`.
+- Language direction: `SPEC.md`, `docs/V1_ROADMAP.md`, `docs/ROADMAP.md`.
+- Long-term release milestones: `docs/V1_ROADMAP.md`.
 - Escalation: `docs/ESCALATION_POLICY.md`.
 - Repository command map: `docs/REPO_MANIFEST.yaml`.
