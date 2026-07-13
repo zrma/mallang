@@ -65,6 +65,10 @@ This repository is the Mallang language PoC workspace.
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
   overflow undefined behavior.
+- Multi-file projects use `mallang.toml`, `src/main.mlg`, directory packages,
+  explicit imports, and `pub` visibility. `mlg check`, `mlg build`, and
+  `mlg run` accept either a standalone `.mlg` file or a project directory or
+  manifest.
 
 ## Bootstrap
 
@@ -158,6 +162,10 @@ cargo run --bin mlg -- build examples/else-if.mlg -o target/mallang/else-if
 target/mallang/else-if
 cargo run --bin mlg -- build examples/match-statement.mlg -o target/mallang/match-statement
 target/mallang/match-statement
+cargo run --bin mlg -- check examples/projects/hello
+cargo run --bin mlg -- build examples/projects/hello -o target/mallang/project-hello
+target/mallang/project-hello
+cargo run --bin mlg -- run examples/projects/hello/mallang.toml
 ```
 
 Run the full local gate:
@@ -224,6 +232,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
+- `examples/projects/hello`: two-package project smoke for imported functions,
+  structs, and methods.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/int-division.mlg`: native smoke for guarded integer division and remainder.
 - `examples/checked-arithmetic.mlg`: native smoke for checked integer arithmetic.
@@ -272,6 +282,9 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/match-statement.mlg`: native smoke for statement-form `match` block arms.
 - `src/lexer.rs`: initial hand-written lexer.
 - `src/parser.rs`: AST parser for the current v0 subset.
+- `src/project.rs`: manifest parsing and deterministic project source discovery.
+- `src/package.rs`: package declaration tables, imports, cycles, and build order.
+- `src/linker.rs`: cross-package resolution, visibility, and internal symbols.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics and
   reserved-feature boundaries.
 - `src/ir.rs`: typed IR lowering after semantic analysis.

@@ -1,6 +1,6 @@
 # Spec: v0.2-project-model
 
-상태: approved, implementation in progress
+상태: implemented, release pending
 
 ## 목표
 
@@ -86,7 +86,7 @@ pub func Print() {
 6. 승인된 package/import/visibility token과 AST를 추가한다. (완료)
 7. package별 declaration table과 import graph를 만든다. (완료)
 8. cross-package semantic resolution과 visibility 검사를 연결한다. (완료)
-9. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
+9. project-aware `check`, `build`, `run`과 native smoke를 추가한다. (완료)
 
 ## 제외
 
@@ -105,10 +105,12 @@ pub func Print() {
 | C3 | done | compiler/frontend tests | multi-file span, pipeline, cross-file error 구분 |
 | C4 | done | lexer/parser/frontend tests | package/import/`pub` syntax와 file metadata |
 | C5 | done | package/linker/semantic rejection tests | unresolved import, visibility, cycle 진단 |
-| C6 | pending | native project smoke | 두 package의 function/struct/method 호출 |
+| C6 | done | native project smoke | 두 package의 function/struct/method 호출 |
 
 ## 완료 기준
 
 - `open-questions.md`의 language surface 질문이 닫혀 있다.
 - 승인된 project model이 `SPEC.md`의 planned v0.2 section에 반영되어 있다.
-- 구현 작업을 parser, project loader, semantic graph 단위로 나눌 수 있다.
+- project directory와 manifest를 `mlg check`, `mlg build`, `mlg run`으로 처리한다.
+- function, struct, method를 package 경계 너머에서 native 실행한다.
+- invalid package graph를 source 위치가 있는 diagnostic으로 거부한다.

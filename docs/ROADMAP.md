@@ -872,3 +872,19 @@
 - [x] public API의 package-private type 노출 거부
 - [x] 동명 package declaration과 import qualifier local shadowing 회귀 검증
 - [x] linked project를 기존 ownership, IR, C backend까지 전달
+
+## P112: Project Compiler Pipeline
+
+- [x] project용 check/lower/C generation compiler API 추가
+- [x] frontend/package/link/semantic/IR/backend error stage 보존
+- [x] linked internal symbol을 user-facing package-qualified diagnostic으로 복원
+- [x] project source를 기존 ownership, IR, backend pipeline으로 end-to-end 전달
+
+## P113: Project CLI and Native Acceptance
+
+- [x] directory와 `mallang.toml` 입력을 project-aware `check`, `build`, `run`에 연결
+- [x] direct `.mlg` 입력의 manifest-free standalone 동작 유지
+- [x] project-local 기본 build/run artifact 경로 추가
+- [x] 두 package의 function/struct/method native build/run smoke 추가
+- [x] project import cycle file/line/column CLI diagnostic smoke 추가
+- [x] project generated C strict warning gate 추가

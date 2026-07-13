@@ -6,8 +6,9 @@ use std::{
 };
 
 use mallang::{
-    check_sources, generate_c_sources, lex_with_source, load_source_files, lower_sources,
-    parse_sources, CompilerError, FrontendError, SourceId, SourceMap,
+    check_project_sources, check_sources, discover_project, generate_c_project_sources,
+    generate_c_sources, lex_with_source, load_source_files, lower_sources, parse_sources,
+    CompilerError, FrontendError, Project, SourceId, SourceMap,
 };
 
 fn main() {
@@ -69,10 +70,10 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "usage:")?;
     writeln!(output, "  {program} lex <source-file>")?;
     writeln!(output, "  {program} parse <source-file>")?;
-    writeln!(output, "  {program} check <source-file>")?;
+    writeln!(output, "  {program} check <input>")?;
     writeln!(output, "  {program} ir <source-file>")?;
-    writeln!(output, "  {program} build <source-file> [-o <output>]")?;
-    writeln!(output, "  {program} run <source-file>")?;
+    writeln!(output, "  {program} build <input> [-o <output>]")?;
+    writeln!(output, "  {program} run <input>")?;
     writeln!(output, "  {program} --version")
 }
 
@@ -104,10 +105,21 @@ fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
 }
 
 fn run_check(program: &str, args: &[String]) -> Result<(), String> {
-    let path = single_source_arg(program, "check", args)?;
-    let (sources, source_id) = load_source(path)?;
-    check_sources(&sources, &[source_id])
-        .map_err(|error| format_compiler_error(&sources, path, error))?;
+    let path = single_input_arg(program, "check", args)?;
+    match load_compilation_input(path)? {
+        CompilationInput::Standalone { sources, source_id } => {
+            check_sources(&sources, &[source_id])
+                .map_err(|error| format_compiler_error(&sources, path, error))?;
+        }
+        CompilationInput::Project {
+            project,
+            sources,
+            source_ids,
+        } => {
+            check_project_sources(&project, &sources, &source_ids)
+                .map_err(|error| format_compiler_error(&sources, path, error))?;
+        }
+    }
     println!("{path}: ok");
     Ok(())
 }
@@ -123,9 +135,7 @@ fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
 
 fn run_build(program: &str, args: &[String]) -> Result<(), String> {
     if args.is_empty() {
-        return Err(format!(
-            "usage: {program} build <source-file> [-o <output>]"
-        ));
+        return Err(format!("usage: {program} build <input> [-o <output>]"));
     }
 
     let source_path = &args[0];
@@ -144,19 +154,14 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
         }
     }
 
-    let output_path = compile_source(source_path, output_path)?;
+    let output_path = compile_input(source_path, output_path, OutputKind::Build)?;
     println!("{}", output_path.display());
     Ok(())
 }
 
 fn run_run(program: &str, args: &[String]) -> Result<(), String> {
-    let source_path = single_source_arg(program, "run", args)?;
-    let source_stem = source_stem(source_path);
-    let output_path = PathBuf::from("target")
-        .join("mallang")
-        .join("run")
-        .join(source_stem);
-    let binary_path = compile_source(source_path, Some(output_path))?;
+    let source_path = single_input_arg(program, "run", args)?;
+    let binary_path = compile_input(source_path, None, OutputKind::Run)?;
 
     let status = Command::new(&binary_path)
         .status()
@@ -168,20 +173,51 @@ fn run_run(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn compile_source(source_path: &str, output_path: Option<PathBuf>) -> Result<PathBuf, String> {
-    let (sources, source_id) = load_source(source_path)?;
-    let c_source = generate_c_sources(&sources, &[source_id])
-        .map_err(|error| format_compiler_error(&sources, source_path, error))?;
+#[derive(Debug, Clone, Copy)]
+enum OutputKind {
+    Build,
+    Run,
+}
 
-    let source_stem = source_stem(source_path);
-    let build_dir = PathBuf::from("target/mallang");
+fn compile_input(
+    input_path: &str,
+    output_path: Option<PathBuf>,
+    kind: OutputKind,
+) -> Result<PathBuf, String> {
+    let (c_source, artifact_name, build_dir) = match load_compilation_input(input_path)? {
+        CompilationInput::Standalone { sources, source_id } => {
+            let c_source = generate_c_sources(&sources, &[source_id])
+                .map_err(|error| format_compiler_error(&sources, input_path, error))?;
+            (
+                c_source,
+                source_stem(input_path).to_string(),
+                PathBuf::from("target/mallang"),
+            )
+        }
+        CompilationInput::Project {
+            project,
+            sources,
+            source_ids,
+        } => {
+            let c_source = generate_c_project_sources(&project, &sources, &source_ids)
+                .map_err(|error| format_compiler_error(&sources, input_path, error))?;
+            let artifact_name = project.name().to_string();
+            let build_dir = project.root().join("target/mallang");
+            (c_source, artifact_name, build_dir)
+        }
+    };
+
     fs::create_dir_all(&build_dir)
         .map_err(|error| format!("failed to create {}: {error}", build_dir.display()))?;
-    let c_path = build_dir.join(format!("{source_stem}.c"));
+    let c_path = build_dir.join(format!("{artifact_name}.c"));
     fs::write(&c_path, c_source)
         .map_err(|error| format!("failed to write {}: {error}", c_path.display()))?;
 
-    let output_path = output_path.unwrap_or_else(|| build_dir.join(source_stem));
+    let default_output_dir = match kind {
+        OutputKind::Build => build_dir.clone(),
+        OutputKind::Run => build_dir.join("run"),
+    };
+    let output_path = output_path.unwrap_or_else(|| default_output_dir.join(&artifact_name));
     if let Some(parent) = output_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -218,6 +254,49 @@ fn single_source_arg<'a>(
         return Err(format!("usage: {program} {subcommand} <source-file>"));
     }
     Ok(&args[0])
+}
+
+fn single_input_arg<'a>(
+    program: &str,
+    subcommand: &str,
+    args: &'a [String],
+) -> Result<&'a str, String> {
+    if args.len() != 1 {
+        return Err(format!("usage: {program} {subcommand} <input>"));
+    }
+    Ok(&args[0])
+}
+
+enum CompilationInput {
+    Standalone {
+        sources: SourceMap,
+        source_id: SourceId,
+    },
+    Project {
+        project: Project,
+        sources: SourceMap,
+        source_ids: Vec<SourceId>,
+    },
+}
+
+fn load_compilation_input(path: &str) -> Result<CompilationInput, String> {
+    let input = Path::new(path);
+    if input
+        .extension()
+        .is_some_and(|extension| extension == "mlg")
+    {
+        let (sources, source_id) = load_source(path)?;
+        return Ok(CompilationInput::Standalone { sources, source_id });
+    }
+
+    let project = discover_project(input).map_err(|error| error.to_string())?;
+    let loaded =
+        load_source_files(project.source_files().iter()).map_err(|error| error.to_string())?;
+    Ok(CompilationInput::Project {
+        project,
+        sources: loaded.sources,
+        source_ids: loaded.source_ids,
+    })
 }
 
 fn load_source(path: &str) -> Result<(SourceMap, SourceId), String> {

@@ -29,8 +29,8 @@ without changing it:
 
 The v0.2 surface intentionally excludes import aliases, dot or wildcard imports,
 remote dependencies, a package registry, lockfiles, and package initialization
-hooks. These rules become normative with the v0.2 release after their compiler
-implementation and acceptance tests are complete.
+hooks. The compiler and native acceptance path implement these rules. They become
+normative with the v0.2 release.
 
 ## Naming
 

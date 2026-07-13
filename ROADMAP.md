@@ -245,7 +245,9 @@
 
 - The nine planned release milestones from `v0.2.0` through `v1.0.0` are owned
   by `docs/V1_ROADMAP.md`.
-- The next implementation milestone is `v0.2.0: Projects and Modules`.
+- `v0.2.0: Projects and Modules` is implemented locally; release publication is
+  still pending.
+- The next implementation milestone is `v0.3.0: Functions and Closures`.
 - Modules, closures, generic ADTs, ownership/runtime completion, standard
   library, tooling, hardening, and language freeze must advance through the
   acceptance gates in that document.

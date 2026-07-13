@@ -123,7 +123,7 @@ fi
 mkdir -p target/mallang
 help_stderr="target/mallang/help.stderr"
 help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
-if [[ "$help_output" != *"usage:"* || "$help_output" != *"target/debug/mlg check <source-file>"* || "$help_output" != *"target/debug/mlg --version"* ]]; then
+if [[ "$help_output" != *"usage:"* || "$help_output" != *"target/debug/mlg check <input>"* || "$help_output" != *"target/debug/mlg --version"* ]]; then
   echo "help smoke failed: unexpected help output '$help_output'" >&2
   exit 1
 fi
@@ -169,6 +169,42 @@ fi
 first_output="$(target/mallang/first)"
 if [[ "$first_output" != "30" ]]; then
   echo "first native build smoke failed: expected 30, got '$first_output'" >&2
+  exit 1
+fi
+project_input="examples/projects/hello"
+"${CARGO[@]}" run --bin mlg -- check "$project_input" >/dev/null
+project_output_path="$("${CARGO[@]}" run --quiet --bin mlg -- build "$project_input")"
+if [[ "$project_output_path" != */examples/projects/hello/target/mallang/hello ]]; then
+  echo "project default build path smoke failed: got '$project_output_path'" >&2
+  exit 1
+fi
+project_output="$("$project_output_path")"
+if [[ "$project_output" != $'kim\n42' ]]; then
+  echo "project native build smoke failed: expected kim and 42, got '$project_output'" >&2
+  exit 1
+fi
+project_run_output="$("${CARGO[@]}" run --quiet --bin mlg -- run "$project_input/mallang.toml")"
+if [[ "$project_run_output" != $'kim\n42' ]]; then
+  echo "project native run smoke failed: expected kim and 42, got '$project_run_output'" >&2
+  exit 1
+fi
+expect_warning_clean_generated_c \
+  "project-hello" \
+  "$project_input/target/mallang/hello.c"
+
+project_cycle_stderr="target/mallang/project-cycle.stderr"
+if "${CARGO[@]}" run --quiet --bin mlg -- check tests/fixtures/project-cycle >/dev/null 2>"$project_cycle_stderr"; then
+  echo "project cycle smoke failed: expected non-zero exit" >&2
+  exit 1
+fi
+if ! grep -Fq 'package import cycle: cycle -> cycle/a -> cycle' "$project_cycle_stderr"; then
+  echo "project cycle smoke failed: expected cycle diagnostic" >&2
+  cat "$project_cycle_stderr" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/fixtures/project-cycle/src/a/a.mlg:3:1:' "$project_cycle_stderr"; then
+  echo "project cycle smoke failed: expected source location" >&2
+  cat "$project_cycle_stderr" >&2
   exit 1
 fi
 "${CARGO[@]}" run --bin mlg -- check examples/if.mlg >/dev/null
