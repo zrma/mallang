@@ -11,7 +11,8 @@
   파일의 declaration을 하나의 semantic/backend compilation unit으로 합치면서
   원본 source span을 유지한다. `check_sources`, `lower_sources`,
   `generate_c_sources`는 같은 source 집합을 semantic, IR, C backend까지 전달하며
-  기존 single-file CLI도 이 pipeline을 사용한다. Project loader와
+  `load_source_files`는 명시적 file 목록을 caller 순서대로 읽는다. 기존 single-file
+  CLI도 이 loader와 pipeline을 사용한다. Project discovery와
   package/import/visibility grammar는 아직 구현하지 않았다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 

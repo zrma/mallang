@@ -6,8 +6,8 @@ use std::{
 };
 
 use mallang::{
-    check_sources, generate_c_sources, lex_with_source, lower_sources, parse_sources,
-    CompilerError, FrontendError, SourceId, SourceMap,
+    check_sources, generate_c_sources, lex_with_source, load_source_files, lower_sources,
+    parse_sources, CompilerError, FrontendError, SourceId, SourceMap,
 };
 
 fn main() {
@@ -221,11 +221,13 @@ fn single_source_arg<'a>(
 }
 
 fn load_source(path: &str) -> Result<(SourceMap, SourceId), String> {
-    let source = fs::read_to_string(path)
-        .map_err(|error| format!("{path}: failed to read source: {error}"))?;
-    let mut sources = SourceMap::new();
-    let source_id = sources.add_file(path, source);
-    Ok((sources, source_id))
+    let loaded = load_source_files([path]).map_err(|error| error.to_string())?;
+    let source_id = loaded
+        .source_ids
+        .first()
+        .copied()
+        .ok_or_else(|| "source loader returned no source IDs".to_string())?;
+    Ok((loaded.sources, source_id))
 }
 
 fn source_text(sources: &SourceMap, source_id: SourceId) -> &str {

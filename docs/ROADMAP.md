@@ -830,3 +830,10 @@
 - [x] frontend, semantic, IR, backend stage를 보존하는 compiler error model 추가
 - [x] 기존 single-file CLI check/ir/build/run을 compiler pipeline으로 통합
 - [x] cross-file semantic, IR, C backend와 stage/source identity regression 추가
+
+## P107: Explicit Source File Loader
+
+- [x] caller가 제공한 file 순서를 보존하는 `load_source_files` 추가
+- [x] loaded `SourceMap`과 ordered `SourceId`를 `SourceSet`으로 전달
+- [x] source read failure에 실패 path와 underlying I/O error 보존
+- [x] 기존 single-file CLI source loading을 공통 loader로 통합
