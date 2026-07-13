@@ -5,7 +5,9 @@ use std::{
     process::{self, Command},
 };
 
-use mallang::{check, generate_c, lex, lower, parse};
+use mallang::{
+    check, generate_c_from_ir, lex_with_source, lower, parse_with_source, SourceId, SourceMap,
+};
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
@@ -75,9 +77,10 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
 
 fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "lex", args)?;
-    let source = read_source(path)?;
+    let (sources, source_id) = load_source(path)?;
+    let source = source_text(&sources, source_id);
 
-    match lex(&source) {
+    match lex_with_source(source, source_id) {
         Ok(tokens) => {
             for token in tokens {
                 println!(
@@ -87,33 +90,35 @@ fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        Err(error) => Err(format!("{path}: {error}")),
+        Err(error) => Err(sources.format_diagnostic(&error.message, error.span)),
     }
 }
 
 fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "parse", args)?;
-    let source = read_source(path)?;
-    let program = parse(&source).map_err(|error| format!("{path}: {error}"))?;
+    let (sources, source_id) = load_source(path)?;
+    let program = parse_loaded_source(&sources, source_id)?;
     println!("{program:#?}");
     Ok(())
 }
 
 fn run_check(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "check", args)?;
-    let source = read_source(path)?;
-    let program_ast = parse(&source).map_err(|error| format!("{path}: {error}"))?;
-    check(&program_ast).map_err(|error| format!("{path}: {error}"))?;
+    let (sources, source_id) = load_source(path)?;
+    let program_ast = parse_loaded_source(&sources, source_id)?;
+    check(&program_ast).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
     println!("{path}: ok");
     Ok(())
 }
 
 fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
     let path = single_source_arg(program, "ir", args)?;
-    let source = read_source(path)?;
-    let program_ast = parse(&source).map_err(|error| format!("{path}: {error}"))?;
-    let checked = check(&program_ast).map_err(|error| format!("{path}: {error}"))?;
-    let ir = lower(&checked).map_err(|error| format!("{path}: {error}"))?;
+    let (sources, source_id) = load_source(path)?;
+    let program_ast = parse_loaded_source(&sources, source_id)?;
+    let checked = check(&program_ast)
+        .map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
+    let ir =
+        lower(&checked).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
     println!("{ir:#?}");
     Ok(())
 }
@@ -166,10 +171,13 @@ fn run_run(program: &str, args: &[String]) -> Result<(), String> {
 }
 
 fn compile_source(source_path: &str, output_path: Option<PathBuf>) -> Result<PathBuf, String> {
-    let source = read_source(source_path)?;
-    let program_ast = parse(&source).map_err(|error| format!("{source_path}: {error}"))?;
-    check(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
-    let c_source = generate_c(&program_ast).map_err(|error| format!("{source_path}: {error}"))?;
+    let (sources, source_id) = load_source(source_path)?;
+    let program_ast = parse_loaded_source(&sources, source_id)?;
+    let checked = check(&program_ast)
+        .map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
+    let ir =
+        lower(&checked).map_err(|error| sources.format_diagnostic(&error.message, error.span))?;
+    let c_source = generate_c_from_ir(&ir).map_err(|error| format!("{source_path}: {error}"))?;
 
     let source_stem = source_stem(source_path);
     let build_dir = PathBuf::from("target/mallang");
@@ -218,6 +226,25 @@ fn single_source_arg<'a>(
     Ok(&args[0])
 }
 
-fn read_source(path: &str) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|error| format!("{path}: failed to read source: {error}"))
+fn load_source(path: &str) -> Result<(SourceMap, SourceId), String> {
+    let source = fs::read_to_string(path)
+        .map_err(|error| format!("{path}: failed to read source: {error}"))?;
+    let mut sources = SourceMap::new();
+    let source_id = sources.add_file(path, source);
+    Ok((sources, source_id))
+}
+
+fn source_text(sources: &SourceMap, source_id: SourceId) -> &str {
+    sources
+        .file(source_id)
+        .expect("source ID returned by SourceMap must resolve")
+        .text()
+}
+
+fn parse_loaded_source(
+    sources: &SourceMap,
+    source_id: SourceId,
+) -> Result<mallang::ast::Program, String> {
+    parse_with_source(source_text(sources, source_id), source_id)
+        .map_err(|error| sources.format_diagnostic(&error.message, error.span))
 }

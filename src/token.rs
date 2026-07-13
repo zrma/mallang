@@ -1,12 +1,35 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct SourceId(usize);
+
+impl SourceId {
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Span {
+    pub source: SourceId,
     pub start: usize,
     pub end: usize,
 }
 
 impl Span {
+    pub const fn new(source: SourceId, start: usize, end: usize) -> Self {
+        Self { source, start, end }
+    }
+
     pub fn join(self, other: Self) -> Self {
+        assert_eq!(
+            self.source, other.source,
+            "cannot join spans from different source files"
+        );
         Self {
+            source: self.source,
             start: self.start.min(other.start),
             end: self.end.max(other.end),
         }

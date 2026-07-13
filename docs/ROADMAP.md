@@ -799,3 +799,18 @@
 - [x] 각 milestone의 목표, 범위, 완료 조건, 제외 항목을 구분
 - [x] first-class references, interfaces, backend 전환을 automatic v1 scope가 아닌 decision gate로 유지
 - [x] README, compiler roadmap, handoff, agent harness에서 장기 roadmap 연결
+
+## P103: v0.2 Project Model Decision Gate
+
+- [x] package/import/visibility, manifest, source layout 선택지와 추천안 기록
+- [x] standalone `.mlg` compatibility와 v0.2 제외 범위 기록
+- [x] hand-written parser 유지 조건 기록
+- [ ] 사용자 승인 뒤 language/project surface 확정
+
+## P104: File-Aware Source Model
+
+- [x] token/AST/IR `Span`에 `SourceId` 전파
+- [x] 여러 source file과 line/column lookup을 소유하는 `SourceMap` 추가
+- [x] 기존 single-file `lex`/`parse` compatibility API 유지
+- [x] CLI frontend diagnostic을 file/line/column 형식으로 연결
+- [x] multi-file identity, Unicode column, error propagation regression 추가

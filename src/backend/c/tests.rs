@@ -139,7 +139,7 @@ fn generates_c_drop_helpers_for_internal_cleanup_types() {
 #[test]
 fn generates_c_for_explicit_internal_drop_statement() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![
@@ -181,7 +181,7 @@ fn generates_c_for_explicit_internal_drop_statement() {
 #[test]
 fn generates_c_for_explicit_internal_cleanup_field_drop_statement() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: vec![IrStruct {
             name: "Holder".to_string(),
@@ -230,7 +230,7 @@ fn generates_c_for_explicit_internal_cleanup_array_element_drop_statement() {
         len: 2,
         element: Box::new(slice_ty.clone()),
     };
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![IrFunction {
@@ -273,7 +273,7 @@ fn generates_c_for_explicit_internal_cleanup_array_element_drop_statement() {
 #[test]
 fn generates_c_for_for_init_cleanup_trailer() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![IrFunction {
@@ -324,7 +324,7 @@ fn generates_c_for_for_init_cleanup_trailer() {
 
 #[test]
 fn rejects_explicit_internal_drop_for_non_cleanup_type() {
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![IrFunction {
@@ -353,7 +353,7 @@ fn rejects_explicit_internal_drop_for_non_cleanup_type() {
 
 #[test]
 fn rejects_invalid_ir_print_arity() {
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![IrFunction {
@@ -385,7 +385,7 @@ fn rejects_invalid_ir_print_arity() {
 
 #[test]
 fn rejects_invalid_ir_range_source_type() {
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![IrFunction {
@@ -418,7 +418,7 @@ fn rejects_invalid_ir_range_source_type() {
 
 #[test]
 fn rejects_invalid_ir_option_match_arm() {
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let option_int = Type::Option(Box::new(Type::Int));
     let program = IrProgram {
         structs: Vec::new(),
@@ -456,7 +456,7 @@ fn rejects_invalid_ir_option_match_arm() {
 
 #[test]
 fn rejects_invalid_ir_borrow_argument_expression() {
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![
@@ -837,7 +837,7 @@ return if flag { Some(7) } else { None }
 #[test]
 fn generates_c_for_if_expression_cleanup_trailer() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
-    let span = crate::token::Span { start: 0, end: 0 };
+    let span = crate::token::Span::default();
     let program = IrProgram {
         structs: Vec::new(),
         functions: vec![

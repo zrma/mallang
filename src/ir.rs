@@ -3268,7 +3268,7 @@ mod tests {
     use crate::{check, parse};
 
     fn test_span() -> Span {
-        Span { start: 0, end: 0 }
+        Span::default()
     }
 
     fn test_slice_ty() -> Type {
