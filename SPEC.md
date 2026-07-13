@@ -5,6 +5,30 @@ source release.
 
 Post-v0 milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 
+## Planned v0.2 Project Model
+
+The approved v0.2 project surface extends the existing standalone `.mlg` mode
+without changing it:
+
+- A project has a `mallang.toml` manifest with a lowercase project path name.
+- Project sources live under `src/`; `src/main.mlg` is the executable entry
+  source.
+- Every project source declares `package <name>`. Files in the same directory
+  form one package and must use the same package name.
+- `import "project/path"` imports a package. The final path segment is its
+  qualifier.
+- Top-level declarations are package-private by default and use explicit `pub`
+  when another package may access them.
+- Directory and manifest inputs select project mode. A direct `.mlg` input
+  continues to select manifest-free standalone mode, including inside a project.
+- Project source discovery and package graph processing are deterministic. Any
+  import cycle is rejected in v0.2.
+
+The v0.2 surface intentionally excludes import aliases, dot or wildcard imports,
+remote dependencies, a package registry, lockfiles, and package initialization
+hooks. These rules become normative with the v0.2 release after their compiler
+implementation and acceptance tests are complete.
+
 ## Naming
 
 The language name is Mallang.

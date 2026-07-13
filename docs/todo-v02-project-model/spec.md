@@ -1,6 +1,6 @@
 # Spec: v0.2-project-model
 
-상태: decision gate open
+상태: approved, implementation in progress
 
 ## 목표
 
@@ -30,10 +30,9 @@
 - 기존 `lex`와 `parse` API는 anonymous source를 사용하는 compatibility wrapper로
   유지된다.
 
-## 추천안
+## 확정안
 
-아래 조합을 v0.2 기본안으로 추천하되, language surface이므로 사용자 승인 전에는
-확정하거나 parser에 구현하지 않는다.
+아래 조합을 v0.2 language/project surface로 확정한다.
 
 - package 단위: 같은 directory의 `.mlg` 파일을 하나의 package로 묶고 각 파일에
   `package <name>`을 선언한다.
@@ -83,7 +82,7 @@ pub func Print() {
 2. 여러 source file을 하나의 semantic/backend compilation unit으로 합친다. (완료)
 3. multi-source compiler pipeline을 semantic, IR, C backend까지 연결한다. (완료)
 4. 명시적 source file 목록 loader를 compiler pipeline 앞에 연결한다. (완료)
-5. manifest와 project discovery model을 구현한다.
+5. manifest와 project discovery model을 구현한다. (완료)
 6. 승인된 package/import/visibility token과 AST를 추가한다.
 7. package별 declaration table과 import graph를 만든다.
 8. cross-package semantic resolution과 visibility 검사를 연결한다.
@@ -101,8 +100,8 @@ pub func Print() {
 
 | ID | 상태 | 검증 | 작업 |
 | --- | --- | --- | --- |
-| C1 | pending | 사용자 decision | package/import/visibility surface 확정 |
-| C2 | pending | 사용자 decision | manifest와 source layout 확정 |
+| C1 | done | 사용자 decision | package/import/visibility surface 확정 |
+| C2 | done | 사용자 decision | manifest와 source layout 확정 |
 | C3 | done | compiler/frontend tests | multi-file span, pipeline, cross-file error 구분 |
 | C4 | pending | parser tests | package/import/`pub` syntax |
 | C5 | pending | semantic rejection tests | unresolved import, visibility, cycle 진단 |
