@@ -29,6 +29,10 @@ pub struct Project {
 }
 
 impl Project {
+    pub fn name(&self) -> &str {
+        &self.manifest.project.name
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }

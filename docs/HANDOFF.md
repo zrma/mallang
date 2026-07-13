@@ -17,7 +17,10 @@
   `src/main.mlg`, 재귀적 `.mlg` source 목록을 deterministic order로 찾는 project
   discovery API를 추가했다. Parser는 `package`, `import`, `pub`을 지원하고 file별
   package/import metadata와 top-level declaration visibility를 AST에 보존한다. CLI
-  project mode, package graph, cross-package resolution은 아직 구현하지 않았다.
+  project mode는 아직 연결하지 않았다. Project source에서 directory package와
+  declaration table, import edge, dependency-first build order를 만들고 unresolved import,
+  qualifier 충돌, package mismatch, 모든 import cycle을 거부하는 package graph API를
+  추가했다. Cross-package resolution은 아직 구현하지 않았다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -151,9 +154,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Directory package와 import graph를 만들고 cycle을 거부한다.
-2. Cross-package name resolution과 visibility 검사를 compiler pipeline에 연결한다.
-3. Project-aware `check`, `build`, `run` CLI와 native smoke를 추가한다.
+1. Cross-package name resolution과 visibility 검사를 compiler pipeline에 연결한다.
+2. Project-aware `check`, `build`, `run` CLI와 native smoke를 추가한다.
+3. Invalid project graph diagnostic의 file/line/column CLI smoke를 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -853,3 +853,12 @@
 - [x] top-level type, function, method에 package-private/public visibility 보존
 - [x] package/import 위치와 invalid `pub` declaration diagnostic 추가
 - [x] standalone source의 optional package compatibility 유지
+
+## P110: Deterministic Package Graph
+
+- [x] manifest name과 source directory에서 canonical package path 계산
+- [x] source directory와 `package` declaration 일치 검증
+- [x] package별 type/function/method declaration table 구성
+- [x] unresolved/duplicate/conflicting import diagnostic 추가
+- [x] 모든 import cycle을 span과 함께 거부하고 dependency-first build order 생성
+- [x] 서로 다른 package의 같은 declaration 이름 허용
