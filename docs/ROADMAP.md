@@ -792,3 +792,10 @@
 - [x] `target/release/mlg build examples/first.mlg --wat`가 unknown build argument diagnostic을 내는지 검증
 - [x] release build argument failure stdout이 비어 있는지 검증
 - [x] 기존 release CLI failure helper를 재사용
+
+## P102: V1 Milestone Roadmap
+
+- [x] `docs/V1_ROADMAP.md`에 `v0.2.0`부터 `v1.0.0`까지 아홉 개 milestone 기록
+- [x] 각 milestone의 목표, 범위, 완료 조건, 제외 항목을 구분
+- [x] first-class references, interfaces, backend 전환을 automatic v1 scope가 아닌 decision gate로 유지
+- [x] README, compiler roadmap, handoff, agent harness에서 장기 roadmap 연결
