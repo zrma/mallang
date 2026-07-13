@@ -24,6 +24,8 @@
   unit으로 합치고 원본 파일별 span을 보존한다.
 - `check_sources`, `lower_sources`, `generate_c_sources`가 같은 source 집합을
   semantic, IR, C backend까지 전달하고 stage별 error를 보존한다.
+- `load_source_files`가 project discovery에서 선택한 명시적 file 목록을 caller
+  순서대로 `SourceMap`과 `SourceId` 집합으로 읽는다.
 - CLI frontend diagnostic은 source path와 1-based line/column을 출력한다.
 - 기존 `lex`와 `parse` API는 anonymous source를 사용하는 compatibility wrapper로
   유지된다.
@@ -80,11 +82,12 @@ pub func Print() {
 1. file-aware source identity와 location diagnostics를 추가한다. (완료)
 2. 여러 source file을 하나의 semantic/backend compilation unit으로 합친다. (완료)
 3. multi-source compiler pipeline을 semantic, IR, C backend까지 연결한다. (완료)
-4. manifest와 project discovery model을 구현한다.
-5. 승인된 package/import/visibility token과 AST를 추가한다.
-6. package별 declaration table과 import graph를 만든다.
-7. cross-package semantic resolution과 visibility 검사를 연결한다.
-8. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
+4. 명시적 source file 목록 loader를 compiler pipeline 앞에 연결한다. (완료)
+5. manifest와 project discovery model을 구현한다.
+6. 승인된 package/import/visibility token과 AST를 추가한다.
+7. package별 declaration table과 import graph를 만든다.
+8. cross-package semantic resolution과 visibility 검사를 연결한다.
+9. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
 
 ## 제외
 

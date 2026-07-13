@@ -18,5 +18,7 @@ pub use ir::{lower, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
 pub use parser::{parse, parse_with_source, ParseError, Parser};
 pub use semantic::{check, CheckedProgram, SemanticError};
-pub use source::{SourceFile, SourceLocation, SourceMap};
+pub use source::{
+    load_source_files, SourceFile, SourceLoadError, SourceLocation, SourceMap, SourceSet,
+};
 pub use token::{Keyword, SourceId, Span, Token, TokenKind};

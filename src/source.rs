@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use crate::token::{SourceId, Span};
 
@@ -96,6 +99,64 @@ impl SourceMap {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceSet {
+    pub sources: SourceMap,
+    pub source_ids: Vec<SourceId>,
+}
+
+#[derive(Debug)]
+pub struct SourceLoadError {
+    path: PathBuf,
+    source: io::Error,
+}
+
+impl SourceLoadError {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl std::fmt::Display for SourceLoadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{}: failed to read source: {}",
+            self.path.display(),
+            self.source
+        )
+    }
+}
+
+impl std::error::Error for SourceLoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+pub fn load_source_files<I, P>(paths: I) -> Result<SourceSet, SourceLoadError>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<PathBuf>,
+{
+    let mut sources = SourceMap::new();
+    let mut source_ids = Vec::new();
+
+    for path in paths {
+        let path = path.into();
+        let text = fs::read_to_string(&path).map_err(|source| SourceLoadError {
+            path: path.clone(),
+            source,
+        })?;
+        source_ids.push(sources.add_file(path, text));
+    }
+
+    Ok(SourceSet {
+        sources,
+        source_ids,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +205,34 @@ mod tests {
             sources.file(source).and_then(|file| file.location(offset)),
             Some(SourceLocation { line: 2, column: 6 })
         );
+    }
+
+    #[test]
+    fn loads_explicit_source_files_in_caller_order() {
+        let loaded = load_source_files(["examples/first.mlg", "examples/hello.mlg"]).unwrap();
+
+        assert_eq!(loaded.source_ids.len(), 2);
+        assert_eq!(
+            loaded
+                .sources
+                .file(loaded.source_ids[0])
+                .map(SourceFile::path),
+            Some(Path::new("examples/first.mlg"))
+        );
+        assert_eq!(
+            loaded
+                .sources
+                .file(loaded.source_ids[1])
+                .map(SourceFile::path),
+            Some(Path::new("examples/hello.mlg"))
+        );
+    }
+
+    #[test]
+    fn reports_the_source_path_that_failed_to_load() {
+        let error = load_source_files(["examples/missing-source.mlg"]).unwrap_err();
+
+        assert_eq!(error.path(), Path::new("examples/missing-source.mlg"));
+        assert!(error.to_string().contains("failed to read source"));
     }
 }
