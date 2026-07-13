@@ -16,14 +16,17 @@
   `mallang.toml`의 project name을 읽고 directory의 가장 가까운 manifest,
   `src/main.mlg`, 재귀적 `.mlg` source 목록을 deterministic order로 찾는 project
   discovery API를 추가했다. Parser는 `package`, `import`, `pub`을 지원하고 file별
-  package/import metadata와 top-level declaration visibility를 AST에 보존한다. CLI
-  project mode는 아직 연결하지 않았다. Project source에서 directory package와
+  package/import metadata와 top-level declaration visibility를 AST에 보존한다. Project
+  source에서 directory package와
   declaration table, import edge, dependency-first build order를 만들고 unresolved import,
   qualifier 충돌, package mismatch, 모든 import cycle을 거부하는 package graph API를
   추가했다. Qualified function/type/struct literal을 package graph에서 충돌 없는 내부
   symbol로 연결하고 imported function/type/method의 `pub`과 public API의 private type
   노출을 검사한다. Linked project는 기존 ownership checker, typed IR, C backend를
-  그대로 사용한다.
+  그대로 사용한다. Directory 또는 `mallang.toml` 입력을 project-aware `mlg check`,
+  `mlg build`, `mlg run`으로 연결했으며 direct `.mlg` standalone 동작은 유지한다.
+  두 package의 function/struct/method native smoke, import cycle 위치 diagnostic,
+  project generated C warning-clean gate가 v0.2 acceptance를 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -40,6 +43,9 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- check examples/projects/hello
+cargo run --bin mlg -- build examples/projects/hello
+cargo run --bin mlg -- run examples/projects/hello/mallang.toml
 cargo run --bin mlg -- ir examples/adt.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
@@ -157,9 +163,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Project-aware compiler pipeline과 `check`, `build`, `run` CLI를 연결한다.
-2. 두 package의 function/struct/method native smoke를 추가한다.
-3. Invalid project graph diagnostic의 file/line/column CLI smoke를 추가한다.
+1. v0.3 function type과 function value 문법 decision gate를 연다.
+2. closure literal과 owned/`con`/`mut` capture surface를 결정한다.
+3. closure environment의 ownership, cleanup, C ABI prototype을 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

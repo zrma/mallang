@@ -1,0 +1,17 @@
+package greet
+
+pub type Message struct {
+    name string
+}
+
+pub func New(name string) Message {
+    return Message{name: name}
+}
+
+pub func (con message Message) Print() {
+    print(message.name)
+}
+
+pub func Double(value int) int {
+    return value * 2
+}

@@ -1,0 +1,5 @@
+package main
+
+import "cycle/a"
+
+func main() {}

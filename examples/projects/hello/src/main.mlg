@@ -1,0 +1,9 @@
+package main
+
+import "hello/greet"
+
+func main() {
+    message := greet.New("kim")
+    message.Print()
+    print(greet.Double(21))
+}

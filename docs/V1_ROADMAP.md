@@ -66,6 +66,8 @@ v1로 간주한다.
 
 ## v0.2.0: Projects and Modules
 
+상태: implementation complete, release pending
+
 목표: 단일 source file 언어에서 multi-file project 언어로 전환한다.
 
 범위:
