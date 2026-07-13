@@ -4,12 +4,21 @@ use crate::{
     ast::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, MatchArm,
         MatchBlockArm, MatchPattern, ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
+        Visibility,
     },
+    package::PackageGraph,
     token::Span,
 };
 
 pub fn check(program: &Program) -> Result<CheckedProgram<'_>, SemanticError> {
     Checker::new(program).check()
+}
+
+pub fn check_project<'a>(
+    program: &'a Program,
+    package_graph: &'a PackageGraph,
+) -> Result<CheckedProgram<'a>, SemanticError> {
+    Checker::new_project(program, package_graph).check()
 }
 
 #[derive(Debug, Clone)]
@@ -137,18 +146,34 @@ impl std::error::Error for SemanticError {}
 
 struct Checker<'a> {
     program: &'a Program,
+    package_graph: Option<&'a PackageGraph>,
     signatures: HashMap<&'a str, FunctionSig>,
     methods: HashMap<MethodKey, MethodSig>,
+    method_access: HashMap<MethodKey, MethodAccess>,
     structs: HashMap<&'a str, StructSig>,
+}
+
+struct MethodAccess {
+    package_path: String,
+    visibility: Visibility,
 }
 
 impl<'a> Checker<'a> {
     fn new(program: &'a Program) -> Self {
         Self {
             program,
+            package_graph: None,
             signatures: HashMap::new(),
             methods: HashMap::new(),
+            method_access: HashMap::new(),
             structs: HashMap::new(),
+        }
+    }
+
+    fn new_project(program: &'a Program, package_graph: &'a PackageGraph) -> Self {
+        Self {
+            package_graph: Some(package_graph),
+            ..Self::new(program)
         }
     }
 
@@ -318,6 +343,23 @@ impl<'a> Checker<'a> {
                     receiver: receiver.ty.clone(),
                     name: function.name.clone(),
                 };
+                if let Some(package_graph) = self.package_graph {
+                    let package = package_graph
+                        .package_for_source(function.span.source)
+                        .ok_or_else(|| {
+                            SemanticError::new(
+                                "method source is not part of the package graph",
+                                function.span,
+                            )
+                        })?;
+                    self.method_access.insert(
+                        key.clone(),
+                        MethodAccess {
+                            package_path: package.path.clone(),
+                            visibility: function.visibility,
+                        },
+                    );
+                }
                 if self
                     .methods
                     .insert(
@@ -2367,6 +2409,7 @@ impl<'a> Checker<'a> {
             receiver: base_ty.clone(),
             name: method_name.to_string(),
         };
+        self.check_method_visibility(&key, span)?;
         let sig = self.method_sig(&key, span)?;
         let mut call_borrows = Vec::new();
         match sig.receiver.mode {
@@ -2427,6 +2470,33 @@ impl<'a> Checker<'a> {
             span,
         )?;
         Ok(sig.function.return_type.clone())
+    }
+
+    fn check_method_visibility(&self, key: &MethodKey, span: Span) -> Result<(), SemanticError> {
+        let Some(package_graph) = self.package_graph else {
+            return Ok(());
+        };
+        let Some(access) = self.method_access.get(key) else {
+            return Ok(());
+        };
+        if access.visibility == Visibility::Public {
+            return Ok(());
+        }
+        let caller = package_graph
+            .package_for_source(span.source)
+            .ok_or_else(|| {
+                SemanticError::new("method call source is not part of the package graph", span)
+            })?;
+        if caller.path != access.package_path {
+            return Err(SemanticError::new(
+                format!(
+                    "method `{}` is private to package `{}`",
+                    key.name, access.package_path
+                ),
+                span,
+            ));
+        }
+        Ok(())
     }
 
     fn check_receiver_probe_type(
