@@ -81,6 +81,9 @@ pub enum TokenKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
+    Package,
+    Import,
+    Pub,
     Func,
     Return,
     If,
@@ -103,6 +106,9 @@ pub enum Keyword {
 impl Keyword {
     pub fn from_ident(ident: &str) -> Option<Self> {
         match ident {
+            "package" => Some(Self::Package),
+            "import" => Some(Self::Import),
+            "pub" => Some(Self::Pub),
             "func" => Some(Self::Func),
             "return" => Some(Self::Return),
             "if" => Some(Self::If),

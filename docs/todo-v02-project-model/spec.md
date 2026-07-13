@@ -83,7 +83,7 @@ pub func Print() {
 3. multi-source compiler pipeline을 semantic, IR, C backend까지 연결한다. (완료)
 4. 명시적 source file 목록 loader를 compiler pipeline 앞에 연결한다. (완료)
 5. manifest와 project discovery model을 구현한다. (완료)
-6. 승인된 package/import/visibility token과 AST를 추가한다.
+6. 승인된 package/import/visibility token과 AST를 추가한다. (완료)
 7. package별 declaration table과 import graph를 만든다.
 8. cross-package semantic resolution과 visibility 검사를 연결한다.
 9. project-aware `check`, `build`, `run`과 native smoke를 추가한다.
@@ -103,7 +103,7 @@ pub func Print() {
 | C1 | done | 사용자 decision | package/import/visibility surface 확정 |
 | C2 | done | 사용자 decision | manifest와 source layout 확정 |
 | C3 | done | compiler/frontend tests | multi-file span, pipeline, cross-file error 구분 |
-| C4 | pending | parser tests | package/import/`pub` syntax |
+| C4 | done | lexer/parser/frontend tests | package/import/`pub` syntax와 file metadata |
 | C5 | pending | semantic rejection tests | unresolved import, visibility, cycle 진단 |
 | C6 | pending | native project smoke | 두 package의 function/struct/method 호출 |
 

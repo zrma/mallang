@@ -3,8 +3,8 @@ use std::fmt;
 use crate::{
     ast::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, ForInit, ForPost,
-        Function, MatchArm, MatchBlockArm, MatchPattern, Param, ParamMode, Program, Stmt, StmtKind,
-        StructDecl, TypeRef, UnaryOp,
+        Function, ImportDecl, MatchArm, MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode,
+        Program, SourceUnit, Stmt, StmtKind, StructDecl, TypeRef, UnaryOp, Visibility,
     },
     lexer::{lex, lex_with_source, LexError},
     token::{Keyword, SourceId, Span, Token, TokenKind},
@@ -71,17 +71,56 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let start = self.peek().span;
+        let package = if self.at_keyword(Keyword::Package) {
+            Some(self.parse_package_decl()?)
+        } else {
+            None
+        };
+        if package.is_none() && self.at_keyword(Keyword::Import) {
+            return Err(ParseError::new(
+                "import declarations require a package declaration",
+                self.peek().span,
+            ));
+        }
+
+        let mut imports = Vec::new();
+        while self.at_keyword(Keyword::Import) {
+            imports.push(self.parse_import_decl()?);
+        }
+
         let mut structs = Vec::new();
         let mut functions = Vec::new();
 
         while !self.at(TokenTag::Eof) {
+            let public_span = self.eat_keyword(Keyword::Pub);
+            let visibility = if public_span.is_some() {
+                Visibility::Public
+            } else {
+                Visibility::Package
+            };
+
             if self.at_keyword(Keyword::Type) {
-                structs.push(self.parse_type_decl()?);
+                structs.push(self.parse_type_decl(visibility, public_span)?);
             } else if self.at_keyword(Keyword::Func) {
-                functions.push(self.parse_function()?);
+                functions.push(self.parse_function(visibility, public_span)?);
+            } else if public_span.is_some() {
+                return Err(ParseError::new(
+                    "expected `type` or `func` declaration after `pub`",
+                    self.peek().span,
+                ));
+            } else if self.at_keyword(Keyword::Package) {
+                return Err(ParseError::new(
+                    "package declaration must appear first",
+                    self.peek().span,
+                ));
+            } else if self.at_keyword(Keyword::Import) {
+                return Err(ParseError::new(
+                    "import declarations must appear before top-level declarations",
+                    self.peek().span,
+                ));
             } else {
                 return Err(ParseError::new(
-                    "expected `type` or `func` declaration",
+                    "expected `type`, `func`, or `pub` declaration",
                     self.peek().span,
                 ));
             }
@@ -90,6 +129,11 @@ impl Parser {
         let end = self.peek().span;
         let span = start.join(end);
         Ok(Program {
+            source_units: vec![SourceUnit {
+                package,
+                imports,
+                span,
+            }],
             structs,
             functions,
             source_spans: vec![span],
@@ -97,8 +141,33 @@ impl Parser {
         })
     }
 
-    fn parse_type_decl(&mut self) -> Result<StructDecl, ParseError> {
-        let start = self.expect_keyword(Keyword::Type, "expected `type` declaration")?;
+    fn parse_package_decl(&mut self) -> Result<PackageDecl, ParseError> {
+        let start = self.expect_keyword(Keyword::Package, "expected `package` declaration")?;
+        let (name, end) = self.expect_ident("expected package name")?;
+
+        Ok(PackageDecl {
+            name,
+            span: start.join(end),
+        })
+    }
+
+    fn parse_import_decl(&mut self) -> Result<ImportDecl, ParseError> {
+        let start = self.expect_keyword(Keyword::Import, "expected `import` declaration")?;
+        let (path, end) = self.expect_string("expected import path string")?;
+
+        Ok(ImportDecl {
+            path,
+            span: start.join(end),
+        })
+    }
+
+    fn parse_type_decl(
+        &mut self,
+        visibility: Visibility,
+        public_span: Option<Span>,
+    ) -> Result<StructDecl, ParseError> {
+        let type_span = self.expect_keyword(Keyword::Type, "expected `type` declaration")?;
+        let start = public_span.unwrap_or(type_span);
         let (name, _) = self.expect_ident("expected type name")?;
         self.expect_keyword(Keyword::Struct, "expected `struct` after type name")?;
         self.expect(TokenTag::LeftBrace, "expected `{` before struct fields")?;
@@ -111,6 +180,7 @@ impl Parser {
 
         let end = self.expect(TokenTag::RightBrace, "expected `}` after struct fields")?;
         Ok(StructDecl {
+            visibility,
             name,
             fields,
             span: start.join(end),
@@ -125,8 +195,13 @@ impl Parser {
         Ok(FieldDecl { name, ty, span })
     }
 
-    fn parse_function(&mut self) -> Result<Function, ParseError> {
-        let start = self.expect_keyword(Keyword::Func, "expected `func` declaration")?;
+    fn parse_function(
+        &mut self,
+        visibility: Visibility,
+        public_span: Option<Span>,
+    ) -> Result<Function, ParseError> {
+        let func_span = self.expect_keyword(Keyword::Func, "expected `func` declaration")?;
+        let start = public_span.unwrap_or(func_span);
         let receiver = if self.at(TokenTag::LeftParen) {
             Some(self.parse_receiver()?)
         } else {
@@ -158,6 +233,7 @@ impl Parser {
         let span = start.join(body.span);
 
         Ok(Function {
+            visibility,
             name,
             receiver,
             params,
@@ -1118,6 +1194,14 @@ impl Parser {
         }
     }
 
+    fn expect_string(&mut self, message: &'static str) -> Result<(String, Span), ParseError> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(value) => Ok((value, token.span)),
+            _ => Err(ParseError::new(message, token.span)),
+        }
+    }
+
     fn at(&self, tag: TokenTag) -> bool {
         tag.matches(&self.peek().kind)
     }
@@ -1225,6 +1309,86 @@ func add(a int, b int) int {
             program.functions[1].body.statements[0].kind,
             StmtKind::Return { .. }
         ));
+    }
+
+    #[test]
+    fn parses_package_import_and_public_declarations() {
+        let source = r#"
+package main
+
+import "hello/greet"
+
+pub type Message struct {
+    text string
+}
+
+pub func (con self Message) Print() {
+    print(self.text)
+}
+
+func main() {
+    greet.Print()
+}
+"#;
+        let program = parse(source).unwrap();
+        let unit = &program.source_units[0];
+
+        assert_eq!(
+            unit.package.as_ref().map(|package| package.name.as_str()),
+            Some("main")
+        );
+        assert_eq!(unit.imports.len(), 1);
+        assert_eq!(unit.imports[0].path, "hello/greet");
+        assert_eq!(program.structs[0].visibility, Visibility::Public);
+        assert_eq!(
+            program.structs[0].span.start,
+            source.find("pub type").unwrap()
+        );
+        assert_eq!(program.functions[0].visibility, Visibility::Public);
+        assert!(program.functions[0].receiver.is_some());
+        assert_eq!(program.functions[1].visibility, Visibility::Package);
+    }
+
+    #[test]
+    fn keeps_standalone_declarations_package_private() {
+        let program = parse("type Message struct {}\nfunc main() {}\n").unwrap();
+
+        assert!(program.source_units[0].package.is_none());
+        assert!(program.source_units[0].imports.is_empty());
+        assert_eq!(program.structs[0].visibility, Visibility::Package);
+        assert_eq!(program.functions[0].visibility, Visibility::Package);
+    }
+
+    #[test]
+    fn rejects_invalid_project_header_order() {
+        let missing_package = parse("import \"hello/greet\"\nfunc main() {}\n").unwrap_err();
+        assert_eq!(
+            missing_package.message,
+            "import declarations require a package declaration"
+        );
+
+        let late_package = parse("func main() {}\npackage main\n").unwrap_err();
+        assert_eq!(
+            late_package.message,
+            "package declaration must appear first"
+        );
+
+        let late_import =
+            parse("package main\nfunc main() {}\nimport \"hello/greet\"\n").unwrap_err();
+        assert_eq!(
+            late_import.message,
+            "import declarations must appear before top-level declarations"
+        );
+    }
+
+    #[test]
+    fn restricts_pub_to_top_level_type_and_function_declarations() {
+        let error = parse("package main\npub package other\n").unwrap_err();
+
+        assert_eq!(
+            error.message,
+            "expected `type` or `func` declaration after `pub`"
+        );
     }
 
     #[test]

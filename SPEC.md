@@ -103,7 +103,7 @@ entrypoint rather than receiver-qualified methods.
 Reserved words:
 
 ```text
-func return if else for break continue range match case mut con true false struct type nil
+package import pub func return if else for break continue range match case mut con true false struct type nil
 ```
 
 `nil` is reserved so the compiler can produce a clear error instead of treating

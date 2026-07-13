@@ -845,3 +845,11 @@
 - [x] `src/main.mlg` entry source와 recursive `.mlg` source discovery 추가
 - [x] project-relative path 기준 deterministic source order 보장
 - [x] direct `.mlg` 입력을 project discovery에서 제외해 standalone 경계 유지
+
+## P109: Package Syntax and File Metadata
+
+- [x] `package`, `import`, `pub` keyword와 parser grammar 추가
+- [x] package/import metadata를 source file별 `SourceUnit`으로 보존
+- [x] top-level type, function, method에 package-private/public visibility 보존
+- [x] package/import 위치와 invalid `pub` declaration diagnostic 추가
+- [x] standalone source의 optional package compatibility 유지
