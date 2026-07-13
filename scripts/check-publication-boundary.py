@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -16,6 +17,43 @@ EXCLUDED_PATHS = {
     "scripts/check-agent-harness-interface.sh",
     "scripts/check-publication-boundary.py",
 }
+
+SAFE_HOME_USERS = {
+    "example",
+    "local-user",
+    "me",
+    "runner",
+    "tester",
+    "user",
+    "you",
+}
+
+SAFE_KUBERNETES_CONTEXTS = {
+    "example",
+    "example-cluster",
+    "kind",
+    "minikube",
+    "test",
+    "test-cluster",
+}
+
+DOCUMENTATION_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+)
+
+SAFE_NETWORK_LITERALS = {
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+}
+
+RAW_EVIDENCE_PATH = re.compile(
+    r"(?i)(?:^|/)(?:(?:microk8s|kubernetes|cluster)[-_])?"
+    r"(?:healthcheck|diagnostic|support-bundle|cluster-dump)[-_]"
+    r"[0-9]{8}(?:[-_][0-9]{4,6})?(?:/|$)"
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -159,6 +197,17 @@ def scan_text(
 ) -> set[Finding]:
     findings: set[Finding] = set()
     path_pattern = re.compile(r"(?<![A-Za-z0-9_.<>-])([A-Za-z0-9_.-]+)/(?=(?:apps|manifests|argocd|common|infra|deploy|charts)/)", re.IGNORECASE)
+    home_pattern = re.compile(r"(?<![A-Za-z0-9_.-])/(?:Users|home)/([A-Za-z0-9._-]+)")
+    windows_home_pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])[A-Z]:\\Users\\([A-Za-z0-9._-]+)")
+    ipv4_pattern = re.compile(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])")
+    kubernetes_context_pattern = re.compile(r"(?i)--context(?:=|\s+)[`'\"]?([a-z0-9][a-z0-9._-]*)")
+    private_hostname_pattern = re.compile(
+        r"(?i)\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)*\."
+        r"(?:local|internal|lan|home\.arpa|ts\.net)\b"
+    )
+    record_like = Path(relative.split("@", 1)[0]).suffix.lower() in {".log", ".md", ".txt"}
+    if RAW_EVIDENCE_PATH.search(relative):
+        findings.add(Finding(relative, 1, "raw-runtime-evidence-path"))
     for kind, pattern in patterns:
         for match in pattern.finditer(text):
             line_no = text.count("\n", 0, match.start()) + 1
@@ -167,6 +216,29 @@ def scan_text(
         for match in path_pattern.finditer(line):
             if match.group(1) not in top_levels:
                 findings.add(Finding(relative, line_no, "external-repository-path"))
+        for match in home_pattern.finditer(line):
+            if match.group(1).lower() not in SAFE_HOME_USERS:
+                findings.add(Finding(relative, line_no, "machine-local-home-path"))
+        for match in windows_home_pattern.finditer(line):
+            if match.group(1).lower() not in SAFE_HOME_USERS:
+                findings.add(Finding(relative, line_no, "machine-local-home-path"))
+        for match in kubernetes_context_pattern.finditer(line):
+            if match.group(1).lower() not in SAFE_KUBERNETES_CONTEXTS:
+                findings.add(Finding(relative, line_no, "machine-kubernetes-context"))
+        if record_like and private_hostname_pattern.search(line):
+            findings.add(Finding(relative, line_no, "private-operations-hostname"))
+        if record_like:
+            for match in ipv4_pattern.finditer(line):
+                try:
+                    address = ipaddress.ip_address(match.group(0))
+                except ValueError:
+                    continue
+                suffix = re.match(r"/[0-9]{1,3}", line[match.end() :])
+                if suffix and f"{address}{suffix.group(0)}" in SAFE_NETWORK_LITERALS:
+                    continue
+                if address.is_loopback or address.is_unspecified or any(address in network for network in DOCUMENTATION_NETWORKS):
+                    continue
+                findings.add(Finding(relative, line_no, "specific-network-address"))
     return findings
 
 
@@ -183,20 +255,30 @@ def self_test() -> int:
     patterns = fixed_patterns("example", "public-app")
     top_levels = {"docs", "scripts", "src"}
     unsafe = [
-        "See https://github.com/example/secret-infra for details.",
-        "Apply secret-infra/apps/service/manifests.",
-        "GitOps revision deadbeef was promoted.",
-        "The companion platform repo currently has a local draft.",
+        ("fixture", "See https://github.com/example/secret-infra for details."),
+        ("fixture", "Apply secret-infra/apps/service/manifests."),
+        ("fixture", "GitOps revision deadbeef was promoted."),
+        ("fixture", "The companion platform repo currently has a local draft."),
+        ("fixture", "Built from /Users/alice/src/public-app."),
+        ("fixture", r"Built from C:\Users\alice\src\public-app."),
+        ("docs/HANDOFF.md", "The target was 100.64.0.10."),
+        ("docs/HANDOFF.md", "Run kubectl --context homelab-admin get pods."),
+        ("docs/HANDOFF.md", "Connect to node-a.private.internal."),
+        ("microk8s-healthcheck-20260711-010203/SUMMARY.txt", "ready"),
     ]
     safe = [
-        "See https://github.com/example/public-app/releases.",
-        "The private deployment source of truth owns promotion.",
-        "Use docs/deploy/checklist.md for the local contract.",
+        ("fixture", "See https://github.com/example/public-app/releases."),
+        ("fixture", "The private deployment source of truth owns promotion."),
+        ("fixture", "Use docs/deploy/checklist.md for the local contract."),
+        ("fixture", "Use <home>/<repo-root> and <private-host>."),
+        ("docs/HANDOFF.md", "Use 192.0.2.10 in documentation."),
+        ("docs/HANDOFF.md", "The shared carrier-grade network is 100.64.0.0/10."),
+        ("docs/HANDOFF.md", "Run kubectl --context example-cluster get pods."),
     ]
-    if any(not scan_text("fixture", text, patterns, top_levels) for text in unsafe):
+    if any(not scan_text(path, text, patterns, top_levels) for path, text in unsafe):
         print("self-test failed: expected unsafe fixture was not detected", file=sys.stderr)
         return 1
-    if any(scan_text("fixture", text, patterns, top_levels) for text in safe):
+    if any(scan_text(path, text, patterns, top_levels) for path, text in safe):
         print("self-test failed: safe fixture was rejected", file=sys.stderr)
         return 1
     print("publication boundary repository gate self-test passed")
@@ -206,6 +288,8 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the repository-owned publication boundary contract.")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--stdin", action="store_true", help="scan candidate text from stdin instead of the working tree")
+    parser.add_argument("--label", default="candidate", help="redacted location label used with --stdin")
     args = parser.parse_args()
     if args.self_test:
         return self_test()
@@ -225,7 +309,11 @@ def main() -> int:
             return 0
 
         owner, repository = repository_identity(root)
-        findings = check_tree(root, owner, repository)
+        if args.stdin:
+            top_levels = {path.split("/", 1)[0] for path in tracked_files(root)}
+            findings = scan_text(args.label, sys.stdin.read(), fixed_patterns(owner, repository), top_levels)
+        else:
+            findings = check_tree(root, owner, repository)
         if findings:
             for finding in sorted(findings):
                 print(
