@@ -253,6 +253,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   environments, propagated captures, and independent owned state.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, methods, function values, higher-order APIs, and closure returns.
+- `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
+  function move/alias, and recursive closure behavior.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/int-division.mlg`: native smoke for guarded integer division and remainder.
 - `examples/checked-arithmetic.mlg`: native smoke for checked integer arithmetic.

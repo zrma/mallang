@@ -247,9 +247,11 @@
   by `docs/V1_ROADMAP.md`.
 - `v0.2.0: Projects and Modules` is implemented locally; release publication is
   still pending.
-- The next implementation milestone is `v0.3.0: Functions and Closures`.
-- Modules, closures, generic ADTs, ownership/runtime completion, standard
-  library, tooling, hardening, and language freeze must advance through the
-  acceptance gates in that document.
+- `v0.3.0: Functions and Closures` is implemented locally; release publication
+  is still pending.
+- The next implementation milestone is `v0.4.0: Generic Data Model`.
+- Generic ADTs, ownership/runtime completion, standard library, tooling,
+  hardening, and language freeze must advance through the acceptance gates in
+  that document.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

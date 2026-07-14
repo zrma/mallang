@@ -802,7 +802,12 @@ impl<'a> Checker<'a> {
     ) -> Result<(), SemanticError> {
         reject_builtin_value_name(name, span)?;
 
-        let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
+        let recursive_binding = (!locals.contains_key(name)).then_some(name);
+        let ty = if let ExprKind::FunctionLiteral(function) = &expr.kind {
+            self.check_function_literal(function, locals, expr.span, recursive_binding)?
+        } else {
+            self.check_expr(expr, locals, ValueUse::Owned)?
+        };
         if locals
             .get(name)
             .is_some_and(|local| local.scope_depth == scope_depth)
@@ -956,7 +961,7 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
             ExprKind::FunctionLiteral(function) => {
-                self.check_function_literal(function, locals, expr.span)
+                self.check_function_literal(function, locals, expr.span, None)
             }
             ExprKind::If {
                 condition,
@@ -1022,9 +1027,15 @@ impl<'a> Checker<'a> {
         function: &FunctionLiteral,
         outer_locals: &mut HashMap<String, Local>,
         span: Span,
+        recursive_binding: Option<&str>,
     ) -> Result<Type, SemanticError> {
-        let capture_uses =
-            collect_closure_captures(function, outer_locals, &self.methods, &self.structs)?;
+        let capture_uses = collect_closure_captures(
+            function,
+            outer_locals,
+            &self.methods,
+            &self.structs,
+            recursive_binding,
+        )?;
         let mut captures = Vec::new();
         let mut closure_locals = HashMap::new();
         for capture_use in capture_uses {
@@ -3617,11 +3628,14 @@ fn collect_closure_captures(
     outer_locals: &HashMap<String, Local>,
     methods: &HashMap<MethodKey, MethodSig>,
     structs: &HashMap<&str, StructSig>,
+    recursive_binding: Option<&str>,
 ) -> Result<Vec<ClosureCaptureUse>, SemanticError> {
     let mut collector = ClosureCaptureCollector {
         outer_locals,
         methods,
         structs,
+        recursive_binding,
+        recursive_reference: None,
         captures: Vec::new(),
         capture_indices: HashMap::new(),
     };
@@ -3631,6 +3645,13 @@ fn collect_closure_captures(
         .map(|param| param.name.clone())
         .collect::<HashSet<_>>();
     collector.visit_block(&function.body, &mut bound)?;
+    if let Some(span) = collector.recursive_reference {
+        let name = recursive_binding.expect("recursive reference has an initializing binding");
+        return Err(SemanticError::new(
+            format!("recursive closure `{name}` is not supported in v0.3"),
+            span,
+        ));
+    }
     Ok(collector.captures)
 }
 
@@ -3638,6 +3659,8 @@ struct ClosureCaptureCollector<'a> {
     outer_locals: &'a HashMap<String, Local>,
     methods: &'a HashMap<MethodKey, MethodSig>,
     structs: &'a HashMap<&'a str, StructSig>,
+    recursive_binding: Option<&'a str>,
+    recursive_reference: Option<Span>,
     captures: Vec<ClosureCaptureUse>,
     capture_indices: HashMap<String, usize>,
 }
@@ -3665,7 +3688,7 @@ impl ClosureCaptureCollector<'_> {
                 bound.insert(name.clone());
             }
             StmtKind::Assign { name, expr } => {
-                self.visit_name(name, bound, true);
+                self.visit_name(name, bound, true, stmt.span);
                 self.visit_expr(expr, bound)?;
             }
             StmtKind::FieldAssign { base, expr, .. } => {
@@ -3747,7 +3770,7 @@ impl ClosureCaptureCollector<'_> {
 
     fn visit_expr(&mut self, expr: &Expr, bound: &HashSet<String>) -> Result<(), SemanticError> {
         match &expr.kind {
-            ExprKind::Var(name) => self.visit_name(name, bound, false),
+            ExprKind::Var(name) => self.visit_name(name, bound, false, expr.span),
             ExprKind::FunctionLiteral(function) => {
                 let mut nested_bound = bound.clone();
                 nested_bound.extend(function.params.iter().map(|param| param.name.clone()));
@@ -3819,7 +3842,7 @@ impl ClosureCaptureCollector<'_> {
                         self.outer_locals.get(name).map(|local| &local.ty),
                         Some(Type::Function(function)) if function.mutable
                     );
-                self.visit_name(name, bound, mutable);
+                self.visit_name(name, bound, mutable, callee.span);
             }
             ExprKind::FieldAccess { base, field } => {
                 let mutable_receiver = self
@@ -3848,7 +3871,7 @@ impl ClosureCaptureCollector<'_> {
         bound: &HashSet<String>,
     ) -> Result<(), SemanticError> {
         match &expr.kind {
-            ExprKind::Var(name) => self.visit_name(name, bound, true),
+            ExprKind::Var(name) => self.visit_name(name, bound, true, expr.span),
             ExprKind::FieldAccess { base, .. } => self.visit_mutated_place(base, bound)?,
             ExprKind::Index { base, index } => {
                 self.visit_mutated_place(base, bound)?;
@@ -3883,8 +3906,14 @@ impl ClosureCaptureCollector<'_> {
         }
     }
 
-    fn visit_name(&mut self, name: &str, bound: &HashSet<String>, mutable: bool) {
-        if bound.contains(name) || !self.outer_locals.contains_key(name) {
+    fn visit_name(&mut self, name: &str, bound: &HashSet<String>, mutable: bool, span: Span) {
+        if bound.contains(name) {
+            return;
+        }
+        if !self.outer_locals.contains_key(name) {
+            if self.recursive_binding == Some(name) && self.recursive_reference.is_none() {
+                self.recursive_reference = Some(span);
+            }
             return;
         }
         if let Some(index) = self.capture_indices.get(name).copied() {
@@ -4495,6 +4524,45 @@ func main() {
             .closures
             .iter()
             .all(|closure| closure.captures[0].mutable));
+    }
+
+    #[test]
+    fn rejects_recursive_closure_initializers() {
+        let error = check_error(
+            r#"
+func main() {
+    recurse := func(value int) int {
+        return recurse(value)
+    }
+    print(recurse(1))
+}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("recursive closure `recurse` is not supported in v0.3"));
+    }
+
+    #[test]
+    fn closure_initializer_can_capture_shadowed_outer_binding() {
+        check_ok(
+            r#"
+func Double(value int) int {
+    return value * 2
+}
+
+func main() {
+    transform := Double
+    if true {
+        transform := func(value int) int {
+            return transform(value)
+        }
+        print(transform(2))
+    }
+}
+"#,
+        );
     }
 
     #[test]

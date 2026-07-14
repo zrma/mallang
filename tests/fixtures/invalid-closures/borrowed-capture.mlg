@@ -1,0 +1,8 @@
+func Make(con name string) func() int {
+    return func() int {
+        print(name)
+        return 0
+    }
+}
+
+func main() {}

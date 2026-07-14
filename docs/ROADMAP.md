@@ -967,3 +967,13 @@
 - [x] public function type parameter/return의 nested type visibility 검증
 - [x] cross-package higher-order parameter, named return, closure return native smoke 추가
 - [x] project generated C strict warning과 ASan/UBSan smoke 추가
+
+## P123: v0.3 Closure Safety Acceptance
+
+- [x] borrowed non-Copy capture CLI rejection fixture 추가
+- [x] immutable source의 mutable capture CLI rejection fixture 추가
+- [x] function value use-after-move와 same-call mutable alias fixture 추가
+- [x] recursive closure initializer 전용 source diagnostic 추가
+- [x] invalid fixture의 file/line/column CLI diagnostic gate 추가
+- [x] full Rust/C/project gate와 56-program generated C sanitizer sweep 통과
+- [x] SPEC, v1 roadmap, handoff를 implementation complete/release pending으로 동기화

@@ -1,0 +1,14 @@
+func Hold(mut first func mut() int, mut second func mut() int) unit {}
+
+func Make() func mut() int {
+    mut value := 0
+    return func mut() int {
+        value = value + 1
+        return value
+    }
+}
+
+func main() {
+    mut next := Make()
+    Hold(mut next, mut next)
+}
