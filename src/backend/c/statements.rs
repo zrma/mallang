@@ -547,6 +547,11 @@ impl<'a> CGenerator<'a> {
                         "IR invariant violation: invalid Option match arm",
                     ));
                 }
+                _ => {
+                    return Err(CompileError::new(
+                        "IR invariant violation: invalid Option match arm",
+                    ));
+                }
             }
         }
         output.push('}');
@@ -581,6 +586,11 @@ impl<'a> CGenerator<'a> {
                     output.push_str("}\n");
                 }
                 IrMatchPattern::Some(_) | IrMatchPattern::None => {
+                    return Err(CompileError::new(
+                        "IR invariant violation: invalid Result match arm",
+                    ));
+                }
+                _ => {
                     return Err(CompileError::new(
                         "IR invariant violation: invalid Result match arm",
                     ));

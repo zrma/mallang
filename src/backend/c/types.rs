@@ -286,6 +286,11 @@ impl<'a> TypeEmitter<'a> {
                     self.collect_expr_types(payload, types);
                 }
             }
+            IrExprKind::EnumConstructor { payload, .. } => {
+                if let Some(payload) = payload {
+                    self.collect_expr_types(payload, types);
+                }
+            }
             IrExprKind::Match { scrutinee, arms } => {
                 self.collect_expr_types(scrutinee, types);
                 for arm in arms {
