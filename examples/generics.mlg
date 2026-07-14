@@ -3,6 +3,14 @@ type Pair[A, B] struct {
     second B
 }
 
+type Box[T] struct {
+    value T
+}
+
+func (mut box Box[T]) replace(value T) {
+    box.value = value
+}
+
 func Identity[T](value T) T {
     return value
 }
@@ -18,4 +26,8 @@ func main() {
 
     values := Identity[[]int]([]int{1, 2, 3})
     print(len(values))
+
+    mut box := Box[string]{value: "initial"}
+    box.replace("updated")
+    print(box.value)
 }

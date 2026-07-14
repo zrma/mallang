@@ -224,8 +224,8 @@ fi
 "${CARGO[@]}" run --bin mlg -- check examples/generics.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/generics.mlg -o target/mallang/generics >/dev/null
 generics_output="$(target/mallang/generics)"
-if [[ "$generics_output" != $'7\nmallang\n11\npair\n3' ]]; then
-  echo "generics native build smoke failed: expected 7, mallang, 11, pair, 3 got '$generics_output'" >&2
+if [[ "$generics_output" != $'7\nmallang\n11\npair\n3\nupdated' ]]; then
+  echo "generics native build smoke failed: expected 7, mallang, 11, pair, 3, updated got '$generics_output'" >&2
   exit 1
 fi
 expect_check_failure \
@@ -885,5 +885,5 @@ expect_sanitized_native_output \
 expect_sanitized_native_output \
   "generics" \
   "target/mallang/generics.c" \
-  $'7\nmallang\n11\npair\n3'
+  $'7\nmallang\n11\npair\n3\nupdated'
 expect_all_warning_clean_generated_c

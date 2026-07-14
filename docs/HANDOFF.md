@@ -60,9 +60,12 @@
   잘못된 arity와 type argument가 계속 커지는 specialization cycle을 source
   diagnostic으로 거부한다. Concrete struct/function/function value는 기존 semantic,
   ownership, typed IR, C backend를 재사용하며 `examples/generics.mlg`의 Copy/string/slice
-  specialization이 native, strict C, ASan/UBSan gate를 통과한다. Symbolic generic body
-  validation, package generic API와 receiver resolution, user-defined enum semantic/pattern,
-  enum IR/backend는 아직 구현 전이다.
+  specialization이 native, strict C, ASan/UBSan gate를 통과한다. 사용되지 않은 generic
+  declaration도 non-Copy, non-printable symbolic type으로 검사하며 internal sentinel
+  이름은 source type parameter로 복원해 진단한다. Generic receiver는 declaration type
+  parameter를 그대로 binding하고 concrete struct마다 method를 생성한다. `mut`
+  receiver의 non-Copy field 교체도 native cleanup gate를 통과한다. Package generic API와
+  user-defined enum semantic/pattern, enum IR/backend는 아직 구현 전이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -205,8 +208,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Symbolic generic body validation과 package generic API resolution을 추가한다.
-2. Generic receiver method specialization과 public API visibility를 연결한다.
+1. Package generic type/function/receiver resolution과 public API visibility를 연결한다.
+2. Cross-package specialization key 재사용과 native acceptance를 검증한다.
 3. User-defined enum specialization, exhaustive nested pattern, typed IR/C backend를 완료한다.
 
 Publish helper note: the real publish path fetches `origin` before verification

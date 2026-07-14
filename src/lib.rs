@@ -34,5 +34,5 @@ pub use semantic::{check, check_project, CheckedProgram, SemanticError};
 pub use source::{
     load_source_files, SourceFile, SourceLoadError, SourceLocation, SourceMap, SourceSet,
 };
-pub use specialize::{specialize, SpecializationError};
+pub use specialize::{specialize, specialize_for_validation, SpecializationError, SymbolicProgram};
 pub use token::{Keyword, SourceId, Span, Token, TokenKind};
