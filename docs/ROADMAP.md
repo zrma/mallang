@@ -986,4 +986,4 @@
 - [x] built-in `Option`/`Result` compatibility migration 경계 기록
 - [x] project-wide monomorphization과 generic ownership/cleanup 계약 기록
 - [x] generic receiver와 excluded feature 경계 기록
-- [ ] 사용자 승인 뒤 v0.4 language surface 확정
+- [x] 사용자 승인 뒤 v0.4 language surface 확정
