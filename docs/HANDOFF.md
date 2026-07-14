@@ -196,9 +196,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. `docs/todo-v04-generic-data-model/open-questions.md` Q1-Q7 추천안을 승인받는다.
-2. 승인 뒤 generic enum/function과 project-wide monomorphization 계약을 확정한다.
-3. 확정된 v0.4 surface를 parser부터 native acceptance까지 구현한다.
+1. Generic parameter, user-defined enum과 nested pattern AST/parser를 추가한다.
+2. Generic type/function resolution과 project-wide monomorphization을 구현한다.
+3. Specialized typed IR/C backend와 native ownership acceptance를 완료한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

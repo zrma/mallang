@@ -1,6 +1,8 @@
 # Open Questions: v0.4-generic-data-model
 
-상태: awaiting user approval
+상태: closed
+
+2026-07-14에 Q1-Q7 추천안을 v0.4 language surface로 승인했다.
 
 v0.4 구현 전에 user-defined enum, generic surface, pattern 범위와 static
 specialization 계약을 확정한다. Q1-Q7은 서로 연결된 하나의 language decision
@@ -171,6 +173,6 @@ func (con box Box[T]) HasValue() bool {
 
 ## 추천안 승인 범위
 
-Q1-Q7 추천안을 함께 승인하면 `spec.md`를 v0.4 구현 계약으로 확정하고 parser,
-semantic, monomorphization, typed IR/C backend, native acceptance 순서로 구현한다.
-승인되지 않은 동안 이 문서는 proposal이며 현재 지원 문법이 아니다.
+Q1-Q7 추천안을 `spec.md`의 v0.4 구현 계약으로 확정한다. Parser, semantic,
+monomorphization, typed IR/C backend, native acceptance 순서로 구현하며 추가
+language surface 결정이 필요할 때만 새 decision gate를 연다.

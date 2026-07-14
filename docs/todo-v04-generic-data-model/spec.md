@@ -1,6 +1,6 @@
 # Spec: v0.4-generic-data-model
 
-상태: proposed, awaiting language decision
+상태: approved, implementation in progress
 
 ## 목표
 
@@ -13,7 +13,7 @@
 
 ## 제안 surface
 
-이 절은 `open-questions.md` Q1-Q7 추천안이 승인될 때 구현 계약이 된다.
+이 절은 승인된 `open-questions.md` Q1-Q7의 구현 계약이다.
 
 ### Generic type과 function
 
