@@ -1,0 +1,39 @@
+func MakeCounter() func mut(int) int {
+    mut count := 0
+    return func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+}
+
+func MakeBumper(values []int) func mut(int) int {
+    mut state := values
+    return func mut(index int) int {
+        state[index] = state[index] + 1
+        return state[index]
+    }
+}
+
+func main() {
+    mut counter := MakeCounter()
+    print(counter(1))
+    print(counter(2))
+
+    mut wrapped := func mut(delta int) int {
+        return counter(delta)
+    }
+    print(wrapped(4))
+
+    mut bump := MakeBumper([]int{7, 8})
+    print(bump(0))
+    print(bump(0))
+
+    mut source := 10
+    mut add := func mut(delta int) int {
+        source = source + delta
+        return source
+    }
+    print(source)
+    print(add(1))
+    print(source)
+}
