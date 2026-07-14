@@ -1,0 +1,9 @@
+func consume(value string) {
+    print(value)
+}
+
+func main() {
+    value := "owned"
+    consume(value)
+    print(value)
+}

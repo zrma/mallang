@@ -1,0 +1,12 @@
+func consume(value string) {
+    print(value)
+}
+
+func forward(con value string) {
+    consume(value)
+}
+
+func main() {
+    value := "owned"
+    forward(con value)
+}

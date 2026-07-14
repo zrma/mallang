@@ -1,0 +1,8 @@
+func leak(con value string) string {
+    return value
+}
+
+func main() {
+    value := "owned"
+    print(leak(con value))
+}

@@ -8803,6 +8803,35 @@ func main() {
     }
 
     #[test]
+    fn allows_indexed_call_scoped_borrows_during_non_copy_range() {
+        check_ok(
+            r#"
+type User struct {
+    name string
+}
+
+func show(con user User) {
+    print(user.name)
+}
+
+func rename(mut user User) {
+    user.name = "updated"
+}
+
+func main() {
+    mut users := []User{User{name: "kim"}, User{name: "lee"}}
+    for i := range users {
+        show(con users[i])
+        rename(mut users[i])
+        show(con users[i])
+    }
+    show(con users[0])
+}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_inline_slice_range_with_temporary_cleanup() {
         check_ok(
             r#"

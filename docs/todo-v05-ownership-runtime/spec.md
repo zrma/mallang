@@ -1,6 +1,6 @@
 # Spec: v0.5-ownership-runtime
 
-상태: implementation in progress (P138-P143 complete)
+상태: implementation in progress (P138-P144 complete)
 
 ## 목표
 
@@ -153,12 +153,16 @@ Every owned value on normal control flow is moved or dropped exactly once.
 ## Borrow and Range Rules
 
 - `con expr` and `mut expr` remain direct call argument modes.
+- Using either marker in a local initializer, return value or other expression position is a
+  reserved diagnostic rather than a first-class reference expression.
 - A borrow ends when the callee returns.
 - Borrowed non-Copy values cannot be moved, returned, stored or captured.
 - First-class references, lifetime annotation and borrowed return values are not part of v1.
 - Range value binding remains Copy-only.
 - Non-Copy range traversal uses index-only iteration and call-scoped indexed borrow.
 - Range element mutation uses indexed assignment or `mut values[i]` call access.
+- `for i, con value := range values` and `for i, mut value := range values` are reserved
+  diagnostics with the index-only alternatives named in the message.
 - Compiler-owned loop temporaries do not create user-visible borrowed values.
 
 ## Runtime Failure Contract
@@ -178,7 +182,7 @@ Every owned value on normal control flow is moved or dropped exactly once.
 5. Compiler-owned recursive enum C layout, constructor, match와 drop을 구현한다. (완료: P141)
 6. Full-expression temporary와 loop source cleanup normalization을 완성한다. (완료: P142)
 7. Static/owned string runtime representation과 drop contract를 통합한다. (완료: P143)
-8. Borrow/range exclusion regression과 normative memory spec을 동기화한다.
+8. Borrow/range exclusion regression과 normative memory spec을 동기화한다. (완료: P144)
 9. Allocation accounting, failure injection, strict C와 sanitizer acceptance를 연결한다.
 
 ## 제외

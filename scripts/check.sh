@@ -257,6 +257,45 @@ if [[ "$string_runtime_output" != $'literal\nreturned\ntrue\nfield\nreplaced\n1\
   exit 1
 fi
 scripts/check-string-runtime.sh target/mallang/string-runtime.c
+"${CARGO[@]}" run --bin mlg -- check examples/borrow-range-contract.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/borrow-range-contract.mlg -o target/mallang/borrow-range-contract >/dev/null
+borrow_range_contract_output="$(target/mallang/borrow-range-contract)"
+if [[ "$borrow_range_contract_output" != $'kim\n1\nvisited\n2\nlee\n3\nvisited\n4\nvisited\n2' ]]; then
+  echo "borrow/range contract native build smoke output mismatch: got '$borrow_range_contract_output'" >&2
+  exit 1
+fi
+expect_check_failure \
+  "v05-first-class-borrow" \
+  "tests/fixtures/invalid-v05-ownership/first-class-borrow.mlg" \
+  'first-class borrow values are not supported; `con` and `mut` are only valid on direct call arguments'
+expect_check_failure \
+  "v05-mutable-range" \
+  "tests/fixtures/invalid-v05-ownership/mutable-range.mlg" \
+  'mutable range value bindings are not supported; use indexed assignment or indexed `mut` call access'
+expect_check_failure \
+  "v05-by-reference-range" \
+  "tests/fixtures/invalid-v05-ownership/by-reference-range.mlg" \
+  'by-reference range value bindings are not supported; use index-only range and indexed `con` call access'
+expect_check_failure \
+  "v05-borrowed-return" \
+  "tests/fixtures/invalid-v05-ownership/borrowed-return.mlg" \
+  'cannot move borrowed value `value`'
+expect_check_failure \
+  "v05-borrowed-store" \
+  "tests/fixtures/invalid-v05-ownership/borrowed-store.mlg" \
+  'cannot move borrowed value `value`'
+expect_check_failure \
+  "v05-borrowed-owned-argument" \
+  "tests/fixtures/invalid-v05-ownership/borrowed-owned-argument.mlg" \
+  'cannot move borrowed value `value`'
+expect_check_failure \
+  "v05-use-after-move" \
+  "tests/fixtures/invalid-v05-ownership/use-after-move.mlg" \
+  'use of moved value `value`'
+expect_check_failure \
+  "v05-overlapping-borrows" \
+  "tests/fixtures/invalid-v05-ownership/overlapping-borrows.mlg" \
+  'borrow of `value` overlaps with an active borrow in this call'
 expect_check_failure \
   "closure-borrowed-capture" \
   "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
@@ -939,4 +978,8 @@ expect_sanitized_native_output \
   "string-runtime" \
   "target/mallang/string-runtime.c" \
   $'literal\nreturned\ntrue\nfield\nreplaced\n1\nindexed-after\nenum\nclosure\nmutated'
+expect_sanitized_native_output \
+  "borrow-range-contract" \
+  "target/mallang/borrow-range-contract.c" \
+  $'kim\n1\nvisited\n2\nlee\n3\nvisited\n4\nvisited\n2'
 expect_all_warning_clean_generated_c

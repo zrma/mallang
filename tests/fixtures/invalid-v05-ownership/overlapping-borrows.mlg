@@ -1,0 +1,9 @@
+func compare(con left string, mut right string) {
+    print(left)
+    print(right)
+}
+
+func main() {
+    mut value := "owned"
+    compare(con value, mut value)
+}

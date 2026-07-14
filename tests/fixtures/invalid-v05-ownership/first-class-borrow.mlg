@@ -1,0 +1,9 @@
+type User struct {
+    name string
+}
+
+func main() {
+    user := User{name: "kim"}
+    borrowed := con user.name
+    print(borrowed)
+}
