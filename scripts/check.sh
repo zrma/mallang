@@ -194,10 +194,10 @@ fi
 standard_build_stdout="target/mallang/v06-standard-registry.stdout"
 standard_build_stderr="target/mallang/v06-standard-registry.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- build "$standard_fixture" >"$standard_build_stdout" 2>"$standard_build_stderr"; then
-  echo "standard registry backend boundary smoke failed: expected P147 runtime rejection" >&2
+  echo "standard registry backend boundary smoke failed: expected unimplemented map rejection" >&2
   exit 1
 fi
-if [[ -s "$standard_build_stdout" ]] || ! grep -Fq 'standard intrinsic `std/strings.byteLen` is not implemented in this compiler milestone' "$standard_build_stderr"; then
+if [[ -s "$standard_build_stdout" ]] || ! grep -Fq 'standard intrinsic `std/collections.newMap` is not implemented in this compiler milestone' "$standard_build_stderr"; then
   echo "standard registry backend boundary smoke failed: unexpected diagnostic" >&2
   cat "$standard_build_stderr" >&2
   exit 1
@@ -211,6 +211,23 @@ if [[ "$standard_unused_output" != "1" ]]; then
   exit 1
 fi
 expect_warning_clean_generated_c "v06-standard-unused" "target/mallang/unused-standard-imports.c"
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/standard-strings.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/standard-strings.mlg -o target/mallang/standard-strings >/dev/null
+standard_strings_output="$(target/mallang/standard-strings)"
+if [[ "$standard_strings_output" != $'8\n3\n8\ntrue\n1\na||b|\n가/a\n-42\ntrue\n-9223372036854775808\nInvalidData\nfalse' ]]; then
+  echo "standard strings native build smoke output mismatch: got '$standard_strings_output'" >&2
+  exit 1
+fi
+scripts/check-standard-strings-runtime.sh target/mallang/standard-strings.c
+standard_strings_edge_fixture="tests/fixtures/v06-standard-strings/edge-cases.mlg"
+"${CARGO[@]}" run --quiet --bin mlg -- check "$standard_strings_edge_fixture" >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build "$standard_strings_edge_fixture" -o target/mallang/v06-standard-strings-edge >/dev/null
+standard_strings_edge_output="$(target/mallang/v06-standard-strings-edge)"
+if [[ "$standard_strings_edge_output" != $'0\n-1\n0\n1\n|a||b|\n9223372036854775807\n-9223372036854775808\nInvalidData\nInvalidData\nInvalidData\nInvalidData\ntrue\nfalse\nInvalidData\nError{kind: InvalidData, message: invalid integer text}\n-9223372036854775808\nfalse' ]]; then
+  echo "standard strings edge-case smoke output mismatch: got '$standard_strings_edge_output'" >&2
+  exit 1
+fi
+expect_warning_clean_generated_c "v06-standard-strings-edge" "target/mallang/edge-cases.c"
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null
@@ -1013,6 +1030,10 @@ expect_sanitized_native_output \
   "string-runtime" \
   "target/mallang/string-runtime.c" \
   $'literal\nreturned\ntrue\nfield\nreplaced\n1\nindexed-after\nenum\nclosure\nmutated'
+expect_sanitized_native_output \
+  "standard-strings-edge" \
+  "target/mallang/edge-cases.c" \
+  $'0\n-1\n0\n1\n|a||b|\n9223372036854775807\n-9223372036854775808\nInvalidData\nInvalidData\nInvalidData\nInvalidData\ntrue\nfalse\nInvalidData\nError{kind: InvalidData, message: invalid integer text}\n-9223372036854775808\nfalse'
 expect_sanitized_native_output \
   "borrow-range-contract" \
   "target/mallang/borrow-range-contract.c" \

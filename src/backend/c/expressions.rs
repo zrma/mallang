@@ -12,6 +12,7 @@ use super::{
         callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
         drop_fn_name, empty_slice_value_code, variant_payload_member, COperator, TypeCName,
     },
+    standard_runtime::intrinsic_helper_name,
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
         checked_binary_right_temp_name, checked_int_binary_builtin,
@@ -65,10 +66,24 @@ impl<'a> CGenerator<'a> {
             IrExprKind::FunctionValue { function } => {
                 self.emit_function_value_stmt_expr(expr, function)
             }
-            IrExprKind::IntrinsicFunctionValue { intrinsic } => Err(CompileError::new(format!(
-                "standard intrinsic `{}` is not implemented in this compiler milestone",
-                intrinsic.source_name()
-            ))),
+            IrExprKind::IntrinsicFunctionValue { intrinsic } => {
+                if intrinsic_helper_name(*intrinsic).is_none() {
+                    return Err(CompileError::new(format!(
+                        "standard intrinsic `{}` is not implemented in this compiler milestone",
+                        intrinsic.source_name()
+                    )));
+                }
+                if !matches!(expr.ty, Type::Function(_)) {
+                    return Err(CompileError::new(
+                        "IR invariant violation: intrinsic function value must have function type",
+                    ));
+                }
+                Ok(CExpr::simple(format!(
+                    "({}){{ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = {} }}",
+                    expr.ty.c_name(),
+                    callable_thunk_name(&intrinsic.internal_name())
+                )))
+            }
             IrExprKind::ClosureValue { closure, captures } => {
                 self.emit_closure_value_stmt_expr(expr, closure, captures, env)
             }
@@ -180,10 +195,28 @@ impl<'a> CGenerator<'a> {
                     postlude,
                 })
             }
-            IrExprKind::IntrinsicCall { intrinsic, .. } => Err(CompileError::new(format!(
-                "standard intrinsic `{}` is not implemented in this compiler milestone",
-                intrinsic.source_name()
-            ))),
+            IrExprKind::IntrinsicCall { intrinsic, args } => {
+                let Some(helper) = intrinsic_helper_name(*intrinsic) else {
+                    return Err(CompileError::new(format!(
+                        "standard intrinsic `{}` is not implemented in this compiler milestone",
+                        intrinsic.source_name()
+                    )));
+                };
+                let mut prelude = Vec::new();
+                let mut arg_codes = Vec::new();
+                let mut postlude = Vec::new();
+                for arg in args {
+                    let emitted = self.emit_call_arg_stmt_expr(arg, env)?;
+                    prelude.extend(emitted.prelude);
+                    arg_codes.push(emitted.code);
+                    prepend_postlude(&mut postlude, emitted.postlude);
+                }
+                Ok(CExpr {
+                    prelude,
+                    code: format!("{helper}({})", arg_codes.join(", ")),
+                    postlude,
+                })
+            }
             IrExprKind::IndirectCall { callee, args } => {
                 self.emit_indirect_call_stmt_expr(expr, callee, args, env)
             }

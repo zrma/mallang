@@ -350,13 +350,13 @@ mod tests {
         let mut runtime_sources = SourceMap::new();
         let runtime_main = runtime_sources.add_file(
             "runtime.mlg",
-            "import \"std/strings\"\nfunc main() { text := \"hello\"; print(strings.byteLen(con text)) }\n",
+            "import \"std/os\"\nfunc main() { result := os.args() }\n",
         );
         let runtime_error = generate_c_sources(&runtime_sources, &[runtime_main]).unwrap_err();
         assert_eq!(runtime_error.stage, CompilerStage::Backend);
         assert_eq!(
             runtime_error.message,
-            "standard intrinsic `std/strings.byteLen` is not implemented in this compiler milestone"
+            "standard intrinsic `std/os.args` is not implemented in this compiler milestone"
         );
     }
 
@@ -459,6 +459,10 @@ mod tests {
         let ir = lower_sources(&sources, &[main]).unwrap();
 
         assert!(format!("{ir:?}").contains("IntrinsicFunctionValue"));
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+        assert!(c.contains("mallang_std_strings_byte_len"));
+        assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
     }
 
     #[test]
@@ -476,6 +480,39 @@ mod tests {
             error.message,
             "type `collections.Map` is opaque and cannot be constructed directly"
         );
+    }
+
+    #[test]
+    fn rejects_printing_opaque_standard_maps() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "opaque-print.mlg",
+            "import \"std/collections\"\nfunc main() { values := collections.newMap[string, int](); print(values) }\n",
+        );
+
+        let error = check_sources(&sources, &[main]).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Semantic);
+        assert!(error.message.contains("cannot print value of type"));
+        assert!(
+            error.message.contains("std/collections.Map[string,int]"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn prints_standard_errors_without_internal_linker_names() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "error-print.mlg",
+            "import \"std/strings\"\nfunc main() { text := \"x\"; match strings.parseInt(con text) { case Ok(value) { print(value) } case Err(error) { print(error) } } }\n",
+        );
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+
+        assert!(c.contains("printf(\"Error{\");"));
+        assert!(!c.contains("printf(\"__mlg_pkg_"));
     }
 
     #[test]

@@ -234,6 +234,7 @@ impl Parser {
         Ok(ParsedTypeDecl::Enum(EnumDecl {
             visibility,
             name,
+            intrinsic: None,
             specialization_origin: None,
             type_params,
             variants,

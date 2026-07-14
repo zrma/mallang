@@ -4,6 +4,7 @@ mod expressions;
 mod names;
 mod patterns;
 mod runtime;
+mod standard_runtime;
 mod statements;
 mod types;
 mod utils;
@@ -13,6 +14,7 @@ use names::{
     closure_env_type_name, drop_fn_name, TypeCName,
 };
 use runtime::{emit_allocation_runtime, emit_string_runtime};
+use standard_runtime::emit_standard_runtime;
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
 
@@ -122,6 +124,12 @@ impl<'a> CGenerator<'a> {
         let type_definitions = emit_type_definitions(self.program, &defined_types)?;
         output.push_str(&type_definitions);
         if !type_definitions.is_empty() {
+            output.push('\n');
+        }
+
+        let standard_runtime = emit_standard_runtime(self.program)?;
+        output.push_str(&standard_runtime);
+        if !standard_runtime.is_empty() {
             output.push('\n');
         }
 

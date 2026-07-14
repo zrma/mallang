@@ -154,6 +154,18 @@
   string allocation도 같은 harness에서 별도로 계수한다. 506개 unit test, strict C/native
   accounting/failure-injection harness와 63-program deep ASan/UBSan sweep이 v0.5 memory runtime
   완료 조건을 검증한다.
+- v0.6 P147-P148 완료: compiler-owned `std/...` registry가 project와 standalone import를
+  같은 package/linker 경로로 resolve하고 exact public signature, explicit generic
+  specialization, opaque `Map[K,V]`와 typed intrinsic call/function value identity를 보존한다.
+  `std/strings`의 byte/scalar count, contains/find, split/join, int/bool format/strict parse를
+  demand-driven C runtime과 callable thunk로 연결했다. String은 valid UTF-8 invariant를
+  검사하고 search offset은 byte 단위, empty separator split은 Unicode scalar 단위다.
+  `errors.Kind`는 payload 없는 Copy enum이며 `errors.Error`는 owned message를 가진 cleanup
+  value다. Parse failure는 `InvalidData`로 반환하고 malformed compiler-owned string은 fatal
+  invariant failure로 유지한다. Owned string/slice/error 결과는 공통 allocation accounting,
+  normal cleanup과 deterministic failure injection을 사용한다. `examples/standard-strings.mlg`,
+  edge fixture, 523개 unit test, 64-program generated C warning-clean/deep ASan/UBSan gate와
+  모든 standard-string allocation 지점 failure sweep이 P148 완료 조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -178,6 +190,7 @@ cargo run --bin mlg -- run examples/full-expression-cleanup.mlg
 cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- run examples/allocation-accounting.mlg
+cargo run --bin mlg -- run examples/standard-strings.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -293,7 +306,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147 registry/intrinsic ABI evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P148 implementation evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -302,12 +315,12 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P148에서 `errors.Kind`/`errors.Error` native representation과 stable category mapping을
-   구현한다.
-2. `std/strings`의 UTF-8 byte/scalar/search/split/join/conversion intrinsic을 backend/runtime에
-   연결한다.
-3. Owned string/slice/error result를 cleanup, allocation accounting/failure injection과 strict C
-   sanitizer acceptance에 연결한다.
+1. P149에서 generated C `main` internal ABI에 process arguments를 연결하고 `std/os.args`,
+   `std/os.env`, `std/os.exit`를 구현한다.
+2. `mlg run <input> -- <program-args>` forwarding과 direct binary invocation parity를
+   검증한다.
+3. `std/io.readStdin`, `writeStdout`, `writeStderr`를 recoverable `Result` API와 UTF-8,
+   short/failing stream behavior에 연결한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

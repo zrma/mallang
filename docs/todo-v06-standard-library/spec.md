@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147 complete; P148 next)
+상태: implementation in progress (P147-P148 complete; P149 next)
 
 ## 목표
 
@@ -100,7 +100,7 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 
 ### P148: UTF-8 Text and Standard Error
 
-상태: next
+상태: complete (2026-07-15)
 
 - `errors.Kind`/`errors.Error` owned value와 platform-independent error mapping을 추가한다.
 - `strings` byte/scalar/search/split/join/conversion API를 구현한다.

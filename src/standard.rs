@@ -12,13 +12,18 @@ use crate::{
 
 pub const STANDARD_PREFIX: &str = "std/";
 
+pub(crate) fn is_error_kind_type_name(name: &str) -> bool {
+    name == internal_symbol("std/errors", "Kind")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StandardType {
+    ErrorKind,
     Error,
     Map,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StandardIntrinsic {
     FsReadText,
     FsWriteText,
@@ -129,6 +134,10 @@ impl StandardIntrinsic {
 
     pub fn source_name(self) -> String {
         format!("{}.{}", self.package_path(), self.function_name())
+    }
+
+    pub(crate) fn internal_name(self) -> String {
+        internal_symbol(self.package_path(), self.function_name())
     }
 }
 
@@ -252,6 +261,7 @@ fn add_error_types(program: &mut Program, span: Span) {
     program.enums.push(EnumDecl {
         visibility: Visibility::Public,
         name: kind_name.clone(),
+        intrinsic: Some(StandardType::ErrorKind),
         specialization_origin: None,
         type_params: Vec::new(),
         variants: [
@@ -633,7 +643,7 @@ fn add_function(
 ) {
     program.functions.push(Function {
         visibility: Visibility::Public,
-        name: internal_symbol(intrinsic.package_path(), intrinsic.function_name()),
+        name: intrinsic.internal_name(),
         intrinsic: Some(intrinsic),
         type_params: type_params
             .iter()

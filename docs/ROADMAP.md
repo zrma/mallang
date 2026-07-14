@@ -1220,9 +1220,9 @@
 
 ## P148: UTF-8 Text and Standard Error
 
-- [ ] `errors.Kind`/`errors.Error` native representation과 platform-independent category mapping 추가
-- [ ] string byte/scalar count, contains/find와 UTF-8 validation runtime 구현
-- [ ] split/join과 int/bool conversion/parse intrinsic 구현
-- [ ] owned string/slice/error result를 allocation accounting와 cleanup에 연결
-- [ ] invalid UTF-8, parse overflow와 empty separator semantics regression 추가
-- [ ] strict C, sanitizer와 allocation failure injection acceptance 통과
+- [x] `errors.Kind`/`errors.Error` native representation과 platform-independent category mapping 추가
+- [x] string byte/scalar count, contains/find와 UTF-8 validation runtime 구현
+- [x] split/join과 int/bool conversion/parse intrinsic 구현
+- [x] owned string/slice/error result를 allocation accounting와 cleanup에 연결
+- [x] invalid UTF-8, parse overflow와 empty separator semantics regression 추가
+- [x] strict C, sanitizer와 allocation failure injection acceptance 통과

@@ -62,6 +62,7 @@ pub struct IrStructField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrEnum {
     pub name: String,
+    pub intrinsic: Option<StandardType>,
     pub source_name: String,
     pub storage: IrEnumStorage,
     pub variants: Vec<IrEnumVariant>,
@@ -498,6 +499,7 @@ impl<'a> Lowerer<'a> {
                 .collect();
             enums.push(IrEnum {
                 name: declaration.name.clone(),
+                intrinsic: sig.intrinsic,
                 source_name: sig.pattern_name.clone(),
                 storage: self.enum_storage(&Type::Enum(declaration.name.clone())),
                 variants,

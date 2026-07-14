@@ -3,10 +3,14 @@ use std::collections::HashMap;
 use crate::{
     ir::{IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrMatchBlockArm, IrStmt, IrStmtKind},
     semantic::Type,
+    standard::StandardType,
 };
 
 use super::{
-    names::{c_assignment_target, c_condition, c_field, c_ident, drop_fn_name, TypeCName},
+    names::{
+        c_assignment_target, c_condition, c_field, c_ident, c_string_literal, drop_fn_name,
+        TypeCName,
+    },
     utils::{
         condition_temp_name, finish_with_full_expr, finish_with_prelude, for_post_label,
         index_assign_value_temp_name, index_value_temp_name, is_blank_identifier,
@@ -780,9 +784,7 @@ impl<'a> CGenerator<'a> {
             Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
                 self.emit_print_composite(arg, prelude, code, postlude)
             }
-            Type::Enum(_) => Err(CompileError::new(
-                "user-defined enum printing requires v0.4 C lowering",
-            )),
+            Type::Enum(_) => self.emit_print_composite(arg, prelude, code, postlude),
         }
     }
 
@@ -874,7 +876,25 @@ impl<'a> CGenerator<'a> {
             }
             Type::Struct(name) => {
                 let struct_def = self.struct_def(name)?;
-                push_indented_lines(output, &format!("printf(\"{}{{\");", name), level);
+                let display_name = match struct_def.intrinsic {
+                    Some(StandardType::Error) => "Error",
+                    Some(StandardType::Map) => {
+                        return Err(CompileError::new(
+                            "IR invariant violation: cannot print opaque standard Map",
+                        ));
+                    }
+                    Some(StandardType::ErrorKind) => {
+                        return Err(CompileError::new(
+                            "IR invariant violation: errors.Kind must use enum lowering",
+                        ));
+                    }
+                    None => name,
+                };
+                push_indented_lines(
+                    output,
+                    &format!("printf(\"{}{{\");", display_name),
+                    level,
+                );
                 for (index, field) in struct_def.fields.iter().enumerate() {
                     if index > 0 {
                         push_indented_lines(output, "printf(\", \");", level);
@@ -890,9 +910,34 @@ impl<'a> CGenerator<'a> {
                 push_indented_lines(output, "printf(\"}\");", level);
                 Ok(())
             }
-            Type::Enum(_) => Err(CompileError::new(
-                "user-defined enum printing requires v0.4 C lowering",
-            )),
+            Type::Enum(name) => {
+                let enum_def = self.enum_def(name)?;
+                if enum_def.intrinsic != Some(StandardType::ErrorKind)
+                    || enum_def
+                        .variants
+                        .iter()
+                        .any(|variant| !variant.payloads.is_empty())
+                {
+                    return Err(CompileError::new(
+                        "IR invariant violation: cannot print user-defined enum",
+                    ));
+                }
+
+                push_indented_lines(output, &format!("switch (({code}).tag) {{"), level);
+                for (tag, variant) in enum_def.variants.iter().enumerate() {
+                    push_indented_lines(output, &format!("case {tag}:"), level + 1);
+                    push_indented_lines(
+                        output,
+                        &format!("printf(\"%s\", {});", c_string_literal(&variant.name)),
+                        level + 2,
+                    );
+                    push_indented_lines(output, "break;", level + 2);
+                }
+                push_indented_lines(output, "default:", level + 1);
+                push_indented_lines(output, &runtime_error_call("invalid enum tag"), level + 2);
+                push_indented_lines(output, "}", level);
+                Ok(())
+            }
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),

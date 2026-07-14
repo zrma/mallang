@@ -1,0 +1,90 @@
+import "std/errors"
+import "std/strings"
+
+func printParsedInt(result Result[int, errors.Error]) {
+    match result {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}
+
+func printParsedBool(result Result[bool, errors.Error]) {
+    match result {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}
+
+func main() {
+    text := "mallang"
+    empty := ""
+    missing := "z"
+
+    match strings.find(con text, con empty) {
+        case Some(offset) {
+            print(offset)
+        }
+        case None {
+            print(-1)
+        }
+    }
+    match strings.find(con text, con missing) {
+        case Some(offset) {
+            print(offset)
+        }
+        case None {
+            print(-1)
+        }
+    }
+
+    empty_scalars := strings.split(con empty, con empty)
+    print(len(empty_scalars))
+    comma := ","
+    empty_fields := strings.split(con empty, con comma)
+    print(len(empty_fields))
+    fields_text := ",a,,b,"
+    fields := strings.split(con fields_text, con comma)
+    pipe := "|"
+    print(strings.join(con fields, con pipe))
+
+    max_int := "9223372036854775807"
+    printParsedInt(strings.parseInt(con max_int))
+    min_int := "-9223372036854775808"
+    printParsedInt(strings.parseInt(con min_int))
+    invalid_empty := ""
+    printParsedInt(strings.parseInt(con invalid_empty))
+    invalid_plus := "+1"
+    printParsedInt(strings.parseInt(con invalid_plus))
+    invalid_space := " 1"
+    printParsedInt(strings.parseInt(con invalid_space))
+    negative_overflow := "-9223372036854775809"
+    printParsedInt(strings.parseInt(con negative_overflow))
+
+    true_text := "true"
+    printParsedBool(strings.parseBool(con true_text))
+    false_text := "false"
+    printParsedBool(strings.parseBool(con false_text))
+    invalid_bool := "True"
+    printParsedBool(strings.parseBool(con invalid_bool))
+
+    invalid_integer := "x"
+    match strings.parseInt(con invalid_integer) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+
+    print(strings.fromInt(-9223372036854775807 - 1))
+    print(strings.fromBool(false))
+}

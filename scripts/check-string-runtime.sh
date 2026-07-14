@@ -70,6 +70,23 @@ int main(void) {
 }
 EOF
 
+cat >"$OUT_DIR/invalid-utf8.c" <<EOF
+#define main mallang_example_main
+#include "$(cd "$(dirname "$GENERATED_C")" && pwd)/$(basename "$GENERATED_C")"
+#undef main
+
+int main(void) {
+    const char mlg_bytes[] = { (char)0xc0, (char)0xaf };
+    mlg_String mlg_invalid = (mlg_String){
+        .mlg_data = mlg_bytes,
+        .mlg_len = sizeof(mlg_bytes),
+        .mlg_storage = MLG_STRING_STATIC
+    };
+    mallang_validate_string(mlg_invalid);
+    return 0;
+}
+EOF
+
 COMMON_FLAGS=(-std=c11 -Wall -Wextra -Werror -pedantic)
 "$CLANG_BIN" "${COMMON_FLAGS[@]}" "$OUT_DIR/normal.c" -o "$OUT_DIR/normal"
 if [[ "$("$OUT_DIR/normal")" != "owned" ]]; then
@@ -106,6 +123,7 @@ expect_failure() {
 
 expect_failure malformed "invalid string data"
 expect_failure overflow "string allocation size overflow"
+expect_failure invalid-utf8 "invalid UTF-8 string data"
 
 if ! rg -q 'mallang_alloc\(' "$GENERATED_C" || \
   ! rg -q '"string allocation failed"' "$GENERATED_C"; then

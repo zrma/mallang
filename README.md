@@ -97,9 +97,11 @@ This repository is the Mallang language PoC workspace.
 - Compiler-owned `std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, and
   `std/collections` packages resolve in both project and standalone mode. Their
   exact signatures, ownership checks, explicit generic specialization, opaque
-  `Map[K,V]`, and typed intrinsic IR are implemented. Runtime bodies are the
-  next v0.6 slices, so calling an intrinsic during `build` is intentionally
-  rejected until its runtime milestone lands.
+  `Map[K,V]`, and typed intrinsic IR are implemented. `std/strings` now provides
+  UTF-8 byte/scalar operations, search, split/join, strict int/bool conversion,
+  standard `Error` results, function-value thunks, and allocation-safe native
+  cleanup. Process, I/O, and map calls remain deterministic backend rejections
+  until P149-P151 land.
 
 ## Bootstrap
 
@@ -270,7 +272,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147 registry/intrinsic ABI status.
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P148 implementation status.
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
@@ -287,6 +289,9 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   generic receiver cleanup.
 - `examples/generic-enums.mlg`: native smoke for generic enum specialization,
   nested user/built-in patterns, and owned payload cleanup.
+- `examples/standard-strings.mlg`: native smoke for UTF-8 byte/scalar behavior,
+  search, split/join, strict conversion, standard errors, and intrinsic function
+  values.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, generic APIs, receivers and enums, function values, higher-order APIs,
   and closure returns.

@@ -1,0 +1,65 @@
+import "std/strings"
+
+func main() {
+    text := "a한🙂"
+    print(strings.byteLen(con text))
+    print(strings.scalarCount(con text))
+    byte_len := strings.byteLen
+    print(byte_len(con text))
+
+    needle := "한"
+    print(strings.contains(con text, con needle))
+    match strings.find(con text, con needle) {
+        case Some(offset) {
+            print(offset)
+        }
+        case None {
+            print(-1)
+        }
+    }
+
+    split_text := "a,,b,"
+    comma := ","
+    parts := strings.split(con split_text, con comma)
+    pipe := "|"
+    print(strings.join(con parts, con pipe))
+
+    scalar_text := "가a"
+    empty := ""
+    scalars := strings.split(con scalar_text, con empty)
+    slash := "/"
+    print(strings.join(con scalars, con slash))
+
+    print(strings.fromInt(-42))
+    print(strings.fromBool(true))
+
+    integer_text := "-9223372036854775808"
+    match strings.parseInt(con integer_text) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+
+    overflow_text := "9223372036854775808"
+    match strings.parseInt(con overflow_text) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+
+    bool_text := "false"
+    match strings.parseBool(con bool_text) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}

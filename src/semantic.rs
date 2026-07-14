@@ -13,7 +13,7 @@ use crate::{
     },
     package::PackageGraph,
     specialize::{specialize_for_checking, specialize_for_validation},
-    standard::{StandardIntrinsic, StandardType},
+    standard::{is_error_kind_type_name, StandardIntrinsic, StandardType},
     token::Span,
 };
 
@@ -159,6 +159,7 @@ pub struct FieldSig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumSig {
+    pub intrinsic: Option<StandardType>,
     pub pattern_name: String,
     pub variants: Vec<EnumVariantSig>,
 }
@@ -242,7 +243,7 @@ impl Type {
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
             Self::Array { .. } | Self::Slice(_) => false,
             Self::Struct(_) => false,
-            Self::Enum(_) => false,
+            Self::Enum(name) => is_error_kind_type_name(name),
             Self::Function(_) => false,
         }
     }
@@ -254,7 +255,7 @@ impl Type {
             Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
             Self::Array { element, .. } => element.needs_cleanup(),
             Self::Struct(_) => true,
-            Self::Enum(_) => true,
+            Self::Enum(name) => !is_error_kind_type_name(name),
             Self::Function(_) => true,
             Self::Int | Self::Bool | Self::Unit => false,
         }
@@ -401,6 +402,7 @@ impl<'a> Checker<'a> {
                 .insert(
                     declaration.name.clone(),
                     EnumSig {
+                        intrinsic: declaration.intrinsic,
                         pattern_name: declaration
                             .specialization_origin
                             .clone()
@@ -3938,16 +3940,20 @@ impl<'a> Checker<'a> {
             Type::Option(inner) => self.is_printable_type(inner),
             Type::Result(ok, err) => self.is_printable_type(ok) && self.is_printable_type(err),
             Type::Struct(name) => self.structs.get(name.as_str()).is_some_and(|struct_sig| {
-                struct_sig
-                    .fields
-                    .iter()
-                    .all(|field| self.is_printable_type(&field.ty))
+                struct_sig.intrinsic != Some(StandardType::Map)
+                    && struct_sig
+                        .fields
+                        .iter()
+                        .all(|field| self.is_printable_type(&field.ty))
             }),
-            Type::Enum(_)
-            | Type::Unit
-            | Type::Array { .. }
-            | Type::Slice(_)
-            | Type::Function(_) => false,
+            Type::Enum(name) => self.enums.get(name.as_str()).is_some_and(|enum_sig| {
+                enum_sig.intrinsic == Some(StandardType::ErrorKind)
+                    && enum_sig
+                        .variants
+                        .iter()
+                        .all(|variant| variant.payloads.is_empty())
+            }),
+            Type::Unit | Type::Array { .. } | Type::Slice(_) | Type::Function(_) => false,
         }
     }
 

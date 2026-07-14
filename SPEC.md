@@ -32,10 +32,10 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
-## Implemented v0.6 Standard Registry Foundation
+## Implemented v0.6 Standard Registry and Text Runtime
 
 The approved v0.6 standard-library contract currently implements its compiler
-foundation:
+foundation and UTF-8 text slice:
 
 - `import "std/..."` works in project and manifest-free standalone source for
   the six approved standard packages.
@@ -46,9 +46,24 @@ foundation:
 - `collections.Map[K,V]` is opaque, move-only, restricted to `int`, `bool`, or
   `string` keys, and cannot be directly constructed as a struct literal.
 - Accepted standard calls and function values retain a typed intrinsic identity
-  in IR. Runtime implementations land in P148-P151; until then, `mlg check` and
-  `mlg ir` accept valid source while `mlg build` reports a deterministic missing
-  intrinsic implementation error.
+  in IR. Implemented standard functions also work through ordinary function
+  values and indirect calls.
+- `string` values are immutable valid UTF-8. `std/strings` implements byte
+  length, Unicode scalar count, byte-offset search, split, join, integer and
+  boolean formatting, and strict parsing with the signatures fixed by the v0.6
+  contract.
+- `find` returns the first byte offset, including `Some(0)` for an empty needle.
+  Splitting on a non-empty separator preserves empty fields; an empty separator
+  splits by Unicode scalar value and returns an empty slice for empty input.
+- `parseInt` accepts only an optional leading `-` and ASCII digits. Empty input,
+  whitespace, `+`, and overflow return `Err(errors.Error)` with
+  `errors.Kind.InvalidData`. `parseBool` accepts exactly `true` or `false`.
+- Owned string, slice, and error results use the compiler allocation accounting,
+  cleanup, deterministic failure injection, and fatal malformed-runtime-string
+  boundary. Normal P148 acceptance programs finish with zero live allocations.
+- Process, stream, file, and map runtime bodies remain P149-P151 work. Calling
+  one of those unimplemented intrinsics during `mlg build` reports a
+  deterministic compiler-milestone error.
 
 ## Implemented v0.3 Function Values and Closures
 

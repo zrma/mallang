@@ -213,7 +213,7 @@ pub(super) fn empty_slice_value_code(ty: &Type) -> Option<String> {
     ))
 }
 
-pub(super) fn c_string(value: &str) -> String {
+pub(super) fn c_string_literal(value: &str) -> String {
     let mut literal = String::from("\"");
     for ch in value.chars() {
         match ch {
@@ -226,6 +226,11 @@ pub(super) fn c_string(value: &str) -> String {
         }
     }
     literal.push('"');
+    literal
+}
+
+pub(super) fn c_string(value: &str) -> String {
+    let literal = c_string_literal(value);
     format!(
         "(mlg_String){{ .{} = {literal}, .{} = {}, .{} = MLG_STRING_STATIC }}",
         c_field("data"),
