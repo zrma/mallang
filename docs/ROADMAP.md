@@ -1094,3 +1094,13 @@
 - [x] 기존 `Some`/`None`/`Ok`/`Err` source syntax와 native print output 유지
 - [x] top-level wildcard와 nested built-in pattern 공통 IR 회귀 테스트 추가
 - [x] legacy built-in 전용 IR node, match emitter와 payload field 경로 제거
+
+## P136: v0.4 Generic Data Model Closeout
+
+- [x] v0.4 완료 조건을 unit, CLI diagnostic, native output과 sanitizer gate에 매핑
+- [x] user generic type/function/receiver와 generic enum concrete specialization 재검증
+- [x] nested exhaustive match, invalid constructor/pattern과 source diagnostic 재검증
+- [x] non-Copy payload cleanup과 multi-package visibility acceptance 재검증
+- [x] interface/trait는 현재 use case에 필요하지 않아 decision-gated 제외 유지
+- [x] `scripts/check.sh` canonical gate와 publication boundary gate 통과
+- [x] `docs/V1_ROADMAP.md`를 implementation complete, release pending으로 갱신

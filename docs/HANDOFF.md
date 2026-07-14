@@ -54,7 +54,7 @@
   imported `pkg.Function`을 value position에서 internal symbol로 연결한다. Public
   function type parameter/return, cross-package higher-order call, named function return과
   closure return이 project native warning/sanitizer gate를 통과한다.
-- v0.4 구현 진행 중: generic struct/function declaration과 explicit type argument를
+- v0.4 구현 완료: generic struct/function declaration과 explicit type argument를
   project-wide demand-driven concrete specialization pass에 연결했다. 같은
   declaration/type argument key는 재사용하고 deterministic internal symbol을 만들며,
   잘못된 arity와 type argument가 계속 커지는 specialization cycle을 source
@@ -230,9 +230,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. v0.4 완료 기준을 코드, 스펙, CLI diagnostic과 native acceptance 기준으로 감사한다.
-2. 전체 strict generated C와 ASan/UBSan gate에서 generic data model 회귀를 재검증한다.
-3. v0.4 closeout과 다음 v0.5 language decision gate를 준비한다.
+1. v0.5 ownership/runtime 범위와 현재 ownership-lite 모델의 gap inventory를 작성한다.
+2. collection cleanup, panic/runtime failure와 error propagation decision gate를 연다.
+3. 사용자 승인 뒤 v0.5 구현 순서와 compatibility boundary를 확정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
