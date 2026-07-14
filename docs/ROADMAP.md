@@ -1104,3 +1104,12 @@
 - [x] interface/trait는 현재 use case에 필요하지 않아 decision-gated 제외 유지
 - [x] `scripts/check.sh` canonical gate와 publication boundary gate 통과
 - [x] `docs/V1_ROADMAP.md`를 implementation complete, release pending으로 갱신
+
+## P137: v0.5 Ownership and Runtime Decision Gate
+
+- [x] current Copy/move/drop, heap allocation과 cleanup path inventory 작성
+- [x] owned recursive heap abstraction 이름과 source surface 추천안 작성
+- [x] partial move/replace, temporary cleanup과 control-flow drop 경계 작성
+- [x] first-class reference, range borrow와 fatal runtime failure 추천안 작성
+- [x] memory-safety acceptance와 implementation order 초안 작성
+- [ ] 사용자 승인 뒤 v0.5 language/runtime contract 확정

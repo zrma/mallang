@@ -247,6 +247,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `SPEC.md`: v0 language specification.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
+- `docs/todo-v05-ownership-runtime/`: proposed v0.5 memory model and safe owned heap decision gate.
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
