@@ -242,6 +242,21 @@ if [[ "$recursive_enums_output" != $'6\n7' ]]; then
   echo "recursive enum native build smoke failed: expected 6, 7 got '$recursive_enums_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/full-expression-cleanup.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/full-expression-cleanup.mlg -o target/mallang/full-expression-cleanup >/dev/null
+full_expression_cleanup_output="$(target/mallang/full-expression-cleanup)"
+if [[ "$full_expression_cleanup_output" != $'42\n3\n5\n10\n0\n1\n3\n1\n2\n3\n17\n2\n1\n5\n4\n0\n1\n7\n20' ]]; then
+  echo "full-expression cleanup native build smoke output mismatch: got '$full_expression_cleanup_output'" >&2
+  exit 1
+fi
+"${CARGO[@]}" run --bin mlg -- check examples/string-runtime.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/string-runtime.mlg -o target/mallang/string-runtime >/dev/null
+string_runtime_output="$(target/mallang/string-runtime)"
+if [[ "$string_runtime_output" != $'literal\nreturned\ntrue\nfield\nreplaced\n1\nindexed-after\nenum\nclosure\nmutated' ]]; then
+  echo "string runtime native build smoke output mismatch: got '$string_runtime_output'" >&2
+  exit 1
+fi
+scripts/check-string-runtime.sh target/mallang/string-runtime.c
 expect_check_failure \
   "closure-borrowed-capture" \
   "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
@@ -916,4 +931,12 @@ expect_sanitized_native_output \
   "recursive-enums" \
   "target/mallang/recursive-enums.c" \
   $'6\n7'
+expect_sanitized_native_output \
+  "full-expression-cleanup" \
+  "target/mallang/full-expression-cleanup.c" \
+  $'42\n3\n5\n10\n0\n1\n3\n1\n2\n3\n17\n2\n1\n5\n4\n0\n1\n7\n20'
+expect_sanitized_native_output \
+  "string-runtime" \
+  "target/mallang/string-runtime.c" \
+  $'literal\nreturned\ntrue\nfield\nreplaced\n1\nindexed-after\nenum\nclosure\nmutated'
 expect_all_warning_clean_generated_c

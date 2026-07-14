@@ -118,6 +118,24 @@
   runtime diagnostic으로 중단한다. `examples/recursive-enums.mlg`는 generic `List[int]`,
   `List[[]int]`와 non-recursive multi-payload enum을 native, strict C와 ASan/UBSan 경로에서
   검증한다.
+- v0.5 P142 완료: cleanup-valued computed expression을 source syntax 변경 없이 typed IR
+  `FullExprTemporary`로 모델링했다. Discarded expression, `len`/index, `con`/`mut` call
+  argument와 `if`/`for` condition은 마지막 사용 뒤 정확히 한 번 정리되며, logical
+  right-hand side는 short-circuit branch 안에서만 생성된다. Computed range source는 loop
+  전체를 소유하고 normal exit, `break`, enclosing return에서 정리되며 `continue`에서는
+  유지된다. Inline slice len/index/range 제한을 제거했고 bounds failure는 기존 fatal
+  no-unwind 계약을 유지한다. `examples/full-expression-cleanup.mlg`와 500개 unit test,
+  strict generated C, native output 및 60-program deep ASan/UBSan sweep이 이 계약을 검증한다.
+- v0.5 P143 완료: static literal과 future heap-owned buffer를 같은 immutable move-only
+  `string` value로 표현하는 tagged length-aware C runtime을 추가했다. Equality와 print는
+  storage kind와 무관하게 byte length/content를 읽고, drop은 static storage를 해제하지 않으며
+  owned buffer만 normal flow에서 한 번 해제한다. String parameter/return/local/field/enum payload와
+  closure capture는 공통 cleanup 경로를 사용한다. Cleanup overwrite는 RHS를 먼저 평가하고 target
+  place를 한 번만 계산한 뒤 old value를 drop/store하는 typed IR operation으로 정규화했다. 따라서
+  side-effecting indexed target, mutable borrowed parameter와 mutable closure capture도 external owner를
+  유지한다. Malformed storage/data와 allocation overflow/failure는 fatal no-unwind contract를 따른다.
+  `examples/string-runtime.mlg`, 504개 unit test, strict generated C/native harness와 61-program deep
+  ASan/UBSan sweep이 이 계약을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -138,6 +156,8 @@ cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- run examples/mutable-closures.mlg
 cargo run --bin mlg -- run examples/nested-closures.mlg
+cargo run --bin mlg -- run examples/full-expression-cleanup.mlg
+cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -261,9 +281,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Typed IR enum variant와 pattern을 positional payload list로 일반화한다.
-2. Recursive enum storage metadata와 constructor/match ownership transfer를 IR에 보존한다.
-3. Non-recursive zero/single payload compatibility와 recursive generic enum lowering을 함께 검증한다.
+1. P144에서 `con`/`mut` call-scoped borrow와 first-class reference 제외 계약을 regression으로 고정한다.
+2. By-reference/mutable range syntax 거부와 non-Copy index-only range acceptance를 함께 검증한다.
+3. Use-after-move, borrow overlap, overwrite와 control-flow ownership merge 규칙을 normative spec과 동기화한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

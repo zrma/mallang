@@ -1156,10 +1156,30 @@
 
 ## P142: Full-Expression Temporary Cleanup
 
-- [ ] cleanup value temporary를 typed IR의 full-expression scope로 모델링
-- [ ] call argument와 discarded expression temporary를 statement 종료 시 정확히 한 번 정리
-- [ ] `if`/`for` condition temporary를 각 평가 직후 정리하고 short-circuit 순서 유지
-- [ ] index/`len`/range source temporary cleanup과 bounds guard 순서 연결
-- [ ] return, `break`/`continue`와 runtime failure 경로의 temporary ownership 계약 고정
-- [ ] 기존 inline slice index/`len`/range 제한을 안전한 temporary cleanup 경로로 교체
-- [ ] strict C, native output와 ASan/UBSan temporary-heavy acceptance 추가
+- [x] cleanup value temporary를 typed IR의 full-expression scope로 모델링
+- [x] call argument와 discarded expression temporary를 statement 종료 시 정확히 한 번 정리
+- [x] `if`/`for` condition temporary를 각 평가 직후 정리하고 short-circuit 순서 유지
+- [x] index/`len`/range source temporary cleanup과 bounds guard 순서 연결
+- [x] return, `break`/`continue`와 runtime failure 경로의 temporary ownership 계약 고정
+- [x] 기존 inline slice index/`len`/range 제한을 안전한 temporary cleanup 경로로 교체
+- [x] strict C, native output와 ASan/UBSan temporary-heavy acceptance 추가
+
+## P143: Static and Owned String Runtime
+
+- [x] current static string literal ABI, move rule와 cleanup gap inventory 작성
+- [x] static/owned storage를 같은 immutable `string` value로 표현하는 typed IR/C contract 고정
+- [x] static literal은 해제하지 않고 owned buffer는 정확히 한 번 해제하는 drop helper 구현
+- [x] string parameter/return/local/field/enum/closure ownership을 공통 cleanup 경로에 연결
+- [x] print/equality가 storage kind와 무관하게 같은 value semantics를 유지
+- [x] malformed owned string과 allocation failure의 fatal no-unwind invariant 추가
+- [x] strict C, native output와 ASan/UBSan string ownership acceptance 추가
+
+## P144: Borrow and Range Exclusion Contract
+
+- [ ] `con`/`mut`가 direct call-scoped mode이고 first-class reference가 아님을 regression으로 고정
+- [ ] borrowed non-Copy move/return/store/capture와 overlapping mutable access 진단 matrix 보강
+- [ ] by-reference/mutable range binding syntax가 reserved diagnostic으로 거부되는지 고정
+- [ ] non-Copy range의 index-only traversal과 indexed `con`/`mut` access acceptance 유지
+- [ ] use-after-move, overwrite, return, branch와 loop ownership merge 규칙을 `SPEC.md`와 동기화
+- [ ] accepted/rejected borrow-range fixture를 CLI diagnostic 및 native gate에 연결
+- [ ] strict C와 generated C sanitizer sweep에서 기존 ownership runtime 회귀 없음 확인

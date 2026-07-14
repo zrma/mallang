@@ -248,6 +248,10 @@ impl<'a> TypeEmitter<'a> {
                 self.collect_expr_types(index, types);
                 self.collect_expr_types(expr, types);
             }
+            IrStmtKind::Overwrite { target, expr } => {
+                self.collect_expr_types(target, types);
+                self.collect_expr_types(expr, types);
+            }
             IrStmtKind::If {
                 condition,
                 then_body,
@@ -288,11 +292,15 @@ impl<'a> TypeEmitter<'a> {
                 source,
                 element_ty,
                 body,
+                cleanup,
                 ..
             } => {
                 self.collect_expr_types(source, types);
                 collect_type(element_ty, types);
                 for stmt in body {
+                    self.collect_stmt_types(stmt, types);
+                }
+                for stmt in cleanup {
                     self.collect_stmt_types(stmt, types);
                 }
             }
@@ -329,6 +337,9 @@ impl<'a> TypeEmitter<'a> {
     fn collect_expr_types(&self, expr: &IrExpr, types: &mut Vec<Type>) {
         collect_type(&expr.ty, types);
         match &expr.kind {
+            IrExprKind::FullExprTemporary { expr, .. } => {
+                self.collect_expr_types(expr, types);
+            }
             IrExprKind::If {
                 condition,
                 then_branch,
@@ -587,7 +598,7 @@ impl<'a> TypeEmitter<'a> {
                 }
             }
             Type::Function(_) => {}
-            Type::Int | Type::Bool | Type::String | Type::Unit => {}
+            Type::String | Type::Int | Type::Bool | Type::Unit => {}
         }
         visiting.pop();
 
@@ -764,7 +775,15 @@ impl<'a> TypeEmitter<'a> {
                 "if (mlg_value->mlg_drop != NULL) {\n    mlg_value->mlg_drop(mlg_value->mlg_env);\n}\nmlg_value->mlg_env = NULL;\nmlg_value->mlg_drop = NULL;\nmlg_value->mlg_call = NULL;"
                     .to_string(),
             ),
-            Type::Int | Type::Bool | Type::String | Type::Unit => Err(CompileError::new(format!(
+            Type::String => Ok(format!(
+                "mallang_validate_string(*mlg_value);\nif (mlg_value->{} == MLG_STRING_OWNED) {{\n    free((void *)mlg_value->{});\n}}\n*mlg_value = (mlg_String){{ .{} = \"\", .{} = 0, .{} = MLG_STRING_STATIC }};",
+                c_field("storage"),
+                c_field("data"),
+                c_field("data"),
+                c_field("len"),
+                c_field("storage")
+            )),
+            Type::Int | Type::Bool | Type::Unit => Err(CompileError::new(format!(
                 "IR invariant violation: drop helper requested for non-cleanup type `{}`",
                 ty.source_name()
             ))),
@@ -813,6 +832,11 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
                 types.push(ty.clone());
             }
         }
-        Type::Int | Type::Bool | Type::String | Type::Unit => {}
+        Type::String => {
+            if !types.contains(ty) {
+                types.push(ty.clone());
+            }
+        }
+        Type::Int | Type::Bool | Type::Unit => {}
     }
 }

@@ -3,6 +3,7 @@ use std::fmt;
 mod expressions;
 mod names;
 mod patterns;
+mod runtime;
 mod statements;
 mod types;
 mod utils;
@@ -11,6 +12,7 @@ use names::{
     c_field, c_ident, c_param_decl, callable_thunk_name, closure_call_name, closure_drop_name,
     closure_env_type_name, drop_fn_name, TypeCName,
 };
+use runtime::emit_string_runtime;
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
 
@@ -58,12 +60,14 @@ struct CGenerator<'a> {
 struct CExpr {
     prelude: Vec<String>,
     code: String,
+    postlude: Vec<String>,
 }
 
 struct AppendSourceExpr {
     prelude: Vec<String>,
     code: String,
     clear_source: Option<String>,
+    postlude: Vec<String>,
 }
 
 impl CExpr {
@@ -71,6 +75,7 @@ impl CExpr {
         Self {
             prelude: Vec::new(),
             code,
+            postlude: Vec::new(),
         }
     }
 }
@@ -112,6 +117,7 @@ impl<'a> CGenerator<'a> {
         output.push_str("}\n\n");
 
         let defined_types = collect_defined_types(self.program);
+        output.push_str(&emit_string_runtime(&defined_types));
         let type_definitions = emit_type_definitions(self.program, &defined_types)?;
         output.push_str(&type_definitions);
         if !type_definitions.is_empty() {

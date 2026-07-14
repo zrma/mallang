@@ -20,6 +20,19 @@ pub(super) fn finish_with_prelude(prelude: Vec<String>, body: String) -> String 
     output
 }
 
+pub(super) fn finish_with_full_expr(
+    prelude: Vec<String>,
+    body: String,
+    postlude: Vec<String>,
+) -> String {
+    let mut output = finish_with_prelude(prelude, body);
+    for line in postlude {
+        output.push('\n');
+        output.push_str(&line);
+    }
+    output
+}
+
 pub(super) fn runtime_error_call(message: &str) -> String {
     format!("mallang_runtime_error(\"{message}\");")
 }
@@ -46,6 +59,9 @@ pub(super) fn if_expr_temp_block(
         push_indented_lines(&mut output, &line, 1);
     }
     push_indented_lines(&mut output, &format!("{temp} = {};", then_expr.code), 1);
+    for line in then_expr.postlude {
+        push_indented_lines(&mut output, &line, 1);
+    }
     for stmt in then_cleanup {
         push_indented_lines(&mut output, &stmt, 1);
     }
@@ -54,6 +70,9 @@ pub(super) fn if_expr_temp_block(
         push_indented_lines(&mut output, &line, 1);
     }
     push_indented_lines(&mut output, &format!("{temp} = {};", else_expr.code), 1);
+    for line in else_expr.postlude {
+        push_indented_lines(&mut output, &line, 1);
+    }
     for stmt in else_cleanup {
         push_indented_lines(&mut output, &stmt, 1);
     }
@@ -63,6 +82,14 @@ pub(super) fn if_expr_temp_block(
 
 pub(super) fn if_expr_temp_name(expr: &IrExpr) -> String {
     format!("mallang_if_tmp_{}", expr.span.start)
+}
+
+pub(super) fn if_condition_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_if_condition_{}_{}", expr.span.start, expr.span.end)
+}
+
+pub(super) fn logical_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_logical_{}_{}", expr.span.start, expr.span.end)
 }
 
 pub(super) fn match_expr_temp_name(expr: &IrExpr) -> String {
@@ -99,6 +126,13 @@ pub(super) fn index_value_temp_name(expr: &IrExpr) -> String {
 pub(super) fn index_assign_value_temp_name(expr: &IrExpr) -> String {
     format!(
         "mallang_index_assign_value_{}_{}",
+        expr.span.start, expr.span.end
+    )
+}
+
+pub(super) fn overwrite_target_temp_name(expr: &IrExpr) -> String {
+    format!(
+        "mallang_overwrite_target_{}_{}",
         expr.span.start, expr.span.end
     )
 }
@@ -183,6 +217,14 @@ pub(super) fn for_post_label(post: &IrForPost) -> String {
 
 pub(super) fn range_source_temp_name(expr: &IrExpr) -> String {
     format!("mallang_range_src_{}", expr.span.start)
+}
+
+pub(super) fn condition_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_condition_{}_{}", expr.span.start, expr.span.end)
+}
+
+pub(super) fn return_expr_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_return_expr_{}_{}", expr.span.start, expr.span.end)
 }
 
 pub(super) fn range_index_temp_name(expr: &IrExpr) -> String {

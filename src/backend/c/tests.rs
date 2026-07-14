@@ -423,6 +423,7 @@ fn rejects_invalid_ir_range_source_type() {
                     },
                     element_ty: Type::Int,
                     body: Vec::new(),
+                    cleanup: Vec::new(),
                 },
                 span,
             }],
@@ -594,7 +595,10 @@ print(label)
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("const char * mlg_label = ((true) ? (\"pass\") : (\"fail\"));"));
+    assert!(c.contains("mlg_String mlg_label = ((true) ? ("));
+    assert!(c.contains(".mlg_data = \"pass\""));
+    assert!(c.contains(".mlg_data = \"fail\""));
+    assert!(c.contains("mlg_drop_string(&(mlg_label));"));
 }
 
 #[test]
@@ -1003,7 +1007,8 @@ if true {
 
     assert!(c.contains("if (true) {"));
     assert!(c.contains("} else {"));
-    assert!(c.contains("printf(\"%s\\n\", \"yes\");"));
+    assert!(c.contains(".mlg_data = \"yes\""));
+    assert!(c.contains("mallang_print_string("));
 }
 
 #[test]
@@ -1253,10 +1258,10 @@ print(user.age)
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("typedef struct"));
-    assert!(c.contains("const char * mlg_name;"));
+    assert!(c.contains("mlg_String mlg_name;"));
     assert!(c.contains("int64_t mlg_age;"));
     assert!(c.contains(
-        "mlg_struct_User mlg_user = (mlg_struct_User){ .mlg_name = \"kim\", .mlg_age = 30 };"
+        "mlg_struct_User mlg_user = (mlg_struct_User){ .mlg_name = (mlg_String){ .mlg_data = \"kim\", .mlg_len = 3, .mlg_storage = MLG_STRING_STATIC }, .mlg_age = 30 };"
     ));
     assert!(c.contains("printf(\"%lld\\n\", (long long)((mlg_user).mlg_age));"));
 }
@@ -1759,10 +1764,11 @@ print(name)
     assert!(c.contains("] = 5;"));
     assert!(c.contains(">= (mlg_users).mlg_len"));
     assert!(c.contains("mlg_struct_User mlg_mallang_cleanup_assign_rhs_"));
-    assert!(c.contains(" = (mlg_struct_User){ .mlg_name = \"park\" };"));
-    assert!(c.contains("mlg_drop_Struct_User(&((mlg_users).mlg_data[mallang_index_value_"));
-    assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
-    assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+    assert!(c.contains(" = (mlg_struct_User){ .mlg_name = (mlg_String){ .mlg_data = \"park\""));
+    assert!(c.contains("mlg_struct_User *mallang_overwrite_target_"));
+    assert!(c.contains("mlg_drop_Struct_User(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(" = mlg_mallang_cleanup_assign_rhs_"));
     assert!(c.contains("mlg_drop_Slice_int(&(mlg_values));"));
     assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
 }
@@ -1797,11 +1803,10 @@ store.bags[0] = Bag{values: []int{7, 8}}
     assert!(c.contains("((mlg_bag).mlg_values).mlg_data[mallang_index_assign_value_"));
     assert!(c.contains("] = 5;"));
     assert!(c.contains("mlg_struct_Bag mlg_mallang_cleanup_assign_rhs_"));
-    assert!(
-        c.contains("mlg_drop_Struct_Bag(&(((mlg_store).mlg_bags).mlg_data[mallang_index_value_")
-    );
-    assert!(c.contains("((mlg_store).mlg_bags).mlg_data[mallang_index_assign_value_"));
-    assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+    assert!(c.contains("mlg_struct_Bag *mallang_overwrite_target_"));
+    assert!(c.contains("mlg_drop_Struct_Bag(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(" = mlg_mallang_cleanup_assign_rhs_"));
     assert!(c.contains("mlg_drop_Struct_Store(&(mlg_store));"));
     assert!(c.contains("mlg_drop_Struct_Bag(&(mlg_bag));"));
 }
@@ -1822,9 +1827,10 @@ rows[0] = []int{3}
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("mlg_Slice_int mlg_mallang_cleanup_assign_rhs_"));
-    assert!(c.contains("mlg_drop_Slice_int(&((mlg_rows).mlg_data[mallang_index_value_"));
-    assert!(c.contains("(mlg_rows).mlg_data[mallang_index_assign_value_"));
-    assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+    assert!(c.contains("mlg_Slice_int *mallang_overwrite_target_"));
+    assert!(c.contains("mlg_drop_Slice_int(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(" = mlg_mallang_cleanup_assign_rhs_"));
     assert!(c.contains("mlg_drop_Slice_Slice_int(&(mlg_rows));"));
 }
 
@@ -1854,10 +1860,11 @@ print(name)
 
     assert!(c.contains("mlg_struct_User mlg_data[2];"));
     assert!(c.contains("mlg_struct_User mlg_mallang_cleanup_assign_rhs_"));
-    assert!(c.contains(" = (mlg_struct_User){ .mlg_name = \"park\" };"));
-    assert!(c.contains("mlg_drop_Struct_User(&((mlg_users).mlg_data[mallang_check_index(1, 2)]));"));
-    assert!(c.contains("(mlg_users).mlg_data[mallang_index_assign_value_"));
-    assert!(c.contains("] = mlg_mallang_cleanup_assign_rhs_"));
+    assert!(c.contains(" = (mlg_struct_User){ .mlg_name = (mlg_String){ .mlg_data = \"park\""));
+    assert!(c.contains("mlg_struct_User *mallang_overwrite_target_"));
+    assert!(c.contains("mlg_drop_Struct_User(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(" = mlg_mallang_cleanup_assign_rhs_"));
     assert!(c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));"));
 }
 
@@ -1911,7 +1918,9 @@ print(total)
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("(void)(mlg_values);"));
-    assert!(c.contains("if (!(mlg_i < 3)) {"));
+    assert!(c.contains("int64_t mallang_checked_left_"));
+    assert!(c.contains("int64_t mallang_checked_right_"));
+    assert!(c.contains("if (!(mallang_checked_left_"));
     assert!(!c.contains("mallang_for_post_"));
     assert!(c.contains("mlg_Array_3_int mallang_index_src_"));
     assert!(c.contains("int64_t mallang_index_value_"));
@@ -2075,7 +2084,10 @@ print(age)
     assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains(">= (mlg_sliceUsers).mlg_len"));
     assert!(c.contains("((mlg_sliceUsers).mlg_data[mallang_index_value_"));
-    assert!(c.contains("]).mlg_name = \"park\";"));
+    assert!(c.contains("mlg_String *mallang_overwrite_target_"));
+    assert!(c.contains("mlg_drop_string(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(".mlg_data = \"park\""));
     assert!(c.contains("]).mlg_age = 21;"));
 }
 
@@ -2096,8 +2108,10 @@ print(word != "rust")
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("#include <string.h>"));
-    assert!(c.contains("strcmp(mlg_word, \"mallang\") == 0"));
-    assert!(c.contains("strcmp(mlg_word, \"rust\") != 0"));
+    assert!(c.contains("mallang_string_equal(mlg_word, (mlg_String){"));
+    assert!(c.contains("!mallang_string_equal(mlg_word, (mlg_String){"));
+    assert!(c.contains("memcmp(mlg_left.mlg_data, mlg_right.mlg_data, mlg_left.mlg_len)"));
+    assert!(c.contains("mlg_drop_string(&(mlg_word));"));
 }
 
 #[test]
@@ -2131,11 +2145,13 @@ age = age + 1
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+    assert!(c.contains("void mlg_rename(mlg_String * mlg_name);"));
     assert!(c.contains("void mlg_bump(int64_t * mlg_age);"));
     assert!(c.contains("mlg_rename(&((mlg_user).mlg_name));"));
     assert!(c.contains("mlg_bump(&((mlg_user).mlg_age));"));
-    assert!(c.contains("(*mlg_name) = \"lee\";"));
+    assert!(c.contains("mlg_drop_string(mallang_overwrite_target_"));
+    assert!(c.contains("*mallang_overwrite_target_"));
+    assert!(c.contains(".mlg_data = \"lee\""));
     assert!(c.contains("__builtin_add_overflow"));
     assert!(c.contains("(*mlg_age) = mallang_checked_result_"));
 }
@@ -2169,13 +2185,14 @@ print(name)
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("void mlg_show(const char * const * mlg_name);"));
-    assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+    assert!(c.contains("void mlg_show(const mlg_String * mlg_name);"));
+    assert!(c.contains("void mlg_rename(mlg_String * mlg_name);"));
     assert!(c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_check_index(0, 2)]).mlg_name));"));
     assert!(
         c.contains("mlg_rename(&(((mlg_users).mlg_data[mallang_check_index(1, 2)]).mlg_name));")
     );
-    assert!(c.contains("(*mlg_name) = \"park\";"));
+    assert!(c.contains("mlg_drop_string(mallang_overwrite_target_"));
+    assert!(c.contains(".mlg_data = \"park\""));
 }
 
 #[test]
@@ -2207,14 +2224,15 @@ print(name)
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("void mlg_show(const char * const * mlg_name);"));
-    assert!(c.contains("void mlg_rename(const char ** mlg_name);"));
+    assert!(c.contains("void mlg_show(const mlg_String * mlg_name);"));
+    assert!(c.contains("void mlg_rename(mlg_String * mlg_name);"));
     assert!(c.contains("int64_t mallang_index_value_"));
     assert!(c.contains("mallang_runtime_error(\"slice index out of bounds\")"));
     assert!(c.contains("mlg_show(&(((mlg_users).mlg_data[mallang_index_value_"));
     assert!(c.contains("mlg_rename(&(((mlg_users).mlg_data[mallang_index_value_"));
     assert!(c.contains("]).mlg_name));"));
-    assert!(c.contains("(*mlg_name) = \"park\";"));
+    assert!(c.contains("mlg_drop_string(mallang_overwrite_target_"));
+    assert!(c.contains(".mlg_data = \"park\""));
     assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
 }
 
@@ -2348,11 +2366,11 @@ func main() { value := Pair.Pair(7, "mallang") }
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("int64_t mlg_payload_0;"));
-    assert!(c.contains("const char * mlg_payload_1;"));
+    assert!(c.contains("mlg_String mlg_payload_1;"));
     assert!(c.contains(".mlg_Pair = { .mlg_payload_0 = mallang_variant_payload_"));
     assert!(c.contains(".mlg_payload_1 = mallang_variant_payload_"));
     let first = c.find("int64_t mallang_variant_payload_").unwrap();
-    let second = c.find("const char * mallang_variant_payload_").unwrap();
+    let second = c.find("mlg_String mallang_variant_payload_").unwrap();
     let constructor = c.find("mlg_enum_Pair mlg_value =").unwrap();
     assert!(first < second && second < constructor);
 }
@@ -2386,4 +2404,110 @@ func main() {
     assert!(c.contains("recursive enum allocation failed"));
     assert!(c.contains("invalid recursive enum handle"));
     assert!(c.contains("free(mlg_node);"));
+}
+
+#[test]
+fn generates_c_cleanup_after_temporary_borrow_call() {
+    let program = parse(
+        r#"
+func inspect(con values []int) int {
+    return len(values)
+}
+
+func main() {
+    print(inspect(con []int{1, 2}))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    let temporary = c
+        .find("mlg_Slice_int mlg_mallang_full_expr_")
+        .expect("temporary declaration");
+    let call = c
+        .find("mlg_inspect(&(mlg_mallang_full_expr_")
+        .expect("borrowed call");
+    let drop = c[call..]
+        .find("mlg_drop_Slice_int(&(mlg_mallang_full_expr_")
+        .map(|offset| call + offset)
+        .expect("temporary drop");
+    assert!(temporary < call && call < drop);
+}
+
+#[test]
+fn generates_short_circuit_cleanup_only_inside_the_rhs_branch() {
+    let program = parse(
+        r#"
+func main() {
+    if false && []int{9}[5] == 9 {
+        print(1)
+    }
+    if true || []int{9}[5] == 9 {
+        print(2)
+    }
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert_eq!(c.matches("mlg_Slice_int mlg_mallang_full_expr_").count(), 2);
+    assert_eq!(
+        c.matches("mlg_drop_Slice_int(&(mlg_mallang_full_expr_")
+            .count(),
+        2
+    );
+    assert!(c.contains("if (mallang_logical_"));
+    assert!(c.contains("if (!mallang_logical_"));
+    assert_eq!(
+        c.matches("mallang_runtime_error(\"slice index out of bounds\")")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn generates_static_and_owned_string_runtime_contract() {
+    let program = parse(
+        r#"
+type Label struct { value string }
+type Message enum { Empty Text(string) }
+
+func main() {
+    label := Label{value: "field"}
+    message := Message.Text("enum")
+    captured := "closure"
+    render := func() { print(captured) }
+    print(label)
+    render()
+    match message {
+        case Message.Empty {}
+        case Message.Text(text) { print(text) }
+    }
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("const char *mlg_data;"));
+    assert!(c.contains("size_t mlg_len;"));
+    assert!(c.contains("uint8_t mlg_storage;"));
+    assert!(c.contains("MLG_STRING_STATIC = 0"));
+    assert!(c.contains("MLG_STRING_OWNED = 1"));
+    assert!(c.contains("mallang_string_owned_copy"));
+    assert!(c.contains("mallang_runtime_error(\"string allocation failed\")"));
+    assert!(c.contains("mallang_runtime_error(\"invalid string storage\")"));
+    assert!(c.contains("if (mlg_value->mlg_storage == MLG_STRING_OWNED)"));
+    assert!(c.contains("free((void *)mlg_value->mlg_data);"));
+    assert!(c.contains("mlg_drop_string(&(mlg_value->mlg_value));"));
+    assert!(c.contains("mlg_drop_string(&(mlg_env->mlg_captured));"));
+    assert!(c.contains("mallang_print_string("));
 }
