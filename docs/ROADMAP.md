@@ -958,3 +958,12 @@
 - [x] nested plain/mutable function type과 capture metadata를 typed IR에 보존
 - [x] owned slice outer environment와 invocation-local inner capture native smoke 추가
 - [x] nested mutable state 독립성과 environment cleanup sanitizer smoke 추가
+
+## P122: Package Function Values and Closure API
+
+- [x] unqualified package-local named function을 value position에서 internal symbol로 연결
+- [x] imported `pkg.Function` value를 public function declaration으로 검증해 연결
+- [x] private/non-function package selector value diagnostic 유지
+- [x] public function type parameter/return의 nested type visibility 검증
+- [x] cross-package higher-order parameter, named return, closure return native smoke 추가
+- [x] project generated C strict warning과 ASan/UBSan smoke 추가

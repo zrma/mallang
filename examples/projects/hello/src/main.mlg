@@ -5,5 +5,10 @@ import "hello/greet"
 func main() {
     message := greet.New("kim")
     message.Print()
-    print(greet.Double(21))
+    transform := greet.Double
+    print(greet.Apply(21, transform))
+    selected := greet.Select()
+    print(selected(11))
+    add := greet.MakeAdder(10)
+    print(add(5))
 }

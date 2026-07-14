@@ -50,7 +50,10 @@
   literal은 lexical free variable을 바깥 closure까지 전파하고 생성 시 각 environment로
   다시 copy/move한다. Copy와 invocation-local owned value는 중첩 환경에서 안전하게
   사용할 수 있고, 반복 호출되는 바깥 환경의 borrowed non-Copy capture를 다시
-  이동하는 경우는 거부한다.
+  이동하는 경우는 거부한다. Project linker는 unqualified package-local function과
+  imported `pkg.Function`을 value position에서 internal symbol로 연결한다. Public
+  function type parameter/return, cross-package higher-order call, named function return과
+  closure return이 project native warning/sanitizer gate를 통과한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -192,9 +195,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. package-qualified function value와 public function type linking을 검증한다.
-2. v0.3 invalid capture/alias와 project sanitizer acceptance를 닫는다.
-3. v0.3 완료 상태를 spec과 release readiness 문서에 동기화한다.
+1. v0.3 invalid capture/alias와 recursive closure rejection acceptance를 닫는다.
+2. v0.3 완료 상태를 spec과 release readiness 문서에 동기화한다.
+3. v0.4 generic data model decision gate를 준비한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
