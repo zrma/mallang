@@ -644,7 +644,10 @@ impl<'a> TypeEmitter<'a> {
                     );
                     output.push_str("}\n");
                 }
-                output.push_str(&format!("free(mlg_value->{});\n", c_field("data")));
+                output.push_str(&format!(
+                    "mallang_dealloc(mlg_value->{});\n",
+                    c_field("data")
+                ));
                 output.push_str(&format!("mlg_value->{} = NULL;\n", c_field("data")));
                 output.push_str(&format!("mlg_value->{} = 0;\n", c_field("len")));
                 output.push_str(&format!("mlg_value->{} = 0;", c_field("cap")));
@@ -759,7 +762,7 @@ impl<'a> TypeEmitter<'a> {
                 }
                 if enum_def.storage == IrEnumStorage::Owned {
                     output = format!(
-                        "if (mlg_value->{} == NULL) {{\n    return;\n}}\n{} *mlg_node = mlg_value->{};\n{output}free(mlg_node);\nmlg_value->{} = NULL;",
+                        "if (mlg_value->{} == NULL) {{\n    return;\n}}\n{} *mlg_node = mlg_value->{};\n{output}mallang_dealloc(mlg_node);\nmlg_value->{} = NULL;",
                         c_field("node"),
                         enum_node_type_name(&enum_def.name),
                         c_field("node"),
@@ -776,7 +779,7 @@ impl<'a> TypeEmitter<'a> {
                     .to_string(),
             ),
             Type::String => Ok(format!(
-                "mallang_validate_string(*mlg_value);\nif (mlg_value->{} == MLG_STRING_OWNED) {{\n    free((void *)mlg_value->{});\n}}\n*mlg_value = (mlg_String){{ .{} = \"\", .{} = 0, .{} = MLG_STRING_STATIC }};",
+                "mallang_validate_string(*mlg_value);\nif (mlg_value->{} == MLG_STRING_OWNED) {{\n    mallang_dealloc((void *)mlg_value->{});\n}}\n*mlg_value = (mlg_String){{ .{} = \"\", .{} = 0, .{} = MLG_STRING_STATIC }};",
                 c_field("storage"),
                 c_field("data"),
                 c_field("data"),

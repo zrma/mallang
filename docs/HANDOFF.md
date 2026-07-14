@@ -144,6 +144,16 @@
   유지된다. `SPEC.md`는 move, overwrite, return, branch merge와 loop-persistent ownership을 같은
   normative v1 contract로 설명한다. `examples/borrow-range-contract.mlg`, 505개 unit test, strict
   generated C/native output와 62-program deep ASan/UBSan sweep이 이 경계를 검증한다.
+- v0.5 P145 완료, release pending: slice buffer, closure environment, recursive enum node와
+  owned string buffer의 raw allocation/free를 공통 generated C runtime helper로 통합했다. New
+  allocation lifetime과 null-buffer first growth는 live count를 증가시키고 existing realloc
+  growth는 유지하며, non-null deallocation은 정확히 한 번 감소시킨다. Internal test macro는
+  source/API 변경 없이 N번째 allocation attempt를 실패시키고 각 site의 stable fatal diagnostic을
+  유지한다. `examples/allocation-accounting.mlg`는 slice/realloc, closure, recursive enum, return
+  branch, loop, aggregate overwrite를 실행하고 normal `main` 뒤 live count 0을 검증한다. Owned
+  string allocation도 같은 harness에서 별도로 계수한다. 506개 unit test, strict C/native
+  accounting/failure-injection harness와 63-program deep ASan/UBSan sweep이 v0.5 memory runtime
+  완료 조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -167,6 +177,7 @@ cargo run --bin mlg -- run examples/nested-closures.mlg
 cargo run --bin mlg -- run examples/full-expression-cleanup.mlg
 cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- run examples/borrow-range-contract.mlg
+cargo run --bin mlg -- run examples/allocation-accounting.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -282,6 +293,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
+- `docs/todo-v06-standard-library/`: v0.6 standard package/API decision gate draft
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -290,9 +302,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P145에서 compiler-owned allocation/free path를 inventory하고 공통 accounting contract를 고정한다.
-2. Source surface에 노출하지 않는 deterministic allocation failure injection과 stable fatal diagnostic을 추가한다.
-3. Cleanup-heavy return/branch/loop/overwrite의 allocation/free count를 native harness와 sanitizer로 검증한다.
+1. P146에서 standard package namespace/resolution과 runtime/compiler ownership 경계를 승인한다.
+2. Program arguments, UTF-8 text/index, file I/O와 standard `Error`/`Result` API를 승인한다.
+3. Error propagation syntax와 owned key-value collection surface를 승인한 뒤 v0.6 implementation order를 확정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

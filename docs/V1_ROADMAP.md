@@ -157,7 +157,7 @@ v1로 간주한다.
 
 ## v0.5.0: Ownership and Runtime
 
-상태: implementation in progress
+상태: implementation complete, release pending
 
 목표: v1 language surface 전체에 적용할 memory model과 runtime ownership 경계를
 닫는다.
@@ -337,6 +337,7 @@ contract를 검증하고 배포하는 마일스톤이다.
 | `v0.3` 시작 전 | closure literal, capture mode, escaping closure 규칙 |
 | `v0.4` 시작 전 | enum/generic syntax와 specialization strategy |
 | `v0.5` 시작 전 | transparent recursive ADT, partial move와 first-class reference 필요성 |
+| `v0.6` 시작 전 | standard package/API, text/index, I/O error와 propagation surface |
 | `v0.7` 시작 전 | supported target matrix와 installation contract |
 | `v0.9` 시작 전 | v1 compatibility, deprecation, edition policy |
 

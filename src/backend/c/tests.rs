@@ -58,6 +58,24 @@ print(values[0])
 }
 
 #[test]
+fn generates_common_allocation_accounting_runtime() {
+    let program = parse("func main() { print(1) }").unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("#ifndef MLG_ALLOCATION_FAIL_AFTER"));
+    assert!(c.contains("static uint64_t mallang_allocation_attempts = 0;"));
+    assert!(c.contains("static uint64_t mallang_live_allocations = 0;"));
+    assert!(c.contains("static void *MLG_UNUSED mallang_alloc("));
+    assert!(c.contains("static void *MLG_UNUSED mallang_realloc("));
+    assert!(c.contains("static void MLG_UNUSED mallang_dealloc("));
+    assert!(c.contains("mallang_runtime_error(\"allocation accounting underflow\")"));
+    assert!(c.contains("static uint64_t MLG_UNUSED mallang_allocation_attempt_count(void)"));
+    assert!(c.contains("static uint64_t MLG_UNUSED mallang_live_allocation_count(void)"));
+}
+
+#[test]
 fn generates_c_for_internal_owned_slice_type_shell() {
     let program = IrProgram {
         closures: Vec::new(),
@@ -132,7 +150,7 @@ fn generates_c_drop_helpers_for_internal_cleanup_types() {
     let c = generate_c_from_ir(&program).unwrap();
 
     assert!(c.contains(
-        "static void MLG_UNUSED mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    free(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
+        "static void MLG_UNUSED mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    mallang_dealloc(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
     ));
     assert!(c.contains(
         "static void MLG_UNUSED mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->mlg_payload.mlg_Some));\n    }\n}"
@@ -1458,8 +1476,9 @@ print(total)
     assert!(c.contains("mlg_Slice_int mallang_slice_tmp_"));
     assert!(c.contains("UINT64_MAX / sizeof(int64_t)"));
     assert!(c.contains("mallang_runtime_error(\"slice allocation size overflow\")"));
-    assert!(c.contains(".mlg_data = malloc(sizeof(int64_t) * 3);"));
-    assert!(c.contains("mallang_runtime_error(\"slice allocation failed\")"));
+    assert!(
+        c.contains(".mlg_data = mallang_alloc(sizeof(int64_t) * 3, \"slice allocation failed\");")
+    );
     assert!(c.contains(".mlg_len = 3;"));
     assert!(c.contains(".mlg_cap = 3;"));
     assert!(c.contains(".mlg_data[0] = 1;"));
@@ -1534,8 +1553,8 @@ print(total)
     assert!(c.contains("int64_t mallang_slice_append_tmp_"));
     assert!(c.contains("_new_len = mallang_slice_append_tmp_"));
     assert!(c.contains("void *mallang_slice_append_tmp_"));
-    assert!(c.contains("realloc(mallang_slice_append_tmp_"));
-    assert!(c.contains("mallang_runtime_error(\"slice allocation failed\")"));
+    assert!(c.contains("mallang_realloc(mallang_slice_append_tmp_"));
+    assert!(c.contains("\"slice allocation failed\""));
     assert!(c.contains(".mlg_data[mallang_slice_append_tmp_"));
     assert!(c.contains(" = 3;"));
     assert!(c.contains("mlg_values = mallang_slice_append_tmp_"));
@@ -2322,7 +2341,7 @@ func main() {
     assert!(c.contains("typedef struct {\n    mlg_Slice_int mlg_values;"));
     assert!(c.contains("closure environment allocation failed"));
     assert!(c.contains("mlg_drop_Slice_int(&(mlg_env->mlg_values));"));
-    assert!(c.contains("free(mlg_env);"));
+    assert!(c.contains("mallang_dealloc(mlg_env);"));
     assert!(c.contains(".mlg_drop = mallang_closure_"));
     assert!(c.contains(".mlg_call = mallang_closure_"));
 }
@@ -2403,7 +2422,7 @@ func main() {
     assert!(c.contains("mlg_drop_Enum_Chain(&(mlg_node->mlg_payload.mlg_Next));"));
     assert!(c.contains("recursive enum allocation failed"));
     assert!(c.contains("invalid recursive enum handle"));
-    assert!(c.contains("free(mlg_node);"));
+    assert!(c.contains("mallang_dealloc(mlg_node);"));
 }
 
 #[test]
@@ -2503,10 +2522,11 @@ func main() {
     assert!(c.contains("MLG_STRING_STATIC = 0"));
     assert!(c.contains("MLG_STRING_OWNED = 1"));
     assert!(c.contains("mallang_string_owned_copy"));
-    assert!(c.contains("mallang_runtime_error(\"string allocation failed\")"));
+    assert!(c.contains("mallang_alloc("));
+    assert!(c.contains("\"string allocation failed\""));
     assert!(c.contains("mallang_runtime_error(\"invalid string storage\")"));
     assert!(c.contains("if (mlg_value->mlg_storage == MLG_STRING_OWNED)"));
-    assert!(c.contains("free((void *)mlg_value->mlg_data);"));
+    assert!(c.contains("mallang_dealloc((void *)mlg_value->mlg_data);"));
     assert!(c.contains("mlg_drop_string(&(mlg_value->mlg_value));"));
     assert!(c.contains("mlg_drop_string(&(mlg_env->mlg_captured));"));
     assert!(c.contains("mallang_print_string("));

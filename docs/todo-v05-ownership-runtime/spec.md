@@ -1,6 +1,6 @@
 # Spec: v0.5-ownership-runtime
 
-상태: implementation in progress (P138-P144 complete)
+상태: implementation complete, release pending (P138-P145 complete)
 
 ## 목표
 
@@ -173,6 +173,19 @@ Every owned value on normal control flow is moved or dropped exactly once.
 - User-visible panic/recover, exception and catch are not added.
 - Recoverable I/O and environment failures belong to v0.6 `Result` APIs.
 
+## Allocation Accounting Contract
+
+- Slice buffer, closure environment, recursive enum node와 owned string buffer는 generated C의
+  공통 compiler-owned allocation helper를 사용한다.
+- 새 storage lifetime을 만드는 successful allocation은 live count를 1 증가시킨다. Existing
+  allocation의 realloc growth는 count를 유지하고 null buffer의 first growth는 1 증가시킨다.
+- Non-null deallocation은 live count를 정확히 1 감소시키며 null deallocation은 no-op이다.
+- Live count가 0인데 non-null storage를 해제하려는 경로는 internal fatal accounting error다.
+- Internal test build는 source/API 변경 없이 N번째 allocation attempt를 deterministic하게
+  실패시킬 수 있다. Diagnostic은 `slice allocation failed`처럼 allocation site 의미를 유지한다.
+- Normal `main` return은 compiler-owned live allocation count 0을 만족해야 한다.
+- Fatal no-unwind failure는 pending value cleanup이나 zero live count를 보장하지 않는다.
+
 ## 구현 순서
 
 1. Q1-Q7 추천안을 승인하고 이 문서를 확정한다. (완료)
@@ -184,6 +197,7 @@ Every owned value on normal control flow is moved or dropped exactly once.
 7. Static/owned string runtime representation과 drop contract를 통합한다. (완료: P143)
 8. Borrow/range exclusion regression과 normative memory spec을 동기화한다. (완료: P144)
 9. Allocation accounting, failure injection, strict C와 sanitizer acceptance를 연결한다.
+   (완료: P145)
 
 ## 제외
 
