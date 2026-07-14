@@ -18,8 +18,8 @@ use super::{
         checked_unary_operand_temp_name, checked_unary_result_temp_name, closure_env_temp_name,
         dividend_temp_name, divisor_temp_name, if_expr_temp_block, if_expr_temp_name,
         index_source_temp_name, index_value_temp_name, match_expr_temp_name,
-        match_scrutinee_temp_name, runtime_error_call, runtime_guard, slice_append_temp_name,
-        slice_field_take_temp_name, slice_literal_temp_name,
+        match_scrutinee_temp_name, push_indented_lines, runtime_error_call, runtime_guard,
+        slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
     },
     AppendSourceExpr, CExpr, CGenerator, CompileError,
 };
@@ -90,9 +90,17 @@ impl<'a> CGenerator<'a> {
             } => {
                 self.emit_adt_constructor_stmt_expr(&expr.ty, *constructor, payload.as_deref(), env)
             }
-            IrExprKind::EnumConstructor { .. } => Err(CompileError::new(
-                "user-defined enum constructors require v0.4 C lowering",
-            )),
+            IrExprKind::EnumConstructor {
+                enum_name,
+                variant,
+                payload,
+            } => self.emit_enum_constructor_stmt_expr(
+                &expr.ty,
+                enum_name,
+                variant,
+                payload.as_deref(),
+                env,
+            ),
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(expr, scrutinee, arms, env)
             }
@@ -686,6 +694,58 @@ impl<'a> CGenerator<'a> {
         }
     }
 
+    fn emit_enum_constructor_stmt_expr(
+        &self,
+        ty: &Type,
+        enum_name: &str,
+        variant_name: &str,
+        payload: Option<&IrExpr>,
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Enum(type_name) = ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: user enum constructor must have enum type",
+            ));
+        };
+        if type_name != enum_name {
+            return Err(CompileError::new(
+                "IR invariant violation: user enum constructor type mismatch",
+            ));
+        }
+        let enum_def = self.enum_def(enum_name)?;
+        let (tag, variant) = enum_def
+            .variants
+            .iter()
+            .enumerate()
+            .find(|(_, candidate)| candidate.name == variant_name)
+            .ok_or_else(|| {
+                CompileError::new(format!(
+                    "IR invariant violation: unknown enum variant `{enum_name}.{variant_name}`"
+                ))
+            })?;
+        match (&variant.payload, payload) {
+            (None, None) => Ok(CExpr::simple(format!(
+                "({}){{ .tag = {tag} }}",
+                ty.c_name()
+            ))),
+            (Some(expected), Some(payload)) if expected == &payload.ty => {
+                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
+                Ok(CExpr {
+                    prelude,
+                    code: format!(
+                        "({}){{ .tag = {tag}, .{} = {{ .{} = {code} }} }}",
+                        ty.c_name(),
+                        c_field("payload"),
+                        c_field(variant_name)
+                    ),
+                })
+            }
+            _ => Err(CompileError::new(
+                "IR invariant violation: user enum constructor payload mismatch",
+            )),
+        }
+    }
+
     fn emit_struct_literal_stmt_expr(
         &self,
         type_name: &str,
@@ -822,10 +882,65 @@ impl<'a> CGenerator<'a> {
             Type::Result(_, _) => {
                 self.emit_result_match_stmt_expr(expr, &scrutinee_code, arms, env, prelude)
             }
+            Type::Enum(_) => self.emit_user_enum_match_stmt_expr(
+                expr,
+                &scrutinee.ty,
+                &scrutinee_code,
+                arms,
+                env,
+                prelude,
+            ),
             _ => Err(CompileError::new(
                 "IR invariant violation: match on non-ADT value",
             )),
         }
+    }
+
+    fn emit_user_enum_match_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        scrutinee_ty: &Type,
+        scrutinee: &str,
+        arms: &[IrMatchArm],
+        env: &HashMap<String, String>,
+        mut prelude: Vec<String>,
+    ) -> Result<CExpr, CompileError> {
+        if arms.is_empty() {
+            return Err(CompileError::new(
+                "IR invariant violation: user enum match requires at least one arm",
+            ));
+        }
+
+        let temp = match_expr_temp_name(expr);
+        let mut block = String::new();
+        prelude.push(format!("{} {temp};", expr.ty.c_name()));
+        for (index, arm) in arms.iter().enumerate() {
+            let plan = self.plan_user_enum_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            let emitted = self.emit_stmt_expr_with_env(&arm.expr, &plan.env)?;
+            let cleanup = self.emit_cleanup_stmts(&arm.cleanup, &plan.env)?;
+            if index == 0 {
+                block.push_str(&format!("if ({}) {{\n", plan.condition));
+            } else {
+                block.push_str(&format!(" else if ({}) {{\n", plan.condition));
+            }
+            for line in emitted.prelude {
+                push_indented_lines(&mut block, &line, 1);
+            }
+            push_indented_lines(&mut block, &format!("{temp} = {};", emitted.code), 1);
+            for line in cleanup {
+                push_indented_lines(&mut block, &line, 1);
+            }
+            block.push('}');
+        }
+        block.push_str(" else {\n");
+        push_indented_lines(&mut block, &runtime_error_call("invalid enum tag"), 1);
+        block.push('}');
+        prelude.push(block);
+
+        Ok(CExpr {
+            prelude,
+            code: temp,
+        })
     }
 
     fn emit_option_match_stmt_expr(

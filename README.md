@@ -261,6 +261,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/generics.mlg`: native smoke for explicit generic struct/function
   specialization, concrete function values, slice type arguments, and mutable
   generic receiver cleanup.
+- `examples/generic-enums.mlg`: native smoke for generic enum specialization,
+  nested user/built-in patterns, and owned payload cleanup.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, generic APIs and receivers, function values, higher-order APIs, and
   closure returns.

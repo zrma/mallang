@@ -228,6 +228,13 @@ if [[ "$generics_output" != $'7\nmallang\n11\npair\n3\nupdated' ]]; then
   echo "generics native build smoke failed: expected 7, mallang, 11, pair, 3, updated got '$generics_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/generic-enums.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/generic-enums.mlg -o target/mallang/generic-enums >/dev/null
+generic_enums_output="$(target/mallang/generic-enums)"
+if [[ "$generic_enums_output" != $'7\n-1\n0\n9' ]]; then
+  echo "generic enum native build smoke failed: expected 7, -1, 0, 9 got '$generic_enums_output'" >&2
+  exit 1
+fi
 expect_check_failure \
   "closure-borrowed-capture" \
   "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
@@ -886,4 +893,8 @@ expect_sanitized_native_output \
   "generics" \
   "target/mallang/generics.c" \
   $'7\nmallang\n11\npair\n3\nupdated'
+expect_sanitized_native_output \
+  "generic-enums" \
+  "target/mallang/generic-enums.c" \
+  $'7\n-1\n0\n9'
 expect_all_warning_clean_generated_c

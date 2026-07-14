@@ -1,0 +1,45 @@
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+type Status enum {
+    Idle
+    Busy(int)
+}
+
+type Event enum {
+    Missing
+    Changed(Status)
+}
+
+func classify(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.Some(Err(message)) { if message == "bad" { -1 } else { 0 } }
+        case Maybe.None { 0 }
+    }
+}
+
+func eventCode(value Event) int {
+    return match value {
+        case Event.Missing { 0 }
+        case Event.Changed(Status.Idle) { 1 }
+        case Event.Changed(Status.Busy(code)) { code }
+    }
+}
+
+func discard(value Maybe[[]int]) {
+    match value {
+        case Maybe.Some(_) {}
+        case Maybe.None {}
+    }
+}
+
+func main() {
+    print(classify(Maybe[Result[int, string]].Some(Ok(7))))
+    print(classify(Maybe[Result[int, string]].Some(Err("bad"))))
+    print(classify(Maybe[Result[int, string]].None))
+    print(eventCode(Event.Changed(Status.Busy(9))))
+    discard(Maybe[[]int].Some([]int{1, 2, 3}))
+}

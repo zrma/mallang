@@ -50,7 +50,9 @@ print(values[0])
     let ir = lower(&checked).unwrap();
     let c = generate_c_from_ir(&ir).unwrap();
 
-    assert!(c.contains("static void MLG_UNUSED mallang_runtime_error(const char *message)"));
+    assert!(
+        c.contains("static _Noreturn void MLG_UNUSED mallang_runtime_error(const char *message)")
+    );
     assert_eq!(c.matches("fprintf(stderr").count(), 1);
     assert!(c.contains("mallang_runtime_error(\"array index out of bounds\")"));
 }
@@ -472,6 +474,34 @@ fn rejects_invalid_ir_option_match_arm() {
     assert!(error
         .message
         .contains("IR invariant violation: invalid Option match arm"));
+}
+
+#[test]
+fn rejects_invalid_ir_user_enum_constructor_variant() {
+    let program = parse(
+        r#"
+type State enum { Idle Busy(int) }
+func main() {
+    value := State.Busy(7)
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let mut ir = lower(&checked).unwrap();
+    let IrStmtKind::Let { expr, .. } = &mut ir.functions[0].body[0].kind else {
+        panic!("expected enum constructor binding");
+    };
+    let IrExprKind::EnumConstructor { variant, .. } = &mut expr.kind else {
+        panic!("expected user enum constructor");
+    };
+    *variant = "Missing".to_string();
+
+    let error = generate_c_from_ir(&ir).unwrap_err();
+
+    assert!(error
+        .message
+        .contains("IR invariant violation: unknown enum variant `State.Missing`"));
 }
 
 #[test]
@@ -997,6 +1027,47 @@ return match value {
     assert!(c.contains(".tag = 1"));
     assert!(c.contains(".tag = 0"));
     assert!(c.contains(".some"));
+}
+
+#[test]
+fn generates_c_for_user_enum_constructors_nested_match_and_cleanup() {
+    let program = parse(
+        r#"
+type Maybe[T] enum { None Some(T) }
+
+func classify(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.Some(Err(message)) { if message == "bad" { -1 } else { 0 } }
+        case Maybe.None { 0 }
+    }
+}
+
+func discard(value Maybe[[]int]) {
+    match value {
+        case Maybe.Some(_) {}
+        case Maybe.None {}
+    }
+}
+
+func main() {
+    print(classify(Maybe[Result[int, string]].Some(Ok(7))))
+    discard(Maybe[[]int].Some([]int{1, 2}))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("union {"));
+    assert!(c.contains(".mlg_payload = { .mlg_Some ="));
+    assert!(c.contains(".mlg_payload.mlg_Some"));
+    assert!(c.contains(".ok"));
+    assert!(c.contains(".err"));
+    assert!(c.contains("mallang_runtime_error(\"invalid enum tag\")"));
+    assert!(c.contains("mlg_drop_Slice_int(&("));
 }
 
 #[test]
