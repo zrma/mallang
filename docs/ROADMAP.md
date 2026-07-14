@@ -1126,9 +1126,20 @@
 
 ## P139: Recursive Type Graph Validation
 
-- [ ] concrete struct/user enum payload와 nested wrapper를 포함한 type dependency graph 작성
-- [ ] recursive SCC가 user enum과 non-recursive base variant를 모두 가질 때만 허용
-- [ ] direct/mutual struct-only recursion과 base 없는 enum recursion source diagnostic 유지
-- [ ] built-in `Option`/`Result`만으로 생긴 cycle에는 implicit indirection을 부여하지 않음
-- [ ] generic specialization과 imported enum의 recursive graph를 concrete type 기준으로 검사
-- [ ] accepted recursive enum과 rejected cycle shape semantic regression 추가
+- [x] concrete struct/user enum payload와 nested wrapper를 포함한 type dependency graph 작성
+- [x] recursive SCC가 user enum과 non-recursive base variant를 모두 가질 때만 허용
+- [x] direct/mutual struct-only recursion과 base 없는 enum recursion source diagnostic 유지
+- [x] built-in `Option`/`Result`만으로 생긴 cycle에는 implicit indirection을 부여하지 않음
+- [x] generic specialization과 imported enum의 recursive graph를 concrete type 기준으로 검사
+- [x] accepted recursive enum과 rejected cycle shape semantic regression 추가
+- [x] indirect representation 구현 전 recursive enum typed IR invariant boundary 유지
+
+## P140: Recursive Multi-Payload Typed IR
+
+- [ ] `IrEnumVariant`와 recursive `IrMatchPattern`을 positional payload list로 일반화
+- [ ] recursive enum을 non-recursive inline enum과 구분하는 typed storage metadata 추가
+- [ ] constructor argument를 left-to-right로 평가한 뒤 owned payload slot으로 이동
+- [ ] consuming match에서 active payload 전체 binding/wildcard와 storage shell release 표현
+- [ ] recursive/multi-payload cleanup binding과 drop path를 typed IR에 보존
+- [ ] non-recursive zero/single payload IR compatibility regression 유지
+- [ ] recursive generic enum constructor/match typed IR acceptance 추가

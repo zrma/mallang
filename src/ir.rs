@@ -439,6 +439,15 @@ impl<'a> Lowerer<'a> {
         let mut enums = Vec::new();
         for declaration in &self.checked.program.enums {
             let sig = self.enum_sig(&declaration.name, declaration.span)?;
+            if self.checked.recursive_enums.contains(&declaration.name) {
+                return Err(IrError::new(
+                    format!(
+                        "recursive enum `{}` is not supported by typed IR yet",
+                        sig.pattern_name
+                    ),
+                    declaration.span,
+                ));
+            }
             let variants = sig
                 .variants
                 .iter()
@@ -6493,5 +6502,30 @@ func main() {
             .message
             .contains("multi-payload enum variant `Pair.Pair`"));
         assert!(error.message.contains("not supported by typed IR yet"));
+    }
+
+    #[test]
+    fn ir_rejects_recursive_enum_until_indirect_lowering_exists() {
+        let program = parse(
+            r#"
+type Chain enum {
+    End
+    Next(Chain)
+}
+
+func main() {
+    tail := Chain.End
+    values := Chain.Next(tail)
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        assert!(checked.recursive_enums.contains("Chain"));
+
+        let error = lower(&checked).unwrap_err();
+        assert!(error
+            .message
+            .contains("recursive enum `Chain` is not supported by typed IR yet"));
     }
 }

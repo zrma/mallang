@@ -96,6 +96,14 @@
   호환성을 유지한다. Typed IR/backend는 아직 single payload 구조이므로 multi-payload enum은
   semantic `check`까지 허용하되 IR lowering에서 enum/variant를 명시한 invariant diagnostic으로
   중단한다.
+- v0.5 P139 완료: concrete struct/user enum dependency graph와 SCC validation을 추가했다.
+  모든 recursive cycle은 user enum indirection boundary를 지나야 하며 component 내부 값을
+  요구하지 않는 enum base variant가 있어야 한다. Direct/mutual struct-only recursion, mixed
+  component 안의 struct-only subcycle, base 없는 enum recursion과 built-in wrapper로 감싼
+  비생산적 recursion은 source diagnostic으로 거부한다. Recursive generic enum은 concrete
+  specialization 뒤 검사하며 cross-package `List[T]`도 같은 경로를 사용한다. Accepted recursive
+  enum 이름은 checked semantic metadata에 보존하고 indirect representation 구현 전 typed IR에서
+  명시적으로 차단한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -239,9 +247,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Concrete struct/user enum payload의 recursive type dependency graph를 만든다.
-2. User enum과 base variant가 있는 SCC만 transparent recursive representation 대상으로 허용한다.
-3. Struct-only, base 없는 cycle과 built-in wrapper만으로 생긴 cycle을 source diagnostic으로 거부한다.
+1. Typed IR enum variant와 pattern을 positional payload list로 일반화한다.
+2. Recursive enum storage metadata와 constructor/match ownership transfer를 IR에 보존한다.
+3. Non-recursive zero/single payload compatibility와 recursive generic enum lowering을 함께 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
