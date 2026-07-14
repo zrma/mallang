@@ -59,13 +59,21 @@ pub struct IrStructField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrEnum {
     pub name: String,
+    pub source_name: String,
+    pub storage: IrEnumStorage,
     pub variants: Vec<IrEnumVariant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IrEnumStorage {
+    Inline,
+    Owned,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrEnumVariant {
     pub name: String,
-    pub payload: Option<Type>,
+    pub payloads: Vec<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,7 +199,8 @@ pub enum IrExprKind {
     },
     VariantConstructor {
         variant: String,
-        payload: Option<Box<IrExpr>>,
+        storage: IrEnumStorage,
+        payloads: Vec<IrExpr>,
     },
     Match {
         scrutinee: Box<IrExpr>,
@@ -279,7 +288,8 @@ pub enum IrMatchPattern {
     Variant {
         ty: Type,
         variant: String,
-        payload: Option<Box<IrMatchPattern>>,
+        storage: IrEnumStorage,
+        payloads: Vec<IrMatchPattern>,
     },
 }
 
@@ -439,44 +449,18 @@ impl<'a> Lowerer<'a> {
         let mut enums = Vec::new();
         for declaration in &self.checked.program.enums {
             let sig = self.enum_sig(&declaration.name, declaration.span)?;
-            if self.checked.recursive_enums.contains(&declaration.name) {
-                return Err(IrError::new(
-                    format!(
-                        "recursive enum `{}` is not supported by typed IR yet",
-                        sig.pattern_name
-                    ),
-                    declaration.span,
-                ));
-            }
             let variants = sig
                 .variants
                 .iter()
-                .map(|variant| {
-                    let payload = match variant.payloads.as_slice() {
-                        [] => None,
-                        [payload] => Some(payload.clone()),
-                        _ => {
-                            return Err(IrError::new(
-                                format!(
-                                    "multi-payload enum variant `{}.{}` is not supported by typed IR yet",
-                                    sig.pattern_name, variant.name
-                                ),
-                                variant
-                                    .payload_spans
-                                    .get(1)
-                                    .copied()
-                                    .unwrap_or(declaration.span),
-                            ));
-                        }
-                    };
-                    Ok(IrEnumVariant {
-                        name: variant.name.clone(),
-                        payload,
-                    })
+                .map(|variant| IrEnumVariant {
+                    name: variant.name.clone(),
+                    payloads: variant.payloads.clone(),
                 })
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect();
             enums.push(IrEnum {
                 name: declaration.name.clone(),
+                source_name: sig.pattern_name.clone(),
+                storage: self.enum_storage(&Type::Enum(declaration.name.clone())),
                 variants,
             });
         }
@@ -1482,12 +1466,12 @@ impl<'a> Lowerer<'a> {
     ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
         arms.iter()
             .map(|arm| {
-                let (pattern, binding) =
+                let (pattern, bindings) =
                     self.lower_adt_match_pattern(&arm.pattern, expected, arm.span)?;
                 Ok(PreparedMatchArm {
                     pattern,
                     expr: &arm.expr,
-                    binding,
+                    bindings,
                 })
             })
             .collect()
@@ -1500,12 +1484,12 @@ impl<'a> Lowerer<'a> {
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
         arms.iter()
             .map(|arm| {
-                let (pattern, binding) =
+                let (pattern, bindings) =
                     self.lower_adt_match_pattern(&arm.pattern, expected, arm.span)?;
                 Ok(PreparedMatchBlockArm {
                     pattern,
                     block: &arm.block,
-                    binding,
+                    bindings,
                 })
             })
             .collect()
@@ -1516,25 +1500,37 @@ impl<'a> Lowerer<'a> {
         pattern: &MatchPattern,
         expected: &Type,
         span: Span,
-    ) -> Result<(IrMatchPattern, Option<(String, Type)>), IrError> {
+    ) -> Result<(IrMatchPattern, Vec<(String, Type)>), IrError> {
+        let mut discard_index = 0;
+        self.lower_adt_match_pattern_inner(pattern, expected, span, &mut discard_index)
+    }
+
+    fn lower_adt_match_pattern_inner(
+        &self,
+        pattern: &MatchPattern,
+        expected: &Type,
+        span: Span,
+        discard_index: &mut usize,
+    ) -> Result<(IrMatchPattern, Vec<(String, Type)>), IrError> {
         match pattern {
             MatchPattern::Wildcard if expected.needs_cleanup() => {
-                let name = match_discard_name(span);
+                let name = match_discard_name(span, *discard_index);
+                *discard_index += 1;
                 Ok((
                     IrMatchPattern::Binding {
                         name: name.clone(),
                         ty: expected.clone(),
                     },
-                    Some((name, expected.clone())),
+                    vec![(name, expected.clone())],
                 ))
             }
-            MatchPattern::Wildcard => Ok((IrMatchPattern::Wildcard(expected.clone()), None)),
+            MatchPattern::Wildcard => Ok((IrMatchPattern::Wildcard(expected.clone()), Vec::new())),
             MatchPattern::Binding(name) => Ok((
                 IrMatchPattern::Binding {
                     name: name.clone(),
                     ty: expected.clone(),
                 },
-                Some((name.clone(), expected.clone())),
+                vec![(name.clone(), expected.clone())],
             )),
             MatchPattern::Variant {
                 type_name,
@@ -1564,39 +1560,32 @@ impl<'a> Lowerer<'a> {
                             span,
                         )
                     })?;
-                let (payload, binding) = match (
-                    variant_sig.payloads.as_slice(),
-                    payloads.as_slice(),
-                ) {
-                    ([], []) => (None, None),
-                    ([payload_ty], [pattern]) => {
-                        let (pattern, binding) =
-                            self.lower_adt_match_pattern(pattern, payload_ty, span)?;
-                        (Some(Box::new(pattern)), binding)
-                    }
-                    (payloads, _) if payloads.len() > 1 => {
-                        return Err(IrError::new(
-                            format!(
-                                "multi-payload enum variant `{}.{}` is not supported by typed IR yet",
-                                enum_sig.pattern_name, variant_sig.name
-                            ),
-                            span,
-                        ));
-                    }
-                    _ => {
-                        return Err(IrError::new(
-                            "semantic analysis accepted invalid enum pattern arity",
-                            span,
-                        ));
-                    }
-                };
+                if variant_sig.payloads.len() != payloads.len() {
+                    return Err(IrError::new(
+                        "semantic analysis accepted invalid enum pattern arity",
+                        span,
+                    ));
+                }
+                let mut lowered_payloads = Vec::new();
+                let mut bindings = Vec::new();
+                for (payload_ty, payload) in variant_sig.payloads.iter().zip(payloads) {
+                    let (payload, mut payload_bindings) = self.lower_adt_match_pattern_inner(
+                        payload,
+                        payload_ty,
+                        span,
+                        discard_index,
+                    )?;
+                    lowered_payloads.push(payload);
+                    bindings.append(&mut payload_bindings);
+                }
                 Ok((
                     IrMatchPattern::Variant {
                         ty: expected.clone(),
                         variant: variant.clone(),
-                        payload,
+                        storage: self.enum_storage(expected),
+                        payloads: lowered_payloads,
                     },
-                    binding,
+                    bindings,
                 ))
             }
             MatchPattern::Some(binding) => {
@@ -1610,12 +1599,13 @@ impl<'a> Lowerer<'a> {
                     IrMatchPattern::Variant {
                         ty: expected.clone(),
                         variant: "Some".to_string(),
-                        payload: Some(Box::new(IrMatchPattern::Binding {
+                        storage: IrEnumStorage::Inline,
+                        payloads: vec![IrMatchPattern::Binding {
                             name: binding.clone(),
                             ty: inner.as_ref().clone(),
-                        })),
+                        }],
                     },
-                    Some((binding.clone(), inner.as_ref().clone())),
+                    vec![(binding.clone(), inner.as_ref().clone())],
                 ))
             }
             MatchPattern::None => {
@@ -1629,9 +1619,10 @@ impl<'a> Lowerer<'a> {
                     IrMatchPattern::Variant {
                         ty: expected.clone(),
                         variant: "None".to_string(),
-                        payload: None,
+                        storage: IrEnumStorage::Inline,
+                        payloads: Vec::new(),
                     },
-                    None,
+                    Vec::new(),
                 ))
             }
             MatchPattern::Ok(binding) | MatchPattern::Err(binding) => {
@@ -1650,12 +1641,13 @@ impl<'a> Lowerer<'a> {
                     IrMatchPattern::Variant {
                         ty: expected.clone(),
                         variant: variant.to_string(),
-                        payload: Some(Box::new(IrMatchPattern::Binding {
+                        storage: IrEnumStorage::Inline,
+                        payloads: vec![IrMatchPattern::Binding {
                             name: binding.clone(),
                             ty: payload_ty.clone(),
-                        })),
+                        }],
                     },
-                    Some((binding.clone(), payload_ty.clone())),
+                    vec![(binding.clone(), payload_ty.clone())],
                 ))
             }
             MatchPattern::NestedBuiltin { variant, payload } => {
@@ -1670,14 +1662,16 @@ impl<'a> Lowerer<'a> {
                         ));
                     }
                 };
-                let (payload, binding) = self.lower_adt_match_pattern(payload, payload_ty, span)?;
+                let (payload, bindings) =
+                    self.lower_adt_match_pattern_inner(payload, payload_ty, span, discard_index)?;
                 Ok((
                     IrMatchPattern::Variant {
                         ty: expected.clone(),
                         variant: variant.clone(),
-                        payload: Some(Box::new(payload)),
+                        storage: IrEnumStorage::Inline,
+                        payloads: vec![payload],
                     },
-                    binding,
+                    bindings,
                 ))
             }
         }
@@ -1726,25 +1720,30 @@ impl<'a> Lowerer<'a> {
         expected: Option<&Type>,
     ) -> Result<IrMatchArm, IrError> {
         let mut arm_locals = locals.clone();
-        if let Some((name, ty)) = &arm.binding {
+        for (name, ty) in &arm.bindings {
             arm_locals.insert(name.clone(), ty.clone());
         }
 
         let mut expr = self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?;
         let mut cleanup = Vec::new();
-        if let Some((name, ty)) = &arm.binding {
-            if ty.needs_cleanup() {
-                let active = [CleanupBinding {
-                    name: name.clone(),
-                    ty: ty.clone(),
-                    span: arm.expr.span,
-                }];
-                let insertion = insert_expr_cleanup_drops(expr, &active);
-                if !insertion.moved_roots.contains(name) {
-                    push_cleanup_drop(&mut cleanup, &active[0], arm.expr.span);
+        let active = arm
+            .bindings
+            .iter()
+            .filter(|(_, ty)| ty.needs_cleanup())
+            .map(|(name, ty)| CleanupBinding {
+                name: name.clone(),
+                ty: ty.clone(),
+                span: arm.expr.span,
+            })
+            .collect::<Vec<_>>();
+        if !active.is_empty() {
+            let insertion = insert_expr_cleanup_drops(expr, &active);
+            for binding in &active {
+                if !insertion.moved_roots.contains(&binding.name) {
+                    push_cleanup_drop(&mut cleanup, binding, arm.expr.span);
                 }
-                expr = insertion.expr;
             }
+            expr = insertion.expr;
         }
 
         Ok(IrMatchArm {
@@ -1773,23 +1772,23 @@ impl<'a> Lowerer<'a> {
         return_type: &Type,
     ) -> Result<IrMatchBlockArm, IrError> {
         let mut arm_locals = locals.clone();
-        if let Some((name, ty)) = &arm.binding {
+        for (name, ty) in &arm.bindings {
             arm_locals.insert(name.clone(), ty.clone());
         }
 
         let mut body = self.lower_block_statements(arm.block, &mut arm_locals, return_type)?;
-        if let Some((name, ty)) = &arm.binding {
-            if ty.needs_cleanup() {
-                body = insert_straight_line_cleanup_drops(
-                    body,
-                    &[IrParam {
-                        name: name.clone(),
-                        mode: ParamMode::Owned,
-                        ty: ty.clone(),
-                    }],
-                    arm.block.span,
-                );
-            }
+        let cleanup_params = arm
+            .bindings
+            .iter()
+            .filter(|(_, ty)| ty.needs_cleanup())
+            .map(|(name, ty)| IrParam {
+                name: name.clone(),
+                mode: ParamMode::Owned,
+                ty: ty.clone(),
+            })
+            .collect::<Vec<_>>();
+        if !cleanup_params.is_empty() {
+            body = insert_straight_line_cleanup_drops(body, &cleanup_params, arm.block.span);
         }
 
         Ok(IrMatchBlockArm {
@@ -1814,7 +1813,8 @@ impl<'a> Lowerer<'a> {
         Ok((
             IrExprKind::VariantConstructor {
                 variant: "None".to_string(),
-                payload: None,
+                storage: IrEnumStorage::Inline,
+                payloads: Vec::new(),
             },
             expected.clone(),
         ))
@@ -1847,25 +1847,9 @@ impl<'a> Lowerer<'a> {
                     span,
                 )
             })?;
-        let payload = match (variant.payloads.as_slice(), args) {
-            ([], None) => None,
-            ([payload_ty], Some(args)) => {
-                let arg = expect_constructor_arg(variant_name, args, span)?;
-                Some(Box::new(self.lower_expr_with_expected(
-                    &arg.expr,
-                    locals,
-                    Some(payload_ty),
-                )?))
-            }
-            (payloads, _) if payloads.len() > 1 => {
-                return Err(IrError::new(
-                    format!(
-                        "multi-payload enum variant `{}.{variant_name}` is not supported by typed IR yet",
-                        self.enum_sig(enum_name, span)?.pattern_name
-                    ),
-                    span,
-                ));
-            }
+        let args = match (variant.payloads.is_empty(), args) {
+            (true, None) => &[][..],
+            (false, Some(args)) if args.len() == variant.payloads.len() => args,
             _ => {
                 return Err(IrError::new(
                     "semantic analysis accepted invalid enum constructor arity",
@@ -1873,10 +1857,21 @@ impl<'a> Lowerer<'a> {
                 ));
             }
         };
+        let mut payloads = Vec::new();
+        for (payload_ty, arg) in variant.payloads.iter().zip(args) {
+            if !matches!(arg.mode, ArgMode::Owned) {
+                return Err(IrError::new(
+                    "semantic analysis accepted borrowed enum constructor payload",
+                    arg.span,
+                ));
+            }
+            payloads.push(self.lower_expr_with_expected(&arg.expr, locals, Some(payload_ty))?);
+        }
         Ok((
             IrExprKind::VariantConstructor {
                 variant: variant_name.to_string(),
-                payload,
+                storage: self.enum_storage(&ty),
+                payloads,
             },
             ty,
         ))
@@ -1900,7 +1895,8 @@ impl<'a> Lowerer<'a> {
         Ok((
             IrExprKind::VariantConstructor {
                 variant: "Some".to_string(),
-                payload: Some(Box::new(payload)),
+                storage: IrEnumStorage::Inline,
+                payloads: vec![payload],
             },
             ty,
         ))
@@ -1929,7 +1925,8 @@ impl<'a> Lowerer<'a> {
         Ok((
             IrExprKind::VariantConstructor {
                 variant: "Ok".to_string(),
-                payload: Some(Box::new(payload)),
+                storage: IrEnumStorage::Inline,
+                payloads: vec![payload],
             },
             ty,
         ))
@@ -1958,7 +1955,8 @@ impl<'a> Lowerer<'a> {
         Ok((
             IrExprKind::VariantConstructor {
                 variant: "Err".to_string(),
-                payload: Some(Box::new(payload)),
+                storage: IrEnumStorage::Inline,
+                payloads: vec![payload],
             },
             ty,
         ))
@@ -2337,6 +2335,13 @@ impl<'a> Lowerer<'a> {
             .enums
             .get(name)
             .ok_or_else(|| IrError::new(format!("unknown enum `{name}`"), span))
+    }
+
+    fn enum_storage(&self, ty: &Type) -> IrEnumStorage {
+        match ty {
+            Type::Enum(name) if self.checked.recursive_enums.contains(name) => IrEnumStorage::Owned,
+            _ => IrEnumStorage::Inline,
+        }
     }
 
     fn closure(&self, span: Span) -> Result<&CheckedClosure, IrError> {
@@ -2940,13 +2945,24 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 else_cleanup,
             }
         }
-        IrExprKind::VariantConstructor { variant, payload } => {
-            let payload = payload.map(|payload| {
-                let insertion = insert_expr_cleanup_drops(*payload, active);
-                moved_roots.extend(insertion.moved_roots);
-                Box::new(insertion.expr)
-            });
-            IrExprKind::VariantConstructor { variant, payload }
+        IrExprKind::VariantConstructor {
+            variant,
+            storage,
+            payloads,
+        } => {
+            let payloads = payloads
+                .into_iter()
+                .map(|payload| {
+                    let insertion = insert_expr_cleanup_drops(payload, active);
+                    moved_roots.extend(insertion.moved_roots);
+                    insertion.expr
+                })
+                .collect();
+            IrExprKind::VariantConstructor {
+                variant,
+                storage,
+                payloads,
+            }
         }
         IrExprKind::Match { scrutinee, arms } => {
             let scrutinee = insert_expr_cleanup_drops(*scrutinee, active);
@@ -3506,8 +3522,8 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
         IrExprKind::Var(name) if expr.ty.needs_cleanup() => {
             roots.insert(name.clone());
         }
-        IrExprKind::VariantConstructor { payload, .. } => {
-            if let Some(payload) = payload {
+        IrExprKind::VariantConstructor { payloads, .. } => {
+            for payload in payloads {
                 collect_cleanup_moved_roots(payload, roots);
             }
         }
@@ -3661,25 +3677,26 @@ fn closure_ir_name(span: Span) -> String {
     )
 }
 
-fn match_discard_name(span: Span) -> String {
+fn match_discard_name(span: Span, index: usize) -> String {
     format!(
-        "mallang_match_discard_{}_{}_{}",
+        "mallang_match_discard_{}_{}_{}_{}",
         span.source.index(),
         span.start,
-        span.end
+        span.end,
+        index
     )
 }
 
 struct PreparedMatchArm<'a> {
     pattern: IrMatchPattern,
     expr: &'a Expr,
-    binding: Option<(String, Type)>,
+    bindings: Vec<(String, Type)>,
 }
 
 struct PreparedMatchBlockArm<'a> {
     pattern: IrMatchPattern,
     block: &'a Block,
-    binding: Option<(String, Type)>,
+    bindings: Vec<(String, Type)>,
 }
 
 struct IrRangeForParts<'a> {
@@ -3762,10 +3779,11 @@ mod tests {
         IrMatchPattern::Variant {
             ty: Type::Option(Box::new(Type::Int)),
             variant: "Some".to_string(),
-            payload: Some(Box::new(IrMatchPattern::Binding {
+            storage: IrEnumStorage::Inline,
+            payloads: vec![IrMatchPattern::Binding {
                 name: name.to_string(),
                 ty: Type::Int,
-            })),
+            }],
         }
     }
 
@@ -3773,7 +3791,8 @@ mod tests {
         IrMatchPattern::Variant {
             ty: Type::Option(Box::new(Type::Int)),
             variant: "None".to_string(),
-            payload: None,
+            storage: IrEnumStorage::Inline,
+            payloads: Vec::new(),
         }
     }
 
@@ -5093,9 +5112,9 @@ func main() {}
             panic!("expected return");
         };
         assert!(matches!(
-            expr.kind,
-            IrExprKind::VariantConstructor { ref variant, payload: None }
-                if variant == "None"
+            &expr.kind,
+            IrExprKind::VariantConstructor { variant, payloads, .. }
+                if variant == "None" && payloads.is_empty()
         ));
         assert_eq!(expr.ty, Type::Option(Box::new(Type::Int)));
     }
@@ -5131,11 +5150,12 @@ func main() {}
             IrMatchPattern::Variant {
                 ty: Type::Option(_),
                 variant,
-                payload: Some(payload),
+                payloads,
+                ..
             } if variant == "Some"
                 && matches!(
-                    payload.as_ref(),
-                    IrMatchPattern::Binding { name, ty: Type::Int } if name == "inner"
+                    payloads.as_slice(),
+                    [IrMatchPattern::Binding { name, ty: Type::Int }] if name == "inner"
                 )
         ));
         assert!(matches!(
@@ -5143,8 +5163,9 @@ func main() {}
             IrMatchPattern::Variant {
                 ty: Type::Option(_),
                 variant,
-                payload: None,
-            } if variant == "None"
+                payloads,
+                ..
+            } if variant == "None" && payloads.is_empty()
         ));
     }
 
@@ -5174,25 +5195,25 @@ func main() {}
             panic!("expected match expression");
         };
         let IrMatchPattern::Variant {
-            variant,
-            payload: Some(payload),
-            ..
+            variant, payloads, ..
         } = &arms[0].pattern
         else {
             panic!("expected outer Option variant");
         };
         assert_eq!(variant, "Some");
+        let [IrMatchPattern::Variant {
+            ty: Type::Result(_, _),
+            variant,
+            payloads: inner,
+            ..
+        }] = payloads.as_slice()
+        else {
+            panic!("expected nested Result variant");
+        };
+        assert_eq!(variant, "Ok");
         assert!(matches!(
-            payload.as_ref(),
-            IrMatchPattern::Variant {
-                ty: Type::Result(_, _),
-                variant,
-                payload: Some(inner),
-            } if variant == "Ok"
-                && matches!(
-                    inner.as_ref(),
-                    IrMatchPattern::Binding { name, ty: Type::Int } if name == "item"
-                )
+            inner.as_slice(),
+            [IrMatchPattern::Binding { name, ty: Type::Int }] if name == "item"
         ));
     }
 
@@ -6361,7 +6382,7 @@ func main() {
                 .variants
                 .iter()
                 .find(|variant| variant.name == "Some")
-                .and_then(|variant| variant.payload.as_ref()),
+                .and_then(|variant| variant.payloads.first()),
             Some(Type::Result(ok, err))
                 if ok.as_ref() == &Type::Int && err.as_ref() == &Type::String
         ));
@@ -6376,7 +6397,10 @@ func main() {
             _ => None,
         });
         let Some(IrExpr {
-            kind: IrExprKind::VariantConstructor { variant, payload },
+            kind:
+                IrExprKind::VariantConstructor {
+                    variant, payloads, ..
+                },
             ..
         }) = constructor
         else {
@@ -6384,8 +6408,9 @@ func main() {
         };
         assert_eq!(variant, "Some");
         assert!(matches!(
-            payload.as_deref().map(|payload| &payload.kind),
-            Some(IrExprKind::VariantConstructor { variant, .. }) if variant == "Ok"
+            payloads.as_slice(),
+            [IrExpr { kind: IrExprKind::VariantConstructor { variant, .. }, .. }]
+                if variant == "Ok"
         ));
 
         let unwrap = ir
@@ -6399,19 +6424,21 @@ func main() {
         let IrExprKind::Match { arms, .. } = &expr.kind else {
             panic!("expected match expression");
         };
-        let IrMatchPattern::Variant { payload, .. } = &arms[0].pattern else {
+        let IrMatchPattern::Variant { payloads, .. } = &arms[0].pattern else {
             panic!("expected user enum pattern");
         };
-        let Some(IrMatchPattern::Variant {
-            variant, payload, ..
-        }) = payload.as_deref()
+        let [IrMatchPattern::Variant {
+            variant,
+            payloads: nested_payloads,
+            ..
+        }] = payloads.as_slice()
         else {
             panic!("expected nested built-in pattern");
         };
         assert_eq!(variant, "Ok");
         assert!(matches!(
-            payload.as_deref(),
-            Some(IrMatchPattern::Binding { name, ty })
+            nested_payloads.as_slice(),
+            [IrMatchPattern::Binding { name, ty }]
                 if name == "item" && ty == &Type::Int
         ));
     }
@@ -6454,10 +6481,10 @@ func main() {}
         let IrExprKind::Match { arms, .. } = &expr.kind else {
             panic!("expected expression match");
         };
-        let IrMatchPattern::Variant { payload, .. } = &arms[0].pattern else {
+        let IrMatchPattern::Variant { payloads, .. } = &arms[0].pattern else {
             panic!("expected Some pattern");
         };
-        let Some(IrMatchPattern::Binding { name, ty }) = payload.as_deref() else {
+        let [IrMatchPattern::Binding { name, ty }] = payloads.as_slice() else {
             panic!("expected cleanup binding for wildcard payload");
         };
         assert!(name.starts_with("mallang_match_discard_"));
@@ -6473,10 +6500,10 @@ func main() {}
         let IrStmtKind::Match { arms, .. } = &statement.body[0].kind else {
             panic!("expected statement match");
         };
-        let IrMatchPattern::Variant { payload, .. } = &arms[0].pattern else {
+        let IrMatchPattern::Variant { payloads, .. } = &arms[0].pattern else {
             panic!("expected Some pattern");
         };
-        let Some(IrMatchPattern::Binding { name, .. }) = payload.as_deref() else {
+        let [IrMatchPattern::Binding { name, .. }] = payloads.as_slice() else {
             panic!("expected cleanup binding for wildcard payload");
         };
         assert_eq!(arms[0].body.len(), 1);
@@ -6484,7 +6511,7 @@ func main() {}
     }
 
     #[test]
-    fn ir_rejects_multi_payload_enum_until_runtime_lowering_exists() {
+    fn ir_lowers_multi_payload_enum_metadata_and_constructors() {
         let program = parse(
             r#"
 type Pair enum { Pair(int, string) }
@@ -6496,16 +6523,85 @@ func main() {
         )
         .unwrap();
         let checked = check(&program).unwrap();
-        let error = lower(&checked).unwrap_err();
+        let ir = lower(&checked).unwrap();
 
-        assert!(error
-            .message
-            .contains("multi-payload enum variant `Pair.Pair`"));
-        assert!(error.message.contains("not supported by typed IR yet"));
+        assert_eq!(ir.enums[0].storage, IrEnumStorage::Inline);
+        assert_eq!(
+            ir.enums[0].variants[0].payloads,
+            vec![Type::Int, Type::String]
+        );
+        let IrStmtKind::Let { expr, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected constructor binding");
+        };
+        let IrExprKind::VariantConstructor {
+            storage, payloads, ..
+        } = &expr.kind
+        else {
+            panic!("expected variant constructor");
+        };
+        assert_eq!(*storage, IrEnumStorage::Inline);
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0].ty, Type::Int);
+        assert_eq!(payloads[1].ty, Type::String);
     }
 
     #[test]
-    fn ir_rejects_recursive_enum_until_indirect_lowering_exists() {
+    fn ir_preserves_multi_payload_match_bindings_and_cleanup() {
+        let program = parse(
+            r#"
+type Bundle enum { Both([]int, []string) }
+
+func consume(value Bundle) int {
+    return match value {
+        case Bundle.Both(_, _) { 0 }
+    }
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let consume = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "consume")
+            .unwrap();
+        let IrStmtKind::Return { expr } = &consume.body[0].kind else {
+            panic!("expected match return");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        let IrMatchPattern::Variant {
+            storage, payloads, ..
+        } = &arms[0].pattern
+        else {
+            panic!("expected multi-payload pattern");
+        };
+        assert_eq!(*storage, IrEnumStorage::Inline);
+        let [IrMatchPattern::Binding {
+            name: first_name,
+            ty: Type::Slice(first),
+        }, IrMatchPattern::Binding {
+            name: second_name,
+            ty: Type::Slice(second),
+        }] = payloads.as_slice()
+        else {
+            panic!("expected two owned wildcard bindings");
+        };
+        assert_eq!(first.as_ref(), &Type::Int);
+        assert_eq!(second.as_ref(), &Type::String);
+        assert_ne!(first_name, second_name);
+        assert_eq!(arms[0].cleanup.len(), 2);
+        assert_drop_of(&arms[0].cleanup[0], first_name);
+        assert_drop_of(&arms[0].cleanup[1], second_name);
+    }
+
+    #[test]
+    fn ir_marks_recursive_enum_metadata_and_constructors_as_owned() {
         let program = parse(
             r#"
 type Chain enum {
@@ -6522,10 +6618,123 @@ func main() {
         .unwrap();
         let checked = check(&program).unwrap();
         assert!(checked.recursive_enums.contains("Chain"));
+        let ir = lower(&checked).unwrap();
 
-        let error = lower(&checked).unwrap_err();
-        assert!(error
-            .message
-            .contains("recursive enum `Chain` is not supported by typed IR yet"));
+        assert_eq!(ir.enums[0].source_name, "Chain");
+        assert_eq!(ir.enums[0].storage, IrEnumStorage::Owned);
+        let constructors = ir.functions[0]
+            .body
+            .iter()
+            .filter_map(|statement| match &statement.kind {
+                IrStmtKind::Let { expr, .. } => Some(expr),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(constructors.len(), 2);
+        for constructor in constructors {
+            let IrExprKind::VariantConstructor { storage, .. } = &constructor.kind else {
+                panic!("expected variant constructor");
+            };
+            assert_eq!(*storage, IrEnumStorage::Owned);
+        }
+    }
+
+    #[test]
+    fn ir_lowers_recursive_generic_enum_constructors_and_matches() {
+        let program = parse(
+            r#"
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+func first(value List[int]) int {
+    return match value {
+        case List.Nil { 0 }
+        case List.Cons(head, tail) { head }
+    }
+}
+
+func main() {
+    tail := List[int].Nil
+    values := List[int].Cons(7, tail)
+    print(first(values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let list = ir
+            .enums
+            .iter()
+            .find(|definition| {
+                definition.source_name == "List"
+                    && definition.storage == IrEnumStorage::Owned
+                    && definition
+                        .variants
+                        .iter()
+                        .any(|variant| variant.name == "Cons")
+            })
+            .expect("expected specialized List enum metadata");
+        assert_eq!(list.storage, IrEnumStorage::Owned);
+        assert_eq!(
+            list.variants
+                .iter()
+                .find(|variant| variant.name == "Cons")
+                .unwrap()
+                .payloads
+                .len(),
+            2
+        );
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let constructors = main
+            .body
+            .iter()
+            .filter_map(|statement| match &statement.kind {
+                IrStmtKind::Let { expr, .. } => Some(expr),
+                _ => None,
+            });
+        for constructor in constructors {
+            let IrExprKind::VariantConstructor { storage, .. } = &constructor.kind else {
+                panic!("expected recursive enum constructor");
+            };
+            assert_eq!(*storage, IrEnumStorage::Owned);
+        }
+
+        let first = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "first")
+            .unwrap();
+        let IrStmtKind::Return { expr } = &first.body[0].kind else {
+            panic!("expected match return");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        let IrMatchPattern::Variant {
+            storage, payloads, ..
+        } = &arms[1].pattern
+        else {
+            panic!("expected Cons pattern");
+        };
+        assert_eq!(*storage, IrEnumStorage::Owned);
+        assert_eq!(payloads.len(), 2);
+        assert!(matches!(
+            payloads.as_slice(),
+            [
+                IrMatchPattern::Binding { name, ty: Type::Int },
+                IrMatchPattern::Binding { ty: Type::Enum(_), .. }
+            ] if name == "head"
+        ));
+        assert_eq!(arms[1].cleanup.len(), 1);
+        assert_drop_of(&arms[1].cleanup[0], "tail");
     }
 }

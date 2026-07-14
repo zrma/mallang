@@ -49,7 +49,7 @@ impl<'a> TypeEmitter<'a> {
         for enum_def in &self.program.enums {
             collect_type(&Type::Enum(enum_def.name.clone()), &mut types);
             for variant in &enum_def.variants {
-                if let Some(payload) = &variant.payload {
+                for payload in &variant.payloads {
                     collect_type(payload, &mut types);
                 }
             }
@@ -138,7 +138,7 @@ impl<'a> TypeEmitter<'a> {
             Type::Enum(name) => {
                 let enum_def = self.enum_def(name)?;
                 for variant in &enum_def.variants {
-                    if let Some(payload) = &variant.payload {
+                    for payload in &variant.payloads {
                         self.emit_type_def(payload, emitted, visiting, output)?;
                     }
                 }
@@ -306,8 +306,8 @@ impl<'a> TypeEmitter<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
-            IrExprKind::VariantConstructor { payload, .. } => {
-                if let Some(payload) = payload {
+            IrExprKind::VariantConstructor { payloads, .. } => {
+                for payload in payloads {
                     self.collect_expr_types(payload, types);
                 }
             }
@@ -413,7 +413,7 @@ impl<'a> TypeEmitter<'a> {
         let payload_variants = enum_def
             .variants
             .iter()
-            .filter_map(|variant| variant.payload.as_ref().map(|payload| (variant, payload)))
+            .filter_map(|variant| variant.payloads.first().map(|payload| (variant, payload)))
             .collect::<Vec<_>>();
         if !payload_variants.is_empty() {
             output.push_str("    union {\n");
@@ -526,7 +526,7 @@ impl<'a> TypeEmitter<'a> {
             Type::Enum(name) => {
                 let enum_def = self.enum_def(name)?;
                 for variant in &enum_def.variants {
-                    if let Some(payload) = &variant.payload {
+                    for payload in &variant.payloads {
                         self.emit_drop_helper(payload, emitted, visiting, output)?;
                     }
                 }
@@ -659,8 +659,8 @@ impl<'a> TypeEmitter<'a> {
                 let mut output = String::new();
                 for (tag, variant) in enum_def.variants.iter().enumerate() {
                     let Some(payload) = variant
-                        .payload
-                        .as_ref()
+                        .payloads
+                        .first()
                         .filter(|payload| payload.needs_cleanup())
                     else {
                         continue;

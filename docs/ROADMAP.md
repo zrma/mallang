@@ -1136,10 +1136,20 @@
 
 ## P140: Recursive Multi-Payload Typed IR
 
-- [ ] `IrEnumVariant`와 recursive `IrMatchPattern`을 positional payload list로 일반화
-- [ ] recursive enum을 non-recursive inline enum과 구분하는 typed storage metadata 추가
-- [ ] constructor argument를 left-to-right로 평가한 뒤 owned payload slot으로 이동
-- [ ] consuming match에서 active payload 전체 binding/wildcard와 storage shell release 표현
-- [ ] recursive/multi-payload cleanup binding과 drop path를 typed IR에 보존
-- [ ] non-recursive zero/single payload IR compatibility regression 유지
-- [ ] recursive generic enum constructor/match typed IR acceptance 추가
+- [x] `IrEnumVariant`와 recursive `IrMatchPattern`을 positional payload list로 일반화
+- [x] recursive enum을 non-recursive inline enum과 구분하는 typed storage metadata 추가
+- [x] constructor argument를 left-to-right로 평가한 뒤 owned payload slot으로 이동
+- [x] consuming match에서 active payload 전체 binding/wildcard와 storage shell release 표현
+- [x] recursive/multi-payload cleanup binding과 drop path를 typed IR에 보존
+- [x] non-recursive zero/single payload IR compatibility regression 유지
+- [x] recursive generic enum constructor/match typed IR acceptance 추가
+
+## P141: Multi-Payload and Recursive Enum C Runtime
+
+- [ ] inline multi-payload variant의 C payload struct와 tagged union layout 생성
+- [ ] recursive enum의 compiler-owned node/handle layout과 forward declaration 생성
+- [ ] constructor payload를 left-to-right temporary로 평가하고 allocation failure guard 연결
+- [ ] consuming match가 active payload 전체를 move/bind한 뒤 owned storage shell을 한 번 해제
+- [ ] active variant payload를 순회하는 recursive drop helper와 malformed handle guard 생성
+- [ ] non-recursive zero/single payload C ABI와 native output compatibility 유지
+- [ ] generic recursive enum의 constructor/match/drop native 및 ASan/UBSan acceptance 추가

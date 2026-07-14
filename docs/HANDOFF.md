@@ -93,17 +93,23 @@
   위치의 type을 검사하고, match는 여러 binding, wildcard와 nested ADT pattern의 Cartesian
   exhaustiveness를 검사한다. Generic specialization과 cross-package linker는 모든 payload
   type과 pattern binding을 순회한다. Existing zero/single payload는 전체 회귀 테스트로
-  호환성을 유지한다. Typed IR/backend는 아직 single payload 구조이므로 multi-payload enum은
-  semantic `check`까지 허용하되 IR lowering에서 enum/variant를 명시한 invariant diagnostic으로
-  중단한다.
+  호환성을 유지한다.
 - v0.5 P139 완료: concrete struct/user enum dependency graph와 SCC validation을 추가했다.
   모든 recursive cycle은 user enum indirection boundary를 지나야 하며 component 내부 값을
   요구하지 않는 enum base variant가 있어야 한다. Direct/mutual struct-only recursion, mixed
   component 안의 struct-only subcycle, base 없는 enum recursion과 built-in wrapper로 감싼
   비생산적 recursion은 source diagnostic으로 거부한다. Recursive generic enum은 concrete
   specialization 뒤 검사하며 cross-package `List[T]`도 같은 경로를 사용한다. Accepted recursive
-  enum 이름은 checked semantic metadata에 보존하고 indirect representation 구현 전 typed IR에서
-  명시적으로 차단한다.
+  enum 이름은 checked semantic metadata에 보존한다.
+- v0.5 P140 완료: typed IR enum variant, constructor와 recursive match pattern을 positional
+  payload list로 일반화했다. `IrEnumStorage::Inline`/`Owned` metadata가 non-recursive enum과
+  compiler-owned recursive enum을 구분하고 constructor payload의 source evaluation order를
+  보존한다. Match lowering은 모든 payload binding과 owned wildcard를 순회해 arm cleanup에
+  연결하며 recursive generic enum의 constructor/pattern도 같은 IR로 내려간다. Recursive
+  coverage는 유한한 opaque frontier를 사용하고 그 frontier 뒤의 구체 패턴을 wildcard
+  coverage와 비교해 non-exhaustive 및 unreachable 진단을 유지한다. C backend는 다음 runtime
+  단계 전까지 owned recursive enum과 multi-payload enum을 source 이름이 포함된 명시적
+  diagnostic으로 거부한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작

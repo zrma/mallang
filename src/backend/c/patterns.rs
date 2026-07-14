@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ir::IrMatchPattern, semantic::Type};
+use crate::{
+    ir::{IrEnumStorage, IrMatchPattern},
+    semantic::Type,
+};
 
 use super::{names::c_field, CGenerator, CompileError};
 
@@ -49,14 +52,20 @@ impl<'a> CGenerator<'a> {
             IrMatchPattern::Variant {
                 ty,
                 variant,
-                payload,
+                storage,
+                payloads,
             } => {
                 self.expect_pattern_type(ty, expected)?;
+                if *storage != IrEnumStorage::Inline {
+                    return Err(CompileError::new(
+                        "C backend does not support owned enum match patterns yet",
+                    ));
+                }
                 let (tag, payload_ty) = self.adt_variant(expected, variant)?;
                 conditions.push(format!("({value}).tag == {tag}"));
-                match (payload_ty, payload.as_deref()) {
-                    (None, None) => {}
-                    (Some(payload_ty), Some(payload_pattern)) => {
+                match (payload_ty, payloads.as_slice()) {
+                    (None, []) => {}
+                    (Some(payload_ty), [payload_pattern]) => {
                         let payload_value =
                             format!("({value}).{}.{}", c_field("payload"), c_field(variant));
                         self.plan_pattern(
@@ -104,7 +113,15 @@ impl<'a> CGenerator<'a> {
                 .iter()
                 .enumerate()
                 .find(|(_, candidate)| candidate.name == variant)
-                .map(|(tag, variant)| (tag, variant.payload.as_ref()))
+                .map(|(tag, variant)| match variant.payloads.as_slice() {
+                    [] => Ok((tag, None)),
+                    [payload] => Ok((tag, Some(payload))),
+                    _ => Err(CompileError::new(format!(
+                        "C backend does not support multi-payload enum variant `{name}.{}` yet",
+                        variant.name
+                    ))),
+                })
+                .transpose()?
                 .ok_or_else(|| {
                     CompileError::new(format!(
                         "IR invariant violation: unknown enum variant `{name}.{variant}`"
