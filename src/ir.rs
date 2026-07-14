@@ -8,7 +8,10 @@ use crate::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, MatchArm,
         MatchBlockArm, MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
     },
-    semantic::{CheckedProgram, FunctionSig, MethodKey, MethodSig, ParamSig, StructSig, Type},
+    semantic::{
+        CheckedProgram, FunctionParamType, FunctionSig, FunctionType, MethodKey, MethodSig,
+        ParamSig, StructSig, Type,
+    },
     token::Span,
 };
 
@@ -141,6 +144,9 @@ pub enum IrExprKind {
     String(String),
     Bool(bool),
     Var(String),
+    FunctionValue {
+        function: String,
+    },
     If {
         condition: Box<IrExpr>,
         then_branch: Box<IrExpr>,
@@ -183,6 +189,10 @@ pub enum IrExprKind {
     },
     Call {
         callee: String,
+        args: Vec<IrArg>,
+    },
+    IndirectCall {
+        callee: Box<IrExpr>,
         args: Vec<IrArg>,
     },
     Unary {
@@ -645,14 +655,16 @@ impl<'a> Lowerer<'a> {
             ExprKind::Var(name) => {
                 if matches!(name.as_str(), "None") {
                     self.lower_none_constructor(expected, expr.span)?
-                } else {
-                    let Some(ty) = locals.get(name).cloned() else {
-                        return Err(IrError::new(
-                            format!("unknown variable `{name}` during IR lowering"),
-                            expr.span,
-                        ));
-                    };
+                } else if let Some(ty) = locals.get(name).cloned() {
                     (IrExprKind::Var(name.clone()), ty)
+                } else {
+                    let sig = self.function_sig(name, expr.span)?;
+                    (
+                        IrExprKind::FunctionValue {
+                            function: name.clone(),
+                        },
+                        Type::Function(sig.function_type(false)),
+                    )
                 }
             }
             ExprKind::FunctionLiteral(_) => {
@@ -1740,6 +1752,35 @@ impl<'a> Lowerer<'a> {
             ));
         }
 
+        if let Some(local_ty) = locals.get(name) {
+            let Type::Function(function) = local_ty else {
+                return Err(IrError::new(
+                    "semantic analysis accepted a call to a non-function local",
+                    callee.span,
+                ));
+            };
+            let callee = IrExpr {
+                kind: IrExprKind::Var(name.clone()),
+                ty: Type::Function(function.clone()),
+                span: callee.span,
+            };
+            let mut lowered_args = Vec::new();
+            for (arg, param) in args.iter().zip(function.params.iter()) {
+                lowered_args.push(IrArg {
+                    mode: arg.mode,
+                    expr: self.lower_call_arg_expr(arg, locals, Some(&param.ty))?,
+                    span: arg.span,
+                });
+            }
+            return Ok((
+                IrExprKind::IndirectCall {
+                    callee: Box::new(callee),
+                    args: lowered_args,
+                },
+                function.return_type.as_ref().clone(),
+            ));
+        }
+
         let sig = self.function_sig(name, span)?;
         let mut lowered_args = Vec::new();
         for (arg, param) in args.iter().zip(sig.params.iter()) {
@@ -1956,6 +1997,23 @@ impl<'a> Lowerer<'a> {
     }
 
     fn type_from_ref(&self, ty: &crate::ast::TypeRef) -> Result<Type, IrError> {
+        if let Some(function) = &ty.function {
+            return Ok(Type::Function(FunctionType {
+                mutable: function.mutable,
+                params: function
+                    .params
+                    .iter()
+                    .map(|param| {
+                        Ok(FunctionParamType {
+                            mode: param.mode,
+                            ty: self.type_from_ref(&param.ty)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, IrError>>()?,
+                return_type: Box::new(self.type_from_ref(&function.return_type)?),
+            }));
+        }
+
         if ty.slice {
             if ty.name != "Slice" || ty.args.len() != 1 || ty.array_len.is_some() {
                 return Err(IrError::new(
@@ -2084,9 +2142,41 @@ fn insert_cleanup_drops(
             continue_excluded_roots,
         );
         let (stmt, stmt_moved_roots) = insert_cleanup_drops_in_stmt_exprs(stmt, &active);
-        if let IrStmtKind::Return { expr: _ } = &stmt.kind {
+        if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = stmt_moved_roots;
             moved_in_body.extend(returned_roots.iter().cloned());
+            let needs_pre_drop_evaluation = expr.ty != Type::Unit
+                && active
+                    .iter()
+                    .any(|binding| !returned_roots.contains(&binding.name));
+            if needs_pre_drop_evaluation {
+                let temp_name = return_value_temp_name(stmt.span);
+                output.push(IrStmt {
+                    kind: IrStmtKind::Let {
+                        mutable: false,
+                        name: temp_name.clone(),
+                        ty: expr.ty.clone(),
+                        expr: expr.clone(),
+                    },
+                    span: stmt.span,
+                });
+                push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
+                output.push(IrStmt {
+                    kind: IrStmtKind::Return {
+                        expr: IrExpr {
+                            kind: IrExprKind::Var(temp_name),
+                            ty: expr.ty.clone(),
+                            span: expr.span,
+                        },
+                    },
+                    span: stmt.span,
+                });
+                return CleanupInsertion {
+                    body: output,
+                    moved_roots: moved_in_body,
+                    continues: false,
+                };
+            }
             push_cleanup_drops(&mut output, &active, &returned_roots, stmt.span);
             output.push(stmt);
             return CleanupInsertion {
@@ -2717,6 +2807,32 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 .collect();
             IrExprKind::Call { callee, args }
         }
+        IrExprKind::IndirectCall { callee, args } => {
+            let callee = insert_place_expr_cleanup_drops(*callee, active);
+            moved_roots.extend(callee.moved_roots.iter().cloned());
+            let mut active = cleanup_bindings_after_moved_roots(active, &callee.moved_roots);
+            let args = args
+                .into_iter()
+                .map(|arg| {
+                    let insertion = if arg.mode == ArgMode::Owned {
+                        insert_expr_cleanup_drops(arg.expr, &active)
+                    } else {
+                        insert_place_expr_cleanup_drops(arg.expr, &active)
+                    };
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    IrArg {
+                        mode: arg.mode,
+                        expr: insertion.expr,
+                        span: arg.span,
+                    }
+                })
+                .collect();
+            IrExprKind::IndirectCall {
+                callee: Box::new(callee.expr),
+                args,
+            }
+        }
         IrExprKind::Unary { op, expr } => {
             let expr = insert_expr_cleanup_drops(*expr, active);
             moved_roots.extend(expr.moved_roots);
@@ -2740,6 +2856,7 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
         IrExprKind::Int(value) => IrExprKind::Int(value),
         IrExprKind::String(value) => IrExprKind::String(value),
         IrExprKind::Bool(value) => IrExprKind::Bool(value),
+        IrExprKind::FunctionValue { function } => IrExprKind::FunctionValue { function },
     };
 
     ExprCleanupInsertion {
@@ -3064,6 +3181,10 @@ fn cleanup_assignment_rhs_temp_name(span: Span) -> String {
     format!("mallang_cleanup_assign_rhs_{}_{}", span.start, span.end)
 }
 
+fn return_value_temp_name(span: Span) -> String {
+    format!("mallang_return_value_{}_{}", span.start, span.end)
+}
+
 fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
     match &stmt.kind {
         IrStmtKind::Let { expr, .. }
@@ -3123,6 +3244,13 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
                 }
             }
         }
+        IrExprKind::IndirectCall { args, .. } => {
+            for arg in args {
+                if arg.mode == ArgMode::Owned {
+                    collect_cleanup_moved_roots(&arg.expr, roots);
+                }
+            }
+        }
         IrExprKind::If {
             condition,
             then_branch,
@@ -3160,6 +3288,7 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
         | IrExprKind::Int(_)
         | IrExprKind::String(_)
         | IrExprKind::Bool(_)
+        | IrExprKind::FunctionValue { .. }
         | IrExprKind::Var(_) => {}
     }
 }
@@ -3442,7 +3571,7 @@ func add(a int, b int) int {
     }
 
     #[test]
-    fn inserts_drop_before_straight_line_return() {
+    fn evaluates_return_value_before_straight_line_drop() {
         let slice_ty = test_slice_ty();
         let params = vec![IrParam {
             name: "values".to_string(),
@@ -3462,9 +3591,10 @@ func add(a int, b int) int {
 
         let body = insert_straight_line_cleanup_drops(body, &params, test_span());
 
-        assert_eq!(body.len(), 2);
-        assert_drop_of(&body[0], "values");
-        assert!(matches!(body[1].kind, IrStmtKind::Return { .. }));
+        assert_eq!(body.len(), 3);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "values");
+        assert!(matches!(body[2].kind, IrStmtKind::Return { .. }));
     }
 
     #[test]
@@ -3960,9 +4090,10 @@ func add(a int, b int) int {
         else {
             panic!("expected if statement");
         };
-        assert_eq!(then_body.len(), 2);
-        assert_drop_of(&then_body[0], "values");
-        assert!(matches!(then_body[1].kind, IrStmtKind::Return { .. }));
+        assert_eq!(then_body.len(), 3);
+        assert!(matches!(then_body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&then_body[1], "values");
+        assert!(matches!(then_body[2].kind, IrStmtKind::Return { .. }));
         assert!(else_body.is_empty());
         assert_drop_of(&body[1], "values");
     }
@@ -4153,9 +4284,10 @@ func add(a int, b int) int {
         else {
             panic!("expected for statement");
         };
-        assert_eq!(loop_body.len(), 2);
-        assert_drop_of(&loop_body[0], "values");
-        assert!(matches!(loop_body[1].kind, IrStmtKind::Return { .. }));
+        assert_eq!(loop_body.len(), 3);
+        assert!(matches!(loop_body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&loop_body[1], "values");
+        assert!(matches!(loop_body[2].kind, IrStmtKind::Return { .. }));
         assert_drop_of(&body[1], "values");
     }
 
@@ -4329,9 +4461,10 @@ func add(a int, b int) int {
         let IrStmtKind::For { body, cleanup, .. } = &body[0].kind else {
             panic!("expected for statement");
         };
-        assert_eq!(body.len(), 2);
-        assert_drop_of(&body[0], "loop_values");
-        assert!(matches!(body[1].kind, IrStmtKind::Return { .. }));
+        assert_eq!(body.len(), 3);
+        assert!(matches!(body[0].kind, IrStmtKind::Let { .. }));
+        assert_drop_of(&body[1], "loop_values");
+        assert!(matches!(body[2].kind, IrStmtKind::Return { .. }));
         assert_eq!(cleanup.len(), 1);
         assert_drop_of(&cleanup[0], "loop_values");
     }
@@ -5674,5 +5807,49 @@ func makeUser() User {
         assert_eq!(index.ty, Type::Int);
         assert_eq!(target.ty, Type::Struct("User".to_string()));
         assert_eq!(expr.ty, Type::Struct("User".to_string()));
+    }
+
+    #[test]
+    fn ir_lowers_named_function_values_and_indirect_calls() {
+        let program = parse(
+            r#"
+func main() {
+transform := Double
+print(transform(21))
+}
+
+func Double(value int) int {
+return value * 2
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let IrStmtKind::Let { name, expr, ty, .. } = &ir.functions[0].body[0].kind else {
+            panic!("expected function value binding");
+        };
+        assert_eq!(name, "transform");
+        assert!(matches!(
+            &expr.kind,
+            IrExprKind::FunctionValue { function } if function == "Double"
+        ));
+        assert_eq!(expr.ty, *ty);
+
+        let IrStmtKind::Expr { expr } = &ir.functions[0].body[1].kind else {
+            panic!("expected print statement");
+        };
+        let IrExprKind::Call { callee, args } = &expr.kind else {
+            panic!("expected print call");
+        };
+        assert_eq!(callee, "print");
+        let IrExprKind::IndirectCall { callee, args } = &args[0].expr.kind else {
+            panic!("expected indirect function value call");
+        };
+        assert!(matches!(&callee.kind, IrExprKind::Var(name) if name == "transform"));
+        assert_eq!(args.len(), 1);
+
+        assert_drop_of(&ir.functions[0].body[2], "transform");
     }
 }

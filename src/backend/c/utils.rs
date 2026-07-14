@@ -183,6 +183,10 @@ pub(super) fn slice_field_take_temp_name(expr: &IrExpr) -> String {
     format!("mallang_slice_take_tmp_{}", expr.span.start)
 }
 
+pub(super) fn callable_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_callable_tmp_{}_{}", expr.span.start, expr.span.end)
+}
+
 pub(super) fn is_blank_identifier(name: &str) -> bool {
     name == "_"
 }

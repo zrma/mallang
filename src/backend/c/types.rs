@@ -304,6 +304,12 @@ impl<'a> TypeEmitter<'a> {
                     self.collect_expr_types(&arg.expr, types);
                 }
             }
+            IrExprKind::IndirectCall { callee, args } => {
+                self.collect_expr_types(callee, types);
+                for arg in args {
+                    self.collect_expr_types(&arg.expr, types);
+                }
+            }
             IrExprKind::Unary { expr, .. } => self.collect_expr_types(expr, types),
             IrExprKind::Binary { left, right, .. } => {
                 self.collect_expr_types(left, types);
@@ -312,6 +318,7 @@ impl<'a> TypeEmitter<'a> {
             IrExprKind::Int(_)
             | IrExprKind::String(_)
             | IrExprKind::Bool(_)
+            | IrExprKind::FunctionValue { .. }
             | IrExprKind::Var(_) => {}
         }
     }

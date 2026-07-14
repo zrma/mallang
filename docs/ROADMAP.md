@@ -913,3 +913,12 @@
 - [x] plain/mutable indirect call의 shared/exclusive access와 argument mode 검사 추가
 - [x] local value가 동명의 top-level function call을 shadow하도록 일관성 유지
 - [x] typed callable C value layout과 cleanup helper shell 추가
+
+## P117: Named Function Value Native Lowering
+
+- [x] typed IR에 named `FunctionValue`와 local `IndirectCall` 추가
+- [x] function parameter/return/local move를 cleanup insertion에 연결
+- [x] 반환식을 cleanup보다 먼저 평가해 callable use-after-drop 방지
+- [x] named function용 environment-free C call thunk 생성
+- [x] higher-order parameter/return과 반복 indirect call native smoke 추가
+- [x] generated C strict warning과 ASan/UBSan smoke 통과

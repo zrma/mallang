@@ -2146,3 +2146,29 @@ fn generates_callable_value_type_and_drop_helper() {
     assert!(c.contains("if (mlg_value->mlg_drop != NULL)"));
     assert!(c.contains("mlg_value->mlg_call = NULL;"));
 }
+
+#[test]
+fn generates_c_for_named_function_values_and_indirect_calls() {
+    let program = parse(
+        r#"
+func main() {
+transform := Double
+print(transform(21))
+}
+
+func Double(value int) int {
+return value * 2
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("static int64_t MLG_UNUSED mallang_callable_thunk_mlg_Double("));
+    assert!(c.contains("return mlg_Double(mlg_arg_0);"));
+    assert!(c.contains(".mlg_call = mallang_callable_thunk_mlg_Double"));
+    assert!(c.contains(".mlg_call(mallang_callable_tmp_"));
+    assert!(c.contains("mlg_drop_Function_con_owned_int_ret_int(&(mlg_transform));"));
+}

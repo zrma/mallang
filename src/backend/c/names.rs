@@ -171,6 +171,10 @@ pub(super) fn drop_fn_name(ty: &Type) -> String {
     format!("mlg_drop_{}", mangle_type(ty))
 }
 
+pub(super) fn callable_thunk_name(function: &str) -> String {
+    format!("mallang_callable_thunk_{}", c_ident(function))
+}
+
 pub(super) fn c_ident(name: &str) -> String {
     if name == "main" {
         return name.to_string();
