@@ -1350,7 +1350,7 @@ impl Parser {
     }
 
     fn finish_index(&mut self, base: Expr) -> Result<Expr, ParseError> {
-        if self.bracket_has_top_level_comma() {
+        if self.bracket_has_top_level_comma() || self.bracket_starts_unambiguous_type_ref() {
             return self.finish_type_apply(base);
         }
 
@@ -1411,6 +1411,13 @@ impl Parser {
             }
         }
         false
+    }
+
+    fn bracket_starts_unambiguous_type_ref(&self) -> bool {
+        matches!(
+            self.tokens.get(self.cursor + 1).map(|token| &token.kind),
+            Some(TokenKind::LeftBracket | TokenKind::Keyword(Keyword::Func))
+        )
     }
 
     fn parse_arg(&mut self) -> Result<Arg, ParseError> {

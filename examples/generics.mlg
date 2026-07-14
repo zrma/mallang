@@ -1,0 +1,21 @@
+type Pair[A, B] struct {
+    first A
+    second B
+}
+
+func Identity[T](value T) T {
+    return value
+}
+
+func main() {
+    identity := Identity[int]
+    print(identity(7))
+    print(Identity[string]("mallang"))
+
+    pair := Pair[int, string]{first: 11, second: "pair"}
+    print(pair.first)
+    print(pair.second)
+
+    values := Identity[[]int]([]int{1, 2, 3})
+    print(len(values))
+}

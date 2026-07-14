@@ -10,6 +10,7 @@ pub mod parser;
 pub mod project;
 pub mod semantic;
 pub mod source;
+pub mod specialize;
 pub mod token;
 
 pub use backend::{generate_c, generate_c_from_ir, CompileError};
@@ -33,4 +34,5 @@ pub use semantic::{check, check_project, CheckedProgram, SemanticError};
 pub use source::{
     load_source_files, SourceFile, SourceLoadError, SourceLocation, SourceMap, SourceSet,
 };
+pub use specialize::{specialize, SpecializationError};
 pub use token::{Keyword, SourceId, Span, Token, TokenKind};
