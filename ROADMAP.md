@@ -254,8 +254,8 @@
 - `v0.5.0: Ownership and Runtime` is implemented locally; release publication
   is still pending.
 - `v0.6.0: Standard Library` is in progress. P147 standard package registry
-  through P151 owned map are complete; P152 reference CLI and error-flow review
-  is next.
+  through P152 reference CLI and error-flow review are complete; P153 acceptance
+  and documentation is next.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

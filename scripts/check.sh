@@ -122,7 +122,7 @@ expect_warning_clean_generated_c() {
 }
 
 generated_c_smoke_labels() {
-  sed -nE 's#.*build examples/[^ ]+ -o target/mallang/([^ ]+).*#\1#p' scripts/check.sh |
+  sed -nE 's#.*build examples/[A-Za-z0-9_.-]+\.mlg -o target/mallang/([^ ]+).*#\1#p' scripts/check.sh |
     sort -u
 }
 
@@ -256,6 +256,12 @@ fi
 scripts/check-collections-map-runtime.sh \
   target/mallang/collections-map.c \
   target/mallang/growth-and-ownership.c
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/projects/textstats >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/projects/textstats -o target/mallang/textstats >/dev/null
+scripts/check-reference-cli.sh \
+  examples/projects/textstats/target/mallang/textstats.c \
+  target/mallang/textstats \
+  tests/fixtures/v06-reference-cli/input.txt
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

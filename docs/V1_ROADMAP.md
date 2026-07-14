@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: implementation in progress (P147-P151 complete; P152 next)
+상태: implementation in progress (P147-P152 complete; P153 next)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
@@ -227,6 +227,10 @@ library를 제공한다.
   owned insert/remove, call-scoped callback와 recursive drop runtime
 - Copy/non-Copy key/value, replacement/removal, all collection function-value
   thunks, allocation failure와 sanitizer acceptance
+- `examples/projects/textstats` multi-module reference CLI의 arguments, file read,
+  UTF-8/Map transformation, file/stdout write와 explicit error-to-exit flow
+- Reference CLI evidence review 결과 `?`는 v0.6에 추가하지 않고, additional forwarding
+  evidence가 생길 때만 v0.9 freeze 전 별도 decision gate로 재검토
 
 완료 조건:
 

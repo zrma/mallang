@@ -190,6 +190,14 @@
   정리한다. Direct/standard function-value 호출, Copy/non-Copy value, 24-entry growth,
   zero-allocation accounting, failure injection, strict C와 ASan/UBSan harness, 전체 526개
   unit test와 67-program generated C sweep이 P151 완료 조건을 검증한다.
+- v0.6 P152 완료: `examples/projects/textstats`에 arguments로 UTF-8 input file을 읽고,
+  `stats` package에서 `Map[int,int]` line-length histogram과 text summary를 만든 뒤 file 또는
+  stdout에 쓰는 multi-module reference CLI를 추가했다. `main.mlg`의 5개 `Result` call은
+  exhaustive match 5개, Ok/Err arm 10개와 최대 3-level nesting을 만든다. Error output/exit
+  mapping helper로 branch 중복은 줄지만 `unit main` process boundary는 postfix `?`만으로
+  대체되지 않으므로 v0.6 syntax는 유지한다. Stdout/output-file, usage exit 2,
+  missing/invalid input, write failure, strict C, zero-allocation accounting과 ASan/UBSan
+  harness가 P152 완료 조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -333,7 +341,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P151 implementation evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P152 implementation evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -342,11 +350,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P152에서 arguments로 input/output을 받는 multi-module reference CLI를 작성한다.
-2. File read, text/Map transformation과 file/stdout write failure를 explicit `match`, stderr,
-   non-zero exit로 처리한다.
-3. 반복되는 `Result` propagation boilerplate를 측정해 `?` syntax decision gate 필요성을
-   evidence로 판정한다.
+1. P153에서 local supported-host와 Ubuntu CI native standard-library acceptance를 닫는다.
+2. Standard API reference, `SPEC.md`, README, roadmap와 handoff를 implementation에 맞춘다.
+3. v0.6 completion evidence와 v0.7 tooling/platform decision gate를 확정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147-P151 complete; P152 next)
+상태: implementation in progress (P147-P152 complete; P153 next)
 
 ## 목표
 
@@ -137,6 +137,8 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
   검증한다.
 
 ### P152: Reference CLI and Error Flow Review
+
+상태: complete (2026-07-15)
 
 - Arguments로 input/output을 받고 file을 읽어 text/map transformation 뒤 file 또는 stdout에
   쓰는 multi-module CLI를 Mallang으로 작성한다.

@@ -1257,3 +1257,14 @@
 - [x] Copy/non-Copy key/value, 24-entry growth와 callback read/update native regression 추가
 - [x] strict C, zero-allocation accounting, deterministic failure injection과 ASan/UBSan 통과
 - [x] 전체 526개 unit test와 67-program generated C sanitizer sweep 통과
+
+## P152: Reference CLI and Error Flow Review
+
+- [x] `examples/projects/textstats` multi-module native CLI 추가
+- [x] input/output arguments, UTF-8 file read와 file/stdout write workflow 연결
+- [x] `Map[int,int]` line-length histogram 기반 text summary transformation 구현
+- [x] expected `Result` failure를 stderr와 stable non-zero exit로 변환
+- [x] stdout/output-file, usage, missing/invalid input와 write failure regression 추가
+- [x] strict C, zero-allocation accounting과 ASan/UBSan acceptance 통과
+- [x] 5개 `Result` match, 10개 arm, 3-level nesting evidence 기록
+- [x] `?`는 v0.6에 추가하지 않고 additional evidence 뒤 재검토하기로 판정

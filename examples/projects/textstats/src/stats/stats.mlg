@@ -1,0 +1,40 @@
+package stats
+
+import "std/collections"
+import "std/strings"
+
+func Increment(mut value int) {
+    value = value + 1
+}
+
+pub func Summarize(con text string) string {
+    newline := "\n"
+    lines := strings.split(con text, con newline)
+    mut line_lengths := collections.newMap[int, int]()
+    increment := Increment
+
+    for mut index := 0; index < len(lines); index = index + 1 {
+        length := strings.scalarCount(con lines[index])
+        if !collections.update[int, int](
+            mut line_lengths,
+            con length,
+            con increment
+        ) {
+            collections.insert[int, int](mut line_lengths, length, 1)
+        }
+    }
+
+    byte_count := strings.fromInt(strings.byteLen(con text))
+    scalar_count := strings.fromInt(strings.scalarCount(con text))
+    line_count := strings.fromInt(len(lines))
+    distinct_count := strings.fromInt(collections.count[int, int](con line_lengths))
+    parts := []string{
+        "bytes=", byte_count,
+        "\nscalars=", scalar_count,
+        "\nlines=", line_count,
+        "\ndistinct_line_lengths=", distinct_count,
+        "\n"
+    }
+    empty := ""
+    return strings.join(con parts, con empty)
+}

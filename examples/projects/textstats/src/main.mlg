@@ -1,0 +1,72 @@
+package main
+
+import "std/errors"
+import "std/fs"
+import "std/io"
+import "std/os"
+import "std/strings"
+import "textstats/stats"
+
+func ErrorKindName(kind errors.Kind) string {
+    return match kind {
+        case errors.Kind.NotFound { "NotFound" }
+        case errors.Kind.PermissionDenied { "PermissionDenied" }
+        case errors.Kind.AlreadyExists { "AlreadyExists" }
+        case errors.Kind.InvalidInput { "InvalidInput" }
+        case errors.Kind.InvalidData { "InvalidData" }
+        case errors.Kind.Interrupted { "Interrupted" }
+        case errors.Kind.Other { "Other" }
+    }
+}
+
+func ExitWithMessage(message string, code int) {
+    match io.writeStderr(con message) {
+        case Ok(_) {}
+        case Err(_) {}
+    }
+    os.exit(code)
+}
+
+func ExitWithError(operation string, kind errors.Kind) {
+    kind_name := ErrorKindName(kind)
+    parts := []string{"textstats: ", operation, " failed: ", kind_name, "\n"}
+    empty := ""
+    message := strings.join(con parts, con empty)
+    ExitWithMessage(message, 1)
+}
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            if len(args) < 2 || len(args) > 3 {
+                ExitWithMessage("usage: textstats <input> [output]\n", 2)
+            }
+            match fs.readText(con args[1]) {
+                case Ok(text) {
+                    summary := stats.Summarize(con text)
+                    if len(args) == 3 {
+                        match fs.writeText(con args[2], con summary) {
+                            case Ok(_) {}
+                            case Err(error) {
+                                ExitWithError("write", error.kind)
+                            }
+                        }
+                    } else {
+                        match io.writeStdout(con summary) {
+                            case Ok(_) {}
+                            case Err(error) {
+                                ExitWithError("stdout", error.kind)
+                            }
+                        }
+                    }
+                }
+                case Err(error) {
+                    ExitWithError("read", error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            ExitWithError("arguments", error.kind)
+        }
+    }
+}
