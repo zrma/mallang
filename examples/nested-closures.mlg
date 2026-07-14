@@ -1,0 +1,44 @@
+func MakeAdder(offset int) func(int) func(int) int {
+    return func(base int) func(int) int {
+        return func(value int) int {
+            return offset + base + value
+        }
+    }
+}
+
+func MakeSelector(values []int) func(int) func() int {
+    return func(index int) func() int {
+        selected := values[index]
+        return func() int {
+            return selected
+        }
+    }
+}
+
+func MakeCounterFactory(start int) func mut(int) func mut(int) int {
+    mut seed := start
+    return func mut(offset int) func mut(int) int {
+        seed = seed + offset
+        return func mut(delta int) int {
+            seed = seed + delta
+            return seed
+        }
+    }
+}
+
+func main() {
+    addOffset := MakeAdder(10)
+    addBase := addOffset(5)
+    print(addBase(2))
+
+    select := MakeSelector([]int{4, 9})
+    selected := select(1)
+    print(selected())
+
+    mut factory := MakeCounterFactory(10)
+    mut first := factory(5)
+    print(first(1))
+    mut second := factory(2)
+    print(second(3))
+    print(first(1))
+}

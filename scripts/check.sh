@@ -192,6 +192,13 @@ if [[ "$mutable_closures_output" != $'1\n3\n7\n8\n9\n10\n11\n10' ]]; then
   echo "mutable closure native build smoke failed: expected 1, 3, 7, 8, 9, 10, 11, 10 got '$mutable_closures_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/nested-closures.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/nested-closures.mlg -o target/mallang/nested-closures >/dev/null
+nested_closures_output="$(target/mallang/nested-closures)"
+if [[ "$nested_closures_output" != $'17\n9\n16\n20\n17' ]]; then
+  echo "nested closure native build smoke failed: expected 17, 9, 16, 20, 17 got '$nested_closures_output'" >&2
+  exit 1
+fi
 project_input="examples/projects/hello"
 "${CARGO[@]}" run --bin mlg -- check "$project_input" >/dev/null
 project_output_path="$("${CARGO[@]}" run --quiet --bin mlg -- build "$project_input")"
@@ -818,4 +825,8 @@ expect_sanitized_native_output \
   "mutable-closures" \
   "target/mallang/mutable-closures.c" \
   $'1\n3\n7\n8\n9\n10\n11\n10'
+expect_sanitized_native_output \
+  "nested-closures" \
+  "target/mallang/nested-closures.c" \
+  $'17\n9\n16\n20\n17'
 expect_all_warning_clean_generated_c
