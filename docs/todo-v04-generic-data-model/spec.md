@@ -147,8 +147,9 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
 3. Package symbol/visibility와 generic type/function/receiver resolution을 추가한다.
    (완료: enum type metadata와 public payload visibility 포함)
 4. Symbolic generic checker와 project-wide concrete specialization worklist를 추가한다.
-   (완료)
-5. User-defined enum exhaustiveness와 nested pattern diagnostics를 일반화한다.
+   (완료: generic enum과 source diagnostic 복원 포함)
+5. User-defined enum constructor, exhaustiveness와 nested pattern diagnostics를 일반화한다.
+   (진행 중: constructor specialization/semantic 완료, pattern/exhaustiveness 미완료)
 6. Specialized typed IR, concrete layout, constructor/match C lowering을 추가한다.
    (진행 중: struct/function은 concrete AST를 기존 typed IR/C backend로 전달,
    enum layout과 constructor/match lowering 미완료)

@@ -67,8 +67,11 @@
   receiver의 non-Copy field 교체도 native cleanup gate를 통과한다. Public package
   generic struct/function/receiver와 nested imported type argument는 visibility-aware
   internal symbol로 연결되고 project native warning/sanitizer gate를 통과한다. Enum은
-  package type metadata와 public payload visibility까지만 연결했으며 user-defined enum
-  semantic/pattern과 enum IR/backend는 아직 구현 전이다.
+  generic/non-generic constructor를 concrete AST로 정규화하고 demand-driven
+  specialization한다. Concrete variant/payload type, arity, recursive value type와
+  cross-package visibility를 semantic에서 검사하며 internal specialization 이름을 source
+  generic 표기로 복원한다. User-defined enum pattern/exhaustiveness와 enum IR/backend는
+  아직 구현 전이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -211,9 +214,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. User-defined enum declaration과 constructor를 concrete specialization에 연결한다.
-2. User-defined enum의 nested pattern과 exhaustiveness diagnostics를 일반화한다.
-3. Enum typed IR/C backend와 built-in `Option`/`Result` 공통 경로 이전을 완료한다.
+1. User-defined enum의 nested pattern binding과 exhaustiveness diagnostics를 일반화한다.
+2. Enum typed IR/C layout, constructor/match lowering과 cleanup을 완료한다.
+3. Built-in `Option`/`Result`를 공통 enum 경로로 이전한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -125,6 +125,11 @@ impl<'a> TypeEmitter<'a> {
                 output.push_str(&self.typedef_for_struct(struct_def));
                 output.push('\n');
             }
+            Type::Enum(_) => {
+                return Err(CompileError::new(
+                    "user-defined enum types require v0.4 C lowering",
+                ));
+            }
             Type::Array { .. } => {
                 output.push_str(&self.typedef_for_array(ty)?);
                 output.push('\n');
@@ -463,6 +468,7 @@ impl<'a> TypeEmitter<'a> {
                     self.emit_drop_helper(&field.ty, emitted, visiting, output)?;
                 }
             }
+            Type::Enum(_) => {}
             Type::Function(_) => {}
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
@@ -580,6 +586,9 @@ impl<'a> TypeEmitter<'a> {
                 }
                 Ok(output)
             }
+            Type::Enum(_) => Err(CompileError::new(
+                "user-defined enum cleanup requires v0.4 C lowering",
+            )),
             Type::Function(_) => Ok(
                 "if (mlg_value->mlg_drop != NULL) {\n    mlg_value->mlg_drop(mlg_value->mlg_env);\n}\nmlg_value->mlg_env = NULL;\nmlg_value->mlg_drop = NULL;\nmlg_value->mlg_call = NULL;"
                     .to_string(),
@@ -607,7 +616,7 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
                 types.push(ty.clone());
             }
         }
-        Type::Struct(_) => {
+        Type::Struct(_) | Type::Enum(_) => {
             if !types.contains(ty) {
                 types.push(ty.clone());
             }

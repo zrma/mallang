@@ -1034,3 +1034,13 @@
 - [x] nested imported generic type argument와 value index expression 구분
 - [x] public generic API와 enum payload의 private type 노출 거부
 - [x] cross-package generic native output, strict C, ASan/UBSan gate 추가
+
+## P130: Generic Enum Specialization and Constructor Semantics
+
+- [x] generic/non-generic enum constructor를 concrete `EnumConstructor` AST로 정규화
+- [x] declaration/type argument key 기반 generic enum specialization과 동일 key 재사용
+- [x] concrete enum/variant signature, payload type, constructor arity 검사 추가
+- [x] empty/duplicate variant와 recursive enum value type source diagnostic 추가
+- [x] imported public generic enum constructor와 private visibility 경계 연결
+- [x] concrete specialization internal name을 source generic 표기로 진단 복원
+- [x] full Rust test와 Clippy regression gate 통과; IR/C lowering은 P131 이후로 유지

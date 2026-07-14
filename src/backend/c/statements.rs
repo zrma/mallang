@@ -644,6 +644,9 @@ impl<'a> CGenerator<'a> {
             Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
                 self.emit_print_composite(arg, prelude, code)
             }
+            Type::Enum(_) => Err(CompileError::new(
+                "user-defined enum printing requires v0.4 C lowering",
+            )),
         }
     }
 
@@ -736,6 +739,9 @@ impl<'a> CGenerator<'a> {
                 push_indented_lines(output, "printf(\"}\");", level);
                 Ok(())
             }
+            Type::Enum(_) => Err(CompileError::new(
+                "user-defined enum printing requires v0.4 C lowering",
+            )),
             Type::Unit => Err(CompileError::new(
                 "IR invariant violation: cannot print unit",
             )),

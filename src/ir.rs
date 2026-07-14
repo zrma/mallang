@@ -824,6 +824,12 @@ impl<'a> Lowerer<'a> {
                     expr.span,
                 ));
             }
+            ExprKind::EnumConstructor { .. } => {
+                return Err(IrError::new(
+                    "user-defined enum constructors require v0.4 IR lowering",
+                    expr.span,
+                ));
+            }
             ExprKind::Call { callee, args } => {
                 self.lower_call(callee, args, locals, expected, expr.span)?
             }

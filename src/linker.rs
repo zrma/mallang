@@ -608,6 +608,27 @@ impl<'a> Linker<'a> {
         scopes: &[BTreeSet<String>],
         type_params: &BTreeSet<String>,
     ) -> Result<(), LinkError> {
+        if enum_constructor_base(expr)
+            .is_some_and(|base| self.is_enum_type_expr(base, context, scopes))
+        {
+            match &mut expr.kind {
+                ExprKind::Call { callee, args } => {
+                    let ExprKind::FieldAccess { base, .. } = &mut callee.kind else {
+                        unreachable!("enum constructor target is a field access");
+                    };
+                    self.link_type_expr(base, context, type_params)?;
+                    for arg in args {
+                        self.link_expr(&mut arg.expr, context, scopes, type_params)?;
+                    }
+                }
+                ExprKind::FieldAccess { base, .. } => {
+                    self.link_type_expr(base, context, type_params)?;
+                }
+                _ => unreachable!("enum constructor has call or field-access syntax"),
+            }
+            return Ok(());
+        }
+
         match &mut expr.kind {
             ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => {}
             ExprKind::Var(name) => {
@@ -707,6 +728,25 @@ impl<'a> Linker<'a> {
                 self.link_expr(base, context, scopes, type_params)?;
                 for arg in args {
                     self.link_type_ref(arg, context, type_params)?;
+                }
+            }
+            ExprKind::EnumConstructor {
+                enum_name, args, ..
+            } => {
+                let mut ty = TypeRef {
+                    name: enum_name.clone(),
+                    args: Vec::new(),
+                    array_len: None,
+                    slice: false,
+                    function: None,
+                    span: expr.span,
+                };
+                self.link_type_ref(&mut ty, context, type_params)?;
+                *enum_name = ty.name;
+                if let Some(args) = args {
+                    for arg in args {
+                        self.link_expr(&mut arg.expr, context, scopes, type_params)?;
+                    }
                 }
             }
             ExprKind::Call { callee, args } => {
@@ -850,6 +890,39 @@ impl<'a> Linker<'a> {
                         declaration.kind == PackageDeclarationKind::Function
                             && !declaration.type_params.is_empty()
                     })
+            }
+            _ => false,
+        }
+    }
+
+    fn is_enum_type_expr(
+        &self,
+        expr: &Expr,
+        context: &FileContext,
+        scopes: &[BTreeSet<String>],
+    ) -> bool {
+        match &expr.kind {
+            ExprKind::Index { base, .. } | ExprKind::TypeApply { base, .. } => {
+                self.is_enum_type_expr(base, context, scopes)
+            }
+            ExprKind::Var(name) if !is_bound(scopes, name) => self
+                .graph
+                .package(&context.package_path)
+                .and_then(|package| package.declarations.get(name))
+                .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Enum),
+            ExprKind::FieldAccess { base, field } => {
+                let ExprKind::Var(qualifier) = &base.kind else {
+                    return false;
+                };
+                if is_bound(scopes, qualifier) {
+                    return false;
+                }
+                context
+                    .imports
+                    .get(qualifier)
+                    .and_then(|path| self.graph.package(path))
+                    .and_then(|package| package.declarations.get(field))
+                    .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Enum)
             }
             _ => false,
         }
@@ -1034,6 +1107,18 @@ fn internal_symbol(package_path: &str, name: &str) -> String {
 
 fn is_bound(scopes: &[BTreeSet<String>], name: &str) -> bool {
     scopes.iter().rev().any(|scope| scope.contains(name))
+}
+
+fn enum_constructor_base(expr: &Expr) -> Option<&Expr> {
+    let target = match &expr.kind {
+        ExprKind::Call { callee, .. } => callee.as_ref(),
+        ExprKind::FieldAccess { .. } => expr,
+        _ => return None,
+    };
+    let ExprKind::FieldAccess { base, .. } = &target.kind else {
+        return None;
+    };
+    Some(base)
 }
 
 fn pattern_binding(pattern: &MatchPattern) -> Option<&str> {
@@ -1229,6 +1314,40 @@ pub func (mut box Box[T]) Replace(value T) {
     }
 
     #[test]
+    fn links_cross_package_generic_enum_constructors() {
+        let project = TempProject::new("generic-enum-api");
+        project.write(
+            "src/main.mlg",
+            r#"package main
+import "hello/model"
+
+func main() {
+    value := model.Maybe[int].Some(7)
+    empty := model.Maybe[string].None
+}
+"#,
+        );
+        project.write(
+            "src/model/model.mlg",
+            r#"package model
+
+pub type Maybe[T] enum {
+    None
+    Some(T)
+}
+"#,
+        );
+
+        let (_, _, linked, graph) = project.link().unwrap();
+        let checked = check_project(&linked, &graph).unwrap();
+        assert_eq!(checked.enums.len(), 2);
+        assert!(checked
+            .enums
+            .keys()
+            .all(|name| name.starts_with("__mlg_spec_enum_")));
+    }
+
+    #[test]
     fn links_package_function_values_and_closure_returns() {
         let project = TempProject::new("function-values");
         project.write(
@@ -1337,6 +1456,21 @@ pub func MakeAdder(offset int) func(int) int {
         assert_eq!(
             type_error.message,
             "`greet.Message` is private to package `hello/greet`"
+        );
+
+        let private_enum = TempProject::new("private-enum");
+        private_enum.write(
+            "src/main.mlg",
+            "package main\nimport \"hello/model\"\nfunc main() { value := model.Maybe[int].Some(7) }\n",
+        );
+        private_enum.write(
+            "src/model/model.mlg",
+            "package model\ntype Maybe[T] enum { None Some(T) }\n",
+        );
+        let enum_error = private_enum.link().unwrap_err();
+        assert_eq!(
+            enum_error.message,
+            "`model.Maybe` is private to package `hello/model`"
         );
     }
 

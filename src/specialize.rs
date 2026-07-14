@@ -5,13 +5,21 @@ use std::{
 
 use crate::{
     ast::{
-        Block, Expr, ExprKind, FieldDecl, ForInit, ForPost, Function, FunctionLiteral, MatchArm,
-        MatchBlockArm, Program, Stmt, StmtKind, StructDecl, TypeParam, TypeRef, Visibility,
+        Block, EnumDecl, Expr, ExprKind, FieldDecl, ForInit, ForPost, Function, FunctionLiteral,
+        MatchArm, MatchBlockArm, Program, Stmt, StmtKind, StructDecl, TypeParam, TypeRef,
+        Visibility,
     },
     token::Span,
 };
 
 const MAX_SPECIALIZATIONS: usize = 1024;
+
+struct EnumConstructorParts {
+    enum_name: String,
+    type_args: Vec<TypeRef>,
+    variant: String,
+    args: Option<Vec<crate::ast::Arg>>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecializationError {
@@ -44,6 +52,12 @@ pub fn specialize(program: &Program) -> Result<Program, SpecializationError> {
     Ok(Specializer::new(program)?.run(program, false)?.program)
 }
 
+pub(crate) fn specialize_for_checking(
+    program: &Program,
+) -> Result<SymbolicProgram, SpecializationError> {
+    Specializer::new(program)?.run(program, false)
+}
+
 pub fn specialize_for_validation(
     program: &Program,
 ) -> Result<SymbolicProgram, SpecializationError> {
@@ -72,13 +86,18 @@ impl SymbolicProgram {
 
 struct Specializer {
     generic_structs: HashMap<String, StructDecl>,
+    generic_enums: HashMap<String, EnumDecl>,
+    concrete_enums: HashMap<String, EnumDecl>,
     generic_functions: HashMap<String, Function>,
     generic_methods: HashMap<String, Vec<Function>>,
     struct_specializations: HashMap<String, String>,
+    enum_specializations: HashMap<String, String>,
     function_specializations: HashMap<String, String>,
     active_structs: HashMap<String, String>,
+    active_enums: HashMap<String, String>,
     active_functions: HashMap<String, String>,
     generated_structs: Vec<StructDecl>,
+    generated_enums: Vec<EnumDecl>,
     generated_functions: Vec<Function>,
     used_type_names: HashSet<String>,
     symbolic_type_names: HashMap<String, String>,
@@ -88,6 +107,8 @@ struct Specializer {
 impl Specializer {
     fn new(program: &Program) -> Result<Self, SpecializationError> {
         let mut generic_structs = HashMap::new();
+        let mut generic_enums = HashMap::new();
+        let mut concrete_enums = HashMap::new();
         let mut generic_functions = HashMap::new();
         let mut generic_methods: HashMap<String, Vec<Function>> = HashMap::new();
 
@@ -106,6 +127,28 @@ impl Specializer {
             {
                 return Err(SpecializationError::new(
                     format!("duplicate generic struct `{}`", declaration.name),
+                    declaration.span,
+                ));
+            }
+        }
+
+        for declaration in &program.enums {
+            let target = if declaration.type_params.is_empty() {
+                &mut concrete_enums
+            } else {
+                validate_type_params(
+                    &declaration.name,
+                    &declaration.type_params,
+                    declaration.span,
+                )?;
+                &mut generic_enums
+            };
+            if target
+                .insert(declaration.name.clone(), declaration.clone())
+                .is_some()
+            {
+                return Err(SpecializationError::new(
+                    format!("duplicate enum `{}`", declaration.name),
                     declaration.span,
                 ));
             }
@@ -170,6 +213,8 @@ impl Specializer {
                 .structs
                 .iter()
                 .any(|declaration| declaration.type_params.is_empty() && declaration.name == *name)
+                || generic_enums.contains_key(name)
+                || concrete_enums.contains_key(name)
                 || generic_functions.contains_key(name)
                 || program.functions.iter().any(|function| {
                     function.type_params.is_empty()
@@ -180,6 +225,26 @@ impl Specializer {
                 return Err(SpecializationError::new(
                     format!("generic declaration `{name}` conflicts with another declaration"),
                     generic_structs[name].span,
+                ));
+            }
+        }
+
+        for name in generic_enums.keys() {
+            if program
+                .structs
+                .iter()
+                .any(|declaration| declaration.name == *name)
+                || concrete_enums.contains_key(name)
+                || generic_functions.contains_key(name)
+                || program.functions.iter().any(|function| {
+                    function.type_params.is_empty()
+                        && function.receiver.is_none()
+                        && function.name == *name
+                })
+            {
+                return Err(SpecializationError::new(
+                    format!("generic declaration `{name}` conflicts with another declaration"),
+                    generic_enums[name].span,
                 ));
             }
         }
@@ -199,13 +264,18 @@ impl Specializer {
 
         Ok(Self {
             generic_structs,
+            generic_enums,
+            concrete_enums,
             generic_functions,
             generic_methods,
             struct_specializations: HashMap::new(),
+            enum_specializations: HashMap::new(),
             function_specializations: HashMap::new(),
             active_structs: HashMap::new(),
+            active_enums: HashMap::new(),
             active_functions: HashMap::new(),
             generated_structs: Vec::new(),
+            generated_enums: Vec::new(),
             generated_functions: Vec::new(),
             used_type_names: program
                 .structs
@@ -231,6 +301,7 @@ impl Specializer {
         self.enforce_budget = !symbolic;
         let mut output = program.clone();
         output.structs.clear();
+        output.enums.clear();
         output.functions.clear();
 
         for mut declaration in program
@@ -243,6 +314,20 @@ impl Specializer {
                 self.rewrite_type_ref(&mut field.ty, &HashMap::new())?;
             }
             output.structs.push(declaration);
+        }
+
+        for mut declaration in program
+            .enums
+            .iter()
+            .filter(|declaration| declaration.type_params.is_empty())
+            .cloned()
+        {
+            for variant in &mut declaration.variants {
+                if let Some(payload) = &mut variant.payload {
+                    self.rewrite_type_ref(payload, &HashMap::new())?;
+                }
+            }
+            output.enums.push(declaration);
         }
 
         let concrete_functions = program
@@ -263,6 +348,7 @@ impl Specializer {
         }
 
         output.structs.append(&mut self.generated_structs);
+        output.enums.append(&mut self.generated_enums);
         output.functions.append(&mut self.generated_functions);
         Ok(SymbolicProgram {
             program: output,
@@ -294,6 +380,23 @@ impl Specializer {
         for (name, params, span) in structs {
             let args = self.symbolic_args(&name, &params, output);
             self.specialize_struct(&name, args, span)?;
+        }
+
+        let mut enums = self
+            .generic_enums
+            .values()
+            .map(|declaration| {
+                (
+                    declaration.name.clone(),
+                    declaration.type_params.clone(),
+                    declaration.span,
+                )
+            })
+            .collect::<Vec<_>>();
+        enums.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, params, span) in enums {
+            let args = self.symbolic_args(&name, &params, output);
+            self.specialize_enum(&name, args, span)?;
         }
 
         let mut functions = self
@@ -357,17 +460,6 @@ impl Specializer {
                 simple_type_ref(name, param.span)
             })
             .collect()
-    }
-
-    fn symbolic_specialization_display(&self, name: &str, args: &[TypeRef]) -> Option<String> {
-        let raw = specialization_key(name, args);
-        let display = self
-            .symbolic_type_names
-            .iter()
-            .fold(raw.clone(), |display, (internal, source)| {
-                display.replace(internal, source)
-            });
-        (display != raw).then_some(display)
     }
 
     fn rewrite_function(
@@ -467,6 +559,29 @@ impl Specializer {
         expr: &mut Expr,
         substitutions: &HashMap<String, TypeRef>,
     ) -> Result<(), SpecializationError> {
+        if let Some(mut constructor) = enum_constructor_parts(expr) {
+            if self.generic_enums.contains_key(&constructor.enum_name)
+                || self.concrete_enums.contains_key(&constructor.enum_name)
+            {
+                for type_arg in &mut constructor.type_args {
+                    self.substitute_and_rewrite_type_ref(type_arg, substitutions)?;
+                }
+                let enum_name =
+                    self.specialize_enum(&constructor.enum_name, constructor.type_args, expr.span)?;
+                if let Some(args) = &mut constructor.args {
+                    for arg in args {
+                        self.rewrite_expr(&mut arg.expr, substitutions)?;
+                    }
+                }
+                expr.kind = ExprKind::EnumConstructor {
+                    enum_name,
+                    variant: constructor.variant,
+                    args: constructor.args,
+                };
+                return Ok(());
+            }
+        }
+
         match &mut expr.kind {
             ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => Ok(()),
             ExprKind::Var(name) => {
@@ -568,6 +683,14 @@ impl Specializer {
                 expr.kind = ExprKind::Var(specialized);
                 Ok(())
             }
+            ExprKind::EnumConstructor { args, .. } => {
+                if let Some(args) = args {
+                    for arg in args {
+                        self.rewrite_expr(&mut arg.expr, substitutions)?;
+                    }
+                }
+                Ok(())
+            }
             ExprKind::Call { callee, args } => {
                 self.rewrite_expr(callee, substitutions)?;
                 for arg in args {
@@ -634,6 +757,15 @@ impl Specializer {
             let specialized = self.specialize_struct(&ty.name, ty.args.clone(), ty.span)?;
             ty.name = specialized;
             ty.args.clear();
+        } else if self.generic_enums.contains_key(&ty.name) {
+            let specialized = self.specialize_enum(&ty.name, ty.args.clone(), ty.span)?;
+            ty.name = specialized;
+            ty.args.clear();
+        } else if self.concrete_enums.contains_key(&ty.name) && !ty.args.is_empty() {
+            return Err(SpecializationError::new(
+                format!("enum type `{}` does not take type arguments", ty.name),
+                ty.span,
+            ));
         }
         Ok(())
     }
@@ -665,10 +797,8 @@ impl Specializer {
         }
 
         let specialized_name = specialized_name("type", name, &args);
-        if let Some(display) = self.symbolic_specialization_display(name, &args) {
-            self.symbolic_type_names
-                .insert(specialized_name.clone(), display);
-        }
+        self.symbolic_type_names
+            .insert(specialized_name.clone(), specialization_key(name, &args));
         self.struct_specializations
             .insert(key.clone(), specialized_name.clone());
         self.active_structs.insert(name.to_string(), key);
@@ -694,6 +824,64 @@ impl Specializer {
 
         self.active_structs.remove(name);
         self.generated_structs.push(specialized);
+        Ok(specialized_name)
+    }
+
+    fn specialize_enum(
+        &mut self,
+        name: &str,
+        args: Vec<TypeRef>,
+        span: Span,
+    ) -> Result<String, SpecializationError> {
+        if let Some(declaration) = self.concrete_enums.get(name) {
+            check_arity(name, 0, &args, span)?;
+            return Ok(declaration.name.clone());
+        }
+
+        let declaration = self
+            .generic_enums
+            .get(name)
+            .cloned()
+            .expect("enum existence checked before specialization");
+        check_arity(name, declaration.type_params.len(), &args, span)?;
+        let key = specialization_key(name, &args);
+        if let Some(specialized) = self.enum_specializations.get(&key) {
+            return Ok(specialized.clone());
+        }
+        self.check_specialization_budget(span)?;
+        if let Some(active_key) = self.active_enums.get(name) {
+            return Err(SpecializationError::new(
+                format!(
+                    "generic enum `{name}` creates an expanding specialization cycle: `{active_key}` -> `{key}`"
+                ),
+                span,
+            ));
+        }
+
+        let specialized_name = specialized_name("enum", name, &args);
+        self.symbolic_type_names
+            .insert(specialized_name.clone(), specialization_key(name, &args));
+        self.enum_specializations
+            .insert(key.clone(), specialized_name.clone());
+        self.active_enums.insert(name.to_string(), key);
+
+        let substitutions = declaration
+            .type_params
+            .iter()
+            .zip(args)
+            .map(|(param, arg)| (param.name.clone(), arg))
+            .collect::<HashMap<_, _>>();
+        let mut specialized = declaration;
+        specialized.name = specialized_name.clone();
+        specialized.type_params.clear();
+        for variant in &mut specialized.variants {
+            if let Some(payload) = &mut variant.payload {
+                self.substitute_and_rewrite_type_ref(payload, &substitutions)?;
+            }
+        }
+
+        self.active_enums.remove(name);
+        self.generated_enums.push(specialized);
         Ok(specialized_name)
     }
 
@@ -724,10 +912,8 @@ impl Specializer {
         }
 
         let specialized_name = specialized_name("func", name, &args);
-        if let Some(display) = self.symbolic_specialization_display(name, &args) {
-            self.symbolic_type_names
-                .insert(specialized_name.clone(), display);
-        }
+        self.symbolic_type_names
+            .insert(specialized_name.clone(), specialization_key(name, &args));
         self.function_specializations
             .insert(key.clone(), specialized_name.clone());
         self.active_functions.insert(name.to_string(), key);
@@ -750,7 +936,9 @@ impl Specializer {
 
     fn check_specialization_budget(&self, span: Span) -> Result<(), SpecializationError> {
         if self.enforce_budget
-            && self.struct_specializations.len() + self.function_specializations.len()
+            && self.struct_specializations.len()
+                + self.enum_specializations.len()
+                + self.function_specializations.len()
                 >= MAX_SPECIALIZATIONS
         {
             return Err(SpecializationError::new(
@@ -917,6 +1105,24 @@ fn expression_path(expr: &Expr) -> Option<String> {
     }
 }
 
+fn enum_constructor_parts(expr: &Expr) -> Option<EnumConstructorParts> {
+    let (callee, args) = match &expr.kind {
+        ExprKind::Call { callee, args } => (callee.as_ref(), Some(args.clone())),
+        ExprKind::FieldAccess { .. } => (expr, None),
+        _ => return None,
+    };
+    let ExprKind::FieldAccess { base, field } = &callee.kind else {
+        return None;
+    };
+    let ty = expression_as_type_ref(base)?;
+    Some(EnumConstructorParts {
+        enum_name: ty.name,
+        type_args: ty.args,
+        variant: field.clone(),
+        args,
+    })
+}
+
 fn expression_as_type_ref(expr: &Expr) -> Option<TypeRef> {
     match &expr.kind {
         ExprKind::Var(name) => Some(simple_type_ref(name.clone(), expr.span)),
@@ -997,6 +1203,62 @@ func main() {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn specializes_generic_enums_and_normalizes_constructors() {
+        let program = parse(
+            r#"
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+func main() {
+    first := Maybe[int].Some(7)
+    second := Maybe[string].Some("mallang")
+    empty := Maybe[int].None
+}
+"#,
+        )
+        .unwrap();
+
+        let specialized = specialize(&program).unwrap();
+        assert_eq!(specialized.enums.len(), 2);
+        assert!(specialized.enums.iter().all(|declaration| {
+            declaration.type_params.is_empty() && declaration.name.starts_with("__mlg_spec_enum_")
+        }));
+
+        let main = specialized
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let constructors = main
+            .body
+            .statements
+            .iter()
+            .map(|statement| match &statement.kind {
+                StmtKind::Let { expr, .. } => &expr.kind,
+                _ => panic!("expected constructor binding"),
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            constructors[0],
+            ExprKind::EnumConstructor {
+                variant,
+                args: Some(args),
+                ..
+            } if variant == "Some" && args.len() == 1
+        ));
+        assert!(matches!(
+            constructors[2],
+            ExprKind::EnumConstructor {
+                variant,
+                args: None,
+                ..
+            } if variant == "None"
+        ));
     }
 
     #[test]
