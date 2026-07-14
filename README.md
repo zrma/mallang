@@ -41,8 +41,8 @@ This repository is the Mallang language PoC workspace.
   parameters, returns, and native indirect calls. Plain function literals use
   owned-by-value captures with heap environments and exactly-once cleanup.
   Mutable function literals preserve exclusive call access and can update owned
-  captures from mutable source bindings. Nested function literals remain under
-  v0.3 implementation.
+  captures from mutable source bindings. Nested function literals propagate
+  free variables through owned closure environments.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - `mlg check` rejects `print` for non-printable values such as fixed-size
   arrays and composites containing fixed-size arrays, and rejects `print` in
@@ -92,6 +92,7 @@ target/mallang/first
 cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- run examples/mutable-closures.mlg
+cargo run --bin mlg -- run examples/nested-closures.mlg
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division
@@ -247,6 +248,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   and owned slice captures.
 - `examples/mutable-closures.mlg`: native smoke for mutable Copy/slice/callable
   captures, isolated source state, and nested cleanup.
+- `examples/nested-closures.mlg`: native smoke for nested plain/mutable closure
+  environments, propagated captures, and independent owned state.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, and methods.
 - `examples/if.mlg`: native smoke for `if` expressions.

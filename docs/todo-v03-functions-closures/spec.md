@@ -24,6 +24,9 @@
   cleanup이 구현돼 있다.
 - Plain/mutable closure는 Copy, owned slice, nested callable capture 상태를 native로
   유지하며 generated C warning/sanitizer gate를 통과한다.
+- Nested closure는 lexical free variable을 enclosing closure까지 전파하고 생성 시
+  각 environment가 다시 소유한다. Borrowed non-Copy outer capture를 반복 호출 중
+  이동하는 경우는 거부한다.
 - Package-qualified function value와 project-level closure acceptance는 남아 있다.
 
 ## 추천 surface

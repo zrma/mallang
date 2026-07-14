@@ -3748,11 +3748,10 @@ impl ClosureCaptureCollector<'_> {
     fn visit_expr(&mut self, expr: &Expr, bound: &HashSet<String>) -> Result<(), SemanticError> {
         match &expr.kind {
             ExprKind::Var(name) => self.visit_name(name, bound, false),
-            ExprKind::FunctionLiteral(_) => {
-                return Err(SemanticError::new(
-                    "nested function literals are not implemented yet",
-                    expr.span,
-                ));
+            ExprKind::FunctionLiteral(function) => {
+                let mut nested_bound = bound.clone();
+                nested_bound.extend(function.params.iter().map(|param| param.name.clone()));
+                self.visit_block(&function.body, &mut nested_bound)?;
             }
             ExprKind::If {
                 condition,
@@ -4405,23 +4404,97 @@ func main() {
     }
 
     #[test]
-    fn rejects_nested_function_literals_for_now() {
-        let error = check_error(
+    fn allows_nested_closures_with_capture_propagation() {
+        let program = parse(
             r#"
-func main() {
-    outer := func() func() int {
-        return func() int {
-            return 1
+func Make(offset int) func(int) func(int) int {
+    return func(base int) func(int) int {
+        return func(value int) int {
+            return offset + base + value
         }
     }
-    print(outer)
 }
+
+func main() {
+    addOffset := Make(10)
+    addBase := addOffset(5)
+    print(addBase(2))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert_eq!(checked.closures.len(), 2);
+        let inner = checked
+            .closures
+            .iter()
+            .find(|closure| closure.captures.len() == 2)
+            .unwrap();
+        assert_eq!(inner.captures[0].name, "offset");
+        assert_eq!(inner.captures[1].name, "base");
+        let outer = checked
+            .closures
+            .iter()
+            .find(|closure| closure.captures.len() == 1)
+            .unwrap();
+        assert_eq!(outer.captures[0].name, "offset");
+    }
+
+    #[test]
+    fn rejects_moving_non_copy_outer_capture_into_nested_closure() {
+        let error = check_error(
+            r#"
+func Make(values []int) func() func() int {
+    return func() func() int {
+        return func() int {
+            return values[0]
+        }
+    }
+}
+
+func main() {}
 "#,
         );
 
         assert!(error
             .message
-            .contains("nested function literals are not implemented yet"));
+            .contains("cannot capture borrowed non-Copy value `values`"));
+    }
+
+    #[test]
+    fn allows_nested_mutable_copy_capture_propagation() {
+        let program = parse(
+            r#"
+func Make() func mut() func mut() int {
+    mut count := 0
+    return func mut() func mut() int {
+        return func mut() int {
+            count = count + 1
+            return count
+        }
+    }
+}
+
+func main() {
+    mut makeNext := Make()
+    mut next := makeNext()
+    print(next())
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert_eq!(checked.closures.len(), 2);
+        assert!(checked
+            .closures
+            .iter()
+            .all(|closure| closure.function_type.mutable));
+        assert!(checked
+            .closures
+            .iter()
+            .all(|closure| closure.captures[0].mutable));
     }
 
     #[test]

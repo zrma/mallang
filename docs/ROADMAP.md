@@ -949,3 +949,12 @@
 - [x] closure environment field를 mutable call body lvalue로 연결
 - [x] Copy 원본 격리, owned slice 상태, nested callable cleanup native smoke 추가
 - [x] immutable source와 immutable callable access rejection 회귀 검증
+
+## P121: Nested Closure Capture Propagation
+
+- [x] nested literal free variable을 enclosing closure capture로 전파
+- [x] nested checker가 enclosing parameter/local/capture를 생성 시 다시 copy/move
+- [x] borrowed non-Copy outer capture의 nested move 거부
+- [x] nested plain/mutable function type과 capture metadata를 typed IR에 보존
+- [x] owned slice outer environment와 invocation-local inner capture native smoke 추가
+- [x] nested mutable state 독립성과 environment cleanup sanitizer smoke 추가
