@@ -281,10 +281,12 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 ## Layout
 
 - `SPEC.md`: v0 language specification.
+- `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P152 implementation status.
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and local P147-P153 acceptance evidence.
+- `docs/todo-v07-tooling-platforms/`: proposed v0.7 tooling and platform decision gate.
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.

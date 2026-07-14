@@ -32,10 +32,11 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
-## Implemented v0.6 Standard Registry, Text, Process, Stream, and File Runtime
+## Implemented v0.6 Standard Library
 
-The approved v0.6 standard-library contract currently implements its compiler
-foundation, UTF-8 text, process, standard-stream, and file slices:
+The approved v0.6 standard-library contract implements its compiler foundation,
+UTF-8 text, process, standard-stream, file, and owned-map slices. Exact public
+signatures are listed in `docs/STANDARD_LIBRARY.md`.
 
 - `import "std/..."` works in project and manifest-free standalone source for
   the six approved standard packages.
@@ -74,9 +75,18 @@ foundation, UTF-8 text, process, standard-stream, and file slices:
   preserving embedded NUL content. `writeText` creates or overwrites a file with
   exact length-based bytes. Open, read, write, and close failures return
   `errors.Error`; invalid file text returns `InvalidData`.
-- Normal P148-P150 acceptance programs finish with zero live allocations. Map
-  runtime bodies remain P151 work; calling one during `mlg build` reports a
-  deterministic compiler-milestone error.
+- `std/collections` implements opaque specialized `Map[K,V]` values with
+  deterministic value/content hash and equality, owned insert/remove, call-scoped
+  read/update callbacks, capacity-checked growth, and recursive cleanup.
+- Replacing a map entry cleans up the incoming key and returns the old value;
+  removing an entry cleans up its stored key and transfers value ownership.
+- The multi-package `examples/projects/textstats` CLI composes arguments, file
+  and stream I/O, UTF-8 text, and `Map[int,int]` with exhaustive `Result` matches.
+  Its error-flow review keeps `?` outside v0.6 because early return cleanup,
+  return-type compatibility, and process-exit policy require a joint decision.
+- Normal P148-P152 acceptance programs finish with zero live allocations.
+  Recoverable platform failures remain `Result` values; fatal runtime failures
+  retain the no-unwind contract.
 
 ## Implemented v0.3 Function Values and Closures
 

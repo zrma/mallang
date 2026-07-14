@@ -48,7 +48,7 @@ labels=()
 while IFS= read -r label; do
   labels+=("$label")
 done < <(
-  sed -nE 's#.*build examples/[^ ]+ -o target/mallang/([^ ]+).*#\1#p' scripts/check.sh |
+  sed -nE 's#.*build examples/[A-Za-z0-9_.-]+\.mlg -o target/mallang/([^ ]+).*#\1#p' scripts/check.sh |
     sort -u
 )
 

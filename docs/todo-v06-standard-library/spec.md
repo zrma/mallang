@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147-P152 complete; P153 next)
+상태: local P147-P153 acceptance complete; Ubuntu CI confirmation pending publication
 
 ## 목표
 
@@ -146,6 +146,8 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 - Repeated propagation boilerplate를 기록하고 `?` decision gate가 실제로 필요한지 판정한다.
 
 ### P153: v0.6 Acceptance and Documentation
+
+상태: local acceptance complete; Ubuntu CI confirmation pending publication
 
 - Local supported-host와 Ubuntu CI native acceptance를 닫는다.
 - Standard API reference, `SPEC.md`, README, roadmap와 handoff를 implementation과 동기화한다.

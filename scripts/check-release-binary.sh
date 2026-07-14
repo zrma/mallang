@@ -188,6 +188,21 @@ if [[ -s "$NEGATIVE_DIR/file-run.stdout" ]] || \
   exit 1
 fi
 
+collections_output="$("$RELEASE_BIN" run examples/collections-map.mlg)"
+if [[ "$collections_output" != $'inserted\n1\n1\nKim\n2\ntrue\ntrue\nKim\n3\ntrue\nfalse\nKim\n3\n0' ]]; then
+  echo "release binary collections Map smoke failed: $collections_output" >&2
+  exit 1
+fi
+
+textstats_output="$(
+  "$RELEASE_BIN" run examples/projects/textstats -- \
+    tests/fixtures/v06-reference-cli/input.txt
+)"
+if [[ "$textstats_output" != $'bytes=12\nscalars=10\nlines=4\ndistinct_line_lengths=3' ]]; then
+  echo "release binary reference CLI smoke failed: $textstats_output" >&2
+  exit 1
+fi
+
 "$RELEASE_BIN" build examples/first.mlg -o "$SMOKE_BIN"
 run_output="$("$SMOKE_BIN")"
 if [[ "$run_output" != "30" ]]; then

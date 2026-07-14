@@ -253,9 +253,9 @@
   still pending.
 - `v0.5.0: Ownership and Runtime` is implemented locally; release publication
   is still pending.
-- `v0.6.0: Standard Library` is in progress. P147 standard package registry
-  through P152 reference CLI and error-flow review are complete; P153 acceptance
-  and documentation is next.
+- `v0.6.0: Standard Library` has complete local P147-P153 implementation and
+  acceptance evidence. P153 remains open only for post-publication Ubuntu x86_64
+  CI confirmation.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

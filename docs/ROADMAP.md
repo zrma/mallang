@@ -1268,3 +1268,16 @@
 - [x] strict C, zero-allocation accounting과 ASan/UBSan acceptance 통과
 - [x] 5개 `Result` match, 10개 arm, 3-level nesting evidence 기록
 - [x] `?`는 v0.6에 추가하지 않고 additional evidence 뒤 재검토하기로 판정
+
+## P153: v0.6 Acceptance and Documentation
+
+상태: local acceptance complete; Ubuntu CI confirmation pending publication
+
+- [x] `docs/STANDARD_LIBRARY.md` public API/ownership/failure reference 추가
+- [x] `SPEC.md`, README, roadmap와 handoff를 P151-P152 implementation에 동기화
+- [x] reference CLI와 standard runtime을 optimized release compiler smoke에 연결
+- [x] local macOS arm64 canonical/release/strict-C/ASan/UBSan acceptance 통과
+- [x] Ubuntu `ubuntu-latest`가 같은 canonical `scripts/check.sh`를 실행하도록 CI 연결 확인
+- [x] v0.6 completion evidence와 P154-P160 v0.7 decision gate 초안 작성
+
+P153 complete 판정은 publication 뒤 Ubuntu x86_64 CI success를 확인한 다음 기록한다.
