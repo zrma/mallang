@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{ArgMode, BinaryOp, UnaryOp},
-    ir::{IrAdtConstructor, IrArg, IrExpr, IrExprKind, IrMatchArm, IrMatchPattern},
+    ir::{IrArg, IrExpr, IrExprKind, IrMatchArm},
     semantic::Type,
 };
 
@@ -10,7 +10,7 @@ use super::{
     names::{
         c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
         callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
-        empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
+        empty_slice_value_code, COperator, TypeCName,
     },
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
@@ -84,23 +84,9 @@ impl<'a> CGenerator<'a> {
                     code: temp,
                 })
             }
-            IrExprKind::AdtConstructor {
-                constructor,
-                payload,
-            } => {
-                self.emit_adt_constructor_stmt_expr(&expr.ty, *constructor, payload.as_deref(), env)
+            IrExprKind::VariantConstructor { variant, payload } => {
+                self.emit_variant_constructor_stmt_expr(&expr.ty, variant, payload.as_deref(), env)
             }
-            IrExprKind::EnumConstructor {
-                enum_name,
-                variant,
-                payload,
-            } => self.emit_enum_constructor_stmt_expr(
-                &expr.ty,
-                enum_name,
-                variant,
-                payload.as_deref(),
-                env,
-            ),
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(expr, scrutinee, arms, env)
             }
@@ -644,86 +630,15 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_adt_constructor_stmt_expr(
+    fn emit_variant_constructor_stmt_expr(
         &self,
         ty: &Type,
-        constructor: IrAdtConstructor,
-        payload: Option<&IrExpr>,
-        env: &HashMap<String, String>,
-    ) -> Result<CExpr, CompileError> {
-        let c_type = ty.c_name();
-        match (ty, constructor) {
-            (Type::Option(_), IrAdtConstructor::Some) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Some payload missing")
-                })?;
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
-                Ok(CExpr {
-                    prelude,
-                    code: format!("({c_type}){{ .tag = 1, .some = {code} }}"),
-                })
-            }
-            (Type::Option(_), IrAdtConstructor::None) => {
-                Ok(CExpr::simple(format!("({c_type}){{ .tag = 0 }}")))
-            }
-            (Type::Result(_, _), IrAdtConstructor::Ok) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Ok payload missing")
-                })?;
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
-                Ok(CExpr {
-                    prelude,
-                    code: format!("({c_type}){{ .tag = 0, .ok = {code} }}"),
-                })
-            }
-            (Type::Result(_, _), IrAdtConstructor::Err) => {
-                let payload = payload.ok_or_else(|| {
-                    CompileError::new("IR invariant violation: Err payload missing")
-                })?;
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
-                Ok(CExpr {
-                    prelude,
-                    code: format!("({c_type}){{ .tag = 1, .err = {code} }}"),
-                })
-            }
-            _ => Err(CompileError::new(format!(
-                "IR invariant violation: `{}` constructor does not match `{}`",
-                constructor.c_name(),
-                ty.source_name()
-            ))),
-        }
-    }
-
-    fn emit_enum_constructor_stmt_expr(
-        &self,
-        ty: &Type,
-        enum_name: &str,
         variant_name: &str,
         payload: Option<&IrExpr>,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let Type::Enum(type_name) = ty else {
-            return Err(CompileError::new(
-                "IR invariant violation: user enum constructor must have enum type",
-            ));
-        };
-        if type_name != enum_name {
-            return Err(CompileError::new(
-                "IR invariant violation: user enum constructor type mismatch",
-            ));
-        }
-        let enum_def = self.enum_def(enum_name)?;
-        let (tag, variant) = enum_def
-            .variants
-            .iter()
-            .enumerate()
-            .find(|(_, candidate)| candidate.name == variant_name)
-            .ok_or_else(|| {
-                CompileError::new(format!(
-                    "IR invariant violation: unknown enum variant `{enum_name}.{variant_name}`"
-                ))
-            })?;
-        match (&variant.payload, payload) {
+        let (tag, expected_payload) = self.adt_variant(ty, variant_name)?;
+        match (expected_payload, payload) {
             (None, None) => Ok(CExpr::simple(format!(
                 "({}){{ .tag = {tag} }}",
                 ty.c_name()
@@ -741,7 +656,7 @@ impl<'a> CGenerator<'a> {
                 })
             }
             _ => Err(CompileError::new(
-                "IR invariant violation: user enum constructor payload mismatch",
+                "IR invariant violation: ADT constructor payload mismatch",
             )),
         }
     }
@@ -876,13 +791,7 @@ impl<'a> CGenerator<'a> {
         };
 
         match &scrutinee.ty {
-            Type::Option(_) => {
-                self.emit_option_match_stmt_expr(expr, &scrutinee_code, arms, env, prelude)
-            }
-            Type::Result(_, _) => {
-                self.emit_result_match_stmt_expr(expr, &scrutinee_code, arms, env, prelude)
-            }
-            Type::Enum(_) => self.emit_user_enum_match_stmt_expr(
+            Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => self.emit_adt_match_stmt_expr(
                 expr,
                 &scrutinee.ty,
                 &scrutinee_code,
@@ -896,7 +805,7 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_user_enum_match_stmt_expr(
+    fn emit_adt_match_stmt_expr(
         &self,
         expr: &IrExpr,
         scrutinee_ty: &Type,
@@ -915,7 +824,7 @@ impl<'a> CGenerator<'a> {
         let mut block = String::new();
         prelude.push(format!("{} {temp};", expr.ty.c_name()));
         for (index, arm) in arms.iter().enumerate() {
-            let plan = self.plan_user_enum_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            let plan = self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
             let emitted = self.emit_stmt_expr_with_env(&arm.expr, &plan.env)?;
             let cleanup = self.emit_cleanup_stmts(&arm.cleanup, &plan.env)?;
             if index == 0 {
@@ -937,125 +846,6 @@ impl<'a> CGenerator<'a> {
         block.push('}');
         prelude.push(block);
 
-        Ok(CExpr {
-            prelude,
-            code: temp,
-        })
-    }
-
-    fn emit_option_match_stmt_expr(
-        &self,
-        expr: &IrExpr,
-        scrutinee: &str,
-        arms: &[IrMatchArm],
-        env: &HashMap<String, String>,
-        mut prelude: Vec<String>,
-    ) -> Result<CExpr, CompileError> {
-        let some_arm = arms
-            .iter()
-            .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Some(binding) => Some((binding, arm)),
-                _ => None,
-            })
-            .ok_or_else(|| CompileError::new("IR invariant violation: missing Some arm"))?;
-        let none_arm = arms
-            .iter()
-            .find(|arm| matches!(arm.pattern, IrMatchPattern::None))
-            .ok_or_else(|| CompileError::new("IR invariant violation: missing None arm"))?;
-
-        let mut some_env = env.clone();
-        some_env.insert(some_arm.0.clone(), format!("({scrutinee}).some"));
-        let some_expr = self.emit_stmt_expr_with_env(&some_arm.1.expr, &some_env)?;
-        let none_expr = self.emit_stmt_expr_with_env(&none_arm.expr, env)?;
-
-        if some_expr.prelude.is_empty()
-            && none_expr.prelude.is_empty()
-            && some_arm.1.cleanup.is_empty()
-            && none_arm.cleanup.is_empty()
-        {
-            return Ok(CExpr {
-                prelude,
-                code: format!(
-                    "((({scrutinee}).tag == 1) ? ({}) : ({}))",
-                    some_expr.code, none_expr.code
-                ),
-            });
-        }
-
-        let temp = match_expr_temp_name(expr);
-        let some_cleanup = self.emit_cleanup_stmts(&some_arm.1.cleanup, &some_env)?;
-        let none_cleanup = self.emit_cleanup_stmts(&none_arm.cleanup, env)?;
-        prelude.push(format!("{} {temp};", expr.ty.c_name()));
-        prelude.push(if_expr_temp_block(
-            &format!("({scrutinee}).tag == 1"),
-            &temp,
-            some_expr,
-            some_cleanup,
-            none_expr,
-            none_cleanup,
-        ));
-        Ok(CExpr {
-            prelude,
-            code: temp,
-        })
-    }
-
-    fn emit_result_match_stmt_expr(
-        &self,
-        expr: &IrExpr,
-        scrutinee: &str,
-        arms: &[IrMatchArm],
-        env: &HashMap<String, String>,
-        mut prelude: Vec<String>,
-    ) -> Result<CExpr, CompileError> {
-        let ok_arm = arms
-            .iter()
-            .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Ok(binding) => Some((binding, arm)),
-                _ => None,
-            })
-            .ok_or_else(|| CompileError::new("IR invariant violation: missing Ok arm"))?;
-        let err_arm = arms
-            .iter()
-            .find_map(|arm| match &arm.pattern {
-                IrMatchPattern::Err(binding) => Some((binding, arm)),
-                _ => None,
-            })
-            .ok_or_else(|| CompileError::new("IR invariant violation: missing Err arm"))?;
-
-        let mut ok_env = env.clone();
-        ok_env.insert(ok_arm.0.clone(), format!("({scrutinee}).ok"));
-        let mut err_env = env.clone();
-        err_env.insert(err_arm.0.clone(), format!("({scrutinee}).err"));
-        let ok_expr = self.emit_stmt_expr_with_env(&ok_arm.1.expr, &ok_env)?;
-        let err_expr = self.emit_stmt_expr_with_env(&err_arm.1.expr, &err_env)?;
-
-        if ok_expr.prelude.is_empty()
-            && err_expr.prelude.is_empty()
-            && ok_arm.1.cleanup.is_empty()
-            && err_arm.1.cleanup.is_empty()
-        {
-            return Ok(CExpr {
-                prelude,
-                code: format!(
-                    "((({scrutinee}).tag == 0) ? ({}) : ({}))",
-                    ok_expr.code, err_expr.code
-                ),
-            });
-        }
-
-        let temp = match_expr_temp_name(expr);
-        let ok_cleanup = self.emit_cleanup_stmts(&ok_arm.1.cleanup, &ok_env)?;
-        let err_cleanup = self.emit_cleanup_stmts(&err_arm.1.cleanup, &err_env)?;
-        prelude.push(format!("{} {temp};", expr.ty.c_name()));
-        prelude.push(if_expr_temp_block(
-            &format!("({scrutinee}).tag == 0"),
-            &temp,
-            ok_expr,
-            ok_cleanup,
-            err_expr,
-            err_cleanup,
-        ));
         Ok(CExpr {
             prelude,
             code: temp,

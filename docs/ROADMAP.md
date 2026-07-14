@@ -1084,3 +1084,13 @@
 - [x] nested non-exhaustive path와 constructor payload mismatch CLI fixture 추가
 - [x] invalid fixture의 source file/line/column과 source generic spelling 검증
 - [x] project generated C warning-clean 및 ASan/UBSan acceptance 통과
+
+## P135: Built-in ADT Common Path
+
+- [x] `Option`/`Result`와 user enum을 semantic ADT metadata view로 정규화
+- [x] built-in source pattern spelling을 공통 payload 검사와 finite coverage에 연결
+- [x] constructor를 공통 `VariantConstructor`, pattern을 recursive `Variant` IR로 통합
+- [x] tag/payload union, constructor, match와 cleanup C lowering을 공통 backend 경로로 통합
+- [x] 기존 `Some`/`None`/`Ok`/`Err` source syntax와 native print output 유지
+- [x] top-level wildcard와 nested built-in pattern 공통 IR 회귀 테스트 추가
+- [x] legacy built-in 전용 IR node, match emitter와 payload field 경로 제거

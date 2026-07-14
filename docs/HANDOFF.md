@@ -83,7 +83,11 @@
   `examples/projects/hello`는 public generic enum의 imported constructor와
   package-qualified pattern, owned slice payload cleanup을 같은 native gate에서 검증한다.
   Invalid CLI fixture는 nested non-exhaustive path와 constructor payload mismatch가 source
-  generic 표기 및 file/line/column으로 보고되는지 고정한다.
+  generic 표기 및 file/line/column으로 보고되는지 고정한다. Built-in `Option`/`Result`도
+  user enum과 같은 semantic ADT metadata view, `VariantConstructor`/recursive `Variant` IR,
+  tag/payload union, pattern planner와 cleanup backend를 사용한다. `Some`/`None`/`Ok`/`Err`
+  source spelling과 native print output은 호환성을 유지하며, built-in 전용 IR node와 match
+  emitter는 제거했다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -226,9 +230,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Built-in `Option`/`Result`를 공통 enum metadata/IR/backend 경로로 이전한다.
-2. 기존 built-in source syntax와 print output 호환성을 회귀 검증한다.
-3. v0.4 전체 스펙·진단·sanitizer acceptance를 마감한다.
+1. v0.4 완료 기준을 코드, 스펙, CLI diagnostic과 native acceptance 기준으로 감사한다.
+2. 전체 strict generated C와 ASan/UBSan gate에서 generic data model 회귀를 재검증한다.
+3. v0.4 closeout과 다음 v0.5 language decision gate를 준비한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

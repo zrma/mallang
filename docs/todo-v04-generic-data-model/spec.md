@@ -155,6 +155,8 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
    보존하고 tag/union layout, recursive drop, constructor와 expression/statement nested
    match를 C backend에 연결)
 7. Built-in `Option`/`Result`를 공통 generic enum 경로로 이전한다.
+   (완료: predeclared ADT metadata view, 공통 constructor/pattern IR, tag/payload union,
+   match와 cleanup backend를 사용하며 기존 source spelling과 print output을 유지)
 8. Cross-package positive smoke, invalid fixture, strict C와 sanitizer gate를 추가한다.
    (완료: generic struct/function/receiver와 standalone/cross-package enum native, invalid
    CLI fixture, full generated C warning-clean과 ASan/UBSan gate 연결)

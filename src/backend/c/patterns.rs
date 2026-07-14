@@ -10,7 +10,7 @@ pub(super) struct CPatternPlan {
 }
 
 impl<'a> CGenerator<'a> {
-    pub(super) fn plan_user_enum_pattern(
+    pub(super) fn plan_adt_pattern(
         &self,
         pattern: &IrMatchPattern,
         expected: &Type,
@@ -46,34 +46,15 @@ impl<'a> CGenerator<'a> {
                 self.expect_pattern_type(ty, expected)?;
                 env.insert(name.clone(), value.to_string());
             }
-            IrMatchPattern::EnumVariant {
-                enum_name,
+            IrMatchPattern::Variant {
+                ty,
                 variant,
                 payload,
             } => {
-                let Type::Enum(expected_name) = expected else {
-                    return Err(CompileError::new(
-                        "IR invariant violation: user enum pattern on non-enum value",
-                    ));
-                };
-                if enum_name != expected_name {
-                    return Err(CompileError::new(
-                        "IR invariant violation: user enum pattern type mismatch",
-                    ));
-                }
-                let enum_def = self.enum_def(enum_name)?;
-                let (tag, variant_def) = enum_def
-                    .variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, candidate)| candidate.name == *variant)
-                    .ok_or_else(|| {
-                        CompileError::new(format!(
-                            "IR invariant violation: unknown enum variant `{enum_name}.{variant}`"
-                        ))
-                    })?;
+                self.expect_pattern_type(ty, expected)?;
+                let (tag, payload_ty) = self.adt_variant(expected, variant)?;
                 conditions.push(format!("({value}).tag == {tag}"));
-                match (&variant_def.payload, payload.as_deref()) {
+                match (payload_ty, payload.as_deref()) {
                     (None, None) => {}
                     (Some(payload_ty), Some(payload_pattern)) => {
                         let payload_value =
@@ -88,53 +69,51 @@ impl<'a> CGenerator<'a> {
                     }
                     _ => {
                         return Err(CompileError::new(
-                            "IR invariant violation: user enum pattern payload mismatch",
+                            "IR invariant violation: ADT pattern payload mismatch",
                         ));
                     }
                 }
-            }
-            IrMatchPattern::NestedBuiltin { variant, payload } => {
-                let (tag, payload_ty, field) = match (expected, variant.as_str()) {
-                    (Type::Option(_), "None") => (0, None, None),
-                    (Type::Option(inner), "Some") => (1, Some(inner.as_ref()), Some("some")),
-                    (Type::Result(ok, _), "Ok") => (0, Some(ok.as_ref()), Some("ok")),
-                    (Type::Result(_, err), "Err") => (1, Some(err.as_ref()), Some("err")),
-                    _ => {
-                        return Err(CompileError::new(
-                            "IR invariant violation: invalid nested built-in pattern",
-                        ));
-                    }
-                };
-                conditions.push(format!("({value}).tag == {tag}"));
-                match (payload_ty, field, payload.as_deref()) {
-                    (None, None, None) => {}
-                    (Some(payload_ty), Some(field), Some(payload_pattern)) => {
-                        let payload_value = format!("({value}).{field}");
-                        self.plan_pattern(
-                            payload_pattern,
-                            payload_ty,
-                            &payload_value,
-                            conditions,
-                            env,
-                        )?;
-                    }
-                    _ => {
-                        return Err(CompileError::new(
-                            "IR invariant violation: nested built-in pattern payload mismatch",
-                        ));
-                    }
-                }
-            }
-            IrMatchPattern::Some(_)
-            | IrMatchPattern::None
-            | IrMatchPattern::Ok(_)
-            | IrMatchPattern::Err(_) => {
-                return Err(CompileError::new(
-                    "IR invariant violation: legacy flat pattern in user enum match",
-                ));
             }
         }
         Ok(())
+    }
+
+    pub(super) fn adt_variant<'b>(
+        &'b self,
+        ty: &'b Type,
+        variant: &str,
+    ) -> Result<(usize, Option<&'b Type>), CompileError> {
+        match ty {
+            Type::Option(inner) => match variant {
+                "None" => Ok((0, None)),
+                "Some" => Ok((1, Some(inner.as_ref()))),
+                _ => Err(CompileError::new(format!(
+                    "IR invariant violation: unknown ADT variant `Option.{variant}`"
+                ))),
+            },
+            Type::Result(ok, err) => match variant {
+                "Ok" => Ok((0, Some(ok.as_ref()))),
+                "Err" => Ok((1, Some(err.as_ref()))),
+                _ => Err(CompileError::new(format!(
+                    "IR invariant violation: unknown ADT variant `Result.{variant}`"
+                ))),
+            },
+            Type::Enum(name) => self
+                .enum_def(name)?
+                .variants
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| candidate.name == variant)
+                .map(|(tag, variant)| (tag, variant.payload.as_ref()))
+                .ok_or_else(|| {
+                    CompileError::new(format!(
+                        "IR invariant violation: unknown enum variant `{name}.{variant}`"
+                    ))
+                }),
+            _ => Err(CompileError::new(
+                "IR invariant violation: variant requested for non-ADT type",
+            )),
+        }
     }
 
     fn expect_pattern_type(&self, actual: &Type, expected: &Type) -> Result<(), CompileError> {

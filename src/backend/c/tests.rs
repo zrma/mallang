@@ -135,7 +135,7 @@ fn generates_c_drop_helpers_for_internal_cleanup_types() {
         "static void MLG_UNUSED mlg_drop_Slice_int(mlg_Slice_int *mlg_value) {\n    free(mlg_value->mlg_data);\n    mlg_value->mlg_data = NULL;\n    mlg_value->mlg_len = 0;\n    mlg_value->mlg_cap = 0;\n}"
     ));
     assert!(c.contains(
-        "static void MLG_UNUSED mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->some));\n    }\n}"
+        "static void MLG_UNUSED mlg_drop_Option_Slice_int(mlg_Option_Slice_int *mlg_value) {\n    if (mlg_value->tag == 1) {\n        mlg_drop_Slice_int(&(mlg_value->mlg_payload.mlg_Some));\n    }\n}"
     ));
     assert!(c.contains(
         "static void MLG_UNUSED mlg_drop_Struct_Holder(mlg_struct_Holder *mlg_value) {\n    mlg_drop_Slice_int(&(mlg_value->mlg_values));\n}"
@@ -451,15 +451,22 @@ fn rejects_invalid_ir_option_match_arm() {
             body: vec![IrStmt {
                 kind: IrStmtKind::Match {
                     scrutinee: IrExpr {
-                        kind: IrExprKind::AdtConstructor {
-                            constructor: crate::ir::IrAdtConstructor::None,
+                        kind: IrExprKind::VariantConstructor {
+                            variant: "None".to_string(),
                             payload: None,
                         },
-                        ty: option_int,
+                        ty: option_int.clone(),
                         span,
                     },
                     arms: vec![IrMatchBlockArm {
-                        pattern: IrMatchPattern::Ok("value".to_string()),
+                        pattern: IrMatchPattern::Variant {
+                            ty: Type::Result(Box::new(Type::Int), Box::new(Type::Int)),
+                            variant: "Ok".to_string(),
+                            payload: Some(Box::new(IrMatchPattern::Binding {
+                                name: "value".to_string(),
+                                ty: Type::Int,
+                            })),
+                        },
                         body: Vec::new(),
                         span,
                     }],
@@ -473,7 +480,7 @@ fn rejects_invalid_ir_option_match_arm() {
 
     assert!(error
         .message
-        .contains("IR invariant violation: invalid Option match arm"));
+        .contains("IR invariant violation: match binding type mismatch"));
 }
 
 #[test]
@@ -492,7 +499,7 @@ func main() {
     let IrStmtKind::Let { expr, .. } = &mut ir.functions[0].body[0].kind else {
         panic!("expected enum constructor binding");
     };
-    let IrExprKind::EnumConstructor { variant, .. } = &mut expr.kind else {
+    let IrExprKind::VariantConstructor { variant, .. } = &mut expr.kind else {
         panic!("expected user enum constructor");
     };
     *variant = "Missing".to_string();
@@ -1026,7 +1033,7 @@ return match value {
     assert!(c.contains("mlg_Option_int"));
     assert!(c.contains(".tag = 1"));
     assert!(c.contains(".tag = 0"));
-    assert!(c.contains(".some"));
+    assert!(c.contains(".mlg_payload.mlg_Some"));
 }
 
 #[test]
@@ -1064,8 +1071,8 @@ func main() {
     assert!(c.contains("union {"));
     assert!(c.contains(".mlg_payload = { .mlg_Some ="));
     assert!(c.contains(".mlg_payload.mlg_Some"));
-    assert!(c.contains(".ok"));
-    assert!(c.contains(".err"));
+    assert!(c.contains(".mlg_payload.mlg_Ok"));
+    assert!(c.contains(".mlg_payload.mlg_Err"));
     assert!(c.contains("mallang_runtime_error(\"invalid enum tag\")"));
     assert!(c.contains("mlg_drop_Slice_int(&("));
 }
@@ -1146,7 +1153,7 @@ return if flag { Some(7) } else { None }
 
     assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
     assert!(c.contains("= mlg_maybe(false);"));
-    assert!(c.contains("printf(\"%lld\\n\", (long long)((("));
+    assert!(c.contains("printf(\"%lld\\n\", (long long)(mallang_match_value_tmp_"));
 }
 
 #[test]
@@ -1217,10 +1224,10 @@ return if flag { Some(7) } else { None }
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("mlg_Option_int mallang_match_tmp_"));
-    assert!(c.contains("switch ((mallang_match_tmp_"));
-    assert!(c.contains("case 1: {"));
-    assert!(c.contains(".some"));
-    assert!(c.contains("case 0: {"));
+    assert!(c.contains("if ((mallang_match_tmp_"));
+    assert!(c.contains(".tag == 1) {"));
+    assert!(c.contains(".mlg_payload.mlg_Some"));
+    assert!(c.contains("else if ((mallang_match_tmp_"));
 }
 
 #[test]
