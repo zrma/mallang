@@ -51,11 +51,11 @@ This repository is the Mallang language PoC workspace.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
-- Standalone generic structs, functions, and receiver methods use explicit type
-  arguments and demand-driven static specialization. Generic declarations are
-  also checked once with non-Copy symbolic types. Concrete function values and
-  slice type arguments reuse the existing ownership, typed IR, and native C
-  backend path.
+- Generic structs, functions, and receiver methods use explicit type arguments
+  and project-wide demand-driven static specialization, including public APIs
+  imported across packages. Generic declarations are also checked once with
+  non-Copy symbolic types. Concrete function values and slice type arguments
+  reuse the existing ownership, typed IR, and native C backend path.
 - Struct values with printable fields can be printed natively.
 - Recursive struct value definitions are rejected by `mlg check`.
 - Go-like receiver methods with Mallang parameter modes.
@@ -262,7 +262,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   specialization, concrete function values, slice type arguments, and mutable
   generic receiver cleanup.
 - `examples/projects/hello`: two-package project smoke for imported functions,
-  structs, methods, function values, higher-order APIs, and closure returns.
+  structs, generic APIs and receivers, function values, higher-order APIs, and
+  closure returns.
 - `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
   function move/alias, and recursive closure behavior.
 - `examples/if.mlg`: native smoke for `if` expressions.

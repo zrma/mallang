@@ -162,22 +162,43 @@ impl<'a> Linker<'a> {
 
         for declaration in &mut linked.structs {
             let context = self.context(declaration.span)?;
+            let type_params = declaration
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect::<BTreeSet<_>>();
             for field in &mut declaration.fields {
-                self.link_type_ref(&mut field.ty, context)?;
+                self.link_type_ref(&mut field.ty, context, &type_params)?;
+            }
+            declaration.name = internal_symbol(&context.package_path, &declaration.name);
+        }
+
+        for declaration in &mut linked.enums {
+            let context = self.context(declaration.span)?;
+            let type_params = declaration
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect::<BTreeSet<_>>();
+            for variant in &mut declaration.variants {
+                if let Some(payload) = &mut variant.payload {
+                    self.link_type_ref(payload, context, &type_params)?;
+                }
             }
             declaration.name = internal_symbol(&context.package_path, &declaration.name);
         }
 
         for function in &mut linked.functions {
             let context = self.context(function.span)?;
+            let type_params = self.function_type_params(function, context);
             if let Some(receiver) = &mut function.receiver {
-                self.link_type_ref(&mut receiver.ty, context)?;
+                self.link_type_ref(&mut receiver.ty, context, &type_params)?;
             }
             for param in &mut function.params {
-                self.link_type_ref(&mut param.ty, context)?;
+                self.link_type_ref(&mut param.ty, context, &type_params)?;
             }
             if let Some(return_type) = &mut function.return_type {
-                self.link_type_ref(return_type, context)?;
+                self.link_type_ref(return_type, context, &type_params)?;
             }
 
             let mut scopes = vec![BTreeSet::new()];
@@ -187,7 +208,13 @@ impl<'a> Linker<'a> {
             for param in &function.params {
                 scopes[0].insert(param.name.clone());
             }
-            self.link_block(&mut function.body, context, &mut scopes, false)?;
+            self.link_block(
+                &mut function.body,
+                context,
+                &mut scopes,
+                &type_params,
+                false,
+            )?;
 
             if function.receiver.is_none() {
                 function.name = self.function_symbol(&context.package_path, &function.name);
@@ -207,6 +234,30 @@ impl<'a> Linker<'a> {
                 span,
             )
         })
+    }
+
+    fn function_type_params(
+        &self,
+        function: &crate::ast::Function,
+        context: &FileContext,
+    ) -> BTreeSet<String> {
+        let mut type_params = function
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect::<BTreeSet<_>>();
+        if let Some(receiver) = &function.receiver {
+            let package = self
+                .graph
+                .package(&context.package_path)
+                .expect("every link context has a package");
+            if let Some(declaration) = package.declarations.get(&receiver.ty.name) {
+                if declaration.kind == PackageDeclarationKind::Struct {
+                    type_params.extend(declaration.type_params.iter().cloned());
+                }
+            }
+        }
+        type_params
     }
 
     fn validate_declaration_names(&self) -> Result<(), LinkError> {
@@ -249,8 +300,30 @@ impl<'a> Linker<'a> {
                 continue;
             }
             let context = self.context(declaration.span)?;
+            let type_params = declaration
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect::<BTreeSet<_>>();
             for field in &declaration.fields {
-                self.validate_public_type(&field.ty, context, &declaration.name)?;
+                self.validate_public_type(&field.ty, context, &declaration.name, &type_params)?;
+            }
+        }
+
+        for declaration in &program.enums {
+            if declaration.visibility != Visibility::Public {
+                continue;
+            }
+            let context = self.context(declaration.span)?;
+            let type_params = declaration
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect::<BTreeSet<_>>();
+            for variant in &declaration.variants {
+                if let Some(payload) = &variant.payload {
+                    self.validate_public_type(payload, context, &declaration.name, &type_params)?;
+                }
             }
         }
 
@@ -259,14 +332,15 @@ impl<'a> Linker<'a> {
                 continue;
             }
             let context = self.context(declaration.span)?;
+            let type_params = self.function_type_params(declaration, context);
             if let Some(receiver) = &declaration.receiver {
-                self.validate_public_type(&receiver.ty, context, &declaration.name)?;
+                self.validate_public_type(&receiver.ty, context, &declaration.name, &type_params)?;
             }
             for param in &declaration.params {
-                self.validate_public_type(&param.ty, context, &declaration.name)?;
+                self.validate_public_type(&param.ty, context, &declaration.name, &type_params)?;
             }
             if let Some(return_type) = &declaration.return_type {
-                self.validate_public_type(return_type, context, &declaration.name)?;
+                self.validate_public_type(return_type, context, &declaration.name, &type_params)?;
             }
         }
         Ok(())
@@ -302,18 +376,27 @@ impl<'a> Linker<'a> {
         ty: &TypeRef,
         context: &FileContext,
         declaration_name: &str,
+        type_params: &BTreeSet<String>,
     ) -> Result<(), LinkError> {
         if let Some(function) = &ty.function {
             for param in &function.params {
-                self.validate_public_type(&param.ty, context, declaration_name)?;
+                self.validate_public_type(&param.ty, context, declaration_name, type_params)?;
             }
-            self.validate_public_type(&function.return_type, context, declaration_name)?;
+            self.validate_public_type(
+                &function.return_type,
+                context,
+                declaration_name,
+                type_params,
+            )?;
             return Ok(());
         }
         for arg in &ty.args {
-            self.validate_public_type(arg, context, declaration_name)?;
+            self.validate_public_type(arg, context, declaration_name, type_params)?;
         }
         if ty.slice || ty.array_len.is_some() {
+            return Ok(());
+        }
+        if type_params.contains(&ty.name) {
             return Ok(());
         }
 
@@ -328,8 +411,10 @@ impl<'a> Linker<'a> {
         };
 
         if let Some(referenced) = referenced {
-            if referenced.kind == PackageDeclarationKind::Struct
-                && referenced.visibility != Visibility::Public
+            if matches!(
+                referenced.kind,
+                PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+            ) && referenced.visibility != Visibility::Public
             {
                 return Err(LinkError::new(
                     format!(
@@ -343,18 +428,26 @@ impl<'a> Linker<'a> {
         Ok(())
     }
 
-    fn link_type_ref(&self, ty: &mut TypeRef, context: &FileContext) -> Result<(), LinkError> {
+    fn link_type_ref(
+        &self,
+        ty: &mut TypeRef,
+        context: &FileContext,
+        type_params: &BTreeSet<String>,
+    ) -> Result<(), LinkError> {
         if let Some(function) = &mut ty.function {
             for param in &mut function.params {
-                self.link_type_ref(&mut param.ty, context)?;
+                self.link_type_ref(&mut param.ty, context, type_params)?;
             }
-            self.link_type_ref(&mut function.return_type, context)?;
+            self.link_type_ref(&mut function.return_type, context, type_params)?;
             return Ok(());
         }
         for arg in &mut ty.args {
-            self.link_type_ref(arg, context)?;
+            self.link_type_ref(arg, context, type_params)?;
         }
         if ty.slice || ty.array_len.is_some() {
+            return Ok(());
+        }
+        if type_params.contains(&ty.name) {
             return Ok(());
         }
 
@@ -366,7 +459,7 @@ impl<'a> Linker<'a> {
                 ));
             }
             let declaration = self.imported_declaration(context, qualifier, name, ty.span)?;
-            self.require_kind(declaration, PackageDeclarationKind::Struct, "type", ty.span)?;
+            self.require_type_kind(declaration, ty.span)?;
             self.require_public(context, qualifier, declaration, ty.span)?;
             let package_path = context
                 .imports
@@ -383,7 +476,12 @@ impl<'a> Linker<'a> {
         if package
             .declarations
             .get(&ty.name)
-            .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Struct)
+            .is_some_and(|declaration| {
+                matches!(
+                    declaration.kind,
+                    PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+                )
+            })
         {
             ty.name = internal_symbol(&context.package_path, &ty.name);
         }
@@ -395,13 +493,14 @@ impl<'a> Linker<'a> {
         block: &mut Block,
         context: &FileContext,
         scopes: &mut Vec<BTreeSet<String>>,
+        type_params: &BTreeSet<String>,
         push_scope: bool,
     ) -> Result<(), LinkError> {
         if push_scope {
             scopes.push(BTreeSet::new());
         }
         for statement in &mut block.statements {
-            self.link_stmt(statement, context, scopes)?;
+            self.link_stmt(statement, context, scopes, type_params)?;
         }
         if push_scope {
             scopes.pop();
@@ -414,36 +513,37 @@ impl<'a> Linker<'a> {
         statement: &mut Stmt,
         context: &FileContext,
         scopes: &mut Vec<BTreeSet<String>>,
+        type_params: &BTreeSet<String>,
     ) -> Result<(), LinkError> {
         match &mut statement.kind {
             StmtKind::Let { name, expr, .. } => {
-                self.link_expr(expr, context, scopes)?;
+                self.link_expr(expr, context, scopes, type_params)?;
                 scopes
                     .last_mut()
                     .expect("link scopes are never empty")
                     .insert(name.clone());
             }
             StmtKind::Assign { expr, .. } | StmtKind::Return { expr } => {
-                self.link_expr(expr, context, scopes)?;
+                self.link_expr(expr, context, scopes, type_params)?;
             }
             StmtKind::FieldAssign { base, expr, .. } => {
-                self.link_expr(base, context, scopes)?;
-                self.link_expr(expr, context, scopes)?;
+                self.link_expr(base, context, scopes, type_params)?;
+                self.link_expr(expr, context, scopes, type_params)?;
             }
             StmtKind::IndexAssign { base, index, expr } => {
-                self.link_expr(base, context, scopes)?;
-                self.link_expr(index, context, scopes)?;
-                self.link_expr(expr, context, scopes)?;
+                self.link_expr(base, context, scopes, type_params)?;
+                self.link_expr(index, context, scopes, type_params)?;
+                self.link_expr(expr, context, scopes, type_params)?;
             }
             StmtKind::If {
                 condition,
                 then_block,
                 else_block,
             } => {
-                self.link_expr(condition, context, scopes)?;
-                self.link_block(then_block, context, scopes, true)?;
+                self.link_expr(condition, context, scopes, type_params)?;
+                self.link_block(then_block, context, scopes, type_params, true)?;
                 if let Some(else_block) = else_block {
-                    self.link_block(else_block, context, scopes, true)?;
+                    self.link_block(else_block, context, scopes, type_params, true)?;
                 }
             }
             StmtKind::For {
@@ -455,19 +555,19 @@ impl<'a> Linker<'a> {
                 let mut loop_scopes = scopes.clone();
                 loop_scopes.push(BTreeSet::new());
                 if let Some(ForInit::Let { name, expr, .. }) = init {
-                    self.link_expr(expr, context, &loop_scopes)?;
+                    self.link_expr(expr, context, &loop_scopes, type_params)?;
                     loop_scopes
                         .last_mut()
                         .expect("loop link scope exists")
                         .insert(name.clone());
                 }
                 if let Some(condition) = condition {
-                    self.link_expr(condition, context, &loop_scopes)?;
+                    self.link_expr(condition, context, &loop_scopes, type_params)?;
                 }
-                self.link_block(body, context, &mut loop_scopes, true)?;
+                self.link_block(body, context, &mut loop_scopes, type_params, true)?;
                 if let Some(ForPost::Assign { target, expr }) = post {
-                    self.link_expr(target, context, &loop_scopes)?;
-                    self.link_expr(expr, context, &loop_scopes)?;
+                    self.link_expr(target, context, &loop_scopes, type_params)?;
+                    self.link_expr(expr, context, &loop_scopes, type_params)?;
                 }
             }
             StmtKind::RangeFor {
@@ -476,13 +576,13 @@ impl<'a> Linker<'a> {
                 source,
                 body,
             } => {
-                self.link_expr(source, context, scopes)?;
+                self.link_expr(source, context, scopes, type_params)?;
                 let mut range_scopes = scopes.clone();
                 range_scopes.push(BTreeSet::from([index_name.clone(), value_name.clone()]));
-                self.link_block(body, context, &mut range_scopes, false)?;
+                self.link_block(body, context, &mut range_scopes, type_params, false)?;
             }
             StmtKind::Match { scrutinee, arms } => {
-                self.link_expr(scrutinee, context, scopes)?;
+                self.link_expr(scrutinee, context, scopes, type_params)?;
                 for arm in arms {
                     let mut arm_scopes = scopes.clone();
                     arm_scopes.push(BTreeSet::new());
@@ -492,10 +592,10 @@ impl<'a> Linker<'a> {
                             .expect("match arm link scope exists")
                             .insert(binding.to_string());
                     }
-                    self.link_block(&mut arm.block, context, &mut arm_scopes, false)?;
+                    self.link_block(&mut arm.block, context, &mut arm_scopes, type_params, false)?;
                 }
             }
-            StmtKind::Expr { expr } => self.link_expr(expr, context, scopes)?,
+            StmtKind::Expr { expr } => self.link_expr(expr, context, scopes, type_params)?,
             StmtKind::Break | StmtKind::Continue => {}
         }
         Ok(())
@@ -506,20 +606,23 @@ impl<'a> Linker<'a> {
         expr: &mut Expr,
         context: &FileContext,
         scopes: &[BTreeSet<String>],
+        type_params: &BTreeSet<String>,
     ) -> Result<(), LinkError> {
         match &mut expr.kind {
             ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => {}
             ExprKind::Var(name) => {
-                if let Some(symbol) = self.local_function_symbol(context, scopes, name) {
-                    *name = symbol;
+                if !type_params.contains(name) {
+                    if let Some(symbol) = self.local_function_symbol(context, scopes, name) {
+                        *name = symbol;
+                    }
                 }
             }
             ExprKind::FunctionLiteral(function) => {
                 for param in function.params.iter_mut() {
-                    self.link_type_ref(&mut param.ty, context)?;
+                    self.link_type_ref(&mut param.ty, context, type_params)?;
                 }
                 if let Some(return_type) = &mut function.return_type {
-                    self.link_type_ref(return_type, context)?;
+                    self.link_type_ref(return_type, context, type_params)?;
                 }
                 let mut closure_scopes = scopes.to_vec();
                 closure_scopes.push(
@@ -529,19 +632,25 @@ impl<'a> Linker<'a> {
                         .map(|param| param.name.clone())
                         .collect(),
                 );
-                self.link_block(&mut function.body, context, &mut closure_scopes, false)?;
+                self.link_block(
+                    &mut function.body,
+                    context,
+                    &mut closure_scopes,
+                    type_params,
+                    false,
+                )?;
             }
             ExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                self.link_expr(condition, context, scopes)?;
-                self.link_expr(then_branch, context, scopes)?;
-                self.link_expr(else_branch, context, scopes)?;
+                self.link_expr(condition, context, scopes, type_params)?;
+                self.link_expr(then_branch, context, scopes, type_params)?;
+                self.link_expr(else_branch, context, scopes, type_params)?;
             }
             ExprKind::Match { scrutinee, arms } => {
-                self.link_expr(scrutinee, context, scopes)?;
+                self.link_expr(scrutinee, context, scopes, type_params)?;
                 for arm in arms {
                     let mut arm_scopes = scopes.to_vec();
                     arm_scopes.push(BTreeSet::new());
@@ -551,7 +660,7 @@ impl<'a> Linker<'a> {
                             .expect("match expression link scope exists")
                             .insert(binding.to_string());
                     }
-                    self.link_expr(&mut arm.expr, context, &arm_scopes)?;
+                    self.link_expr(&mut arm.expr, context, &arm_scopes, type_params)?;
                 }
             }
             ExprKind::StructLiteral {
@@ -559,18 +668,19 @@ impl<'a> Linker<'a> {
                 type_args,
                 fields,
             } => {
-                *type_name = self.resolve_struct_name(context, type_name, expr.span)?;
+                *type_name =
+                    self.resolve_struct_name(context, type_name, expr.span, type_params)?;
                 for type_arg in type_args {
-                    self.link_type_ref(type_arg, context)?;
+                    self.link_type_ref(type_arg, context, type_params)?;
                 }
                 for field in fields {
-                    self.link_expr(&mut field.expr, context, scopes)?;
+                    self.link_expr(&mut field.expr, context, scopes, type_params)?;
                 }
             }
             ExprKind::ArrayLiteral { ty, elements } => {
-                self.link_type_ref(ty, context)?;
+                self.link_type_ref(ty, context, type_params)?;
                 for element in elements {
-                    self.link_expr(element, context, scopes)?;
+                    self.link_expr(element, context, scopes, type_params)?;
                 }
             }
             ExprKind::FieldAccess { base, field } => {
@@ -582,16 +692,21 @@ impl<'a> Linker<'a> {
                         return Ok(());
                     }
                 }
-                self.link_expr(base, context, scopes)?;
+                self.link_expr(base, context, scopes, type_params)?;
             }
             ExprKind::Index { base, index } => {
-                self.link_expr(base, context, scopes)?;
-                self.link_expr(index, context, scopes)?;
+                if self.is_generic_function_expr(base, context, scopes) {
+                    self.link_expr(base, context, scopes, type_params)?;
+                    self.link_type_expr(index, context, type_params)?;
+                    return Ok(());
+                }
+                self.link_expr(base, context, scopes, type_params)?;
+                self.link_expr(index, context, scopes, type_params)?;
             }
             ExprKind::TypeApply { base, args } => {
-                self.link_expr(base, context, scopes)?;
+                self.link_expr(base, context, scopes, type_params)?;
                 for arg in args {
-                    self.link_type_ref(arg, context)?;
+                    self.link_type_ref(arg, context, type_params)?;
                 }
             }
             ExprKind::Call { callee, args } => {
@@ -629,19 +744,115 @@ impl<'a> Linker<'a> {
                             *name = symbol;
                         }
                     }
-                    self.link_expr(callee, context, scopes)?;
+                    self.link_expr(callee, context, scopes, type_params)?;
                 }
                 for arg in args {
-                    self.link_expr(&mut arg.expr, context, scopes)?;
+                    self.link_expr(&mut arg.expr, context, scopes, type_params)?;
                 }
             }
-            ExprKind::Unary { expr, .. } => self.link_expr(expr, context, scopes)?,
+            ExprKind::Unary { expr, .. } => self.link_expr(expr, context, scopes, type_params)?,
             ExprKind::Binary { left, right, .. } => {
-                self.link_expr(left, context, scopes)?;
-                self.link_expr(right, context, scopes)?;
+                self.link_expr(left, context, scopes, type_params)?;
+                self.link_expr(right, context, scopes, type_params)?;
             }
         }
         Ok(())
+    }
+
+    fn link_type_expr(
+        &self,
+        expr: &mut Expr,
+        context: &FileContext,
+        type_params: &BTreeSet<String>,
+    ) -> Result<(), LinkError> {
+        match &mut expr.kind {
+            ExprKind::Var(name) => {
+                if type_params.contains(name) {
+                    return Ok(());
+                }
+                let package = self
+                    .graph
+                    .package(&context.package_path)
+                    .expect("every link context has a package");
+                if package.declarations.get(name).is_some_and(|declaration| {
+                    matches!(
+                        declaration.kind,
+                        PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+                    )
+                }) {
+                    *name = internal_symbol(&context.package_path, name);
+                }
+                Ok(())
+            }
+            ExprKind::FieldAccess { base, field } => {
+                if let ExprKind::Var(qualifier) = &base.kind {
+                    if context.imports.contains_key(qualifier) {
+                        let declaration =
+                            self.imported_declaration(context, qualifier, field, expr.span)?;
+                        self.require_type_kind(declaration, expr.span)?;
+                        self.require_public(context, qualifier, declaration, expr.span)?;
+                        let package_path = context
+                            .imports
+                            .get(qualifier)
+                            .expect("an imported declaration has a package path");
+                        expr.kind = ExprKind::Var(internal_symbol(package_path, field));
+                        return Ok(());
+                    }
+                }
+                Err(LinkError::new(
+                    "type argument must use a known type name",
+                    expr.span,
+                ))
+            }
+            ExprKind::Index { base, index } => {
+                self.link_type_expr(base, context, type_params)?;
+                self.link_type_expr(index, context, type_params)
+            }
+            ExprKind::TypeApply { base, args } => {
+                self.link_type_expr(base, context, type_params)?;
+                for arg in args {
+                    self.link_type_ref(arg, context, type_params)?;
+                }
+                Ok(())
+            }
+            _ => Err(LinkError::new("type argument must be a type", expr.span)),
+        }
+    }
+
+    fn is_generic_function_expr(
+        &self,
+        expr: &Expr,
+        context: &FileContext,
+        scopes: &[BTreeSet<String>],
+    ) -> bool {
+        match &expr.kind {
+            ExprKind::Var(name) if !is_bound(scopes, name) => self
+                .graph
+                .package(&context.package_path)
+                .and_then(|package| package.declarations.get(name))
+                .is_some_and(|declaration| {
+                    declaration.kind == PackageDeclarationKind::Function
+                        && !declaration.type_params.is_empty()
+                }),
+            ExprKind::FieldAccess { base, field } => {
+                let ExprKind::Var(qualifier) = &base.kind else {
+                    return false;
+                };
+                if is_bound(scopes, qualifier) {
+                    return false;
+                }
+                context
+                    .imports
+                    .get(qualifier)
+                    .and_then(|path| self.graph.package(path))
+                    .and_then(|package| package.declarations.get(field))
+                    .is_some_and(|declaration| {
+                        declaration.kind == PackageDeclarationKind::Function
+                            && !declaration.type_params.is_empty()
+                    })
+            }
+            _ => false,
+        }
     }
 
     fn resolve_struct_name(
@@ -649,7 +860,11 @@ impl<'a> Linker<'a> {
         context: &FileContext,
         source_name: &str,
         span: Span,
+        type_params: &BTreeSet<String>,
     ) -> Result<String, LinkError> {
+        if type_params.contains(source_name) {
+            return Ok(source_name.to_string());
+        }
         if let Some((qualifier, name)) = source_name.split_once('.') {
             let declaration = self.imported_declaration(context, qualifier, name, span)?;
             self.require_kind(declaration, PackageDeclarationKind::Struct, "struct", span)?;
@@ -753,6 +968,23 @@ impl<'a> Linker<'a> {
                     "`{}` is not a {expected_name} declaration",
                     declaration.name
                 ),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_type_kind(
+        &self,
+        declaration: &PackageDeclaration,
+        span: Span,
+    ) -> Result<(), LinkError> {
+        if !matches!(
+            declaration.kind,
+            PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+        ) {
+            return Err(LinkError::new(
+                format!("`{}` is not a type declaration", declaration.name),
                 span,
             ));
         }
@@ -948,6 +1180,55 @@ pub func (con self Message) Print() {
     }
 
     #[test]
+    fn links_cross_package_generic_types_functions_and_receivers() {
+        let project = TempProject::new("generic-api");
+        project.write(
+            "src/main.mlg",
+            r#"package main
+import "hello/greet"
+
+func main() {
+    print(greet.Identity[int](7))
+    wrapped := greet.Identity[greet.Box[int]](greet.Box[int]{value: 8})
+    print(wrapped.value)
+    mut box := greet.Box[string]{value: "before"}
+    box.Replace("after")
+    print(box.value)
+}
+"#,
+        );
+        project.write(
+            "src/greet/greet.mlg",
+            r#"package greet
+
+type T struct { hidden int }
+
+pub type Box[T] struct { value T }
+
+pub func Identity[T](value T) T { return value }
+
+pub func (mut box Box[T]) Replace(value T) {
+    box.value = value
+}
+"#,
+        );
+
+        let (_, _, linked, graph) = project.link().unwrap();
+        assert!(linked.structs.iter().any(|declaration| {
+            declaration.name.starts_with("__mlg_pkg_") && !declaration.type_params.is_empty()
+        }));
+        assert!(linked.functions.iter().any(|function| {
+            function.name.starts_with("__mlg_pkg_") && !function.type_params.is_empty()
+        }));
+
+        let checked = check_project(&linked, &graph).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+        assert!(c.contains("before"));
+        assert!(c.contains("after"));
+    }
+
+    #[test]
     fn links_package_function_values_and_closure_returns() {
         let project = TempProject::new("function-values");
         project.write(
@@ -1110,19 +1391,22 @@ pub func MakeAdder(offset int) func(int) int {
             r#"package main
 import "hello/greet"
 
-type Local struct {}
+type Local struct {
+    Identity []int
+}
 
 func (con self Local) Print() {}
 
 func main() {
-    greet := Local{}
+    greet := Local{Identity: []int{7}}
     greet.Print()
+    print(greet.Identity[0])
 }
 "#,
         );
         project.write(
             "src/greet/greet.mlg",
-            "package greet\npub func Print() {}\n",
+            "package greet\npub func Print() {}\npub func Identity[T](value T) T { return value }\n",
         );
 
         let (_, _, linked, graph) = project.link().unwrap();
@@ -1189,6 +1473,18 @@ func main() {
         assert_eq!(
             function_type_error.message,
             "public declaration `Apply` exposes private type `Secret`"
+        );
+
+        let enumeration = TempProject::new("private-enum-payload");
+        enumeration.write("src/main.mlg", "package main\nfunc main() {}\n");
+        enumeration.write(
+            "src/model/model.mlg",
+            "package model\ntype Detail struct {}\npub type State enum { Empty Full(Detail) }\n",
+        );
+        let enum_error = enumeration.link().unwrap_err();
+        assert_eq!(
+            enum_error.message,
+            "public declaration `State` exposes private type `Detail`"
         );
     }
 
