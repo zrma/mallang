@@ -157,7 +157,7 @@ v1로 간주한다.
 
 ## v0.5.0: Ownership and Runtime
 
-상태: decision gate proposed
+상태: implementation in progress
 
 목표: v1 language surface 전체에 적용할 memory model과 runtime ownership 경계를
 닫는다.
@@ -165,7 +165,8 @@ v1로 간주한다.
 범위:
 
 - generic value, closure environment, ADT에 move/borrow/drop 규칙을 확장한다.
-- owned recursive data를 위한 safe heap value abstraction을 제공한다.
+- positional multi-payload와 compiler-owned indirection으로 recursive user ADT를
+  ordinary value syntax에서 지원한다.
 - struct/ADT field take와 partial move 규칙을 일반화하거나 명시적으로 제한한다.
 - return, branch, loop, early exit, overwrite의 cleanup 정확성을 완성한다.
 - mutable range value와 by-reference iteration의 최종 v1 경계를 결정한다.
@@ -177,8 +178,8 @@ v1로 간주한다.
 - first-class reference를 요구하는 구체적인 v1 use case가 없다면 `con`/`mut`
   borrow는 call-scoped로 유지한다.
 - user-visible lifetime syntax와 raw pointer syntax는 도입하지 않는다.
-- recursive ownership은 pointer syntax 대신 compiler 또는 standard-library가
-  소유하는 safe abstraction으로 제공한다.
+- recursive ownership의 allocation과 indirection은 compiler가 관리하며 source에는
+  pointer/reference wrapper를 추가하지 않는다.
 
 완료 조건:
 
@@ -335,7 +336,7 @@ contract를 검증하고 배포하는 마일스톤이다.
 | `v0.2` 시작 전 | module/import/visibility syntax와 project manifest 경계 |
 | `v0.3` 시작 전 | closure literal, capture mode, escaping closure 규칙 |
 | `v0.4` 시작 전 | enum/generic syntax와 specialization strategy |
-| `v0.5` 시작 전 | owned heap abstraction, partial move, first-class reference 필요성 |
+| `v0.5` 시작 전 | transparent recursive ADT, partial move와 first-class reference 필요성 |
 | `v0.7` 시작 전 | supported target matrix와 installation contract |
 | `v0.9` 시작 전 | v1 compatibility, deprecation, edition policy |
 

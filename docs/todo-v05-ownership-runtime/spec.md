@@ -1,155 +1,187 @@
 # Spec: v0.5-ownership-runtime
 
-상태: proposed, approval required
+상태: approved
 
 ## 목표
 
-- v1 후보 type 전체의 Copy, move, borrow와 drop 규칙을 하나의 memory model로 닫는다.
-- Raw pointer나 user-visible lifetime 없이 owned recursive data를 표현한다.
-- Normal control flow의 owned temporary와 aggregate replacement를 deterministic cleanup에
-  연결한다.
-- Fatal runtime failure와 recoverable `Result` 경계를 분리한다.
+- 사용자가 기본 move와 call-scoped `con`/`mut`만 기억하는 v1 memory model을
+  완성한다.
+- Pointer/reference wrapper 없이 recursive functional ADT를 ordinary value syntax로
+  표현한다.
+- Allocation, indirection, temporary lifetime과 drop을 compiler 내부 책임으로 둔다.
+- Normal-flow cleanup과 fatal no-unwind runtime failure를 명확히 분리한다.
 
-## 승인 대기 결정
+## 확정 결정
 
-- Value classification: primitive와 built-in ADT의 현재 Copy 경계를 유지하고 나머지
-  aggregate/resource type은 move-only로 둔다.
-- String storage: static literal과 heap-backed immutable text를 하나의 move-only
-  runtime representation으로 통합한다.
-- Recursive ownership: predeclared `Heap[T]`, `heap(value)`, `unheap(value)`를 사용한다.
-- Field extraction: uninitialized partial move 대신
-  `replace(mut place, replacement) -> T`를 사용한다.
-- Temporary: full-expression lifetime과 deterministic normal-flow drop을 구현한다.
-- Borrow: `con`/`mut`는 call-scoped로 유지하고 first-class reference와 by-reference
-  range를 v1 후보에서 제외한다.
-- Failure: fatal runtime error는 stderr + non-zero no-unwind termination이며 expected
-  failure는 v0.6 `Result` API로 넘긴다.
+- `Box`, `Heap`, `Shared`, `Weak`, raw pointer와 lifetime syntax를 추가하지 않는다.
+- User enum variant는 zero, one, multiple positional payload를 가질 수 있다.
+- Recursive user enum은 source에서 ordinary move-only value이며 backend가 compiler-owned
+  indirect storage로 낮춘다.
+- Direct recursive struct와 base variant가 없는 비생산적 recursive ADT는 거부한다.
+- General partial move, `replace` intrinsic과 struct destructuring은 추가하지 않는다.
+- Full-expression temporary cleanup은 source syntax 없이 IR에서 구현한다.
+- `con`/`mut` borrow는 call-scoped로 유지하고 by-reference range를 추가하지 않는다.
+- Fatal runtime failure는 stderr diagnostic과 non-zero no-unwind termination을 사용한다.
 
-## Memory Model
-
-| Type | Copy | Runtime resource | Drop behavior |
-| --- | --- | --- | --- |
-| `int`, `bool`, `unit` | yes | none | no-op |
-| `Option[T]` | when `T` is Copy | payload-dependent | active payload drop |
-| `Result[T, E]` | when both payloads are Copy | payload-dependent | active payload drop |
-| `string` | no | static or owned text storage | free owned storage only |
-| `[N]T` | no | element-dependent | drop active elements |
-| `[]T` | no | owned buffer | drop elements, then free buffer |
-| user struct | no | field-dependent | drop fields in reverse declaration order |
-| user enum | no | active payload-dependent | drop active payload |
-| function value/closure | no | optional owned environment | drop captures, then free environment |
-| `Heap[T]` | no | one non-null allocation | drop payload, then free allocation |
-
-User-defined copy derivation, destructor and finalizer는 v0.5 범위가 아니다.
-
-## Heap Surface
+## Recursive Enum Surface
 
 ```mlg
-next := heap(List[int].Nil)
-node := Node[int]{head: 1, tail: next}
-owned := heap(node)
-show(con owned.value)
-replace(mut owned.value.head, 2)
-nodeAgain := unheap(owned)
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+func Prepend[T](head T, tail List[T]) List[T] {
+    return List[T].Cons(head, tail)
+}
+
+func Length[T](list List[T]) int {
+    return match list {
+        case List.Nil { 0 }
+        case List.Cons(_, tail) { 1 + Length[T](tail) }
+    }
+}
 ```
 
-- `Heap[T]`는 exactly one owner를 가진다.
-- `heap`은 payload ownership을 consume한다.
-- `unheap`은 handle ownership을 consume하고 payload ownership을 반환한다.
-- `.value`는 place projection이며 owned move source가 아니다.
-- Recursive type validation은 `Heap` edge에서 by-value cycle 탐색을 멈춘다.
-- Heap allocation은 checked size와 null failure guard를 사용한다.
+Rules:
 
-## Replace Surface
+- Variant declaration payload arity is part of the enum signature.
+- Constructor type argument remains explicit under v0.4 rules.
+- Constructor argument count and each payload type are checked at source span.
+- Pattern payload count must exactly match the active variant arity.
+- Each payload pattern may be a binding, wildcard or nested enum pattern.
+- Match remains exhaustive and consuming for move-only scrutinees.
+- Existing single payload syntax remains source-compatible.
+- Named variant fields, tuple types, tuple expressions and struct patterns are not implied.
+
+## Recursive Type Validity
+
+The compiler builds a declaration graph after concrete generic specialization.
+
+- An acyclic declaration keeps the existing inline representation.
+- A cyclic component is valid only when it contains at least one user enum.
+- Every valid cyclic component must have a constructor path that does not immediately require
+  another value from the same component.
+- Direct or mutual struct-only recursion is rejected.
+- Built-in `Option`/`Result` alone do not create implicit recursive indirection.
+- A recursive concrete specialization is move-only regardless of payload Copy properties.
+- Expanding generic specialization cycles remain rejected under the v0.4 budget rule.
+
+Examples:
 
 ```mlg
-old := replace(mut target.field, replacement)
+// valid: Nil is a base variant
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+// invalid: no finite constructor
+type Loop enum {
+    Again(Loop)
+}
+
+// invalid: no enum indirection boundary
+type Node struct {
+    next Node
+}
 ```
 
-- Target는 mutable local-rooted place 또는 `Heap.value` projection이어야 한다.
-- Target와 replacement type은 같아야 한다.
-- Target base/index는 한 번만 평가한다.
-- Replacement는 old value를 꺼내기 전에 temporary로 완전히 평가한다.
-- Old value는 결과로 move되고 target는 replacement로 즉시 다시 초기화된다.
-- Result를 버리면 full-expression cleanup이 old value를 drop한다.
-- 일반 uninitialized partial move와 runtime field drop flag는 만들지 않는다.
+## Ownership and Storage Contract
+
+- Recursive enum constructor는 compiler-owned non-null storage를 만들 수 있다.
+- Constructor arguments are evaluated left to right and then moved into active payload slots.
+- A recursive enum handle has exactly one owner and cannot be copied or observed as an address.
+- Assignment, argument passing and return transfer handle ownership under normal move rules.
+- Consuming match transfers every active payload into an arm binding or wildcard cleanup slot.
+- After payload transfer, the compiler releases the enum storage shell exactly once.
+- Dropping an unmatched value drops active payloads before releasing its storage.
+- Source semantics do not depend on the concrete C pointer/tag/union layout.
+- Allocation size overflow and allocation failure become Mallang fatal runtime errors.
+
+## Aggregate and Field Rules
+
+- User struct fields remain fully initialized for the lifetime of the struct.
+- Plain move-out from a non-slice struct field remains rejected.
+- Field assignment evaluates the replacement first, drops the old field, then stores the new
+  ownership.
+- Existing owned slice field take leaves an empty slice and remains the only field-take
+  compatibility exception.
+- Enum match consumes the whole enum, so binding multiple payloads does not create a partially
+  initialized parent value.
 
 ## Temporary and Cleanup Rules
 
-Normal control flow에서 owned value마다 정확히 한 번 다음 중 하나가 일어난다.
+Every owned value on normal control flow is moved or dropped exactly once.
 
-1. 다른 owner로 move한다.
-2. `Copy` value로 복사한다.
-3. 마지막 정상-flow lifetime 끝에서 drop한다.
+- Full-expression temporaries are explicit in typed IR, not source syntax.
+- Call argument temporaries live through the call and drop after return.
+- Condition/index/`len` temporaries drop after their final read.
+- Branch-local values drop when the selected branch exits.
+- Loop source temporaries live through the loop and drop on normal exit, `break` or enclosing
+  function return.
+- Return expressions are evaluated into caller-owned return temporaries before callee local
+  cleanup.
+- Overwrite evaluates the right-hand side before dropping the old destination.
+- Cleanup-valued expression statements drop their result at full-expression end.
+- A control-flow merge that cannot prove one ownership state must be normalized explicitly or
+  rejected; the backend does not guess with implicit aliasing.
 
-Cleanup scope:
+## Borrow and Range Rules
 
-- Statement expression temporary는 full-expression 끝이다.
-- Call argument temporary는 call이 반환된 뒤다.
-- Condition temporary는 condition 평가가 끝난 뒤다.
-- Branch-local temporary는 선택된 branch를 떠날 때다.
-- Loop source temporary는 loop exit, `break` 또는 enclosing function exit에 맞는
-  cleanup path를 가진다.
-- Return expression은 return temporary로 먼저 평가하고 callee local cleanup 뒤
-  caller에게 ownership을 전달한다.
-- Overwrite는 right-hand side 평가 성공 뒤 old destination을 drop하고 새 owner를
-  저장한다.
-- Fatal runtime termination은 unwind하지 않으므로 이 normal-flow 규칙 밖이다.
-
-## Borrow Rules
-
-- `con expr`와 `mut expr`는 direct call argument mode다.
-- Borrow는 callee return 시 끝난다.
-- Borrowed non-Copy value는 move, return, store 또는 capture할 수 없다.
-- 같은 call 안에서 shared/shared는 허용하고 shared/exclusive 및 overlapping
-  exclusive borrow는 거부한다.
-- Field/index place disjointness는 compiler가 증명할 수 있는 범위만 허용한다.
-- First-class reference, lifetime annotation, borrowed return과 borrowed collection view는
-  v0.5/v1 후보 surface에 포함하지 않는다.
-- Range element mutation은 indexed place assignment/replace/call borrow로 표현한다.
+- `con expr` and `mut expr` remain direct call argument modes.
+- A borrow ends when the callee returns.
+- Borrowed non-Copy values cannot be moved, returned, stored or captured.
+- First-class references, lifetime annotation and borrowed return values are not part of v1.
+- Range value binding remains Copy-only.
+- Non-Copy range traversal uses index-only iteration and call-scoped indexed borrow.
+- Range element mutation uses indexed assignment or `mut values[i]` call access.
+- Compiler-owned loop temporaries do not create user-visible borrowed values.
 
 ## Runtime Failure Contract
 
-- Fatal guard는 stderr에 안정적인 Mallang runtime error를 쓰고 non-zero로 종료한다.
-- Fatal failure는 catch할 수 없고 stack unwinding이나 user cleanup을 실행하지 않는다.
-- Allocation size overflow와 allocation failure는 unchecked C behavior 전에 guard한다.
-- Normal program exit은 모든 compiler-owned allocation을 정리한다.
-- Recoverable I/O, parse와 environment failure는 v0.6 library에서 `Result`로 전달한다.
+- Fatal guards print a stable `mallang runtime error: ...` diagnostic to stderr.
+- Fatal failure exits non-zero and does not unwind Mallang stack frames.
+- Normal program exit must release all compiler-owned allocations.
+- User-visible panic/recover, exception and catch are not added.
+- Recoverable I/O and environment failures belong to v0.6 `Result` APIs.
 
 ## 구현 순서
 
-1. Q1-Q7 추천안을 승인받고 이 문서를 확정한다.
-2. Compiler-wide value/drop classification API와 type matrix regression을 추가한다.
-3. Full-expression temporary와 branch/loop/return cleanup normalization을 완성한다.
-4. `replace` place semantics와 overwrite/cleanup lowering을 추가한다.
-5. `Heap[T]`, `heap`, `unheap`, recursive type validation과 native layout/drop을 추가한다.
-6. `string` runtime representation을 static/owned storage로 일반화한다.
-7. Borrow/range exclusion diagnostic과 SPEC memory model을 동기화한다.
-8. Allocation accounting, failure injection, strict C와 sanitizer acceptance를 연결한다.
+1. Q1-Q7 추천안을 승인하고 이 문서를 확정한다. (완료)
+2. Enum declaration/constructor/pattern을 positional payload list로 일반화한다.
+3. Concrete recursive declaration graph, base-case validation과 diagnostics를 추가한다.
+4. Recursive multi-payload enum typed IR과 ownership transfer를 추가한다.
+5. Compiler-owned recursive enum C layout, constructor, match와 drop을 구현한다.
+6. Full-expression temporary와 loop source cleanup normalization을 완성한다.
+7. Static/owned string runtime representation과 drop contract를 통합한다.
+8. Borrow/range exclusion regression과 normative memory spec을 동기화한다.
+9. Allocation accounting, failure injection, strict C와 sanitizer acceptance를 연결한다.
 
 ## 제외
 
-- Raw pointer, address-of와 pointer arithmetic
-- Null/nullable `Heap`
+- `Box`, `Heap`, `Shared`, `Weak` source type
+- Raw pointer, address-of, dereference와 nullable handle
 - Shared ownership, reference counting와 cycle collector
 - First-class reference와 user-visible lifetime
 - By-reference/mutable range binding
-- General uninitialized partial move와 runtime field drop flag
+- General partial move, `replace` intrinsic와 struct destructuring
+- Named enum payload와 standalone tuple type
+- Direct/mutual struct-only recursive value type
 - User-defined destructor/finalizer
 - Panic/recover, exception와 stack unwinding
-- Recoverable standard-library error API 구현
 
 ## 완료 기준
 
-- Recursive `Heap` data가 native compile/run되고 non-Copy payload를 exactly once drop한다.
+- Generic recursive enum이 multiple positional payload로 native compile/run된다.
+- Recursive constructor/match/drop이 non-Copy nested payload를 정확히 한 번 정리한다.
+- Invalid payload arity/type, non-productive recursion과 struct-only recursion을 source
+  diagnostic으로 거부한다.
 - Full-expression temporary가 call, condition, index, range와 discarded expression에서
   leak이나 double-drop 없이 동작한다.
-- `replace`가 local/field/index/heap place에서 old ownership을 안전하게 반환한다.
-- String literal과 heap-backed string의 move/drop contract가 동일 type 아래 검증된다.
-- Known use-after-move, borrowed escape, overlap, partial move와 cleanup merge 오류를
-  source diagnostic으로 거부한다.
-- Return, branch, loop, early exit와 overwrite cleanup이 typed IR regression으로
+- Known use-after-move, borrowed escape, borrow overlap과 cleanup merge failure가 regression으로
   고정된다.
+- Return, branch, loop, early exit와 overwrite cleanup이 typed IR regression으로 고정된다.
 - Cleanup-heavy generated C가 strict warning-clean, ASan/UBSan과 normal-exit allocation
   accounting을 통과한다.
 - `SPEC.md`, implementation과 runtime failure behavior가 같은 memory model을 설명한다.

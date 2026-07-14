@@ -222,7 +222,7 @@ target/mallang/match-statement
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
-- `docs/todo-v05-ownership-runtime/`: v0.5 memory model과 owned heap abstraction decision gate
+- `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -231,9 +231,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. `docs/todo-v05-ownership-runtime/open-questions.md`의 Q1-Q7 추천안을 검토한다.
-2. 사용자 승인 뒤 v0.5 memory model과 compatibility boundary를 확정한다.
-3. 승인 전에는 v0.5 lexer/parser, semantic과 backend 구현을 시작하지 않는다.
+1. Enum declaration/constructor/pattern을 positional multi-payload로 일반화한다.
+2. Existing zero/single payload와 generic/imported enum compatibility를 유지한다.
+3. Typed IR/backend 변경 전 explicit invariant boundary와 source diagnostic을 고정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
