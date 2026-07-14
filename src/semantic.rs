@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     fmt,
+    sync::Arc,
 };
 
 use crate::{
@@ -14,23 +15,23 @@ use crate::{
     token::Span,
 };
 
-pub fn check(program: &Program) -> Result<CheckedProgram<'_>, SemanticError> {
+pub fn check(program: &Program) -> Result<CheckedProgram, SemanticError> {
     Checker::new(program).check()
 }
 
-pub fn check_project<'a>(
-    program: &'a Program,
-    package_graph: &'a PackageGraph,
-) -> Result<CheckedProgram<'a>, SemanticError> {
+pub fn check_project(
+    program: &Program,
+    package_graph: &PackageGraph,
+) -> Result<CheckedProgram, SemanticError> {
     Checker::new_project(program, package_graph).check()
 }
 
 #[derive(Debug, Clone)]
-pub struct CheckedProgram<'a> {
-    pub program: &'a Program,
-    pub signatures: HashMap<&'a str, FunctionSig>,
+pub struct CheckedProgram {
+    pub program: Arc<Program>,
+    pub signatures: HashMap<String, FunctionSig>,
     pub methods: HashMap<MethodKey, MethodSig>,
-    pub structs: HashMap<&'a str, StructSig>,
+    pub structs: HashMap<String, StructSig>,
     pub closures: Vec<CheckedClosure>,
 }
 
@@ -220,10 +221,10 @@ impl std::error::Error for SemanticError {}
 struct Checker<'a> {
     program: &'a Program,
     package_graph: Option<&'a PackageGraph>,
-    signatures: HashMap<&'a str, FunctionSig>,
+    signatures: HashMap<String, FunctionSig>,
     methods: HashMap<MethodKey, MethodSig>,
     method_access: HashMap<MethodKey, MethodAccess>,
-    structs: HashMap<&'a str, StructSig>,
+    structs: HashMap<String, StructSig>,
     closures: RefCell<Vec<CheckedClosure>>,
 }
 
@@ -252,7 +253,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn check(mut self) -> Result<CheckedProgram<'a>, SemanticError> {
+    fn check(mut self) -> Result<CheckedProgram, SemanticError> {
         self.reject_unlowered_generic_declarations()?;
         self.collect_structs()?;
         self.collect_signatures()?;
@@ -261,7 +262,7 @@ impl<'a> Checker<'a> {
         }
 
         Ok(CheckedProgram {
-            program: self.program,
+            program: Arc::new(self.program.clone()),
             signatures: self.signatures,
             methods: self.methods,
             structs: self.structs,
@@ -317,7 +318,7 @@ impl<'a> Checker<'a> {
                 ));
             }
             self.structs
-                .insert(struct_decl.name.as_str(), StructSig { fields: Vec::new() });
+                .insert(struct_decl.name.clone(), StructSig { fields: Vec::new() });
         }
 
         for struct_decl in &self.program.structs {
@@ -341,7 +342,7 @@ impl<'a> Checker<'a> {
             }
 
             self.structs
-                .insert(struct_decl.name.as_str(), StructSig { fields });
+                .insert(struct_decl.name.clone(), StructSig { fields });
         }
 
         self.reject_recursive_structs()?;
@@ -501,7 +502,7 @@ impl<'a> Checker<'a> {
                         function.span,
                     ));
                 }
-                self.signatures.insert(function.name.as_str(), function_sig);
+                self.signatures.insert(function.name.clone(), function_sig);
             }
         }
 
@@ -3699,7 +3700,7 @@ fn collect_closure_captures(
     function: &FunctionLiteral,
     outer_locals: &HashMap<String, Local>,
     methods: &HashMap<MethodKey, MethodSig>,
-    structs: &HashMap<&str, StructSig>,
+    structs: &HashMap<String, StructSig>,
     recursive_binding: Option<&str>,
 ) -> Result<Vec<ClosureCaptureUse>, SemanticError> {
     let mut collector = ClosureCaptureCollector {
@@ -3730,7 +3731,7 @@ fn collect_closure_captures(
 struct ClosureCaptureCollector<'a> {
     outer_locals: &'a HashMap<String, Local>,
     methods: &'a HashMap<MethodKey, MethodSig>,
-    structs: &'a HashMap<&'a str, StructSig>,
+    structs: &'a HashMap<String, StructSig>,
     recursive_binding: Option<&'a str>,
     recursive_reference: Option<Span>,
     captures: Vec<ClosureCaptureUse>,
