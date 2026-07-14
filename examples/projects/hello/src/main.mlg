@@ -11,4 +11,10 @@ func main() {
     print(selected(11))
     add := greet.MakeAdder(10)
     print(add(5))
+    print(greet.Identity[string]("generic"))
+    wrapped := greet.Identity[greet.Box[int]](greet.Box[int]{value: 8})
+    print(wrapped.value)
+    mut box := greet.Box[string]{value: "before"}
+    box.Replace("updated")
+    print(box.value)
 }

@@ -4,12 +4,24 @@ pub type Message struct {
     name string
 }
 
+pub type Box[T] struct {
+    value T
+}
+
 pub func New(name string) Message {
     return Message{name: name}
 }
 
 pub func (con message Message) Print() {
     print(message.name)
+}
+
+pub func Identity[T](value T) T {
+    return value
+}
+
+pub func (mut box Box[T]) Replace(value T) {
+    box.value = value
 }
 
 pub func Double(value int) int {

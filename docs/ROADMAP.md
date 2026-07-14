@@ -1025,3 +1025,12 @@
 - [x] generic receiver의 declaration type parameter binding과 independent generic 거부
 - [x] concrete struct specialization마다 `con`/`mut` receiver method 생성
 - [x] non-Copy generic field 교체의 native output, strict C, ASan/UBSan gate 추가
+
+## P129: Package-aware Generic Resolution
+
+- [x] package declaration metadata에 generic arity와 enum type kind 보존
+- [x] declaration-scoped type parameter namespace와 local type shadowing 처리
+- [x] imported generic struct/function/receiver를 package internal symbol로 연결
+- [x] nested imported generic type argument와 value index expression 구분
+- [x] public generic API와 enum payload의 private type 노출 거부
+- [x] cross-package generic native output, strict C, ASan/UBSan gate 추가

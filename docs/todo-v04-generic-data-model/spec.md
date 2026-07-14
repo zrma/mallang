@@ -144,16 +144,18 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
 1. Q1-Q7 language decision을 승인받고 이 문서를 확정한다.
 2. Generic parameter와 enum declaration, specialized constructor/pattern AST를
    추가한다. (완료)
-3. Package symbol/visibility와 generic type/function/method resolution을 추가한다.
-4. Symbolic generic checker와 concrete specialization worklist를 추가한다.
-   (진행 중: standalone generic struct/function/receiver concrete worklist와 symbolic
-   body checker 완료, package resolution 미완료)
+3. Package symbol/visibility와 generic type/function/receiver resolution을 추가한다.
+   (완료: enum type metadata와 public payload visibility 포함)
+4. Symbolic generic checker와 project-wide concrete specialization worklist를 추가한다.
+   (완료)
 5. User-defined enum exhaustiveness와 nested pattern diagnostics를 일반화한다.
 6. Specialized typed IR, concrete layout, constructor/match C lowering을 추가한다.
    (진행 중: struct/function은 concrete AST를 기존 typed IR/C backend로 전달,
    enum layout과 constructor/match lowering 미완료)
 7. Built-in `Option`/`Result`를 공통 generic enum 경로로 이전한다.
 8. Cross-package positive smoke, invalid fixture, strict C와 sanitizer gate를 추가한다.
+   (진행 중: generic struct/function/receiver positive native gate 완료, enum과 invalid
+   fixture 미완료)
 
 ## 제외
 

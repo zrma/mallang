@@ -55,7 +55,7 @@
   function type parameter/return, cross-package higher-order call, named function return과
   closure return이 project native warning/sanitizer gate를 통과한다.
 - v0.4 구현 진행 중: generic struct/function declaration과 explicit type argument를
-  standalone pipeline의 demand-driven concrete specialization pass에 연결했다. 같은
+  project-wide demand-driven concrete specialization pass에 연결했다. 같은
   declaration/type argument key는 재사용하고 deterministic internal symbol을 만들며,
   잘못된 arity와 type argument가 계속 커지는 specialization cycle을 source
   diagnostic으로 거부한다. Concrete struct/function/function value는 기존 semantic,
@@ -64,8 +64,11 @@
   declaration도 non-Copy, non-printable symbolic type으로 검사하며 internal sentinel
   이름은 source type parameter로 복원해 진단한다. Generic receiver는 declaration type
   parameter를 그대로 binding하고 concrete struct마다 method를 생성한다. `mut`
-  receiver의 non-Copy field 교체도 native cleanup gate를 통과한다. Package generic API와
-  user-defined enum semantic/pattern, enum IR/backend는 아직 구현 전이다.
+  receiver의 non-Copy field 교체도 native cleanup gate를 통과한다. Public package
+  generic struct/function/receiver와 nested imported type argument는 visibility-aware
+  internal symbol로 연결되고 project native warning/sanitizer gate를 통과한다. Enum은
+  package type metadata와 public payload visibility까지만 연결했으며 user-defined enum
+  semantic/pattern과 enum IR/backend는 아직 구현 전이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -208,9 +211,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Package generic type/function/receiver resolution과 public API visibility를 연결한다.
-2. Cross-package specialization key 재사용과 native acceptance를 검증한다.
-3. User-defined enum specialization, exhaustive nested pattern, typed IR/C backend를 완료한다.
+1. User-defined enum declaration과 constructor를 concrete specialization에 연결한다.
+2. User-defined enum의 nested pattern과 exhaustiveness diagnostics를 일반화한다.
+3. Enum typed IR/C backend와 built-in `Option`/`Result` 공통 경로 이전을 완료한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

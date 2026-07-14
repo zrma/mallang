@@ -58,6 +58,7 @@ pub struct PackageImport {
 pub struct PackageDeclaration {
     pub name: String,
     pub kind: PackageDeclarationKind,
+    pub type_params: Vec<String>,
     pub visibility: Visibility,
     pub span: Span,
 }
@@ -65,6 +66,7 @@ pub struct PackageDeclaration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageDeclarationKind {
     Struct,
+    Enum,
     Function,
     Method,
 }
@@ -329,6 +331,30 @@ fn collect_declarations(
             PackageDeclaration {
                 name: declaration.name.clone(),
                 kind: PackageDeclarationKind::Struct,
+                type_params: declaration
+                    .type_params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect(),
+                visibility: declaration.visibility,
+                span: declaration.span,
+            },
+            &package.path,
+        )?;
+    }
+
+    for declaration in &program.enums {
+        let package = package_for_declaration(packages, source_packages, declaration.span)?;
+        insert_declaration(
+            &mut package.declarations,
+            PackageDeclaration {
+                name: declaration.name.clone(),
+                kind: PackageDeclarationKind::Enum,
+                type_params: declaration
+                    .type_params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect(),
                 visibility: declaration.visibility,
                 span: declaration.span,
             },
@@ -346,6 +372,11 @@ fn collect_declarations(
             } else {
                 PackageDeclarationKind::Function
             },
+            type_params: declaration
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect(),
             visibility: declaration.visibility,
             span: declaration.span,
         };
@@ -531,7 +562,7 @@ mod tests {
         );
         project.write(
             "src/greet/greet.mlg",
-            "package greet\npub type Message struct {}\npub func Print() {}\n",
+            "package greet\npub type Message struct {}\npub type State[T] enum { Empty Full(T) }\npub func Print() {}\n",
         );
         project.write(
             "src/greet/method.mlg",
@@ -549,6 +580,11 @@ mod tests {
             PackageDeclarationKind::Struct
         );
         assert_eq!(greet.declarations["Print"].visibility, Visibility::Public);
+        assert_eq!(
+            greet.declarations["State"].kind,
+            PackageDeclarationKind::Enum
+        );
+        assert_eq!(greet.declarations["State"].type_params, ["T"]);
         assert_eq!(
             greet.methods["Message"]["Show"].kind,
             PackageDeclarationKind::Method
