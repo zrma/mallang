@@ -39,8 +39,11 @@
   조기에 drop되지 않는다. Plain function literal은 lexical free variable을 typed
   capture metadata로 보존하며 Copy capture는 복사, non-Copy capture는 생성 시 move로
   검사한다. Borrowed non-Copy capture, active range source capture, plain capture
-  mutation/move-out은 거부한다. Closure environment IR/C allocation과 nested/mutable
-  function literal은 다음 단계다.
+  mutation/move-out은 거부한다. Typed IR은 closure definition과 capture value를
+  보존하고 C backend는 capture environment를 할당해 call body에 연결한다. Callable
+  drop thunk는 nested cleanup value를 정리한 뒤 environment를 해제한다. Escaping
+  closure의 Copy/slice capture와 반복 호출이 strict C 및 sanitizer gate를 통과한다.
+  Nested/mutable function literal은 다음 단계다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -58,6 +61,7 @@ cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- run examples/function-values.mlg
+cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -179,9 +183,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. checked closure metadata를 typed IR closure/environment에 내린다.
-2. immutable owned capture environment allocation과 exactly-once cleanup을 구현한다.
-3. `func mut` capture mutation과 exclusive native call을 연결한다.
+1. `func mut` capture mutation과 exclusive native call을 연결한다.
+2. nested plain closure가 outer capture를 다시 소유하도록 capture propagation을 추가한다.
+3. package-qualified function value와 public function type linking을 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

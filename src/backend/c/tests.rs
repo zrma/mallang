@@ -58,6 +58,7 @@ print(values[0])
 #[test]
 fn generates_c_for_internal_owned_slice_type_shell() {
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -90,6 +91,7 @@ fn generates_c_for_internal_owned_slice_type_shell() {
 #[test]
 fn generates_c_drop_helpers_for_internal_cleanup_types() {
     let program = IrProgram {
+        closures: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
             fields: vec![
@@ -141,6 +143,7 @@ fn generates_c_for_explicit_internal_drop_statement() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -183,6 +186,7 @@ fn generates_c_for_explicit_internal_cleanup_field_drop_statement() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
             fields: vec![IrStructField {
@@ -232,6 +236,7 @@ fn generates_c_for_explicit_internal_cleanup_array_element_drop_statement() {
     };
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "consume".to_string(),
@@ -275,6 +280,7 @@ fn generates_c_for_for_init_cleanup_trailer() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -326,6 +332,7 @@ fn generates_c_for_for_init_cleanup_trailer() {
 fn rejects_explicit_internal_drop_for_non_cleanup_type() {
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -355,6 +362,7 @@ fn rejects_explicit_internal_drop_for_non_cleanup_type() {
 fn rejects_invalid_ir_print_arity() {
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -387,6 +395,7 @@ fn rejects_invalid_ir_print_arity() {
 fn rejects_invalid_ir_range_source_type() {
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -421,6 +430,7 @@ fn rejects_invalid_ir_option_match_arm() {
     let span = crate::token::Span::default();
     let option_int = Type::Option(Box::new(Type::Int));
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -458,6 +468,7 @@ fn rejects_invalid_ir_option_match_arm() {
 fn rejects_invalid_ir_borrow_argument_expression() {
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -839,6 +850,7 @@ fn generates_c_for_if_expression_cleanup_trailer() {
     let slice_ty = Type::Slice(Box::new(Type::Int));
     let span = crate::token::Span::default();
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -2125,6 +2137,7 @@ fn generates_callable_value_type_and_drop_helper() {
         return_type: Box::new(Type::Int),
     });
     let program = IrProgram {
+        closures: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "accept".to_string(),
@@ -2171,4 +2184,34 @@ return value * 2
     assert!(c.contains(".mlg_call = mallang_callable_thunk_mlg_Double"));
     assert!(c.contains(".mlg_call(mallang_callable_tmp_"));
     assert!(c.contains("mlg_drop_Function_con_owned_int_ret_int(&(mlg_transform));"));
+}
+
+#[test]
+fn generates_c_for_owned_closure_environments() {
+    let program = parse(
+        r#"
+func MakeFirst(values []int) func() int {
+    return func() int {
+        return values[0]
+    }
+}
+
+func main() {
+    first := MakeFirst([]int{7})
+    print(first())
+    print(first())
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("typedef struct {\n    mlg_Slice_int mlg_values;"));
+    assert!(c.contains("closure environment allocation failed"));
+    assert!(c.contains("mlg_drop_Slice_int(&(mlg_env->mlg_values));"));
+    assert!(c.contains("free(mlg_env);"));
+    assert!(c.contains(".mlg_drop = mallang_closure_"));
+    assert!(c.contains(".mlg_call = mallang_closure_"));
 }

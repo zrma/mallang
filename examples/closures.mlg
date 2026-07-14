@@ -1,0 +1,21 @@
+func MakeAdder(offset int) func(int) int {
+    return func(value int) int {
+        return value + offset
+    }
+}
+
+func MakeFirst(values []int) func() int {
+    return func() int {
+        return values[0]
+    }
+}
+
+func main() {
+    add := MakeAdder(10)
+    print(add(2))
+    print(add(5))
+
+    first := MakeFirst([]int{7, 8})
+    print(first())
+    print(first())
+}

@@ -9,8 +9,8 @@ use crate::{
         MatchBlockArm, MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
     },
     semantic::{
-        CheckedProgram, FunctionParamType, FunctionSig, FunctionType, MethodKey, MethodSig,
-        ParamSig, StructSig, Type,
+        CheckedClosure, CheckedProgram, FunctionParamType, FunctionSig, FunctionType, MethodKey,
+        MethodSig, ParamSig, StructSig, Type,
     },
     token::Span,
 };
@@ -23,6 +23,22 @@ pub fn lower(checked: &CheckedProgram<'_>) -> Result<IrProgram, IrError> {
 pub struct IrProgram {
     pub structs: Vec<IrStruct>,
     pub functions: Vec<IrFunction>,
+    pub closures: Vec<IrClosure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrClosure {
+    pub name: String,
+    pub captures: Vec<IrClosureCapture>,
+    pub params: Vec<IrParam>,
+    pub return_type: Type,
+    pub body: Vec<IrStmt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrClosureCapture {
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,6 +163,10 @@ pub enum IrExprKind {
     FunctionValue {
         function: String,
     },
+    ClosureValue {
+        closure: String,
+        captures: Vec<IrClosureCaptureValue>,
+    },
     If {
         condition: Box<IrExpr>,
         then_branch: Box<IrExpr>,
@@ -219,6 +239,12 @@ pub struct IrFieldValue {
     pub name: String,
     pub expr: IrExpr,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrClosureCaptureValue {
+    pub name: String,
+    pub expr: IrExpr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,7 +343,60 @@ impl<'a> Lowerer<'a> {
             });
         }
 
-        Ok(IrProgram { structs, functions })
+        let closures = self
+            .checked
+            .closures
+            .iter()
+            .map(|closure| self.lower_closure(closure))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(IrProgram {
+            structs,
+            functions,
+            closures,
+        })
+    }
+
+    fn lower_closure(&self, closure: &CheckedClosure) -> Result<IrClosure, IrError> {
+        let mut locals = closure
+            .captures
+            .iter()
+            .map(|capture| (capture.name.clone(), capture.ty.clone()))
+            .collect::<HashMap<_, _>>();
+        let params = closure
+            .literal
+            .params
+            .iter()
+            .zip(closure.function_type.params.iter())
+            .map(|(param, ty)| IrParam {
+                name: param.name.clone(),
+                mode: param.mode,
+                ty: ty.ty.clone(),
+            })
+            .collect::<Vec<_>>();
+        for param in &params {
+            locals.insert(param.name.clone(), param.ty.clone());
+        }
+        let mut body = Vec::new();
+        for stmt in &closure.literal.body.statements {
+            body.push(self.lower_stmt(stmt, &mut locals, &closure.function_type.return_type)?);
+        }
+        let body = insert_straight_line_cleanup_drops(body, &params, closure.literal.body.span);
+
+        Ok(IrClosure {
+            name: closure_ir_name(closure.span),
+            captures: closure
+                .captures
+                .iter()
+                .map(|capture| IrClosureCapture {
+                    name: capture.name.clone(),
+                    ty: capture.ty.clone(),
+                })
+                .collect(),
+            params,
+            return_type: closure.function_type.return_type.as_ref().clone(),
+            body,
+        })
     }
 
     fn lower_structs(&self) -> Result<Vec<IrStruct>, IrError> {
@@ -668,10 +747,43 @@ impl<'a> Lowerer<'a> {
                 }
             }
             ExprKind::FunctionLiteral(_) => {
-                return Err(IrError::new(
-                    "function literal should have been rejected by semantic analysis",
-                    expr.span,
-                ));
+                let closure = self.closure(expr.span)?;
+                let captures = closure
+                    .captures
+                    .iter()
+                    .map(|capture| {
+                        let ty = locals.get(&capture.name).cloned().ok_or_else(|| {
+                            IrError::new(
+                                format!(
+                                    "unknown closure capture `{}` during IR lowering",
+                                    capture.name
+                                ),
+                                expr.span,
+                            )
+                        })?;
+                        if ty != capture.ty {
+                            return Err(IrError::new(
+                                "semantic closure capture type changed during IR lowering",
+                                expr.span,
+                            ));
+                        }
+                        Ok(IrClosureCaptureValue {
+                            name: capture.name.clone(),
+                            expr: IrExpr {
+                                kind: IrExprKind::Var(capture.name.clone()),
+                                ty,
+                                span: expr.span,
+                            },
+                        })
+                    })
+                    .collect::<Result<Vec<_>, IrError>>()?;
+                (
+                    IrExprKind::ClosureValue {
+                        closure: closure_ir_name(closure.span),
+                        captures,
+                    },
+                    Type::Function(closure.function_type.clone()),
+                )
             }
             ExprKind::If {
                 condition,
@@ -2065,6 +2177,14 @@ impl<'a> Lowerer<'a> {
             .get(name)
             .ok_or_else(|| IrError::new(format!("unknown struct `{name}`"), span))
     }
+
+    fn closure(&self, span: Span) -> Result<&CheckedClosure, IrError> {
+        self.checked
+            .closures
+            .iter()
+            .find(|closure| closure.span == span)
+            .ok_or_else(|| IrError::new("missing checked closure metadata", span))
+    }
 }
 
 fn lower_param(param: &ParamSig) -> IrParam {
@@ -2857,6 +2977,22 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
         IrExprKind::String(value) => IrExprKind::String(value),
         IrExprKind::Bool(value) => IrExprKind::Bool(value),
         IrExprKind::FunctionValue { function } => IrExprKind::FunctionValue { function },
+        IrExprKind::ClosureValue { closure, captures } => {
+            let mut active = active.to_vec();
+            let captures = captures
+                .into_iter()
+                .map(|capture| {
+                    let insertion = insert_expr_cleanup_drops(capture.expr, &active);
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    IrClosureCaptureValue {
+                        name: capture.name,
+                        expr: insertion.expr,
+                    }
+                })
+                .collect();
+            IrExprKind::ClosureValue { closure, captures }
+        }
     };
 
     ExprCleanupInsertion {
@@ -3251,6 +3387,11 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
                 }
             }
         }
+        IrExprKind::ClosureValue { captures, .. } => {
+            for capture in captures {
+                collect_cleanup_moved_roots(&capture.expr, roots);
+            }
+        }
         IrExprKind::If {
             condition,
             then_branch,
@@ -3354,6 +3495,15 @@ fn is_blank_identifier(name: &str) -> bool {
 
 fn method_ir_name(receiver: &Type, method: &str) -> String {
     format!("{}.{}", receiver.source_name(), method)
+}
+
+fn closure_ir_name(span: Span) -> String {
+    format!(
+        "closure_{}_{}_{}",
+        span.source.index(),
+        span.start,
+        span.end
+    )
 }
 
 struct PreparedMatchArm<'a> {
@@ -5851,5 +6001,46 @@ return value * 2
         assert_eq!(args.len(), 1);
 
         assert_drop_of(&ir.functions[0].body[2], "transform");
+    }
+
+    #[test]
+    fn ir_lowers_owned_closure_captures_and_bodies() {
+        let program = parse(
+            r#"
+func MakeFirst(values []int) func() int {
+    return func() int {
+        return values[0]
+    }
+}
+
+func main() {
+    first := MakeFirst([]int{7})
+    print(first())
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert_eq!(ir.closures.len(), 1);
+        assert_eq!(ir.closures[0].captures.len(), 1);
+        assert_eq!(ir.closures[0].captures[0].name, "values");
+        assert!(matches!(ir.closures[0].captures[0].ty, Type::Slice(_)));
+
+        let make_first = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "MakeFirst")
+            .unwrap();
+        let IrStmtKind::Return { expr } = &make_first.body[0].kind else {
+            panic!("expected closure return");
+        };
+        let IrExprKind::ClosureValue { closure, captures } = &expr.kind else {
+            panic!("expected closure value");
+        };
+        assert_eq!(closure, &ir.closures[0].name);
+        assert_eq!(captures.len(), 1);
+        assert!(matches!(&captures[0].expr.kind, IrExprKind::Var(name) if name == "values"));
     }
 }

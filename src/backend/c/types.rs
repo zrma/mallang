@@ -53,6 +53,18 @@ impl<'a> TypeEmitter<'a> {
                 self.collect_stmt_types(stmt, &mut types);
             }
         }
+        for closure in &self.program.closures {
+            collect_type(&closure.return_type, &mut types);
+            for capture in &closure.captures {
+                collect_type(&capture.ty, &mut types);
+            }
+            for param in &closure.params {
+                collect_type(&param.ty, &mut types);
+            }
+            for stmt in &closure.body {
+                self.collect_stmt_types(stmt, &mut types);
+            }
+        }
         types
     }
 
@@ -308,6 +320,11 @@ impl<'a> TypeEmitter<'a> {
                 self.collect_expr_types(callee, types);
                 for arg in args {
                     self.collect_expr_types(&arg.expr, types);
+                }
+            }
+            IrExprKind::ClosureValue { captures, .. } => {
+                for capture in captures {
+                    self.collect_expr_types(&capture.expr, types);
                 }
             }
             IrExprKind::Unary { expr, .. } => self.collect_expr_types(expr, types),

@@ -136,8 +136,11 @@ pub(super) fn divisor_temp_name(expr: &IrExpr) -> String {
 }
 
 pub(super) fn param_env(function: &IrFunction) -> HashMap<String, String> {
-    function
-        .params
+    param_env_from_params(&function.params)
+}
+
+pub(super) fn param_env_from_params(params: &[crate::ir::IrParam]) -> HashMap<String, String> {
+    params
         .iter()
         .filter(|param| !matches!(param.mode, ParamMode::Owned))
         .map(|param| (param.name.clone(), format!("(*{})", c_ident(&param.name))))
@@ -185,6 +188,13 @@ pub(super) fn slice_field_take_temp_name(expr: &IrExpr) -> String {
 
 pub(super) fn callable_temp_name(expr: &IrExpr) -> String {
     format!("mallang_callable_tmp_{}_{}", expr.span.start, expr.span.end)
+}
+
+pub(super) fn closure_env_temp_name(expr: &IrExpr) -> String {
+    format!(
+        "mallang_closure_env_tmp_{}_{}",
+        expr.span.start, expr.span.end
+    )
 }
 
 pub(super) fn is_blank_identifier(name: &str) -> bool {
