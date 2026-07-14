@@ -638,6 +638,9 @@ impl<'a> CGenerator<'a> {
             Type::Slice(_) => Err(CompileError::new(
                 "IR invariant violation: cannot print slice value before slice printability is defined",
             )),
+            Type::Function(_) => Err(CompileError::new(
+                "IR invariant violation: cannot print function value",
+            )),
             Type::Option(_) | Type::Result(_, _) | Type::Struct(_) => {
                 self.emit_print_composite(arg, prelude, code)
             }
@@ -741,6 +744,9 @@ impl<'a> CGenerator<'a> {
             )),
             Type::Slice(_) => Err(CompileError::new(
                 "IR invariant violation: cannot print slice value before slice printability is defined",
+            )),
+            Type::Function(_) => Err(CompileError::new(
+                "IR invariant violation: cannot print function value",
             )),
         }
     }

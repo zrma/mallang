@@ -35,6 +35,23 @@ pub struct FunctionSig {
     pub params: Vec<ParamSig>,
 }
 
+impl FunctionSig {
+    pub fn function_type(&self, mutable: bool) -> FunctionType {
+        FunctionType {
+            mutable,
+            params: self
+                .params
+                .iter()
+                .map(|param| FunctionParamType {
+                    mode: param.mode,
+                    ty: param.ty.clone(),
+                })
+                .collect(),
+            return_type: Box::new(self.return_type.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodSig {
     pub receiver: ParamSig,
@@ -67,6 +84,19 @@ pub struct FieldSig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FunctionType {
+    pub mutable: bool,
+    pub params: Vec<FunctionParamType>,
+    pub return_type: Box<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FunctionParamType {
+    pub mode: ParamMode,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
     Bool,
@@ -77,6 +107,7 @@ pub enum Type {
     Array { len: usize, element: Box<Type> },
     Slice(Box<Type>),
     Struct(String),
+    Function(FunctionType),
 }
 
 impl Type {
@@ -91,6 +122,26 @@ impl Type {
             Self::Array { len, element } => format!("[{}]{}", len, element.source_name()),
             Self::Slice(element) => format!("[]{}", element.source_name()),
             Self::Struct(name) => name.clone(),
+            Self::Function(function) => {
+                let params = function
+                    .params
+                    .iter()
+                    .map(|param| {
+                        let mode = match param.mode {
+                            ParamMode::Owned => "",
+                            ParamMode::Con => "con ",
+                            ParamMode::Mut => "mut ",
+                        };
+                        format!("{mode}{}", param.ty.source_name())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mutable = if function.mutable { " mut" } else { "" };
+                format!(
+                    "func{mutable}({params}) {}",
+                    function.return_type.source_name()
+                )
+            }
         }
     }
 
@@ -102,6 +153,7 @@ impl Type {
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
             Self::Array { .. } | Self::Slice(_) => false,
             Self::Struct(_) => false,
+            Self::Function(_) => false,
         }
     }
 
@@ -112,6 +164,7 @@ impl Type {
             Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
             Self::Array { element, .. } => element.needs_cleanup(),
             Self::Struct(_) => true,
+            Self::Function(_) => true,
             Self::Int | Self::Bool | Self::String | Self::Unit => false,
         }
     }
@@ -284,7 +337,7 @@ impl<'a> Checker<'a> {
                 self.reject_recursive_type(ok, span, visiting)?;
                 self.reject_recursive_type(err, span, visiting)
             }
-            Type::Int | Type::Bool | Type::String | Type::Unit => Ok(()),
+            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Function(_) => Ok(()),
         }
     }
 
@@ -2176,6 +2229,15 @@ impl<'a> Checker<'a> {
         span: Span,
     ) -> Result<Type, SemanticError> {
         let Some(local) = locals.get_mut(name) else {
+            if name == "main" {
+                return Err(SemanticError::new(
+                    "`main` cannot be used as a function value",
+                    span,
+                ));
+            }
+            if let Some(signature) = self.signatures.get(name) {
+                return Ok(Type::Function(signature.function_type(false)));
+            }
             return Err(SemanticError::new(
                 format!("unknown variable `{name}`"),
                 span,
@@ -2257,9 +2319,71 @@ impl<'a> Checker<'a> {
             ));
         }
 
+        if locals.contains_key(name) {
+            return self.check_function_value_call(name, args, locals, span);
+        }
+
         let sig = self.function_sig(name, callee.span)?;
         self.check_call_args(name, args, &sig.params, locals, Vec::new(), span)?;
         Ok(sig.return_type.clone())
+    }
+
+    fn check_function_value_call(
+        &self,
+        name: &str,
+        args: &[Arg],
+        locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let (function, local_mutable, moved) = {
+            let local = locals
+                .get(name)
+                .expect("function value call starts from an existing local");
+            let Type::Function(function) = &local.ty else {
+                return Err(SemanticError::new(
+                    format!("`{name}` is not callable"),
+                    span,
+                ));
+            };
+            (function.clone(), local.mutable, local.moved)
+        };
+        if moved {
+            return Err(SemanticError::new(
+                format!("use of moved value `{name}`"),
+                span,
+            ));
+        }
+        if function.mutable && !local_mutable {
+            return Err(SemanticError::new(
+                format!("mutable function value `{name}` requires mutable access"),
+                span,
+            ));
+        }
+
+        let params = function
+            .params
+            .iter()
+            .enumerate()
+            .map(|(index, param)| ParamSig {
+                name: format!("argument {}", index + 1),
+                mode: param.mode,
+                ty: param.ty.clone(),
+            })
+            .collect::<Vec<_>>();
+        let borrow_kind = if function.mutable {
+            BorrowKind::Exclusive
+        } else {
+            BorrowKind::Shared
+        };
+        self.check_call_args(
+            name,
+            args,
+            &params,
+            locals,
+            vec![(BorrowPlace::root(name.to_string()), borrow_kind)],
+            span,
+        )?;
+        Ok(*function.return_type)
     }
 
     fn check_print_builtin(
@@ -2957,7 +3081,7 @@ impl<'a> Checker<'a> {
                     .iter()
                     .all(|field| self.is_printable_type(&field.ty))
             }),
-            Type::Unit | Type::Array { .. } | Type::Slice(_) => false,
+            Type::Unit | Type::Array { .. } | Type::Slice(_) | Type::Function(_) => false,
         }
     }
 
@@ -2966,6 +3090,29 @@ impl<'a> Checker<'a> {
     }
 
     fn type_from_ref(&self, ty: &TypeRef) -> Result<Type, SemanticError> {
+        if let Some(function) = &ty.function {
+            if ty.name != "func" || !ty.args.is_empty() || ty.array_len.is_some() || ty.slice {
+                return Err(SemanticError::new(
+                    "malformed function type reference",
+                    ty.span,
+                ));
+            }
+            let params = function
+                .params
+                .iter()
+                .map(|param| {
+                    Ok(FunctionParamType {
+                        mode: param.mode,
+                        ty: self.type_from_ref(&param.ty)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, SemanticError>>()?;
+            return Ok(Type::Function(FunctionType {
+                mutable: function.mutable,
+                params,
+                return_type: Box::new(self.type_from_ref(&function.return_type)?),
+            }));
+        }
         if ty.slice {
             if ty.name != "Slice" || ty.args.len() != 1 || ty.array_len.is_some() {
                 return Err(SemanticError::new(
@@ -3570,6 +3717,96 @@ func add(a int, b int) int {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_named_function_values_parameters_returns_and_repeated_calls() {
+        check_ok(
+            r#"
+func Double(value int) int {
+    return value * 2
+}
+
+func Select() func(int) int {
+    return Double
+}
+
+func Apply(value int, transform func(int) int) int {
+    return transform(value)
+}
+
+func main() {
+    transform := Select()
+    print(transform(10))
+    print(transform(11))
+    print(Apply(21, Double))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn treats_function_value_bindings_as_move_only() {
+        let error = check_error(
+            r#"
+func Double(value int) int {
+    return value * 2
+}
+
+func main() {
+    transform := Double
+    moved := transform
+    print(transform(1))
+}
+"#,
+        );
+
+        assert!(error.message.contains("use of moved value `transform`"));
+    }
+
+    #[test]
+    fn requires_mutable_access_for_mutable_function_values() {
+        let error = check_error(
+            r#"
+func Invoke(con transform func mut(int) int) int {
+    return transform(1)
+}
+
+func main() {}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("mutable function value `transform` requires mutable access"));
+
+        check_ok(
+            r#"
+func Invoke(mut transform func mut(int) int) int {
+    return transform(1)
+}
+
+func main() {}
+"#,
+        );
+    }
+
+    #[test]
+    fn local_non_function_shadows_top_level_function_in_calls() {
+        let error = check_error(
+            r#"
+func Double(value int) int {
+    return value * 2
+}
+
+func main() {
+    Double := 1
+    print(Double(2))
+}
+"#,
+        );
+
+        assert!(error.message.contains("`Double` is not callable"));
     }
 
     #[test]

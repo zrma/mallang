@@ -29,7 +29,11 @@
   project generated C warning-clean gate가 v0.2 acceptance를 검증한다.
 - v0.3 진행: 승인된 `func(T) U`, `func mut(T) U` function type과 plain/mutable
   function literal을 AST/parser에 추가했다. Function type은 return type을 필수로
-  하며 no-value signature는 `unit`을 쓴다. Semantic과 callable ABI는 아직 연결 중이다.
+  하며 no-value signature는 `unit`을 쓴다. Semantic checker는 named function을
+  fresh move-only value로 해석하고 function parameter/return/local binding, indirect
+  call argument mode, mutable callable의 exclusive access를 검사한다. C backend에는
+  typed call/environment/drop pointer를 가진 callable value layout과 cleanup helper
+  shell이 있으며 typed IR indirect call과 native thunk 연결은 다음 단계다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -167,9 +171,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. v0.3 function type과 function value 문법 decision gate를 연다.
-2. closure literal과 owned/`con`/`mut` capture surface를 결정한다.
-3. closure environment의 ownership, cleanup, C ABI prototype을 검증한다.
+1. named function value와 indirect call을 typed IR에 추가한다.
+2. non-capturing callable thunk를 C backend와 native smoke에 연결한다.
+3. immutable owned capture 분석과 closure environment cleanup을 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -21,6 +21,7 @@ impl TypeCName for Type {
             Self::Option(_) | Self::Result(_, _) => format!("mlg_{}", mangle_type(self)),
             Self::Array { .. } | Self::Slice(_) => format!("mlg_{}", mangle_type(self)),
             Self::Struct(name) => format!("mlg_struct_{}", c_type_ident(name)),
+            Self::Function(_) => format!("mlg_{}", mangle_type(self)),
         }
     }
 
@@ -143,6 +144,26 @@ pub(super) fn mangle_type(ty: &Type) -> String {
         Type::Array { len, element } => format!("Array_{}_{}", len, mangle_type(element)),
         Type::Slice(element) => format!("Slice_{}", mangle_type(element)),
         Type::Struct(name) => format!("Struct_{}", c_type_ident(name)),
+        Type::Function(function) => {
+            let mutable = if function.mutable { "mut" } else { "con" };
+            let params = function
+                .params
+                .iter()
+                .map(|param| {
+                    let mode = match param.mode {
+                        ParamMode::Owned => "owned",
+                        ParamMode::Con => "con",
+                        ParamMode::Mut => "mut",
+                    };
+                    format!("{mode}_{}", mangle_type(&param.ty))
+                })
+                .collect::<Vec<_>>()
+                .join("_");
+            format!(
+                "Function_{mutable}_{params}_ret_{}",
+                mangle_type(&function.return_type)
+            )
+        }
     }
 }
 
