@@ -1007,3 +1007,12 @@
 - [x] closure capture collector를 owned struct symbol table에 연결
 - [x] 기존 standalone/project compiler API 호환성 유지
 - [x] full Rust/Clippy regression gate 통과
+
+## P127: Demand-driven Generic Struct and Function Specialization
+
+- [x] generic declaration을 concrete AST로 변환하는 owned specialization pass 추가
+- [x] declaration symbol과 type argument 기반 deterministic key/internal name 생성
+- [x] generic struct, function, function value의 explicit type argument specialization 연결
+- [x] 동일 key 재사용, 잘못된 arity, expanding specialization cycle 진단 추가
+- [x] slice를 포함한 concrete type substitution과 기존 ownership/cleanup 경로 재사용
+- [x] standalone generic example의 native output, strict generated C, ASan/UBSan gate 추가

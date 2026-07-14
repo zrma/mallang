@@ -54,6 +54,15 @@
   imported `pkg.Function`을 value position에서 internal symbol로 연결한다. Public
   function type parameter/return, cross-package higher-order call, named function return과
   closure return이 project native warning/sanitizer gate를 통과한다.
+- v0.4 구현 진행 중: generic struct/function declaration과 explicit type argument를
+  standalone pipeline의 demand-driven concrete specialization pass에 연결했다. 같은
+  declaration/type argument key는 재사용하고 deterministic internal symbol을 만들며,
+  잘못된 arity와 type argument가 계속 커지는 specialization cycle을 source
+  diagnostic으로 거부한다. Concrete struct/function/function value는 기존 semantic,
+  ownership, typed IR, C backend를 재사용하며 `examples/generics.mlg`의 Copy/string/slice
+  specialization이 native, strict C, ASan/UBSan gate를 통과한다. Symbolic generic body
+  validation, package generic API와 receiver resolution, user-defined enum semantic/pattern,
+  enum IR/backend는 아직 구현 전이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -196,9 +205,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Generic type/enum declaration을 package symbol과 public API visibility에 연결한다.
-2. Symbolic generic type/function checker와 project-wide monomorphization을 구현한다.
-3. User-defined enum pattern semantic과 specialized typed IR/C backend를 완료한다.
+1. Symbolic generic body validation과 package generic API resolution을 추가한다.
+2. Generic receiver method specialization과 public API visibility를 연결한다.
+3. User-defined enum specialization, exhaustive nested pattern, typed IR/C backend를 완료한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

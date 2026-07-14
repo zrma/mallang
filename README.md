@@ -51,6 +51,9 @@ This repository is the Mallang language PoC workspace.
 - Branch-aware return completeness for statement-form `if`.
 - Go-like data modeling with `type Name struct`, named struct literals, and
   nested field access/assignment.
+- Standalone generic structs and functions use explicit type arguments and
+  demand-driven static specialization. Concrete function values and slice type
+  arguments reuse the existing ownership, typed IR, and native C backend path.
 - Struct values with printable fields can be printed natively.
 - Recursive struct value definitions are rejected by `mlg check`.
 - Go-like receiver methods with Mallang parameter modes.
@@ -94,6 +97,7 @@ cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- run examples/mutable-closures.mlg
 cargo run --bin mlg -- run examples/nested-closures.mlg
+cargo run --bin mlg -- run examples/generics.mlg
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division
@@ -252,6 +256,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   captures, isolated source state, and nested cleanup.
 - `examples/nested-closures.mlg`: native smoke for nested plain/mutable closure
   environments, propagated captures, and independent owned state.
+- `examples/generics.mlg`: native smoke for explicit generic struct/function
+  specialization, concrete function values, and slice type arguments.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, methods, function values, higher-order APIs, and closure returns.
 - `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
@@ -309,6 +315,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `src/linker.rs`: cross-package resolution, visibility, and internal symbols.
 - `src/semantic.rs`: semantic checker for name/type/function diagnostics and
   reserved-feature boundaries.
+- `src/specialize.rs`: demand-driven concrete specialization for generic
+  structs and functions.
 - `src/ir.rs`: typed IR lowering after semantic analysis.
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.

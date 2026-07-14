@@ -12,10 +12,16 @@ use crate::{
         UnaryOp, Visibility,
     },
     package::PackageGraph,
+    specialize::specialize,
     token::Span,
 };
 
 pub fn check(program: &Program) -> Result<CheckedProgram, SemanticError> {
+    if needs_specialization(program) {
+        let concrete =
+            specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
+        return Checker::new(&concrete).check();
+    }
     Checker::new(program).check()
 }
 
@@ -23,7 +29,23 @@ pub fn check_project(
     program: &Program,
     package_graph: &PackageGraph,
 ) -> Result<CheckedProgram, SemanticError> {
+    if needs_specialization(program) {
+        let concrete =
+            specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
+        return Checker::new_project(&concrete, package_graph).check();
+    }
     Checker::new_project(program, package_graph).check()
+}
+
+fn needs_specialization(program: &Program) -> bool {
+    program
+        .structs
+        .iter()
+        .any(|declaration| !declaration.type_params.is_empty())
+        || program
+            .functions
+            .iter()
+            .any(|function| !function.type_params.is_empty())
 }
 
 #[derive(Debug, Clone)]
@@ -6586,25 +6608,25 @@ func main() {
     }
 
     #[test]
-    fn reports_unlowered_v04_declarations_at_the_semantic_boundary() {
+    fn reports_v04_declaration_and_specialization_errors() {
         let enum_error = check_error("type Maybe[T] enum { None Some(T) }\nfunc main() {}\n");
         assert_eq!(
             enum_error.message,
             "user-defined enum declarations require v0.4 semantic lowering"
         );
 
-        let struct_error = check_error("type Box[T] struct { value T }\nfunc main() {}\n");
-        assert_eq!(
-            struct_error.message,
-            "generic struct declarations require v0.4 specialization"
-        );
+        check_ok("type Box[T] struct { value T }\nfunc main() {}\n");
+        check_ok("func Identity[T](value T) T { return value }\nfunc main() {}\n");
 
-        let function_error =
-            check_error("func Identity[T](value T) T { return value }\nfunc main() {}\n");
-        assert_eq!(
-            function_error.message,
-            "generic function declarations require v0.4 specialization"
+        let duplicate = check_error("type Box[T, T] struct { value T }\nfunc main() {}\n");
+        assert!(duplicate.message.contains("duplicate type parameter `T`"));
+
+        let missing = check_error(
+            "func Identity[T](value T) T { return value }\nfunc main() { value := Identity }\n",
         );
+        assert!(missing
+            .message
+            .contains("generic function `Identity` requires explicit type arguments"));
     }
 
     #[test]

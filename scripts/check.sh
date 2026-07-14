@@ -221,6 +221,13 @@ if [[ "$nested_closures_output" != $'17\n9\n16\n20\n17' ]]; then
   echo "nested closure native build smoke failed: expected 17, 9, 16, 20, 17 got '$nested_closures_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/generics.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/generics.mlg -o target/mallang/generics >/dev/null
+generics_output="$(target/mallang/generics)"
+if [[ "$generics_output" != $'7\nmallang\n11\npair\n3' ]]; then
+  echo "generics native build smoke failed: expected 7, mallang, 11, pair, 3 got '$generics_output'" >&2
+  exit 1
+fi
 expect_check_failure \
   "closure-borrowed-capture" \
   "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
@@ -875,4 +882,8 @@ expect_sanitized_native_output \
   "nested-closures" \
   "target/mallang/nested-closures.c" \
   $'17\n9\n16\n20\n17'
+expect_sanitized_native_output \
+  "generics" \
+  "target/mallang/generics.c" \
+  $'7\nmallang\n11\npair\n3'
 expect_all_warning_clean_generated_c
