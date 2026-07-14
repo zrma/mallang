@@ -27,7 +27,8 @@
 - Nested closure는 lexical free variable을 enclosing closure까지 전파하고 생성 시
   각 environment가 다시 소유한다. Borrowed non-Copy outer capture를 반복 호출 중
   이동하는 경우는 거부한다.
-- Package-qualified function value와 project-level closure acceptance는 남아 있다.
+- Package-qualified function value와 public function type API가 project linker와
+  native acceptance에 연결돼 있다.
 
 ## 추천 surface
 
@@ -136,7 +137,7 @@ Owned capture만 허용하면 escaping closure의 environment가 stack local을 
 3. typed IR와 non-capturing callable C ABI를 추가한다. (완료)
 4. immutable owned capture 분석과 environment lowering/cleanup을 추가한다. (완료)
 5. `func mut` type/literal과 exclusive call/capture mutation을 추가한다. (완료)
-6. package-qualified function value와 public API type linking을 추가한다.
+6. package-qualified function value와 public API type linking을 추가한다. (완료)
 7. positive native smoke, invalid capture/move/alias rejection, sanitizer gate를 추가한다.
 
 ## 제외

@@ -509,7 +509,11 @@ impl<'a> Linker<'a> {
     ) -> Result<(), LinkError> {
         match &mut expr.kind {
             ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => {}
-            ExprKind::Var(_) => {}
+            ExprKind::Var(name) => {
+                if let Some(symbol) = self.local_function_symbol(context, scopes, name) {
+                    *name = symbol;
+                }
+            }
             ExprKind::FunctionLiteral(function) => {
                 for param in function.params.iter_mut() {
                     self.link_type_ref(&mut param.ty, context)?;
@@ -562,13 +566,13 @@ impl<'a> Linker<'a> {
                     self.link_expr(element, context, scopes)?;
                 }
             }
-            ExprKind::FieldAccess { base, .. } => {
+            ExprKind::FieldAccess { base, field } => {
                 if let ExprKind::Var(qualifier) = &base.kind {
                     if !is_bound(scopes, qualifier) && context.imports.contains_key(qualifier) {
-                        return Err(LinkError::new(
-                            "package selectors are only valid in function calls and qualified types or struct literals in v0.2",
-                            expr.span,
-                        ));
+                        let symbol =
+                            self.imported_function_symbol(context, qualifier, field, expr.span)?;
+                        expr.kind = ExprKind::Var(symbol);
+                        return Ok(());
                     }
                 }
                 self.link_expr(base, context, scopes)?;
@@ -608,16 +612,8 @@ impl<'a> Linker<'a> {
                     callee.kind = ExprKind::Var(self.function_symbol(package_path, &name));
                 } else {
                     if let ExprKind::Var(name) = &mut callee.kind {
-                        if !is_bound(scopes, name) {
-                            let package = self
-                                .graph
-                                .package(&context.package_path)
-                                .expect("every link context has a package");
-                            if package.declarations.get(name).is_some_and(|declaration| {
-                                declaration.kind == PackageDeclarationKind::Function
-                            }) {
-                                *name = self.function_symbol(&context.package_path, name);
-                            }
+                        if let Some(symbol) = self.local_function_symbol(context, scopes, name) {
+                            *name = symbol;
                         }
                     }
                     self.link_expr(callee, context, scopes)?;
@@ -687,6 +683,48 @@ impl<'a> Linker<'a> {
                 span,
             )
         })
+    }
+
+    fn imported_function_symbol(
+        &self,
+        context: &FileContext,
+        qualifier: &str,
+        name: &str,
+        span: Span,
+    ) -> Result<String, LinkError> {
+        let declaration = self.imported_declaration(context, qualifier, name, span)?;
+        self.require_kind(
+            declaration,
+            PackageDeclarationKind::Function,
+            "function",
+            span,
+        )?;
+        self.require_public(context, qualifier, declaration, span)?;
+        let package_path = context
+            .imports
+            .get(qualifier)
+            .expect("an imported declaration has a package path");
+        Ok(self.function_symbol(package_path, name))
+    }
+
+    fn local_function_symbol(
+        &self,
+        context: &FileContext,
+        scopes: &[BTreeSet<String>],
+        name: &str,
+    ) -> Option<String> {
+        if is_bound(scopes, name) {
+            return None;
+        }
+        let package = self
+            .graph
+            .package(&context.package_path)
+            .expect("every link context has a package");
+        package
+            .declarations
+            .get(name)
+            .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Function)
+            .then(|| self.function_symbol(&context.package_path, name))
     }
 
     fn require_kind(
@@ -894,6 +932,58 @@ pub func (con self Message) Print() {
     }
 
     #[test]
+    fn links_package_function_values_and_closure_returns() {
+        let project = TempProject::new("function-values");
+        project.write(
+            "src/main.mlg",
+            r#"package main
+import "hello/greet"
+
+func main() {
+    transform := greet.Double
+    print(greet.Apply(21, transform))
+    selected := greet.Select()
+    print(selected(11))
+    add := greet.MakeAdder(10)
+    print(add(5))
+}
+"#,
+        );
+        project.write(
+            "src/greet/greet.mlg",
+            r#"package greet
+
+pub func Double(value int) int {
+    return value * 2
+}
+
+pub func Select() func(int) int {
+    return Double
+}
+
+pub func Apply(value int, transform func(int) int) int {
+    return transform(value)
+}
+
+pub func MakeAdder(offset int) func(int) int {
+    return func(value int) int {
+        return value + offset
+    }
+}
+"#,
+        );
+
+        let (_, _, linked, graph) = project.link().unwrap();
+        let checked = check_project(&linked, &graph).unwrap();
+        let ir = lower(&checked).unwrap();
+        let c = generate_c_from_ir(&ir).unwrap();
+
+        assert_eq!(ir.closures.len(), 1);
+        assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
+        assert!(c.contains("closure environment allocation failed"));
+    }
+
+    #[test]
     fn rejects_private_imported_functions_and_types() {
         let private_function = TempProject::new("private-function");
         private_function.write(
@@ -905,6 +995,36 @@ pub func (con self Message) Print() {
         assert_eq!(
             function_error.message,
             "`greet.Secret` is private to package `hello/greet`"
+        );
+
+        let private_function_value = TempProject::new("private-function-value");
+        private_function_value.write(
+            "src/main.mlg",
+            "package main\nimport \"hello/greet\"\nfunc main() { secret := greet.Secret print(secret) }\n",
+        );
+        private_function_value.write(
+            "src/greet/greet.mlg",
+            "package greet\nfunc Secret() int { return 1 }\n",
+        );
+        let function_value_error = private_function_value.link().unwrap_err();
+        assert_eq!(
+            function_value_error.message,
+            "`greet.Secret` is private to package `hello/greet`"
+        );
+
+        let non_function_value = TempProject::new("non-function-value");
+        non_function_value.write(
+            "src/main.mlg",
+            "package main\nimport \"hello/greet\"\nfunc main() { value := greet.Message print(value) }\n",
+        );
+        non_function_value.write(
+            "src/greet/greet.mlg",
+            "package greet\npub type Message struct {}\n",
+        );
+        let non_function_error = non_function_value.link().unwrap_err();
+        assert_eq!(
+            non_function_error.message,
+            "`Message` is not a function declaration"
         );
 
         let private_type = TempProject::new("private-type");
@@ -1041,6 +1161,18 @@ func main() {
         assert_eq!(
             structure_error.message,
             "public declaration `Record` exposes private type `Detail`"
+        );
+
+        let function_type = TempProject::new("private-function-type");
+        function_type.write("src/main.mlg", "package main\nfunc main() {}\n");
+        function_type.write(
+            "src/worker/worker.mlg",
+            "package worker\ntype Secret struct {}\npub func Apply(transform func(Secret) int) int { return 0 }\n",
+        );
+        let function_type_error = function_type.link().unwrap_err();
+        assert_eq!(
+            function_type_error.message,
+            "public declaration `Apply` exposes private type `Secret`"
         );
     }
 

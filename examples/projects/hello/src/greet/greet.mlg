@@ -15,3 +15,17 @@ pub func (con message Message) Print() {
 pub func Double(value int) int {
     return value * 2
 }
+
+pub func Select() func(int) int {
+    return Double
+}
+
+pub func Apply(value int, transform func(int) int) int {
+    return transform(value)
+}
+
+pub func MakeAdder(offset int) func(int) int {
+    return func(value int) int {
+        return value + offset
+    }
+}
