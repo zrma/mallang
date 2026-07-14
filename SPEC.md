@@ -32,6 +32,26 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
+## Planned v0.3 Function Values and Closures
+
+The approved v0.3 surface adds first-class function values and owned closures:
+
+- Function types use `func(int) int`; parameter modes are part of the type.
+- Named functions and package-qualified named functions can be used as values.
+- Closure literals use `func(value int) int { ... }`.
+- Mutable closure types and literals use `func mut(int) int` and
+  `func mut(value int) int { ... }`.
+- Free local bindings are captured by owned value. Copy values are copied and
+  non-copy values are moved into the closure environment.
+- Plain closure captures are immutable. Mutable closures require exclusive
+  access to call and can modify captures originating from mutable bindings.
+- Borrowed captures, explicit capture lists, and recursive local closures are
+  excluded from v0.3.
+
+Function values are move-only. Indirect calls borrow the callable for the call:
+plain function values use read access and mutable closure values use exclusive
+access. Capturing environments are compiler-owned and cleaned up exactly once.
+
 ## Naming
 
 The language name is Mallang.

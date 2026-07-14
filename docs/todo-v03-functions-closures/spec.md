@@ -1,6 +1,6 @@
 # Spec: v0.3-functions-closures
 
-상태: proposed, awaiting user decision
+상태: approved, implementation in progress
 
 ## 목표
 

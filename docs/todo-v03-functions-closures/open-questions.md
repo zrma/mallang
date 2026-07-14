@@ -1,6 +1,8 @@
 # Open Questions: v0.3-functions-closures
 
-상태: awaiting user decision
+상태: closed
+
+2026-07-14에 Q1-Q5 추천안을 v0.3 language surface로 승인했다.
 
 ## Q1. Function type 문법
 
@@ -72,7 +74,7 @@ access를 요구한다.
 - Non-escaping closure만 borrowed capture 허용: escape analysis와 lifetime-like
   diagnostic이 먼저 필요하다.
 
-## 승인 요청
+## 확정된 결정
 
-Q1-Q5 추천안을 함께 승인하면 `spec.md`의 surface를 v0.3 구현 계약으로 확정한다.
-수정이 필요한 항목이 있으면 해당 질문만 다시 연다.
+Q1-Q5 추천안을 `spec.md`의 v0.3 구현 계약으로 확정한다. 추가 language surface
+결정이 필요해질 때만 새 decision gate를 연다.

@@ -98,6 +98,8 @@ v1로 간주한다.
 
 ## v0.3.0: Functions and Closures
 
+상태: approved, implementation in progress
+
 목표: Mallang의 함수형 value style을 first-class function까지 확장한다.
 
 범위:
