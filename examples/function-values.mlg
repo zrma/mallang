@@ -1,0 +1,18 @@
+func Double(value int) int {
+    return value * 2
+}
+
+func Select() func(int) int {
+    return Double
+}
+
+func Apply(value int, transform func(int) int) int {
+    return transform(value)
+}
+
+func main() {
+    transform := Select()
+    print(transform(10))
+    print(transform(11))
+    print(Apply(21, Double))
+}

@@ -33,7 +33,11 @@
   fresh move-only value로 해석하고 function parameter/return/local binding, indirect
   call argument mode, mutable callable의 exclusive access를 검사한다. C backend에는
   typed call/environment/drop pointer를 가진 callable value layout과 cleanup helper
-  shell이 있으며 typed IR indirect call과 native thunk 연결은 다음 단계다.
+  shell이 있다. Typed IR의 named function value/indirect call과 environment-free C
+  thunk를 연결했으며 higher-order parameter/return과 반복 호출이 native로 동작한다.
+  Return expression은 cleanup 전에 내부 temporary로 평가되어 callable parameter가
+  조기에 drop되지 않는다. Function literal capture 분석과 environment allocation은
+  다음 단계다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -50,6 +54,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -171,9 +176,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. named function value와 indirect call을 typed IR에 추가한다.
-2. non-capturing callable thunk를 C backend와 native smoke에 연결한다.
-3. immutable owned capture 분석과 closure environment cleanup을 구현한다.
+1. plain function literal의 free-variable/capture 분석을 추가한다.
+2. immutable owned capture environment allocation과 exactly-once cleanup을 구현한다.
+3. `func mut` capture mutation과 exclusive native call을 연결한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

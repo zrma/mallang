@@ -127,7 +127,7 @@ Owned capture만 허용하면 escaping closure의 environment가 stack local을 
 
 1. function type과 plain function literal token/AST/parser를 추가한다. (완료)
 2. named function value, function parameter/return, indirect call semantic을 추가한다. (완료)
-3. typed IR와 non-capturing callable C ABI를 추가한다.
+3. typed IR와 non-capturing callable C ABI를 추가한다. (named function path 완료)
 4. immutable owned capture 분석과 environment lowering/cleanup을 추가한다.
 5. `func mut` type/literal과 exclusive call/capture mutation을 추가한다.
 6. package-qualified function value와 public API type linking을 추가한다.

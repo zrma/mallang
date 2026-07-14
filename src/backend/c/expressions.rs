@@ -9,10 +9,10 @@ use crate::{
 use super::{
     names::{
         c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
-        empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
+        callable_thunk_name, empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
     },
     utils::{
-        checked_binary_left_temp_name, checked_binary_result_temp_name,
+        callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
         checked_binary_right_temp_name, checked_int_binary_builtin,
         checked_unary_operand_temp_name, checked_unary_result_temp_name, dividend_temp_name,
         divisor_temp_name, if_expr_temp_block, if_expr_temp_name, index_source_temp_name,
@@ -37,6 +37,9 @@ impl<'a> CGenerator<'a> {
             IrExprKind::Var(name) => Ok(CExpr::simple(
                 env.get(name).cloned().unwrap_or_else(|| c_ident(name)),
             )),
+            IrExprKind::FunctionValue { function } => {
+                self.emit_function_value_stmt_expr(expr, function)
+            }
             IrExprKind::If {
                 condition,
                 then_branch,
@@ -125,6 +128,9 @@ impl<'a> CGenerator<'a> {
                     code: format!("{}({})", c_ident(callee), arg_codes.join(", ")),
                 })
             }
+            IrExprKind::IndirectCall { callee, args } => {
+                self.emit_indirect_call_stmt_expr(expr, callee, args, env)
+            }
             IrExprKind::Unary { op, expr: inner } => {
                 self.emit_unary_stmt_expr(expr, *op, inner, env)
             }
@@ -133,6 +139,78 @@ impl<'a> CGenerator<'a> {
                 self.emit_binary_stmt_expr(expr, *op, left, right, &operand_ty, env)
             }
         }
+    }
+
+    fn emit_function_value_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        function: &str,
+    ) -> Result<CExpr, CompileError> {
+        if !matches!(expr.ty, Type::Function(_)) {
+            return Err(CompileError::new(
+                "IR invariant violation: function value must have function type",
+            ));
+        }
+        let function_def = self.function_def(function)?;
+        if expr.ty != Self::callable_type(function_def) {
+            return Err(CompileError::new(
+                "IR invariant violation: named function value signature mismatch",
+            ));
+        }
+        Ok(CExpr::simple(format!(
+            "({}){{ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = {} }}",
+            expr.ty.c_name(),
+            callable_thunk_name(function)
+        )))
+    }
+
+    fn emit_indirect_call_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        callee: &IrExpr,
+        args: &[IrArg],
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let Type::Function(function) = &callee.ty else {
+            return Err(CompileError::new(
+                "IR invariant violation: indirect call target must have function type",
+            ));
+        };
+        if &expr.ty != function.return_type.as_ref() || args.len() != function.params.len() {
+            return Err(CompileError::new(
+                "IR invariant violation: indirect call signature mismatch",
+            ));
+        }
+
+        let callable_type = callee.ty.c_name();
+        let callee = self.emit_stmt_expr_with_env(callee, env)?;
+        let temp = callable_temp_name(expr);
+        let mut prelude = callee.prelude;
+        prelude.push(format!("{callable_type} {temp} = {};", callee.code));
+        let mut arg_codes = Vec::new();
+        for (arg, param) in args.iter().zip(function.params.iter()) {
+            let mode_matches = matches!(
+                (arg.mode, param.mode),
+                (ArgMode::Owned, crate::ast::ParamMode::Owned)
+                    | (ArgMode::Con, crate::ast::ParamMode::Con)
+                    | (ArgMode::Mut, crate::ast::ParamMode::Mut)
+            );
+            if !mode_matches || arg.expr.ty != param.ty {
+                return Err(CompileError::new(
+                    "IR invariant violation: indirect call argument mismatch",
+                ));
+            }
+            let emitted = self.emit_call_arg_stmt_expr(arg, env)?;
+            prelude.extend(emitted.prelude);
+            arg_codes.push(emitted.code);
+        }
+
+        let mut call_args = vec![format!("{temp}.mlg_env")];
+        call_args.extend(arg_codes);
+        Ok(CExpr {
+            prelude,
+            code: format!("{temp}.mlg_call({})", call_args.join(", ")),
+        })
     }
 
     fn emit_unary_stmt_expr(

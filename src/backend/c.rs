@@ -6,14 +6,14 @@ mod statements;
 mod types;
 mod utils;
 
-use names::{c_ident, c_param_decl, TypeCName};
+use names::{c_ident, c_param_decl, callable_thunk_name, TypeCName};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, push_indented_lines, runtime_error_call};
 
 use crate::{
     ast::Program,
     ir::{lower, IrFunction, IrProgram},
-    semantic::check,
+    semantic::{check, FunctionParamType, FunctionType, Type},
 };
 
 pub fn generate_c(program: &Program) -> Result<String, CompileError> {
@@ -124,6 +124,16 @@ impl<'a> CGenerator<'a> {
         }
         output.push('\n');
 
+        for function in self
+            .program
+            .functions
+            .iter()
+            .filter(|function| function.name != "main")
+        {
+            output.push_str(&self.emit_callable_thunk(function));
+            output.push('\n');
+        }
+
         for function in &self.program.functions {
             output.push_str(&self.emit_function(function)?);
             output.push('\n');
@@ -179,6 +189,60 @@ impl<'a> CGenerator<'a> {
 
         output.push_str("}\n");
         Ok(output)
+    }
+
+    fn emit_callable_thunk(&self, function: &IrFunction) -> String {
+        let mut params = vec!["void *mlg_env".to_string()];
+        params.extend(function.params.iter().enumerate().map(|(index, param)| {
+            format!("{} mlg_arg_{index}", param.ty.c_param_type(param.mode))
+        }));
+        let args = (0..function.params.len())
+            .map(|index| format!("mlg_arg_{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut output = format!(
+            "static {} MLG_UNUSED {}({}) {{\n    (void)mlg_env;\n",
+            function.return_type.c_name(),
+            callable_thunk_name(&function.name),
+            params.join(", ")
+        );
+        if function.return_type == crate::semantic::Type::Unit {
+            output.push_str(&format!("    {}({args});\n", c_ident(&function.name)));
+        } else {
+            output.push_str(&format!(
+                "    return {}({args});\n",
+                c_ident(&function.name)
+            ));
+        }
+        output.push_str("}\n");
+        output
+    }
+
+    fn function_def(&self, name: &str) -> Result<&IrFunction, CompileError> {
+        self.program
+            .functions
+            .iter()
+            .find(|function| function.name == name)
+            .ok_or_else(|| {
+                CompileError::new(format!(
+                    "IR invariant violation: unknown function value `{name}`"
+                ))
+            })
+    }
+
+    fn callable_type(function: &IrFunction) -> Type {
+        Type::Function(FunctionType {
+            mutable: false,
+            params: function
+                .params
+                .iter()
+                .map(|param| FunctionParamType {
+                    mode: param.mode,
+                    ty: param.ty.clone(),
+                })
+                .collect(),
+            return_type: Box::new(function.return_type.clone()),
+        })
     }
 
     fn struct_def(&self, name: &str) -> Result<&crate::ir::IrStruct, CompileError> {
