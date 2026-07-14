@@ -872,6 +872,7 @@ impl Specializer {
             .map(|(param, arg)| (param.name.clone(), arg))
             .collect::<HashMap<_, _>>();
         let mut specialized = declaration;
+        specialized.specialization_origin = Some(name.to_string());
         specialized.name = specialized_name.clone();
         specialized.type_params.clear();
         for variant in &mut specialized.variants {

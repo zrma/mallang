@@ -154,6 +154,7 @@ pub struct FieldSig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumSig {
+    pub pattern_name: String,
     pub variants: Vec<EnumVariantSig>,
 }
 
@@ -391,6 +392,10 @@ impl<'a> Checker<'a> {
                 .insert(
                     declaration.name.clone(),
                     EnumSig {
+                        pattern_name: declaration
+                            .specialization_origin
+                            .clone()
+                            .unwrap_or_else(|| declaration.name.clone()),
                         variants: Vec::new(),
                     },
                 )
@@ -2272,9 +2277,10 @@ impl<'a> Checker<'a> {
         match scrutinee_ty {
             Type::Option(inner) => self.prepare_option_match_arms(inner, arms, span),
             Type::Result(ok, err) => self.prepare_result_match_arms(ok, err, arms, span),
+            Type::Enum(name) => self.prepare_enum_match_arms(name, arms, span),
             _ => Err(SemanticError::new(
                 format!(
-                    "match scrutinee must be `Option` or `Result`, got `{}`",
+                    "match scrutinee must be an enum, `Option`, or `Result`, got `{}`",
                     scrutinee_ty.source_name()
                 ),
                 span,
@@ -2291,9 +2297,10 @@ impl<'a> Checker<'a> {
         match scrutinee_ty {
             Type::Option(inner) => self.prepare_option_match_block_arms(inner, arms, span),
             Type::Result(ok, err) => self.prepare_result_match_block_arms(ok, err, arms, span),
+            Type::Enum(name) => self.prepare_enum_match_block_arms(name, arms, span),
             _ => Err(SemanticError::new(
                 format!(
-                    "match scrutinee must be `Option` or `Result`, got `{}`",
+                    "match scrutinee must be an enum, `Option`, or `Result`, got `{}`",
                     scrutinee_ty.source_name()
                 ),
                 span,
@@ -2555,6 +2562,276 @@ impl<'a> Checker<'a> {
             ));
         }
         Ok(prepared)
+    }
+
+    fn prepare_enum_match_arms<'b>(
+        &self,
+        name: &str,
+        arms: &'b [MatchArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
+        let scrutinee_ty = Type::Enum(name.to_string());
+        let all = self.coverage_leaves(&scrutinee_ty, span)?;
+        let mut seen = CoverageSet::new();
+        let mut prepared = Vec::new();
+
+        for arm in arms {
+            let coverage = self.pattern_coverage(&arm.pattern, &scrutinee_ty, arm.span)?;
+            if coverage.leaves.is_subset(&seen) {
+                return Err(SemanticError::new(
+                    "match pattern is duplicate or unreachable",
+                    arm.span,
+                ));
+            }
+            seen.extend(coverage.leaves);
+            prepared.push(PreparedMatchArm {
+                expr: &arm.expr,
+                binding: coverage.binding,
+            });
+        }
+
+        self.require_exhaustive_coverage(&all, &seen, span)?;
+        Ok(prepared)
+    }
+
+    fn prepare_enum_match_block_arms<'b>(
+        &self,
+        name: &str,
+        arms: &'b [MatchBlockArm],
+        span: Span,
+    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
+        let scrutinee_ty = Type::Enum(name.to_string());
+        let all = self.coverage_leaves(&scrutinee_ty, span)?;
+        let mut seen = CoverageSet::new();
+        let mut prepared = Vec::new();
+
+        for arm in arms {
+            let coverage = self.pattern_coverage(&arm.pattern, &scrutinee_ty, arm.span)?;
+            if coverage.leaves.is_subset(&seen) {
+                return Err(SemanticError::new(
+                    "match pattern is duplicate or unreachable",
+                    arm.span,
+                ));
+            }
+            seen.extend(coverage.leaves);
+            prepared.push(PreparedMatchBlockArm {
+                block: &arm.block,
+                binding: coverage.binding,
+            });
+        }
+
+        self.require_exhaustive_coverage(&all, &seen, span)?;
+        Ok(prepared)
+    }
+
+    fn pattern_coverage<'b>(
+        &self,
+        pattern: &'b MatchPattern,
+        expected: &Type,
+        span: Span,
+    ) -> Result<PatternCoverage<'b>, SemanticError> {
+        match pattern {
+            MatchPattern::Wildcard => Ok(PatternCoverage {
+                binding: None,
+                leaves: self.coverage_leaves(expected, span)?,
+            }),
+            MatchPattern::Binding(name) => {
+                reject_builtin_value_name(name, span)?;
+                Ok(PatternCoverage {
+                    binding: Some((name.as_str(), expected.clone())),
+                    leaves: self.coverage_leaves(expected, span)?,
+                })
+            }
+            MatchPattern::Variant {
+                type_name,
+                variant,
+                payload,
+            } => {
+                let Type::Enum(enum_name) = expected else {
+                    return Err(SemanticError::new(
+                        format!(
+                            "pattern `{type_name}.{variant}` requires an enum payload, got `{}`",
+                            expected.source_name()
+                        ),
+                        span,
+                    ));
+                };
+                let enum_sig = self.enum_sig(enum_name, span)?;
+                if type_name != &enum_sig.pattern_name {
+                    return Err(SemanticError::new(
+                        format!(
+                            "pattern type `{type_name}` does not match `{}`",
+                            enum_sig.pattern_name
+                        ),
+                        span,
+                    ));
+                }
+                let variant_sig = enum_sig
+                    .variants
+                    .iter()
+                    .find(|candidate| candidate.name == *variant)
+                    .ok_or_else(|| {
+                        SemanticError::new(
+                            format!("enum `{type_name}` has no variant `{variant}`"),
+                            span,
+                        )
+                    })?;
+                let prefix = format!("{}.{variant}", enum_sig.pattern_name);
+                self.variant_pattern_coverage(
+                    &prefix,
+                    &variant_sig.payload,
+                    payload.as_deref(),
+                    span,
+                )
+            }
+            MatchPattern::Some(binding) => {
+                let Type::Option(inner) = expected else {
+                    return Err(self.pattern_type_error("Some", expected, span));
+                };
+                reject_builtin_value_name(binding, span)?;
+                Ok(PatternCoverage {
+                    binding: Some((binding.as_str(), inner.as_ref().clone())),
+                    leaves: prefix_coverage("Option.Some", self.coverage_leaves(inner, span)?),
+                })
+            }
+            MatchPattern::None => {
+                if !matches!(expected, Type::Option(_)) {
+                    return Err(self.pattern_type_error("None", expected, span));
+                }
+                Ok(PatternCoverage {
+                    binding: None,
+                    leaves: singleton_coverage("Option.None"),
+                })
+            }
+            MatchPattern::Ok(binding) => {
+                let Type::Result(ok, _) = expected else {
+                    return Err(self.pattern_type_error("Ok", expected, span));
+                };
+                reject_builtin_value_name(binding, span)?;
+                Ok(PatternCoverage {
+                    binding: Some((binding.as_str(), ok.as_ref().clone())),
+                    leaves: prefix_coverage("Result.Ok", self.coverage_leaves(ok, span)?),
+                })
+            }
+            MatchPattern::Err(binding) => {
+                let Type::Result(_, err) = expected else {
+                    return Err(self.pattern_type_error("Err", expected, span));
+                };
+                reject_builtin_value_name(binding, span)?;
+                Ok(PatternCoverage {
+                    binding: Some((binding.as_str(), err.as_ref().clone())),
+                    leaves: prefix_coverage("Result.Err", self.coverage_leaves(err, span)?),
+                })
+            }
+            MatchPattern::NestedBuiltin { variant, payload } => {
+                let (prefix, payload_ty) = match (variant.as_str(), expected) {
+                    ("Some", Type::Option(inner)) => ("Option.Some", inner.as_ref()),
+                    ("Ok", Type::Result(ok, _)) => ("Result.Ok", ok.as_ref()),
+                    ("Err", Type::Result(_, err)) => ("Result.Err", err.as_ref()),
+                    _ => return Err(self.pattern_type_error(variant, expected, span)),
+                };
+                let nested = self.pattern_coverage(payload, payload_ty, span)?;
+                Ok(PatternCoverage {
+                    binding: nested.binding,
+                    leaves: prefix_coverage(prefix, nested.leaves),
+                })
+            }
+        }
+    }
+
+    fn variant_pattern_coverage<'b>(
+        &self,
+        prefix: &str,
+        payload_ty: &Option<Type>,
+        payload_pattern: Option<&'b MatchPattern>,
+        span: Span,
+    ) -> Result<PatternCoverage<'b>, SemanticError> {
+        match (payload_ty, payload_pattern) {
+            (None, None) => Ok(PatternCoverage {
+                binding: None,
+                leaves: singleton_coverage(prefix),
+            }),
+            (None, Some(_)) => Err(SemanticError::new(
+                format!("zero-payload variant `{prefix}` cannot destructure a payload"),
+                span,
+            )),
+            (Some(_), None) => Err(SemanticError::new(
+                format!("variant `{prefix}` requires a payload pattern"),
+                span,
+            )),
+            (Some(payload_ty), Some(payload_pattern)) => {
+                let nested = self.pattern_coverage(payload_pattern, payload_ty, span)?;
+                Ok(PatternCoverage {
+                    binding: nested.binding,
+                    leaves: prefix_coverage(prefix, nested.leaves),
+                })
+            }
+        }
+    }
+
+    fn coverage_leaves(&self, ty: &Type, span: Span) -> Result<CoverageSet, SemanticError> {
+        match ty {
+            Type::Enum(name) => {
+                let enum_sig = self.enum_sig(name, span)?;
+                let mut leaves = CoverageSet::new();
+                for variant in &enum_sig.variants {
+                    let prefix = format!("{}.{}", enum_sig.pattern_name, variant.name);
+                    let nested = match &variant.payload {
+                        Some(payload) => self.coverage_leaves(payload, span)?,
+                        None => CoverageSet::from([CoveragePath::new()]),
+                    };
+                    leaves.extend(prefix_coverage(&prefix, nested));
+                }
+                Ok(leaves)
+            }
+            Type::Option(inner) => {
+                let mut leaves = singleton_coverage("Option.None");
+                leaves.extend(prefix_coverage(
+                    "Option.Some",
+                    self.coverage_leaves(inner, span)?,
+                ));
+                Ok(leaves)
+            }
+            Type::Result(ok, err) => {
+                let mut leaves = prefix_coverage("Result.Ok", self.coverage_leaves(ok, span)?);
+                leaves.extend(prefix_coverage(
+                    "Result.Err",
+                    self.coverage_leaves(err, span)?,
+                ));
+                Ok(leaves)
+            }
+            _ => Ok(CoverageSet::from([CoveragePath::new()])),
+        }
+    }
+
+    fn require_exhaustive_coverage(
+        &self,
+        all: &CoverageSet,
+        seen: &CoverageSet,
+        span: Span,
+    ) -> Result<(), SemanticError> {
+        if all.is_subset(seen) {
+            return Ok(());
+        }
+        let mut missing = all
+            .difference(seen)
+            .map(|path| path.join(" -> "))
+            .collect::<Vec<_>>();
+        missing.sort();
+        Err(SemanticError::new(
+            format!("match is not exhaustive; missing {}", missing.join(", ")),
+            span,
+        ))
+    }
+
+    fn pattern_type_error(&self, pattern: &str, expected: &Type, span: Span) -> SemanticError {
+        SemanticError::new(
+            format!(
+                "pattern `{pattern}` does not match payload type `{}`",
+                expected.source_name()
+            ),
+            span,
+        )
     }
 
     fn check_match_arms(
@@ -3749,6 +4026,28 @@ struct IfBranchCheck {
 struct PreparedMatchArm<'a> {
     expr: &'a Expr,
     binding: Option<(&'a str, Type)>,
+}
+
+type CoveragePath = Vec<String>;
+type CoverageSet = HashSet<CoveragePath>;
+
+struct PatternCoverage<'a> {
+    binding: Option<(&'a str, Type)>,
+    leaves: CoverageSet,
+}
+
+fn singleton_coverage(segment: &str) -> CoverageSet {
+    CoverageSet::from([vec![segment.to_string()]])
+}
+
+fn prefix_coverage(prefix: &str, leaves: CoverageSet) -> CoverageSet {
+    leaves
+        .into_iter()
+        .map(|mut path| {
+            path.insert(0, prefix.to_string());
+            path
+        })
+        .collect()
 }
 
 struct MatchArmCheck {
@@ -6971,6 +7270,113 @@ func main() { consume(Maybe[int].Some(7)) }
         assert!(recursive
             .message
             .contains("recursive type definition involving `Node`"));
+    }
+
+    #[test]
+    fn checks_exhaustive_nested_user_enum_patterns() {
+        check_ok(
+            r#"
+type Maybe[T] enum { None Some(T) }
+type Status enum { Idle Busy(int) }
+type Event enum { Missing Changed(Status) }
+
+func unwrap(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.Some(Err(message)) { 0 }
+        case Maybe.None { 0 }
+    }
+}
+
+func show(value Maybe[int]) {
+    match value {
+        case Maybe.Some(item) { print(item) }
+        case _ {}
+    }
+}
+
+func eventCode(value Event) int {
+    return match value {
+        case Event.Missing { 0 }
+        case Event.Changed(Status.Idle) { 1 }
+        case Event.Changed(Status.Busy(code)) { code }
+    }
+}
+
+func main() {
+    value := Maybe[Result[int, string]].Some(Ok(7))
+    print(unwrap(value))
+    print(eventCode(Event.Changed(Status.Busy(9))))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_user_enum_pattern_coverage() {
+        let non_exhaustive = check_error(
+            r#"
+type Maybe[T] enum { None Some(T) }
+func unwrap(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.None { 0 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(non_exhaustive.message.contains("match is not exhaustive"));
+        assert!(non_exhaustive.message.contains("Result.Err"));
+
+        let duplicate = check_error(
+            r#"
+type State enum { Idle Busy }
+func code(value State) int {
+    return match value {
+        case State.Idle { 0 }
+        case State.Idle { 1 }
+        case State.Busy { 2 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(duplicate
+            .message
+            .contains("match pattern is duplicate or unreachable"));
+
+        let after_wildcard = check_error(
+            r#"
+type State enum { Idle Busy }
+func code(value State) int {
+    return match value {
+        case _ { 0 }
+        case State.Busy { 1 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(after_wildcard
+            .message
+            .contains("match pattern is duplicate or unreachable"));
+
+        let wrong_payload = check_error(
+            r#"
+type State enum { Idle Busy(int) }
+func code(value State) int {
+    return match value {
+        case State.Idle(item) { item }
+        case State.Busy(item) { item }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(wrong_payload
+            .message
+            .contains("zero-payload variant `State.Idle`"));
     }
 
     #[test]

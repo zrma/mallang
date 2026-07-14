@@ -48,6 +48,7 @@ pub struct StructDecl {
 pub struct EnumDecl {
     pub visibility: Visibility,
     pub name: String,
+    pub specialization_origin: Option<String>,
     pub type_params: Vec<TypeParam>,
     pub variants: Vec<EnumVariant>,
     pub span: Span,

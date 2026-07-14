@@ -1044,3 +1044,13 @@
 - [x] imported public generic enum constructor와 private visibility 경계 연결
 - [x] concrete specialization internal name을 source generic 표기로 진단 복원
 - [x] full Rust test와 Clippy regression gate 통과; IR/C lowering은 P131 이후로 유지
+
+## P131: Nested User Enum Pattern Semantics
+
+- [x] specialized enum에 source/package pattern origin metadata 보존
+- [x] local/imported `Enum.Variant` pattern qualifier를 package internal symbol로 연결
+- [x] user enum과 nested user enum/`Option`/`Result` payload pattern type 검사
+- [x] finite variant path coverage 기반 recursive exhaustiveness 검사 추가
+- [x] wildcard, duplicate/unreachable arm, payload arity/type mismatch diagnostic 추가
+- [x] expression/statement match binding scope와 cross-package generic enum 회귀 검증
+- [x] full Rust test와 Clippy regression gate 통과; IR/C pattern lowering은 다음 단계로 유지

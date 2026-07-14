@@ -584,6 +584,7 @@ impl<'a> Linker<'a> {
             StmtKind::Match { scrutinee, arms } => {
                 self.link_expr(scrutinee, context, scopes, type_params)?;
                 for arm in arms {
+                    self.link_pattern(&mut arm.pattern, context, arm.span)?;
                     let mut arm_scopes = scopes.clone();
                     arm_scopes.push(BTreeSet::new());
                     if let Some(binding) = pattern_binding(&arm.pattern) {
@@ -673,6 +674,7 @@ impl<'a> Linker<'a> {
             ExprKind::Match { scrutinee, arms } => {
                 self.link_expr(scrutinee, context, scopes, type_params)?;
                 for arm in arms {
+                    self.link_pattern(&mut arm.pattern, context, arm.span)?;
                     let mut arm_scopes = scopes.to_vec();
                     arm_scopes.push(BTreeSet::new());
                     if let Some(binding) = pattern_binding(&arm.pattern) {
@@ -962,6 +964,55 @@ impl<'a> Linker<'a> {
         } else {
             Ok(source_name.to_string())
         }
+    }
+
+    fn link_pattern(
+        &self,
+        pattern: &mut MatchPattern,
+        context: &FileContext,
+        span: Span,
+    ) -> Result<(), LinkError> {
+        match pattern {
+            MatchPattern::Variant {
+                type_name, payload, ..
+            } => {
+                if let Some((qualifier, name)) = type_name.split_once('.') {
+                    let declaration = self.imported_declaration(context, qualifier, name, span)?;
+                    self.require_kind(declaration, PackageDeclarationKind::Enum, "enum", span)?;
+                    self.require_public(context, qualifier, declaration, span)?;
+                    let package_path = context
+                        .imports
+                        .get(qualifier)
+                        .expect("an imported declaration has a package path");
+                    *type_name = internal_symbol(package_path, name);
+                } else {
+                    let package = self
+                        .graph
+                        .package(&context.package_path)
+                        .expect("every link context has a package");
+                    if package
+                        .declarations
+                        .get(type_name)
+                        .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Enum)
+                    {
+                        *type_name = internal_symbol(&context.package_path, type_name);
+                    }
+                }
+                if let Some(payload) = payload {
+                    self.link_pattern(payload, context, span)?;
+                }
+            }
+            MatchPattern::NestedBuiltin { payload, .. } => {
+                self.link_pattern(payload, context, span)?;
+            }
+            MatchPattern::Some(_)
+            | MatchPattern::None
+            | MatchPattern::Ok(_)
+            | MatchPattern::Err(_)
+            | MatchPattern::Wildcard
+            | MatchPattern::Binding(_) => {}
+        }
+        Ok(())
     }
 
     fn imported_declaration<'b>(
@@ -1324,6 +1375,14 @@ import "hello/model"
 func main() {
     value := model.Maybe[int].Some(7)
     empty := model.Maybe[string].None
+    print(unwrap(value))
+}
+
+func unwrap(value model.Maybe[int]) int {
+    return match value {
+        case model.Maybe.Some(item) { item }
+        case model.Maybe.None { 0 }
+    }
 }
 "#,
         );
