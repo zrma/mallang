@@ -27,9 +27,9 @@
   `mlg build`, `mlg run`으로 연결했으며 direct `.mlg` standalone 동작은 유지한다.
   두 package의 function/struct/method native smoke, import cycle 위치 diagnostic,
   project generated C warning-clean gate가 v0.2 acceptance를 검증한다.
-- v0.3 진행: 승인된 `func(T) U`, `func mut(T) U` function type과 plain/mutable
-  function literal을 AST/parser에 추가했다. Function type은 return type을 필수로
-  하며 no-value signature는 `unit`을 쓴다. Semantic checker는 named function을
+- v0.3 구현 완료, release pending: 승인된 `func(T) U`, `func mut(T) U` function
+  type과 plain/mutable function literal을 AST/parser에 추가했다. Function type은
+  return type을 필수로 하며 no-value signature는 `unit`을 쓴다. Semantic checker는 named function을
   fresh move-only value로 해석하고 function parameter/return/local binding, indirect
   call argument mode, mutable callable의 exclusive access를 검사한다. C backend에는
   typed call/environment/drop pointer를 가진 callable value layout과 cleanup helper
@@ -195,9 +195,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. v0.3 invalid capture/alias와 recursive closure rejection acceptance를 닫는다.
-2. v0.3 완료 상태를 spec과 release readiness 문서에 동기화한다.
-3. v0.4 generic data model decision gate를 준비한다.
+1. v0.4 generic data model의 enum/generic syntax decision gate를 연다.
+2. monomorphization과 generic ownership/cleanup 계약을 확정한다.
+3. 승인된 v0.4 surface를 parser부터 native acceptance까지 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

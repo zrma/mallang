@@ -46,6 +46,28 @@ expect_native_runtime_failure() {
   fi
 }
 
+expect_check_failure() {
+  local label="$1"
+  local source="$2"
+  local expected_stderr="$3"
+  local stdout_path="target/mallang/${label}.stdout"
+  local stderr_path="target/mallang/${label}.stderr"
+
+  if "${CARGO[@]}" run --quiet --bin mlg -- check "$source" >"$stdout_path" 2>"$stderr_path"; then
+    echo "$label check failure smoke failed: expected non-zero exit" >&2
+    exit 1
+  fi
+  if [[ -s "$stdout_path" ]]; then
+    echo "$label check failure smoke failed: expected empty stdout" >&2
+    exit 1
+  fi
+  if ! grep -Fq "$expected_stderr" "$stderr_path" || ! grep -Fq "$source:" "$stderr_path"; then
+    echo "$label check failure smoke failed: missing diagnostic or source location" >&2
+    cat "$stderr_path" >&2
+    exit 1
+  fi
+}
+
 expect_sanitized_native_output() {
   local label="$1"
   local c_source="$2"
@@ -199,6 +221,26 @@ if [[ "$nested_closures_output" != $'17\n9\n16\n20\n17' ]]; then
   echo "nested closure native build smoke failed: expected 17, 9, 16, 20, 17 got '$nested_closures_output'" >&2
   exit 1
 fi
+expect_check_failure \
+  "closure-borrowed-capture" \
+  "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
+  'cannot capture borrowed non-Copy value `name`'
+expect_check_failure \
+  "closure-immutable-mutable-capture" \
+  "tests/fixtures/invalid-closures/immutable-mutable-capture.mlg" \
+  'mutable closure capture `count` requires a mutable source binding'
+expect_check_failure \
+  "closure-function-use-after-move" \
+  "tests/fixtures/invalid-closures/function-use-after-move.mlg" \
+  'use of moved value `transform`'
+expect_check_failure \
+  "closure-mutable-alias" \
+  "tests/fixtures/invalid-closures/mutable-alias.mlg" \
+  'borrow of `next` overlaps with an active borrow in this call'
+expect_check_failure \
+  "closure-recursive" \
+  "tests/fixtures/invalid-closures/recursive-closure.mlg" \
+  'recursive closure `recurse` is not supported in v0.3'
 project_input="examples/projects/hello"
 "${CARGO[@]}" run --bin mlg -- check "$project_input" >/dev/null
 project_output_path="$("${CARGO[@]}" run --quiet --bin mlg -- build "$project_input")"

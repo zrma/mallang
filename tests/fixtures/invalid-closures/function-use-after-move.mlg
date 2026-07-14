@@ -1,0 +1,9 @@
+func Double(value int) int {
+    return value * 2
+}
+
+func main() {
+    transform := Double
+    moved := transform
+    print(transform(1))
+}

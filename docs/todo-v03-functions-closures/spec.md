@@ -1,6 +1,6 @@
 # Spec: v0.3-functions-closures
 
-상태: approved, implementation in progress
+상태: implemented, release pending
 
 ## 목표
 
@@ -138,7 +138,7 @@ Owned capture만 허용하면 escaping closure의 environment가 stack local을 
 4. immutable owned capture 분석과 environment lowering/cleanup을 추가한다. (완료)
 5. `func mut` type/literal과 exclusive call/capture mutation을 추가한다. (완료)
 6. package-qualified function value와 public API type linking을 추가한다. (완료)
-7. positive native smoke, invalid capture/move/alias rejection, sanitizer gate를 추가한다.
+7. positive native smoke, invalid capture/move/alias rejection, sanitizer gate를 추가한다. (완료)
 
 ## 제외
 

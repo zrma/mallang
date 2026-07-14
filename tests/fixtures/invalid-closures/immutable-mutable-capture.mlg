@@ -1,0 +1,8 @@
+func main() {
+    count := 0
+    mut next := func mut() int {
+        count = count + 1
+        return count
+    }
+    print(next())
+}

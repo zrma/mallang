@@ -32,7 +32,7 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
-## Planned v0.3 Function Values and Closures
+## Implemented v0.3 Function Values and Closures
 
 The approved v0.3 surface adds first-class function values and owned closures:
 
@@ -46,6 +46,10 @@ The approved v0.3 surface adds first-class function values and owned closures:
   non-copy values are moved into the closure environment.
 - Plain closure captures are immutable. Mutable closures require exclusive
   access to call and can modify captures originating from mutable bindings.
+- Nested closures propagate lexical free variables through enclosing owned
+  environments. A borrowed non-copy outer capture cannot be moved again.
+- Package-qualified named functions work as values, and public function types
+  can cross package API boundaries.
 - Borrowed captures, explicit capture lists, and recursive local closures are
   excluded from v0.3.
 
@@ -79,7 +83,7 @@ day-to-day command is intentionally short.
 - Compile to native binaries.
 - Start with a C backend before committing to LLVM or Cranelift.
 
-## Non-goals for v0
+## Non-goals for Published v0.1
 
 - No goroutines.
 - No interfaces.
