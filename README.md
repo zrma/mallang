@@ -31,6 +31,9 @@ This repository is the Mallang language PoC workspace.
   future heap-owned buffers. Storage kind stays internal; equality, printing,
   moves, and recursive cleanup share one runtime contract.
 - Explicit `con` and `mut` borrow calls.
+- `con` and `mut` are direct call-scoped argument modes, not first-class
+  reference expressions. Non-copy range traversal is index-only and uses
+  indexed `con`/`mut` calls or indexed assignment for element access.
 - Borrow mode syntax is canonical in v0; there are no legacy aliases such as
   `in`.
 - Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter
@@ -137,6 +140,7 @@ target/mallang/for-clause-prelude
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
 cargo run --bin mlg -- run examples/string-runtime.mlg
+cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
 target/mallang/logical-operators
 cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
@@ -296,6 +300,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
 - `examples/string-runtime.mlg`: native and sanitizer smoke for static/owned
   string value semantics, aggregate cleanup, mutable overwrite, and closure capture.
+- `examples/borrow-range-contract.mlg`: native and sanitizer smoke for non-copy
+  index-only range with direct indexed `con`/`mut` call access.
 - `examples/logical-operators.mlg`: native smoke for `bool` operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.

@@ -136,6 +136,14 @@
   유지한다. Malformed storage/data와 allocation overflow/failure는 fatal no-unwind contract를 따른다.
   `examples/string-runtime.mlg`, 504개 unit test, strict generated C/native harness와 61-program deep
   ASan/UBSan sweep이 이 계약을 검증한다.
+- v0.5 P144 완료: `con`/`mut`를 direct call-scoped argument mode로 고정하고 local/return 등
+  expression position의 first-class borrow와 `con`/`mut` range binding에 전용 reserved diagnostic을
+  추가했다. Borrowed non-Copy move/return/store/owned-argument/capture, use-after-move와 same-call
+  overlap을 CLI fixture matrix로 고정했다. Non-Copy range는 index-only traversal 뒤
+  `con users[i]`/`mut users[i]`로 읽고 변경하며, active range source ownership은 loop 뒤에도
+  유지된다. `SPEC.md`는 move, overwrite, return, branch merge와 loop-persistent ownership을 같은
+  normative v1 contract로 설명한다. `examples/borrow-range-contract.mlg`, 505개 unit test, strict
+  generated C/native output와 62-program deep ASan/UBSan sweep이 이 경계를 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -158,6 +166,7 @@ cargo run --bin mlg -- run examples/mutable-closures.mlg
 cargo run --bin mlg -- run examples/nested-closures.mlg
 cargo run --bin mlg -- run examples/full-expression-cleanup.mlg
 cargo run --bin mlg -- run examples/string-runtime.mlg
+cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -281,9 +290,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P144에서 `con`/`mut` call-scoped borrow와 first-class reference 제외 계약을 regression으로 고정한다.
-2. By-reference/mutable range syntax 거부와 non-Copy index-only range acceptance를 함께 검증한다.
-3. Use-after-move, borrow overlap, overwrite와 control-flow ownership merge 규칙을 normative spec과 동기화한다.
+1. P145에서 compiler-owned allocation/free path를 inventory하고 공통 accounting contract를 고정한다.
+2. Source surface에 노출하지 않는 deterministic allocation failure injection과 stable fatal diagnostic을 추가한다.
+3. Cleanup-heavy return/branch/loop/overwrite의 allocation/free count를 native harness와 sanitizer로 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

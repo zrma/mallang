@@ -1176,10 +1176,21 @@
 
 ## P144: Borrow and Range Exclusion Contract
 
-- [ ] `con`/`mut`가 direct call-scoped mode이고 first-class reference가 아님을 regression으로 고정
-- [ ] borrowed non-Copy move/return/store/capture와 overlapping mutable access 진단 matrix 보강
-- [ ] by-reference/mutable range binding syntax가 reserved diagnostic으로 거부되는지 고정
-- [ ] non-Copy range의 index-only traversal과 indexed `con`/`mut` access acceptance 유지
-- [ ] use-after-move, overwrite, return, branch와 loop ownership merge 규칙을 `SPEC.md`와 동기화
-- [ ] accepted/rejected borrow-range fixture를 CLI diagnostic 및 native gate에 연결
-- [ ] strict C와 generated C sanitizer sweep에서 기존 ownership runtime 회귀 없음 확인
+- [x] `con`/`mut`가 direct call-scoped mode이고 first-class reference가 아님을 regression으로 고정
+- [x] borrowed non-Copy move/return/store/capture와 overlapping mutable access 진단 matrix 보강
+- [x] by-reference/mutable range binding syntax가 reserved diagnostic으로 거부되는지 고정
+- [x] non-Copy range의 index-only traversal과 indexed `con`/`mut` access acceptance 유지
+- [x] use-after-move, overwrite, return, branch와 loop ownership merge 규칙을 `SPEC.md`와 동기화
+- [x] accepted/rejected borrow-range fixture를 CLI diagnostic 및 native gate에 연결
+- [x] strict C와 generated C sanitizer sweep에서 기존 ownership runtime 회귀 없음 확인
+
+## P145: Allocation Accounting and Failure Injection
+
+- [ ] slice, closure, recursive enum과 owned string allocation/free path inventory 작성
+- [ ] compiler runtime allocation을 공통 accounting 가능한 helper contract로 연결
+- [ ] source surface에 노출하지 않는 deterministic allocation failure injection 경로 추가
+- [ ] normal exit에서 allocation/free count가 일치하는 cleanup-heavy native harness 추가
+- [ ] allocation size overflow와 injected failure의 stable fatal no-unwind diagnostic 고정
+- [ ] return, branch, loop, overwrite와 nested aggregate cleanup accounting regression 추가
+- [ ] strict C, full project gate와 generated C ASan/UBSan sweep 통과
+- [ ] v0.5 completion evidence와 v0.6 decision gate 문서 동기화

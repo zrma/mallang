@@ -1,0 +1,29 @@
+type User struct {
+    name string
+    visits int
+}
+
+func show(con user User) {
+    print(user.name)
+    print(user.visits)
+}
+
+func visit(mut user User) {
+    user.name = "visited"
+    user.visits = user.visits + 1
+}
+
+func main() {
+    mut users := []User{
+        User{name: "kim", visits: 1},
+        User{name: "lee", visits: 3},
+    }
+
+    for i := range users {
+        show(con users[i])
+        visit(mut users[i])
+        show(con users[i])
+    }
+
+    show(con users[0])
+}

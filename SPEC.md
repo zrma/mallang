@@ -683,7 +683,7 @@ Range rules:
 - The two-variable range form introduces immutable `int` index and immutable
   element value bindings scoped to the loop body.
 - The one-variable range form introduces only the immutable `int` index binding.
-- Range binding syntax intentionally has no `con` or `mut` marker in v0.
+- Range binding syntax intentionally has no `con` or `mut` marker in v1.
 - Either range binding may be `_`. A blank binding is not added to the loop body
   scope.
 - The element binding is allowed only when the element type is `Copy`; if the
@@ -694,11 +694,10 @@ Range rules:
   v0.
 - `break` and `continue` follow the same nearest-loop rules as other `for`
   forms.
-- Mutable range variables, range over maps/strings, and by-reference element
-  iteration are reserved for later slices. Future borrowed range iteration
-  first needs statement-spanning borrow lifetime rules. A future mutable range
-  design must decide whether it mutates a copied loop-local value, borrows the
-  element, or lowers to indexed element assignment.
+- Mutable range variables and by-reference element iteration are not part of
+  v1. Non-copy traversal uses the index-only form and accesses an element with
+  indexed assignment or a direct call-scoped `con values[i]` / `mut values[i]`
+  argument. Range over maps and strings is also deferred.
 
 Expression form:
 
@@ -839,19 +838,47 @@ Rules:
 
 ## Ownership Rules
 
-Initial rule set:
+Normative v1 rule set:
 
 - Every value has one owner unless it is `Copy`.
-- Assigning or passing a move value transfers ownership.
-- Moved variables cannot be used.
-- Any number of read borrows may exist at once.
-- A mutable borrow is exclusive.
-- Mutation requires a mutable binding or mutable borrow.
-- References are not first-class values in v0.
+- Reading a `Copy` value does not change its ownership state. Assigning,
+  passing, returning, or matching a non-copy value in an owned position
+  transfers ownership and leaves the source moved.
+- A moved binding or moved place cannot be read, borrowed, assigned through, or
+  moved again. General partial field moves are rejected; the compiler-owned
+  owned-slice field take is the documented exception that resets its source.
+- `con expr` and `mut expr` are direct call argument modes, not expressions or
+  reference values. Their borrow begins while preparing that call and ends when
+  the callee returns.
+- Any number of overlapping `con` borrows may coexist in one call. A `mut`
+  borrow is exclusive and conflicts with every overlapping `con` or `mut`
+  place. Disjoint struct fields may be borrowed independently; indexed places
+  with the same root overlap conservatively.
+- A borrowed non-copy value cannot be moved into an owned local or argument,
+  returned, stored, or captured by a closure. A borrowed `Copy` value may be
+  copied out.
+- Mutation requires a mutable binding or a `mut` parameter/receiver. After a
+  call-scoped mutable borrow ends, the caller still owns the possibly replaced
+  value.
+- Overwrite evaluates the replacement before dropping the old destination,
+  evaluates a side-effecting destination place once, and stores the new owner
+  after the drop.
+- At a control-flow merge, a binding moved on any reachable incoming path is
+  unavailable afterward. A loop-persistent move-only binding cannot be moved by
+  a condition, body, or post path that may execute again; iteration-local values
+  may be moved within that iteration.
+- A return expression is evaluated into caller-owned storage before remaining
+  callee locals are dropped. Returning a non-copy value transfers it to the
+  caller.
+- Range value bindings copy only `Copy` elements. Non-copy arrays and slices use
+  index-only range and direct indexed `con`/`mut` call access; this does not
+  create a statement-spanning borrow.
+- First-class references, borrowed returns, user-visible lifetimes, and
+  statement-spanning borrows are not part of v1.
 
-This keeps the first checker tractable while preserving the main safety
-properties: no dangling references, no use-after-free, and no data races within
-single-threaded v0 execution.
+These rules preserve no dangling references, no use-after-free, exactly-once
+normal-flow ownership cleanup, and no data races within single-threaded v1
+execution without exposing pointer or lifetime syntax.
 
 ## Backend Strategy
 

@@ -691,6 +691,18 @@ impl Parser {
         if self.starts_range_header() {
             let (index_name, _) = self.expect_ident("expected range index binding name")?;
             let value_name = if self.eat(TokenTag::Comma).is_some() {
+                if self.at_keyword(Keyword::Con) {
+                    return Err(ParseError::new(
+                        "by-reference range value bindings are not supported; use index-only range and indexed `con` call access",
+                        self.peek().span,
+                    ));
+                }
+                if self.at_keyword(Keyword::Mut) {
+                    return Err(ParseError::new(
+                        "mutable range value bindings are not supported; use indexed assignment or indexed `mut` call access",
+                        self.peek().span,
+                    ));
+                }
                 let (value_name, _) = self.expect_ident("expected range value binding name")?;
                 value_name
             } else {
@@ -960,6 +972,10 @@ impl Parser {
             TokenKind::Keyword(Keyword::If) => self.finish_if_expr(token.span),
             TokenKind::Keyword(Keyword::Match) => self.finish_match_expr(token.span),
             TokenKind::Keyword(Keyword::Func) => self.finish_function_literal(token.span),
+            TokenKind::Keyword(Keyword::Con | Keyword::Mut) => Err(ParseError::new(
+                "first-class borrow values are not supported; `con` and `mut` are only valid on direct call arguments",
+                token.span,
+            )),
             TokenKind::Minus => {
                 let expr = self.parse_precedence(6)?;
                 let span = token.span.join(expr.span);
@@ -2373,7 +2389,9 @@ func main() {
         )
         .unwrap_err();
 
-        assert!(error.message.contains("expected expression"));
+        assert!(error.message.contains(
+            "first-class borrow values are not supported; `con` and `mut` are only valid on direct call arguments"
+        ));
     }
 
     #[test]
@@ -2387,7 +2405,9 @@ func identity(mut name string) string {
         )
         .unwrap_err();
 
-        assert!(error.message.contains("expected expression"));
+        assert!(error.message.contains(
+            "first-class borrow values are not supported; `con` and `mut` are only valid on direct call arguments"
+        ));
     }
 
     #[test]
@@ -3020,7 +3040,9 @@ func main() {
         )
         .unwrap_err();
 
-        assert!(error.message.contains("expected range value binding name"));
+        assert!(error.message.contains(
+            "mutable range value bindings are not supported; use indexed assignment or indexed `mut` call access"
+        ));
     }
 
     #[test]
@@ -3037,7 +3059,9 @@ func main() {
         )
         .unwrap_err();
 
-        assert!(error.message.contains("expected range value binding name"));
+        assert!(error.message.contains(
+            "by-reference range value bindings are not supported; use index-only range and indexed `con` call access"
+        ));
     }
 
     #[test]

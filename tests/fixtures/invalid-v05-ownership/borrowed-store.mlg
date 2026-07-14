@@ -1,0 +1,9 @@
+func store(mut value string) {
+    stored := value
+    print(stored)
+}
+
+func main() {
+    mut value := "owned"
+    store(mut value)
+}

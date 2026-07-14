@@ -1,0 +1,6 @@
+func main() {
+    values := [2]int{1, 2}
+    for i, mut value := range values {
+        print(i + value)
+    }
+}
