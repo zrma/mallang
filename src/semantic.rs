@@ -12,12 +12,13 @@ use crate::{
         UnaryOp, Visibility,
     },
     package::PackageGraph,
-    specialize::specialize,
+    specialize::{specialize, specialize_for_validation},
     token::Span,
 };
 
 pub fn check(program: &Program) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
+        validate_generic_bodies(program, None)?;
         let concrete =
             specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
         return Checker::new(&concrete).check();
@@ -30,11 +31,28 @@ pub fn check_project(
     package_graph: &PackageGraph,
 ) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
+        validate_generic_bodies(program, Some(package_graph))?;
         let concrete =
             specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
         return Checker::new_project(&concrete, package_graph).check();
     }
     Checker::new_project(program, package_graph).check()
+}
+
+fn validate_generic_bodies(
+    program: &Program,
+    package_graph: Option<&PackageGraph>,
+) -> Result<(), SemanticError> {
+    let symbolic = specialize_for_validation(program)
+        .map_err(|error| SemanticError::new(error.message, error.span))?;
+    let result = if let Some(package_graph) = package_graph {
+        Checker::new_project(&symbolic.program, package_graph).check()
+    } else {
+        Checker::new(&symbolic.program).check()
+    };
+    result
+        .map(|_| ())
+        .map_err(|error| SemanticError::new(symbolic.display_message(&error.message), error.span))
 }
 
 fn needs_specialization(program: &Program) -> bool {
@@ -6627,6 +6645,44 @@ func main() {
         assert!(missing
             .message
             .contains("generic function `Identity` requires explicit type arguments"));
+    }
+
+    #[test]
+    fn validates_unused_generic_bodies_with_non_copy_symbolic_types() {
+        let print_error = check_error("func Debug[T](value T) { print(value) }\nfunc main() {}\n");
+        assert!(print_error
+            .message
+            .contains("cannot print value of type `T`"));
+        assert!(!print_error.message.contains("__mlg_symbolic"));
+
+        let nested_error = check_error(
+            "type Box[T] struct { value T }\nfunc Debug[T](value Box[T]) { print(value) }\nfunc main() {}\n",
+        );
+        assert!(nested_error
+            .message
+            .contains("cannot print value of type `Box[T]`"));
+        assert!(!nested_error.message.contains("__mlg_spec"));
+
+        let arithmetic_error =
+            check_error("func Add[T](left T, right T) T { return left + right }\nfunc main() {}\n");
+        assert!(arithmetic_error
+            .message
+            .contains("arithmetic operators currently require `int` operands"));
+    }
+
+    #[test]
+    fn allows_generic_receiver_specialization() {
+        check_ok(
+            r#"
+type Box[T] struct { value T }
+func (mut box Box[T]) replace(value T) { box.value = value }
+func main() {
+    mut box := Box[string]{value: "before"}
+    box.replace("after")
+    print(box.value)
+}
+"#,
+        );
     }
 
     #[test]

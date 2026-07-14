@@ -1016,3 +1016,12 @@
 - [x] 동일 key 재사용, 잘못된 arity, expanding specialization cycle 진단 추가
 - [x] slice를 포함한 concrete type substitution과 기존 ownership/cleanup 경로 재사용
 - [x] standalone generic example의 native output, strict generated C, ASan/UBSan gate 추가
+
+## P128: Symbolic Generic Validation and Receiver Specialization
+
+- [x] 사용 여부와 무관하게 모든 generic struct/function body를 symbolic demand로 검사
+- [x] unconstrained type parameter를 non-Copy, non-printable concrete sentinel로 검증
+- [x] symbolic internal type name을 source type parameter diagnostic으로 복원
+- [x] generic receiver의 declaration type parameter binding과 independent generic 거부
+- [x] concrete struct specialization마다 `con`/`mut` receiver method 생성
+- [x] non-Copy generic field 교체의 native output, strict C, ASan/UBSan gate 추가

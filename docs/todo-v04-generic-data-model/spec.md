@@ -146,8 +146,8 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
    추가한다. (완료)
 3. Package symbol/visibility와 generic type/function/method resolution을 추가한다.
 4. Symbolic generic checker와 concrete specialization worklist를 추가한다.
-   (진행 중: standalone generic struct/function concrete worklist 완료, symbolic
-   body checker와 package/method resolution 미완료)
+   (진행 중: standalone generic struct/function/receiver concrete worklist와 symbolic
+   body checker 완료, package resolution 미완료)
 5. User-defined enum exhaustiveness와 nested pattern diagnostics를 일반화한다.
 6. Specialized typed IR, concrete layout, constructor/match C lowering을 추가한다.
    (진행 중: struct/function은 concrete AST를 기존 typed IR/C backend로 전달,

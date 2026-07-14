@@ -1,9 +1,12 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     ast::{
-        Block, Expr, ExprKind, ForInit, ForPost, Function, FunctionLiteral, MatchArm,
-        MatchBlockArm, Program, Stmt, StmtKind, StructDecl, TypeRef,
+        Block, Expr, ExprKind, FieldDecl, ForInit, ForPost, Function, FunctionLiteral, MatchArm,
+        MatchBlockArm, Program, Stmt, StmtKind, StructDecl, TypeParam, TypeRef, Visibility,
     },
     token::Span,
 };
@@ -38,24 +41,55 @@ impl fmt::Display for SpecializationError {
 impl std::error::Error for SpecializationError {}
 
 pub fn specialize(program: &Program) -> Result<Program, SpecializationError> {
-    Specializer::new(program)?.run(program)
+    Ok(Specializer::new(program)?.run(program, false)?.program)
+}
+
+pub fn specialize_for_validation(
+    program: &Program,
+) -> Result<SymbolicProgram, SpecializationError> {
+    Specializer::new(program)?.run(program, true)
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolicProgram {
+    pub program: Program,
+    type_names: HashMap<String, String>,
+}
+
+impl SymbolicProgram {
+    pub fn display_message(&self, message: &str) -> String {
+        let mut names = self.type_names.iter().collect::<Vec<_>>();
+        names.sort_by(|(left, _), (right, _)| {
+            right.len().cmp(&left.len()).then_with(|| left.cmp(right))
+        });
+        names
+            .into_iter()
+            .fold(message.to_string(), |message, (internal, source)| {
+                message.replace(internal, source)
+            })
+    }
 }
 
 struct Specializer {
     generic_structs: HashMap<String, StructDecl>,
     generic_functions: HashMap<String, Function>,
+    generic_methods: HashMap<String, Vec<Function>>,
     struct_specializations: HashMap<String, String>,
     function_specializations: HashMap<String, String>,
     active_structs: HashMap<String, String>,
     active_functions: HashMap<String, String>,
     generated_structs: Vec<StructDecl>,
     generated_functions: Vec<Function>,
+    used_type_names: HashSet<String>,
+    symbolic_type_names: HashMap<String, String>,
+    enforce_budget: bool,
 }
 
 impl Specializer {
     fn new(program: &Program) -> Result<Self, SpecializationError> {
         let mut generic_structs = HashMap::new();
         let mut generic_functions = HashMap::new();
+        let mut generic_methods: HashMap<String, Vec<Function>> = HashMap::new();
 
         for declaration in &program.structs {
             if declaration.type_params.is_empty() {
@@ -78,6 +112,32 @@ impl Specializer {
         }
 
         for function in &program.functions {
+            if let Some(receiver) = &function.receiver {
+                if let Some(declaration) = generic_structs.get(&receiver.ty.name) {
+                    if !function.type_params.is_empty() {
+                        return Err(SpecializationError::new(
+                            "methods cannot declare independent type parameters in v0.4",
+                            function.span,
+                        ));
+                    }
+                    validate_generic_receiver(function, declaration)?;
+                    let methods = generic_methods.entry(receiver.ty.name.clone()).or_default();
+                    if methods
+                        .iter()
+                        .any(|candidate| candidate.name == function.name)
+                    {
+                        return Err(SpecializationError::new(
+                            format!(
+                                "duplicate generic method `{}` on `{}`",
+                                function.name, receiver.ty.name
+                            ),
+                            function.span,
+                        ));
+                    }
+                    methods.push(function.clone());
+                    continue;
+                }
+            }
             if function.type_params.is_empty() {
                 continue;
             }
@@ -140,16 +200,35 @@ impl Specializer {
         Ok(Self {
             generic_structs,
             generic_functions,
+            generic_methods,
             struct_specializations: HashMap::new(),
             function_specializations: HashMap::new(),
             active_structs: HashMap::new(),
             active_functions: HashMap::new(),
             generated_structs: Vec::new(),
             generated_functions: Vec::new(),
+            used_type_names: program
+                .structs
+                .iter()
+                .map(|declaration| declaration.name.clone())
+                .chain(
+                    program
+                        .enums
+                        .iter()
+                        .map(|declaration| declaration.name.clone()),
+                )
+                .collect(),
+            symbolic_type_names: HashMap::new(),
+            enforce_budget: true,
         })
     }
 
-    fn run(mut self, program: &Program) -> Result<Program, SpecializationError> {
+    fn run(
+        mut self,
+        program: &Program,
+        symbolic: bool,
+    ) -> Result<SymbolicProgram, SpecializationError> {
+        self.enforce_budget = !symbolic;
         let mut output = program.clone();
         output.structs.clear();
         output.functions.clear();
@@ -166,19 +245,129 @@ impl Specializer {
             output.structs.push(declaration);
         }
 
-        for mut function in program
+        let concrete_functions = program
             .functions
             .iter()
-            .filter(|function| function.type_params.is_empty())
+            .filter(|function| {
+                function.type_params.is_empty() && !self.is_generic_receiver_method(function)
+            })
             .cloned()
-        {
+            .collect::<Vec<_>>();
+        for mut function in concrete_functions {
             self.rewrite_function(&mut function, &HashMap::new())?;
             output.functions.push(function);
         }
 
+        if symbolic {
+            self.add_symbolic_demands(&mut output)?;
+        }
+
         output.structs.append(&mut self.generated_structs);
         output.functions.append(&mut self.generated_functions);
-        Ok(output)
+        Ok(SymbolicProgram {
+            program: output,
+            type_names: self.symbolic_type_names,
+        })
+    }
+
+    fn is_generic_receiver_method(&self, function: &Function) -> bool {
+        function.receiver.as_ref().is_some_and(|receiver| {
+            self.generic_methods
+                .get(&receiver.ty.name)
+                .is_some_and(|methods| methods.iter().any(|method| method.span == function.span))
+        })
+    }
+
+    fn add_symbolic_demands(&mut self, output: &mut Program) -> Result<(), SpecializationError> {
+        let mut structs = self
+            .generic_structs
+            .values()
+            .map(|declaration| {
+                (
+                    declaration.name.clone(),
+                    declaration.type_params.clone(),
+                    declaration.span,
+                )
+            })
+            .collect::<Vec<_>>();
+        structs.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, params, span) in structs {
+            let args = self.symbolic_args(&name, &params, output);
+            self.specialize_struct(&name, args, span)?;
+        }
+
+        let mut functions = self
+            .generic_functions
+            .values()
+            .map(|declaration| {
+                (
+                    declaration.name.clone(),
+                    declaration.type_params.clone(),
+                    declaration.span,
+                )
+            })
+            .collect::<Vec<_>>();
+        functions.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, params, span) in functions {
+            let args = self.symbolic_args(&name, &params, output);
+            self.specialize_function(&name, args, span)?;
+        }
+        Ok(())
+    }
+
+    fn symbolic_args(
+        &mut self,
+        declaration: &str,
+        params: &[TypeParam],
+        output: &mut Program,
+    ) -> Vec<TypeRef> {
+        params
+            .iter()
+            .enumerate()
+            .map(|(index, param)| {
+                let key = format!("{declaration}:{}:{index}", param.name);
+                let base = format!("__mlg_symbolic_type_{}", hex_encode(key.as_bytes()));
+                let mut name = base.clone();
+                let mut suffix = 0usize;
+                while !self.used_type_names.insert(name.clone()) {
+                    suffix += 1;
+                    name = format!("{base}_{suffix}");
+                }
+                self.symbolic_type_names
+                    .insert(name.clone(), param.name.clone());
+
+                output.structs.push(StructDecl {
+                    visibility: Visibility::Package,
+                    name: name.clone(),
+                    type_params: Vec::new(),
+                    fields: vec![FieldDecl {
+                        name: "__non_printable".to_string(),
+                        ty: TypeRef {
+                            name: "Array".to_string(),
+                            args: vec![simple_type_ref("int".to_string(), param.span)],
+                            array_len: Some(1),
+                            slice: false,
+                            function: None,
+                            span: param.span,
+                        },
+                        span: param.span,
+                    }],
+                    span: param.span,
+                });
+                simple_type_ref(name, param.span)
+            })
+            .collect()
+    }
+
+    fn symbolic_specialization_display(&self, name: &str, args: &[TypeRef]) -> Option<String> {
+        let raw = specialization_key(name, args);
+        let display = self
+            .symbolic_type_names
+            .iter()
+            .fold(raw.clone(), |display, (internal, source)| {
+                display.replace(internal, source)
+            });
+        (display != raw).then_some(display)
     }
 
     fn rewrite_function(
@@ -476,6 +665,10 @@ impl Specializer {
         }
 
         let specialized_name = specialized_name("type", name, &args);
+        if let Some(display) = self.symbolic_specialization_display(name, &args) {
+            self.symbolic_type_names
+                .insert(specialized_name.clone(), display);
+        }
         self.struct_specializations
             .insert(key.clone(), specialized_name.clone());
         self.active_structs.insert(name.to_string(), key);
@@ -491,6 +684,12 @@ impl Specializer {
         specialized.type_params.clear();
         for field in &mut specialized.fields {
             self.substitute_and_rewrite_type_ref(&mut field.ty, &substitutions)?;
+        }
+
+        let methods = self.generic_methods.get(name).cloned().unwrap_or_default();
+        for mut method in methods {
+            self.rewrite_function(&mut method, &substitutions)?;
+            self.generated_functions.push(method);
         }
 
         self.active_structs.remove(name);
@@ -525,6 +724,10 @@ impl Specializer {
         }
 
         let specialized_name = specialized_name("func", name, &args);
+        if let Some(display) = self.symbolic_specialization_display(name, &args) {
+            self.symbolic_type_names
+                .insert(specialized_name.clone(), display);
+        }
         self.function_specializations
             .insert(key.clone(), specialized_name.clone());
         self.active_functions.insert(name.to_string(), key);
@@ -546,8 +749,9 @@ impl Specializer {
     }
 
     fn check_specialization_budget(&self, span: Span) -> Result<(), SpecializationError> {
-        if self.struct_specializations.len() + self.function_specializations.len()
-            >= MAX_SPECIALIZATIONS
+        if self.enforce_budget
+            && self.struct_specializations.len() + self.function_specializations.len()
+                >= MAX_SPECIALIZATIONS
         {
             return Err(SpecializationError::new(
                 format!("generic specialization limit of {MAX_SPECIALIZATIONS} exceeded"),
@@ -556,6 +760,48 @@ impl Specializer {
         }
         Ok(())
     }
+}
+
+fn validate_generic_receiver(
+    function: &Function,
+    declaration: &StructDecl,
+) -> Result<(), SpecializationError> {
+    let receiver = function
+        .receiver
+        .as_ref()
+        .expect("generic receiver validation requires a method");
+    if receiver.ty.function.is_some()
+        || receiver.ty.slice
+        || receiver.ty.array_len.is_some()
+        || receiver.ty.args.len() != declaration.type_params.len()
+        || receiver
+            .ty
+            .args
+            .iter()
+            .zip(&declaration.type_params)
+            .any(|(arg, param)| {
+                arg.function.is_some()
+                    || arg.slice
+                    || arg.array_len.is_some()
+                    || !arg.args.is_empty()
+                    || arg.name != param.name
+            })
+    {
+        let expected = declaration
+            .type_params
+            .iter()
+            .map(|param| param.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(SpecializationError::new(
+            format!(
+                "generic receiver for `{}` must bind declared type parameters as `{}[{expected}]`",
+                declaration.name, declaration.name
+            ),
+            receiver.ty.span,
+        ));
+    }
+    Ok(())
 }
 
 fn validate_type_params(
@@ -820,5 +1066,37 @@ func main() {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn specializes_generic_receiver_methods_with_their_struct() {
+        let program = parse(
+            r#"
+type Box[T] struct { value T }
+func (mut box Box[T]) replace(value T) { box.value = value }
+func main() {
+    mut box := Box[string]{value: "before"}
+    box.replace("after")
+}
+"#,
+        )
+        .unwrap();
+
+        let specialized = specialize(&program).unwrap();
+        let receiver = specialized
+            .functions
+            .iter()
+            .find(|function| function.name == "replace")
+            .and_then(|function| function.receiver.as_ref())
+            .unwrap();
+        assert!(receiver.ty.name.starts_with("__mlg_spec_type_"));
+        assert!(receiver.ty.args.is_empty());
+        assert!(specialized.functions.iter().all(|function| {
+            function.type_params.is_empty()
+                && function
+                    .receiver
+                    .as_ref()
+                    .is_none_or(|receiver| receiver.ty.args.is_empty())
+        }));
     }
 }
