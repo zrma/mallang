@@ -187,6 +187,7 @@ target/mallang/match-statement
 - `SPEC.md`: 언어 v0.1 스펙
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
+- `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -195,9 +196,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. v0.4 generic data model의 enum/generic syntax decision gate를 연다.
-2. monomorphization과 generic ownership/cleanup 계약을 확정한다.
-3. 승인된 v0.4 surface를 parser부터 native acceptance까지 구현한다.
+1. `docs/todo-v04-generic-data-model/open-questions.md` Q1-Q7 추천안을 승인받는다.
+2. 승인 뒤 generic enum/function과 project-wide monomorphization 계약을 확정한다.
+3. 확정된 v0.4 surface를 parser부터 native acceptance까지 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

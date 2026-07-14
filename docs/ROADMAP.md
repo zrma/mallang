@@ -977,3 +977,13 @@
 - [x] invalid fixture의 file/line/column CLI diagnostic gate 추가
 - [x] full Rust/C/project gate와 56-program generated C sanitizer sweep 통과
 - [x] SPEC, v1 roadmap, handoff를 implementation complete/release pending으로 동기화
+
+## P124: v0.4 Generic Data Model Decision Gate
+
+- [x] user-defined enum declaration과 variant qualification 선택지 기록
+- [x] generic type/function declaration과 explicit type argument 추천안 기록
+- [x] nested pattern과 exhaustiveness의 v0.4 범위 기록
+- [x] built-in `Option`/`Result` compatibility migration 경계 기록
+- [x] project-wide monomorphization과 generic ownership/cleanup 계약 기록
+- [x] generic receiver와 excluded feature 경계 기록
+- [ ] 사용자 승인 뒤 v0.4 language surface 확정
