@@ -895,4 +895,4 @@
 - [x] owned capture와 escaping closure safety 추천안 기록
 - [x] mutable closure call effect와 exclusive access 추천안 기록
 - [x] callable C ABI와 cleanup 구현 순서 기록
-- [ ] 사용자 승인 뒤 v0.3 language surface 확정
+- [x] 사용자 승인 뒤 v0.3 language surface 확정
