@@ -263,13 +263,13 @@ if [[ "$project_output_path" != */examples/projects/hello/target/mallang/hello ]
   exit 1
 fi
 project_output="$("$project_output_path")"
-if [[ "$project_output" != $'kim\n42\n22\n15\ngeneric\n8\nupdated' ]]; then
-  echo "project native build smoke failed: expected kim, 42, 22, 15, generic, 8, updated got '$project_output'" >&2
+if [[ "$project_output" != $'kim\n42\n22\n15\ngeneric\n8\nupdated\n13\n0' ]]; then
+  echo "project native build smoke failed: expected kim, 42, 22, 15, generic, 8, updated, 13, 0 got '$project_output'" >&2
   exit 1
 fi
 project_run_output="$("${CARGO[@]}" run --quiet --bin mlg -- run "$project_input/mallang.toml")"
-if [[ "$project_run_output" != $'kim\n42\n22\n15\ngeneric\n8\nupdated' ]]; then
-  echo "project native run smoke failed: expected kim, 42, 22, 15, generic, 8, updated got '$project_run_output'" >&2
+if [[ "$project_run_output" != $'kim\n42\n22\n15\ngeneric\n8\nupdated\n13\n0' ]]; then
+  echo "project native run smoke failed: expected kim, 42, 22, 15, generic, 8, updated, 13, 0 got '$project_run_output'" >&2
   exit 1
 fi
 expect_warning_clean_generated_c \
@@ -278,7 +278,15 @@ expect_warning_clean_generated_c \
 expect_sanitized_native_output \
   "project-hello" \
   "$project_input/target/mallang/hello.c" \
-  $'kim\n42\n22\n15\ngeneric\n8\nupdated'
+  $'kim\n42\n22\n15\ngeneric\n8\nupdated\n13\n0'
+expect_check_failure \
+  "generic-enum-non-exhaustive" \
+  "tests/fixtures/invalid-generic-enums/non-exhaustive.mlg" \
+  'match is not exhaustive; missing Maybe.Some -> Result.Err'
+expect_check_failure \
+  "generic-enum-constructor-payload" \
+  "tests/fixtures/invalid-generic-enums/constructor-payload.mlg" \
+  'payload type mismatch for `Maybe[int].Some`: expected `int`, got `string`'
 
 project_cycle_stderr="target/mallang/project-cycle.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- check tests/fixtures/project-cycle >/dev/null 2>"$project_cycle_stderr"; then

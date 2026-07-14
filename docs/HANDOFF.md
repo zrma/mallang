@@ -80,6 +80,10 @@
   drop helper를 생성하고 constructor 및 expression/statement nested match를 공통 pattern
   planner로 lowering한다. `examples/generic-enums.mlg`는 generic/user/built-in nested
   pattern과 slice payload cleanup을 native, warning-clean, ASan/UBSan 경로에서 검증한다.
+  `examples/projects/hello`는 public generic enum의 imported constructor와
+  package-qualified pattern, owned slice payload cleanup을 같은 native gate에서 검증한다.
+  Invalid CLI fixture는 nested non-exhaustive path와 constructor payload mismatch가 source
+  generic 표기 및 file/line/column으로 보고되는지 고정한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -222,8 +226,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Cross-package public generic enum을 native acceptance와 invalid CLI fixture에 연결한다.
-2. Built-in `Option`/`Result`를 공통 enum metadata/IR/backend 경로로 이전한다.
+1. Built-in `Option`/`Result`를 공통 enum metadata/IR/backend 경로로 이전한다.
+2. 기존 built-in source syntax와 print output 호환성을 회귀 검증한다.
 3. v0.4 전체 스펙·진단·sanitizer acceptance를 마감한다.
 
 Publish helper note: the real publish path fetches `origin` before verification

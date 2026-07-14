@@ -264,10 +264,12 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/generic-enums.mlg`: native smoke for generic enum specialization,
   nested user/built-in patterns, and owned payload cleanup.
 - `examples/projects/hello`: two-package project smoke for imported functions,
-  structs, generic APIs and receivers, function values, higher-order APIs, and
-  closure returns.
+  structs, generic APIs, receivers and enums, function values, higher-order APIs,
+  and closure returns.
 - `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
   function move/alias, and recursive closure behavior.
+- `tests/fixtures/invalid-generic-enums`: CLI rejection fixtures for generic enum
+  constructor payload and nested exhaustiveness diagnostics.
 - `examples/if.mlg`: native smoke for `if` expressions.
 - `examples/int-division.mlg`: native smoke for guarded integer division and remainder.
 - `examples/checked-arithmetic.mlg`: native smoke for checked integer arithmetic.

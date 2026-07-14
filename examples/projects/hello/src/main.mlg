@@ -2,6 +2,20 @@ package main
 
 import "hello/greet"
 
+func unwrap(value greet.Maybe[int]) int {
+    return match value {
+        case greet.Maybe.Some(item) { item }
+        case greet.Maybe.None { 0 }
+    }
+}
+
+func discard(value greet.Maybe[[]int]) {
+    match value {
+        case greet.Maybe.Some(_) {}
+        case greet.Maybe.None {}
+    }
+}
+
 func main() {
     message := greet.New("kim")
     message.Print()
@@ -17,4 +31,7 @@ func main() {
     mut box := greet.Box[string]{value: "before"}
     box.Replace("updated")
     print(box.value)
+    print(unwrap(greet.Maybe[int].Some(13)))
+    print(unwrap(greet.Maybe[int].None))
+    discard(greet.Maybe[[]int].Some([]int{4, 5}))
 }

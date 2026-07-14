@@ -8,6 +8,11 @@ pub type Box[T] struct {
     value T
 }
 
+pub type Maybe[T] enum {
+    None
+    Some(T)
+}
+
 pub func New(name string) Message {
     return Message{name: name}
 }

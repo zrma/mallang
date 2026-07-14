@@ -156,8 +156,8 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
    match를 C backend에 연결)
 7. Built-in `Option`/`Result`를 공통 generic enum 경로로 이전한다.
 8. Cross-package positive smoke, invalid fixture, strict C와 sanitizer gate를 추가한다.
-   (진행 중: generic struct/function/receiver와 standalone enum positive native, strict C,
-   sanitizer gate 완료; cross-package enum native와 invalid CLI fixture 미완료)
+   (완료: generic struct/function/receiver와 standalone/cross-package enum native, invalid
+   CLI fixture, full generated C warning-clean과 ASan/UBSan gate 연결)
 
 ## 제외
 

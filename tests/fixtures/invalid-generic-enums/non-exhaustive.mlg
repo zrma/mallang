@@ -1,0 +1,13 @@
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+func unwrap(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.None { 0 }
+    }
+}
+
+func main() {}
