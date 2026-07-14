@@ -16,6 +16,8 @@ pub(super) fn emit_platform_runtime(
     used: &BTreeSet<StandardIntrinsic>,
 ) -> Result<String, CompileError> {
     let platform_intrinsics = [
+        StandardIntrinsic::FsReadText,
+        StandardIntrinsic::FsWriteText,
         StandardIntrinsic::IoReadStdin,
         StandardIntrinsic::IoWriteStdout,
         StandardIntrinsic::IoWriteStderr,
@@ -32,6 +34,17 @@ pub(super) fn emit_platform_runtime(
 
     let layout = StandardErrorLayout::new(program)?;
     let mut output = emit_error_runtime(&layout);
+    if used.contains(&StandardIntrinsic::FsReadText)
+        || used.contains(&StandardIntrinsic::FsWriteText)
+    {
+        output.push_str(FILE_PATH_RUNTIME);
+    }
+    if used.contains(&StandardIntrinsic::FsReadText) {
+        output.push_str(&emit_fs_read_runtime(&layout));
+    }
+    if used.contains(&StandardIntrinsic::FsWriteText) {
+        output.push_str(&emit_fs_write_runtime(&layout));
+    }
     if used.contains(&StandardIntrinsic::OsArgs) {
         output.push_str(&emit_os_args_runtime(&layout));
     }
@@ -164,6 +177,33 @@ fn emit_os_args_runtime(layout: &StandardErrorLayout) -> String {
     )
 }
 
+fn emit_fs_read_runtime(layout: &StandardErrorLayout) -> String {
+    render(
+        FS_READ_RUNTIME,
+        &[
+            ("<RESULT_TYPE>", layout.result(Type::String).c_name()),
+            ("<INVALID_INPUT_TAG>", layout.invalid_input.to_string()),
+            ("<INVALID_DATA_TAG>", layout.invalid_data.to_string()),
+            ("<OTHER_TAG>", layout.other.to_string()),
+            ("<FIELD_PAYLOAD>", c_field("payload")),
+            ("<FIELD_OK>", c_field("Ok")),
+            ("<FIELD_ERR>", c_field("Err")),
+        ],
+    )
+}
+
+fn emit_fs_write_runtime(layout: &StandardErrorLayout) -> String {
+    render(
+        FS_WRITE_RUNTIME,
+        &[
+            ("<RESULT_TYPE>", layout.result(Type::Unit).c_name()),
+            ("<INVALID_INPUT_TAG>", layout.invalid_input.to_string()),
+            ("<FIELD_PAYLOAD>", c_field("payload")),
+            ("<FIELD_ERR>", c_field("Err")),
+        ],
+    )
+}
+
 fn emit_os_env_runtime(layout: &StandardErrorLayout) -> String {
     let option = Type::Option(Box::new(Type::String));
     render(
@@ -287,6 +327,245 @@ static <ERROR_TYPE> MLG_UNUSED mallang_std_errno_error(
         mallang_std_error_kind_from_errno(mlg_error_number),
         mlg_message
     );
+}
+
+"#;
+
+const FILE_PATH_RUNTIME: &str = r#"static bool MLG_UNUSED mallang_std_file_path(
+    const mlg_String *mlg_path,
+    char **mlg_path_out
+) {
+    mallang_validate_string(*mlg_path);
+    if (memchr(mlg_path->mlg_data, '\0', mlg_path->mlg_len) != NULL) {
+        return false;
+    }
+    if (mlg_path->mlg_len == SIZE_MAX) {
+        mallang_runtime_error("file path allocation size overflow");
+    }
+    char *mlg_path_data = mallang_alloc(
+        mlg_path->mlg_len + 1,
+        "file path allocation failed"
+    );
+    if (mlg_path->mlg_len > 0) {
+        memcpy(mlg_path_data, mlg_path->mlg_data, mlg_path->mlg_len);
+    }
+    mlg_path_data[mlg_path->mlg_len] = '\0';
+    *mlg_path_out = mlg_path_data;
+    return true;
+}
+
+"#;
+
+const FS_READ_RUNTIME: &str = r#"static <RESULT_TYPE> MLG_UNUSED mallang_std_fs_read_text(
+    const mlg_String *mlg_path
+) {
+    char *mlg_path_data = NULL;
+    if (!mallang_std_file_path(mlg_path, &mlg_path_data)) {
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_error(
+                    <INVALID_INPUT_TAG>,
+                    "file path contains NUL"
+                )
+            }
+        };
+    }
+
+    errno = 0;
+    FILE *mlg_file = fopen(mlg_path_data, "rb");
+    int mlg_open_error = errno;
+    mallang_dealloc(mlg_path_data);
+    if (mlg_file == NULL) {
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_errno_error(
+                    mlg_open_error,
+                    "file open failed"
+                )
+            }
+        };
+    }
+
+    size_t mlg_len = 0;
+    size_t mlg_cap = 4096;
+    char *mlg_data = mallang_alloc(mlg_cap, "file read allocation failed");
+    while (true) {
+        if (mlg_len == mlg_cap) {
+            if (mlg_cap > SIZE_MAX / 2) {
+                mallang_runtime_error("file read allocation size overflow");
+            }
+            mlg_cap = mlg_cap * 2;
+            mlg_data = mallang_realloc(
+                mlg_data,
+                mlg_cap,
+                "file read allocation failed"
+            );
+        }
+
+        errno = 0;
+        size_t mlg_read = fread(mlg_data + mlg_len, 1, mlg_cap - mlg_len, mlg_file);
+        int mlg_read_error = errno;
+        mlg_len = mlg_len + mlg_read;
+        if (mlg_len > INT64_MAX) {
+            mallang_dealloc(mlg_data);
+            mallang_runtime_error("file content exceeds string size limit");
+        }
+        if (mlg_read > 0) {
+            continue;
+        }
+        if (ferror(mlg_file) || mlg_read_error != 0) {
+            mallang_dealloc(mlg_data);
+            errno = 0;
+            int mlg_close_status = fclose(mlg_file);
+            if (mlg_read_error == 0 && mlg_close_status != 0) {
+                mlg_read_error = errno;
+            }
+            return (<RESULT_TYPE>){
+                .tag = 1,
+                .<FIELD_PAYLOAD> = {
+                    .<FIELD_ERR> = mallang_std_errno_error(
+                        mlg_read_error,
+                        "file read failed"
+                    )
+                }
+            };
+        }
+        if (feof(mlg_file)) {
+            break;
+        }
+        mallang_dealloc(mlg_data);
+        (void)fclose(mlg_file);
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_error(
+                    <OTHER_TAG>,
+                    "file read made no progress"
+                )
+            }
+        };
+    }
+
+    errno = 0;
+    if (fclose(mlg_file) != 0) {
+        int mlg_close_error = errno;
+        mallang_dealloc(mlg_data);
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_errno_error(
+                    mlg_close_error,
+                    "file close failed"
+                )
+            }
+        };
+    }
+    if (!mallang_utf8_scalar_count_bytes(mlg_data, mlg_len, NULL)) {
+        mallang_dealloc(mlg_data);
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_error(
+                    <INVALID_DATA_TAG>,
+                    "file content is not valid UTF-8"
+                )
+            }
+        };
+    }
+    mlg_data[mlg_len] = '\0';
+    return (<RESULT_TYPE>){
+        .tag = 0,
+        .<FIELD_PAYLOAD> = {
+            .<FIELD_OK> = (mlg_String){
+                .mlg_data = mlg_data,
+                .mlg_len = mlg_len,
+                .mlg_storage = MLG_STRING_OWNED
+            }
+        }
+    };
+}
+
+"#;
+
+const FS_WRITE_RUNTIME: &str = r#"static <RESULT_TYPE> MLG_UNUSED mallang_std_fs_write_text(
+    const mlg_String *mlg_path,
+    const mlg_String *mlg_text
+) {
+    mallang_validate_string(*mlg_text);
+    char *mlg_path_data = NULL;
+    if (!mallang_std_file_path(mlg_path, &mlg_path_data)) {
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_error(
+                    <INVALID_INPUT_TAG>,
+                    "file path contains NUL"
+                )
+            }
+        };
+    }
+
+    errno = 0;
+    FILE *mlg_file = fopen(mlg_path_data, "wb");
+    int mlg_open_error = errno;
+    mallang_dealloc(mlg_path_data);
+    if (mlg_file == NULL) {
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_errno_error(
+                    mlg_open_error,
+                    "file open failed"
+                )
+            }
+        };
+    }
+
+    size_t mlg_written = 0;
+    while (mlg_written < mlg_text->mlg_len) {
+        errno = 0;
+        size_t mlg_step = fwrite(
+            mlg_text->mlg_data + mlg_written,
+            1,
+            mlg_text->mlg_len - mlg_written,
+            mlg_file
+        );
+        int mlg_write_error = errno;
+        mlg_written = mlg_written + mlg_step;
+        if (mlg_step > 0) {
+            continue;
+        }
+        errno = 0;
+        int mlg_close_status = fclose(mlg_file);
+        if (mlg_write_error == 0 && mlg_close_status != 0) {
+            mlg_write_error = errno;
+        }
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_errno_error(
+                    mlg_write_error,
+                    "file write failed"
+                )
+            }
+        };
+    }
+
+    errno = 0;
+    if (fclose(mlg_file) != 0) {
+        return (<RESULT_TYPE>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_errno_error(
+                    errno,
+                    "file close failed"
+                )
+            }
+        };
+    }
+    return (<RESULT_TYPE>){ .tag = 0 };
 }
 
 "#;

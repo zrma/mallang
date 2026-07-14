@@ -350,13 +350,13 @@ mod tests {
         let mut runtime_sources = SourceMap::new();
         let runtime_main = runtime_sources.add_file(
             "runtime.mlg",
-            "import \"std/fs\"\nfunc main() { path := \"missing\"; result := fs.readText(con path) }\n",
+            "import \"std/collections\"\nfunc main() { result := collections.newMap[int, string]() }\n",
         );
         let runtime_error = generate_c_sources(&runtime_sources, &[runtime_main]).unwrap_err();
         assert_eq!(runtime_error.stage, CompilerStage::Backend);
         assert_eq!(
             runtime_error.message,
-            "standard intrinsic `std/fs.readText` is not implemented in this compiler milestone"
+            "standard intrinsic `std/collections.newMap` is not implemented in this compiler milestone"
         );
     }
 
@@ -532,6 +532,24 @@ mod tests {
         assert!(c.contains("mallang_std_os_exit"));
         assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
         assert!(!c.contains("void mlg_Ok;"));
+    }
+
+    #[test]
+    fn generates_file_standard_runtime() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "file.mlg",
+            "import \"std/fs\"\nfunc main() { path := \"file.txt\"; text := \"text\"; read := fs.readText; input := read(con path); written := fs.writeText(con path, con text) }\n",
+        );
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+
+        assert!(c.contains("int main(void)"));
+        assert!(c.contains("mallang_std_file_path"));
+        assert!(c.contains("mallang_std_fs_read_text"));
+        assert!(c.contains("mallang_std_fs_write_text"));
+        assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
+        assert!(!c.contains("mallang_process_init"));
     }
 
     #[test]

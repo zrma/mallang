@@ -102,8 +102,9 @@ This repository is the Mallang language PoC workspace.
   standard `Error` results, function-value thunks, and allocation-safe native
   cleanup. `std/os` provides validated process arguments, environment lookup,
   and explicit exit; `std/io` provides UTF-8 stdin and exact stdout/stderr writes
-  with recoverable errors. File and map calls remain deterministic backend
-  rejections until P150-P151 land.
+  with recoverable errors. `std/fs` provides UTF-8 text reads and create-or-
+  overwrite exact writes with recoverable open/read/write/close errors. Map calls
+  remain deterministic backend rejections until P151 lands.
 
 ## Bootstrap
 
@@ -157,6 +158,8 @@ cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- run examples/allocation-accounting.mlg
 cargo run --bin mlg -- run examples/standard-strings.mlg
 printf 'input' | MALLANG_P149_TEST=값 cargo run --bin mlg -- run examples/process-io.mlg -- alpha
+printf 'text' > target/mallang/file-input.txt
+cargo run --bin mlg -- run examples/file-io.mlg -- target/mallang/file-input.txt target/mallang/file-output.txt
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
 target/mallang/logical-operators
 cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
@@ -276,7 +279,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P149 implementation status.
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P150 implementation status.
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
@@ -298,6 +301,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   values.
 - `examples/process-io.mlg`: native smoke for arguments, environment, stdin,
   stdout, stderr, standard errors, and process exit behavior.
+- `examples/file-io.mlg`: native smoke for function-valued UTF-8 file reads,
+  create-or-overwrite writes, arguments, and recoverable file errors.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, generic APIs, receivers and enums, function values, higher-order APIs,
   and closure returns.

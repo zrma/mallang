@@ -1236,3 +1236,13 @@
 - [x] invalid UTF-8, embedded NUL, missing env와 closed stream failure 검증
 - [x] direct/runner invocation, strict C, allocation accounting/failure injection 검증
 - [x] normal/error process path ASan/UBSan acceptance 통과
+
+## P150: File I/O
+
+- [x] demand-driven `fs.readText`/`fs.writeText` runtime과 callable thunk 연결
+- [x] NUL-free path 변환, UTF-8 read와 embedded NUL content 보존
+- [x] create-or-overwrite exact write와 short-write detection 구현
+- [x] open/read/write/close failure를 platform-independent `errors.Kind`로 mapping
+- [x] NotFound, PermissionDenied, InvalidInput과 InvalidData native regression 추가
+- [x] strict C, zero-allocation accounting과 deterministic failure injection 검증
+- [x] success/error file path ASan/UBSan acceptance 통과

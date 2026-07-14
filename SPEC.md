@@ -32,10 +32,10 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
-## Implemented v0.6 Standard Registry, Text, Process, and Stream Runtime
+## Implemented v0.6 Standard Registry, Text, Process, Stream, and File Runtime
 
 The approved v0.6 standard-library contract currently implements its compiler
-foundation, UTF-8 text, process, and standard-stream slices:
+foundation, UTF-8 text, process, standard-stream, and file slices:
 
 - `import "std/..."` works in project and manifest-free standalone source for
   the six approved standard packages.
@@ -70,9 +70,13 @@ foundation, UTF-8 text, process, and standard-stream slices:
 - `mlg run <input> -- <program-args>` forwards arguments unchanged and propagates
   a generated program's numeric exit status. Direct and runner-based invocation
   use the same generated process ABI.
-- Normal P148-P149 acceptance programs finish with zero live allocations. File
-  and map runtime bodies remain P150-P151 work; calling one during `mlg build`
-  reports a deterministic compiler-milestone error.
+- `std/fs.readText` accepts only NUL-free paths and returns owned valid UTF-8 while
+  preserving embedded NUL content. `writeText` creates or overwrites a file with
+  exact length-based bytes. Open, read, write, and close failures return
+  `errors.Error`; invalid file text returns `InvalidData`.
+- Normal P148-P150 acceptance programs finish with zero live allocations. Map
+  runtime bodies remain P151 work; calling one during `mlg build` reports a
+  deterministic compiler-milestone error.
 
 ## Implemented v0.3 Function Values and Closures
 

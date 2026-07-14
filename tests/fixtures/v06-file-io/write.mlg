@@ -1,0 +1,27 @@
+import "std/fs"
+import "std/io"
+import "std/os"
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            match io.readStdin() {
+                case Ok(text) {
+                    match fs.writeText(con args[1], con text) {
+                        case Ok(_) {
+                        }
+                        case Err(error) {
+                            print(error)
+                        }
+                    }
+                }
+                case Err(error) {
+                    print(error)
+                }
+            }
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+}

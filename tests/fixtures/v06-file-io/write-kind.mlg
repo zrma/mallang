@@ -1,0 +1,21 @@
+import "std/fs"
+import "std/os"
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            text := "abcdef"
+            match fs.writeText(con args[1], con text) {
+                case Ok(_) {
+                    print("ok")
+                }
+                case Err(error) {
+                    print(error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}

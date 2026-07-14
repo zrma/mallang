@@ -231,6 +231,9 @@ expect_warning_clean_generated_c "v06-standard-strings-edge" "target/mallang/edg
 "${CARGO[@]}" run --quiet --bin mlg -- check examples/process-io.mlg >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build examples/process-io.mlg -o target/mallang/process-io >/dev/null
 scripts/check-process-io-runtime.sh
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/file-io.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/file-io.mlg -o target/mallang/file-io >/dev/null
+scripts/check-file-io-runtime.sh
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

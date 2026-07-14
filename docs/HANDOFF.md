@@ -175,6 +175,13 @@
   strict C, zero-allocation accounting, deterministic failure injection과 normal/error
   ASan/UBSan harness, 전체 524개 unit test와 65-program generated C sweep이 P149 완료
   조건을 검증한다.
+- v0.6 P150 완료: `std/fs.readText`와 `writeText`를 demand-driven runtime과 function-value
+  thunk로 연결했다. File path는 embedded NUL을 platform 호출 전에 `InvalidInput`으로
+  거부하고, read는 valid UTF-8 owned string만 반환하면서 content의 NUL은 보존한다.
+  Write는 create-or-overwrite exact-byte semantics이며 short write와 close failure를 성공으로
+  숨기지 않는다. NotFound/PermissionDenied/InvalidData mapping, 4 KiB 초과 read growth,
+  normal/error strict C, zero-allocation accounting, failure injection, ASan/UBSan harness,
+  전체 525개 unit test와 66-program generated C sweep이 P150 완료 조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -201,6 +208,8 @@ cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- run examples/allocation-accounting.mlg
 cargo run --bin mlg -- run examples/standard-strings.mlg
 printf 'input' | MALLANG_P149_TEST=값 cargo run --bin mlg -- run examples/process-io.mlg -- alpha
+printf 'text' > target/mallang/file-input.txt
+cargo run --bin mlg -- run examples/file-io.mlg -- target/mallang/file-input.txt target/mallang/file-output.txt
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -316,7 +325,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P149 implementation evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P150 implementation evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -325,11 +334,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P150에서 `std/fs.readText`와 `writeText`의 owned result/error runtime을 구현한다.
-2. Not found, permission, invalid UTF-8, short write와 close failure를 stable
-   `errors.Kind` contract에 연결한다.
-3. Successful/failing file operation을 strict C, allocation accounting/failure injection과
-   sanitizer native harness로 검증한다.
+1. P151에서 specialized opaque `Map[K,V]` storage, hash/equality, growth와 drop을 구현한다.
+2. `newMap`, `count`, `insert`, `with`, `update`, `remove`를 typed intrinsic과 callable
+   thunk에 연결한다.
+3. Copy/non-Copy key/value replacement/removal/callback, borrow conflict, allocation
+   accounting/failure injection과 sanitizer native path를 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

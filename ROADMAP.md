@@ -254,8 +254,8 @@
 - `v0.5.0: Ownership and Runtime` is implemented locally; release publication
   is still pending.
 - `v0.6.0: Standard Library` is in progress. P147 standard package registry,
-  P148 UTF-8 text/error runtime, and P149 process/stream I/O are complete; P150
-  file I/O is next.
+  P148 UTF-8 text/error runtime, P149 process/stream I/O, and P150 file I/O are
+  complete; P151 owned map is next.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

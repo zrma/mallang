@@ -173,6 +173,21 @@ if [[ "$process_exit_status" -ne 7 ]] || \
   exit 1
 fi
 
+printf 'release-file-한\0text' >"$NEGATIVE_DIR/file-input.txt"
+if ! "$RELEASE_BIN" run examples/file-io.mlg -- \
+  "$NEGATIVE_DIR/file-input.txt" "$NEGATIVE_DIR/file-output.txt" \
+  >"$NEGATIVE_DIR/file-run.stdout" 2>"$NEGATIVE_DIR/file-run.stderr"; then
+  echo "release binary file I/O smoke failed" >&2
+  cat "$NEGATIVE_DIR/file-run.stderr" >&2
+  exit 1
+fi
+if [[ -s "$NEGATIVE_DIR/file-run.stdout" ]] || \
+  [[ -s "$NEGATIVE_DIR/file-run.stderr" ]] || \
+  ! cmp -s "$NEGATIVE_DIR/file-input.txt" "$NEGATIVE_DIR/file-output.txt"; then
+  echo "release binary file I/O output mismatch" >&2
+  exit 1
+fi
+
 "$RELEASE_BIN" build examples/first.mlg -o "$SMOKE_BIN"
 run_output="$("$SMOKE_BIN")"
 if [[ "$run_output" != "30" ]]; then

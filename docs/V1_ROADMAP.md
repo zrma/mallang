@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: implementation in progress (P147-P149 complete; P150 next)
+상태: implementation in progress (P147-P150 complete; P151 next)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
@@ -219,8 +219,11 @@ library를 제공한다.
   stdin/stdout/stderr recoverable runtime
 - `mlg run --` argument와 numeric exit status forwarding, UTF-8/process/stream
   failure, allocation과 sanitizer acceptance
-- file과 map처럼 runtime body가 아직 없는 intrinsic call의 deterministic
-  backend rejection
+- `std/fs.readText`/`writeText` UTF-8 text, exact overwrite와 recoverable
+  open/read/write/close runtime
+- file success/failure, embedded NUL, allocation accounting/failure injection과
+  sanitizer acceptance
+- map runtime body가 아직 없는 intrinsic call의 deterministic backend rejection
 
 완료 조건:
 

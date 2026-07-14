@@ -1,0 +1,20 @@
+import "std/fs"
+import "std/io"
+
+func main() {
+    match io.readStdin() {
+        case Ok(path) {
+            match fs.readText(con path) {
+                case Ok(_) {
+                    print("ok")
+                }
+                case Err(error) {
+                    print(error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}

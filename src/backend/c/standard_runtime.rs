@@ -24,6 +24,8 @@ pub(super) fn intrinsic_helper_name(intrinsic: StandardIntrinsic) -> Option<&'st
         StandardIntrinsic::StringsParseInt => Some("mallang_std_strings_parse_int"),
         StandardIntrinsic::StringsFromBool => Some("mallang_std_strings_from_bool"),
         StandardIntrinsic::StringsParseBool => Some("mallang_std_strings_parse_bool"),
+        StandardIntrinsic::FsReadText => Some("mallang_std_fs_read_text"),
+        StandardIntrinsic::FsWriteText => Some("mallang_std_fs_write_text"),
         StandardIntrinsic::IoReadStdin => Some("mallang_std_io_read_stdin"),
         StandardIntrinsic::IoWriteStdout => Some("mallang_std_io_write_stdout"),
         StandardIntrinsic::IoWriteStderr => Some("mallang_std_io_write_stderr"),

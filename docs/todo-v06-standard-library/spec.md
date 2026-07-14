@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147-P149 complete; P150 next)
+상태: implementation in progress (P147-P150 complete; P151 next)
 
 ## 목표
 
@@ -120,6 +120,8 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 - UTF-8 rejection, missing env, short/failing stream write와 exit code behavior를 검증한다.
 
 ### P150: File I/O
+
+상태: complete (2026-07-15)
 
 - `fs.readText`와 `fs.writeText`의 owned result/error cleanup을 구현한다.
 - Not found, permission, invalid UTF-8, short write와 close failure mapping을 검증한다.

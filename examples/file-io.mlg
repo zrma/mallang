@@ -1,0 +1,30 @@
+import "std/fs"
+import "std/os"
+
+func main() {
+    read := fs.readText
+    write := fs.writeText
+    match os.args() {
+        case Ok(args) {
+            if len(args) > 2 {
+                match read(con args[1]) {
+                    case Ok(text) {
+                        match write(con args[2], con text) {
+                            case Ok(_) {
+                            }
+                            case Err(error) {
+                                print(error)
+                            }
+                        }
+                    }
+                    case Err(error) {
+                        print(error)
+                    }
+                }
+            }
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+}
