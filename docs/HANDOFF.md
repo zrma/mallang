@@ -293,7 +293,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: v0.6 standard package/API decision gate draft
+- `docs/todo-v06-standard-library/`: approved v0.6 standard package/API contract
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -302,12 +302,12 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P146의 `open-questions.md` Q1-Q8에서 exact `std/...` import, compiler-owned typed intrinsic
-   boundary와 standalone/project resolution을 승인한다.
-2. UTF-8 때문에 failure-aware인 arguments/environment, text conversion, file/stream I/O와
-   `errors.Error`/`Result` API를 승인한다.
-3. Explicit `match` error flow, opaque owned `Map` callback API와 macOS/Linux acceptance를
-   승인한 뒤 P147-P153 implementation order를 확정한다.
+1. P147에서 reserved `std/...` package registry와 standalone/project import resolution을
+   구현한다.
+2. Standard public signature와 explicit generic specialization을 ordinary type/ownership
+   checking에 연결하고 call target을 typed intrinsic identity로 IR에 보존한다.
+3. Runtime body는 P148-P151이 소유하며 P147에서는 missing implementation을 compiler
+   invariant로 유지한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

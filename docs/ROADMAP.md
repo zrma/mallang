@@ -1198,11 +1198,20 @@
 ## P146: v0.6 Standard Library Decision Gate
 
 - [x] current package/linker/semantic/IR/backend feasibility와 roadmap scope gap inventory 작성
-- [ ] standard package namespace, resolution과 runtime/compiler ownership 추천안 승인
-- [ ] process arguments/environment와 `main` signature 경계 승인
-- [ ] UTF-8 string operation, byte index와 allocation semantics 승인
-- [ ] file/stream I/O, standard `Error`와 `Result` API surface 승인
-- [ ] error propagation syntax 도입 여부 승인
-- [ ] owned key-value collection type, key restriction과 mutation API 승인
-- [ ] platform support와 standard-library native acceptance matrix 승인
-- [ ] Q1-Q8 승인 결정을 P147-P153 implementation order와 compatibility contract로 확정
+- [x] standard package namespace, resolution과 runtime/compiler ownership 추천안 승인
+- [x] process arguments/environment와 `main` signature 경계 승인
+- [x] UTF-8 string operation, byte index와 allocation semantics 승인
+- [x] file/stream I/O, standard `Error`와 `Result` API surface 승인
+- [x] error propagation syntax는 v0.6에서 제외하고 P152에서 재평가하기로 승인
+- [x] owned key-value collection type, key restriction과 mutation API 승인
+- [x] platform support와 standard-library native acceptance matrix 승인
+- [x] Q1-Q8 승인 결정을 P147-P153 implementation order와 compatibility contract로 확정
+
+## P147: Standard Package Registry and Intrinsic ABI
+
+- [ ] reserved `std/...` package registry와 exact import resolution 추가
+- [ ] project/standalone compilation을 shared standard-aware linking path로 연결
+- [ ] standard public type/function signature와 explicit generic specialization 연결
+- [ ] standard call target을 typed intrinsic identity로 semantic/IR에 보존
+- [ ] unknown standard package, shadow, wrong arity/mode/type와 internal-name access 진단 추가
+- [ ] project/standalone CLI check와 IR acceptance, existing project compatibility 검증

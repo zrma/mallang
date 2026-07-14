@@ -1,8 +1,8 @@
 # Open Questions: v0.6 Standard Library
 
-상태: recommendation draft; user approval required
+상태: approved (2026-07-15)
 
-이 문서는 v0.6 구현 전에 승인할 public API와 compatibility boundary를 정리한다.
+이 문서는 v0.6에서 구현할 public API와 compatibility boundary를 정리한다.
 아래 표기는 실제 source spelling이다. 예를 들어 `import "std/os"` 뒤에는
 `os.args()`를 호출한다.
 
@@ -220,7 +220,8 @@ receiver method와 independently generic method를 새로 열지 않는다.
 - Windows, cross compilation과 release artifact matrix는 v0.7 tooling/platform decision
   gate까지 지원 대상으로 선언하지 않는다.
 
-## 승인 요청
+## 승인 기록
 
-Q1-Q8을 한 묶음으로 승인하면 P146을 닫고 P147부터 순서대로 구현한다. 일부 항목을
-변경하려면 해당 Q 번호와 원하는 contract를 지정한다.
+Q1-Q8 추천안은 2026-07-15 사용자 승인을 받았다. `import`와 `func main()`을 유지하고,
+`?`는 v0.6에 넣지 않은 채 P152에서 Rust-style propagation 필요성을 재평가한다.
+Implementation은 P147부터 P153까지 순서대로 진행한다.

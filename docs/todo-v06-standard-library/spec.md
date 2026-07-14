@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: decision gate draft; user approval required
+상태: approved; implementation pending (P146 complete)
 
 ## 목표
 
@@ -26,7 +26,7 @@
   non-Copy access는 call-scoped callback.
 
 Exact signatures와 edge semantics는 `open-questions.md` Q1-Q8이 소유한다. 이 문서는
-승인 전 recommendation이고 implemented API로 해석하지 않는다.
+승인된 implementation contract이고 아직 implemented API로 해석하지 않는다.
 
 ## Compiler and runtime ownership boundary
 
@@ -174,8 +174,9 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 - Shared ownership, first-class reference and borrowed return
 - Windows and cross-compilation support declaration
 
-## Decision gate
+## Decision record
 
-Implementation starts only after `open-questions.md` Q1-Q8 approval. Approval closes P146 and
-fixes P147-P153 as the v0.6 execution order. A changed recommendation must update this document,
-the operational roadmap and compatibility contract before code implementation.
+`open-questions.md` Q1-Q8은 2026-07-15 사용자 승인을 받아 P146을 닫았다. `import`와
+`func main()`을 유지하고, `?`는 v0.6에서 제외한 채 P152에서 Rust-style propagation
+필요성을 재평가한다. P147-P153이 v0.6 execution order다. 승인된 contract를 바꾸려면
+새 compatibility decision gate가 필요하다.

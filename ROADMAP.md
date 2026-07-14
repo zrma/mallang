@@ -253,8 +253,8 @@
   still pending.
 - `v0.5.0: Ownership and Runtime` is implemented locally; release publication
   is still pending.
-- The next implementation milestone is `v0.6.0: Standard Library`, beginning
-  with its package/API and error-propagation decision gate.
+- The next implementation milestone is `v0.6.0: Standard Library`; its
+  package/API contract is approved and P147 standard package registry is next.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.
