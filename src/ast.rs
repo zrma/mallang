@@ -255,6 +255,11 @@ pub enum ExprKind {
         base: Box<Expr>,
         args: Vec<TypeRef>,
     },
+    EnumConstructor {
+        enum_name: String,
+        variant: String,
+        args: Option<Vec<Arg>>,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Arg>,

@@ -12,16 +12,18 @@ use crate::{
         UnaryOp, Visibility,
     },
     package::PackageGraph,
-    specialize::{specialize, specialize_for_validation},
+    specialize::{specialize_for_checking, specialize_for_validation},
     token::Span,
 };
 
 pub fn check(program: &Program) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
         validate_generic_bodies(program, None)?;
-        let concrete =
-            specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
-        return Checker::new(&concrete).check();
+        let concrete = specialize_for_checking(program)
+            .map_err(|error| SemanticError::new(error.message, error.span))?;
+        return Checker::new(&concrete.program).check().map_err(|error| {
+            SemanticError::new(concrete.display_message(&error.message), error.span)
+        });
     }
     Checker::new(program).check()
 }
@@ -32,9 +34,13 @@ pub fn check_project(
 ) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
         validate_generic_bodies(program, Some(package_graph))?;
-        let concrete =
-            specialize(program).map_err(|error| SemanticError::new(error.message, error.span))?;
-        return Checker::new_project(&concrete, package_graph).check();
+        let concrete = specialize_for_checking(program)
+            .map_err(|error| SemanticError::new(error.message, error.span))?;
+        return Checker::new_project(&concrete.program, package_graph)
+            .check()
+            .map_err(|error| {
+                SemanticError::new(concrete.display_message(&error.message), error.span)
+            });
     }
     Checker::new_project(program, package_graph).check()
 }
@@ -60,6 +66,7 @@ fn needs_specialization(program: &Program) -> bool {
         .structs
         .iter()
         .any(|declaration| !declaration.type_params.is_empty())
+        || !program.enums.is_empty()
         || program
             .functions
             .iter()
@@ -72,6 +79,7 @@ pub struct CheckedProgram {
     pub signatures: HashMap<String, FunctionSig>,
     pub methods: HashMap<MethodKey, MethodSig>,
     pub structs: HashMap<String, StructSig>,
+    pub enums: HashMap<String, EnumSig>,
     pub closures: Vec<CheckedClosure>,
 }
 
@@ -144,6 +152,18 @@ pub struct FieldSig {
     pub ty_span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumSig {
+    pub variants: Vec<EnumVariantSig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariantSig {
+    pub name: String,
+    pub payload: Option<Type>,
+    pub payload_span: Option<Span>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     pub mutable: bool,
@@ -168,6 +188,7 @@ pub enum Type {
     Array { len: usize, element: Box<Type> },
     Slice(Box<Type>),
     Struct(String),
+    Enum(String),
     Function(FunctionType),
 }
 
@@ -183,6 +204,7 @@ impl Type {
             Self::Array { len, element } => format!("[{}]{}", len, element.source_name()),
             Self::Slice(element) => format!("[]{}", element.source_name()),
             Self::Struct(name) => name.clone(),
+            Self::Enum(name) => name.clone(),
             Self::Function(function) => {
                 let params = function
                     .params
@@ -214,6 +236,7 @@ impl Type {
             Self::Result(ok, err) => ok.is_copy() && err.is_copy(),
             Self::Array { .. } | Self::Slice(_) => false,
             Self::Struct(_) => false,
+            Self::Enum(_) => false,
             Self::Function(_) => false,
         }
     }
@@ -225,6 +248,7 @@ impl Type {
             Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
             Self::Array { element, .. } => element.needs_cleanup(),
             Self::Struct(_) => true,
+            Self::Enum(_) => true,
             Self::Function(_) => true,
             Self::Int | Self::Bool | Self::String | Self::Unit => false,
         }
@@ -265,6 +289,7 @@ struct Checker<'a> {
     methods: HashMap<MethodKey, MethodSig>,
     method_access: HashMap<MethodKey, MethodAccess>,
     structs: HashMap<String, StructSig>,
+    enums: HashMap<String, EnumSig>,
     closures: RefCell<Vec<CheckedClosure>>,
 }
 
@@ -282,6 +307,7 @@ impl<'a> Checker<'a> {
             methods: HashMap::new(),
             method_access: HashMap::new(),
             structs: HashMap::new(),
+            enums: HashMap::new(),
             closures: RefCell::new(Vec::new()),
         }
     }
@@ -295,7 +321,10 @@ impl<'a> Checker<'a> {
 
     fn check(mut self) -> Result<CheckedProgram, SemanticError> {
         self.reject_unlowered_generic_declarations()?;
+        self.collect_enum_names()?;
         self.collect_structs()?;
+        self.collect_enums()?;
+        self.reject_recursive_types()?;
         self.collect_signatures()?;
         for function in &self.program.functions {
             self.check_function(function)?;
@@ -306,14 +335,20 @@ impl<'a> Checker<'a> {
             signatures: self.signatures,
             methods: self.methods,
             structs: self.structs,
+            enums: self.enums,
             closures: self.closures.into_inner(),
         })
     }
 
     fn reject_unlowered_generic_declarations(&self) -> Result<(), SemanticError> {
-        if let Some(declaration) = self.program.enums.first() {
+        if let Some(declaration) = self
+            .program
+            .enums
+            .iter()
+            .find(|declaration| !declaration.type_params.is_empty())
+        {
             return Err(SemanticError::new(
-                "user-defined enum declarations require v0.4 semantic lowering",
+                "generic enum declarations require v0.4 specialization",
                 declaration.span,
             ));
         }
@@ -342,6 +377,34 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    fn collect_enum_names(&mut self) -> Result<(), SemanticError> {
+        for declaration in &self.program.enums {
+            if is_builtin_type_name(&declaration.name) {
+                return Err(SemanticError::new(
+                    format!("`{}` is a built-in type name", declaration.name),
+                    declaration.span,
+                ));
+            }
+            reject_builtin_value_name(&declaration.name, declaration.span)?;
+            if self
+                .enums
+                .insert(
+                    declaration.name.clone(),
+                    EnumSig {
+                        variants: Vec::new(),
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticError::new(
+                    format!("duplicate enum `{}`", declaration.name),
+                    declaration.span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn collect_structs(&mut self) -> Result<(), SemanticError> {
         for struct_decl in &self.program.structs {
             if is_builtin_type_name(&struct_decl.name) {
@@ -351,6 +414,15 @@ impl<'a> Checker<'a> {
                 ));
             }
             reject_builtin_value_name(&struct_decl.name, struct_decl.span)?;
+            if self.enums.contains_key(struct_decl.name.as_str()) {
+                return Err(SemanticError::new(
+                    format!(
+                        "type `{}` is declared as both a struct and an enum",
+                        struct_decl.name
+                    ),
+                    struct_decl.span,
+                ));
+            }
             if self.structs.contains_key(struct_decl.name.as_str()) {
                 return Err(SemanticError::new(
                     format!("duplicate struct `{}`", struct_decl.name),
@@ -385,17 +457,71 @@ impl<'a> Checker<'a> {
                 .insert(struct_decl.name.clone(), StructSig { fields });
         }
 
-        self.reject_recursive_structs()?;
-
         Ok(())
     }
 
-    fn reject_recursive_structs(&self) -> Result<(), SemanticError> {
+    fn collect_enums(&mut self) -> Result<(), SemanticError> {
+        for declaration in &self.program.enums {
+            if declaration.variants.is_empty() {
+                return Err(SemanticError::new(
+                    format!(
+                        "enum `{}` must declare at least one variant",
+                        declaration.name
+                    ),
+                    declaration.span,
+                ));
+            }
+            let mut seen = HashSet::new();
+            let mut variants = Vec::new();
+            for variant in &declaration.variants {
+                if !seen.insert(variant.name.as_str()) {
+                    return Err(SemanticError::new(
+                        format!(
+                            "duplicate variant `{}` in enum `{}`",
+                            variant.name, declaration.name
+                        ),
+                        variant.span,
+                    ));
+                }
+                let payload = variant
+                    .payload
+                    .as_ref()
+                    .map(|ty| self.type_from_ref(ty))
+                    .transpose()?;
+                variants.push(EnumVariantSig {
+                    name: variant.name.clone(),
+                    payload,
+                    payload_span: variant.payload.as_ref().map(|payload| payload.span),
+                });
+            }
+            self.enums
+                .get_mut(&declaration.name)
+                .expect("enum names are collected before payloads")
+                .variants = variants;
+        }
+        Ok(())
+    }
+
+    fn reject_recursive_types(&self) -> Result<(), SemanticError> {
         for struct_decl in &self.program.structs {
             let mut visiting = vec![struct_decl.name.clone()];
             let struct_sig = self.struct_sig(&struct_decl.name, struct_decl.span)?;
             for field_sig in &struct_sig.fields {
                 self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, &mut visiting)?;
+            }
+        }
+
+        for declaration in &self.program.enums {
+            let mut visiting = vec![declaration.name.clone()];
+            let enum_sig = self.enum_sig(&declaration.name, declaration.span)?;
+            for variant in &enum_sig.variants {
+                if let Some(payload) = &variant.payload {
+                    self.reject_recursive_type(
+                        payload,
+                        variant.payload_span.unwrap_or(declaration.span),
+                        &mut visiting,
+                    )?;
+                }
             }
         }
 
@@ -423,6 +549,26 @@ impl<'a> Checker<'a> {
                 let struct_sig = self.struct_sig(name, span)?;
                 for field_sig in &struct_sig.fields {
                     self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, visiting)?;
+                }
+                visiting.pop();
+                Ok(())
+            }
+            Type::Enum(name) => {
+                if visiting.contains(name) {
+                    return Err(SemanticError::new(
+                        format!(
+                            "recursive type definition involving `{name}` is not supported in v0"
+                        ),
+                        span,
+                    ));
+                }
+
+                visiting.push(name.clone());
+                let enum_sig = self.enum_sig(name, span)?;
+                for variant in &enum_sig.variants {
+                    if let Some(payload) = &variant.payload {
+                        self.reject_recursive_type(payload, span, visiting)?;
+                    }
                 }
                 visiting.pop();
                 Ok(())
@@ -531,6 +677,15 @@ impl<'a> Checker<'a> {
                     return Err(SemanticError::new(
                         format!(
                             "top-level function `{}` conflicts with struct `{}`",
+                            function.name, function.name
+                        ),
+                        function.span,
+                    ));
+                }
+                if self.enums.contains_key(function.name.as_str()) {
+                    return Err(SemanticError::new(
+                        format!(
+                            "top-level function `{}` conflicts with enum `{}`",
                             function.name, function.name
                         ),
                         function.span,
@@ -1081,6 +1236,18 @@ impl<'a> Checker<'a> {
                 "generic value application requires v0.4 specialization",
                 expr.span,
             )),
+            ExprKind::EnumConstructor {
+                enum_name,
+                variant,
+                args,
+            } => self.check_enum_constructor(
+                enum_name,
+                variant,
+                args.as_deref(),
+                locals,
+                expected,
+                expr.span,
+            ),
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
             }
@@ -1434,6 +1601,79 @@ impl<'a> Checker<'a> {
         }
 
         Ok(Type::Struct(type_name.to_string()))
+    }
+
+    fn check_enum_constructor(
+        &self,
+        enum_name: &str,
+        variant_name: &str,
+        args: Option<&[Arg]>,
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        let enum_ty = Type::Enum(enum_name.to_string());
+        if let Some(expected) = expected {
+            if expected != &enum_ty {
+                return Err(SemanticError::new(
+                    format!(
+                        "enum constructor type mismatch: expected `{}`, got `{}`",
+                        expected.source_name(),
+                        enum_ty.source_name()
+                    ),
+                    span,
+                ));
+            }
+        }
+
+        let enum_sig = self.enum_sig(enum_name, span)?;
+        let variant = enum_sig
+            .variants
+            .iter()
+            .find(|candidate| candidate.name == variant_name)
+            .ok_or_else(|| {
+                SemanticError::new(
+                    format!("enum `{enum_name}` has no variant `{variant_name}`"),
+                    span,
+                )
+            })?;
+
+        match (&variant.payload, args) {
+            (None, None) => {}
+            (None, Some(_)) => {
+                return Err(SemanticError::new(
+                    format!("zero-payload variant `{enum_name}.{variant_name}` is not callable"),
+                    span,
+                ));
+            }
+            (Some(_), None) => {
+                return Err(SemanticError::new(
+                    format!("variant `{enum_name}.{variant_name}` requires one payload argument"),
+                    span,
+                ));
+            }
+            (Some(payload_ty), Some(args)) => {
+                let arg = expect_constructor_arg(variant_name, args, span)?;
+                let actual = self.check_expr_with_expected(
+                    &arg.expr,
+                    locals,
+                    ValueUse::Owned,
+                    Some(payload_ty),
+                )?;
+                if &actual != payload_ty {
+                    return Err(SemanticError::new(
+                        format!(
+                            "payload type mismatch for `{enum_name}.{variant_name}`: expected `{}`, got `{}`",
+                            payload_ty.source_name(),
+                            actual.source_name()
+                        ),
+                        arg.span,
+                    ));
+                }
+            }
+        }
+
+        Ok(enum_ty)
     }
 
     fn check_array_literal(
@@ -3305,6 +3545,12 @@ impl<'a> Checker<'a> {
             .ok_or_else(|| SemanticError::new(format!("unknown struct `{name}`"), span))
     }
 
+    fn enum_sig(&self, name: &str, span: Span) -> Result<&EnumSig, SemanticError> {
+        self.enums
+            .get(name)
+            .ok_or_else(|| SemanticError::new(format!("unknown enum `{name}`"), span))
+    }
+
     fn resolve_field_path_type(
         &self,
         root_ty: &Type,
@@ -3351,7 +3597,11 @@ impl<'a> Checker<'a> {
                     .iter()
                     .all(|field| self.is_printable_type(&field.ty))
             }),
-            Type::Unit | Type::Array { .. } | Type::Slice(_) | Type::Function(_) => false,
+            Type::Enum(_)
+            | Type::Unit
+            | Type::Array { .. }
+            | Type::Slice(_)
+            | Type::Function(_) => false,
         }
     }
 
@@ -3441,6 +3691,13 @@ impl<'a> Checker<'a> {
             }
             name if self.structs.contains_key(name) => Err(SemanticError::new(
                 format!("struct type `{}` does not take type arguments", ty.name),
+                ty.span,
+            )),
+            name if ty.args.is_empty() && self.enums.contains_key(name) => {
+                Ok(Type::Enum(name.to_string()))
+            }
+            name if self.enums.contains_key(name) => Err(SemanticError::new(
+                format!("enum type `{}` does not take type arguments", ty.name),
                 ty.span,
             )),
             _ => Err(SemanticError::new(
@@ -3661,6 +3918,7 @@ fn is_stable_place_index_expr(expr: &Expr) -> bool {
         | ExprKind::Match { .. }
         | ExprKind::StructLiteral { .. }
         | ExprKind::ArrayLiteral { .. }
+        | ExprKind::EnumConstructor { .. }
         | ExprKind::FunctionLiteral(_)
         | ExprKind::Call { .. } => false,
     }
@@ -3924,6 +4182,13 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(index, bound)?;
             }
             ExprKind::TypeApply { base, .. } => self.visit_expr(base, bound)?,
+            ExprKind::EnumConstructor { args, .. } => {
+                if let Some(args) = args {
+                    for arg in args {
+                        self.visit_expr(&arg.expr, bound)?;
+                    }
+                }
+            }
             ExprKind::Call { callee, args } => {
                 self.visit_call_callee(callee, bound)?;
                 for arg in args {
@@ -6627,12 +6892,7 @@ func main() {
 
     #[test]
     fn reports_v04_declaration_and_specialization_errors() {
-        let enum_error = check_error("type Maybe[T] enum { None Some(T) }\nfunc main() {}\n");
-        assert_eq!(
-            enum_error.message,
-            "user-defined enum declarations require v0.4 semantic lowering"
-        );
-
+        check_ok("type Maybe[T] enum { None Some(T) }\nfunc main() {}\n");
         check_ok("type Box[T] struct { value T }\nfunc main() {}\n");
         check_ok("func Identity[T](value T) T { return value }\nfunc main() {}\n");
 
@@ -6645,6 +6905,72 @@ func main() {
         assert!(missing
             .message
             .contains("generic function `Identity` requires explicit type arguments"));
+    }
+
+    #[test]
+    fn checks_user_defined_enum_constructors() {
+        check_ok(
+            r#"
+type Maybe[T] enum { None Some(T) }
+type State enum { Idle Busy(string) }
+
+func main() {
+    number := Maybe[int].Some(7)
+    empty := Maybe[int].None
+    idle := State.Idle
+    busy := State.Busy("work")
+}
+"#,
+        );
+
+        let unknown =
+            check_error("type State enum { Idle }\nfunc main() { state := State.Missing }\n");
+        assert!(unknown.message.contains("has no variant `Missing`"));
+
+        let missing_payload =
+            check_error("type State enum { Busy(string) }\nfunc main() { state := State.Busy }\n");
+        assert!(missing_payload
+            .message
+            .contains("requires one payload argument"));
+
+        let called_empty =
+            check_error("type State enum { Idle }\nfunc main() { state := State.Idle() }\n");
+        assert!(called_empty.message.contains("is not callable"));
+
+        let wrong_payload = check_error(
+            "type State enum { Busy(string) }\nfunc main() { state := State.Busy(7) }\n",
+        );
+        assert!(wrong_payload.message.contains("payload type mismatch"));
+
+        let specialization_mismatch = check_error(
+            r#"
+type Maybe[T] enum { None Some(T) }
+func consume(value Maybe[string]) {}
+func main() { consume(Maybe[int].Some(7)) }
+"#,
+        );
+        assert!(specialization_mismatch
+            .message
+            .contains("expected `Maybe[string]`, got `Maybe[int]`"));
+        assert!(!specialization_mismatch.message.contains("__mlg_spec"));
+    }
+
+    #[test]
+    fn rejects_invalid_and_recursive_enum_declarations() {
+        let empty = check_error("type Empty enum {}\nfunc main() {}\n");
+        assert!(empty
+            .message
+            .contains("enum `Empty` must declare at least one variant"));
+
+        let duplicate = check_error("type State enum { Idle Idle }\nfunc main() {}\n");
+        assert!(duplicate
+            .message
+            .contains("duplicate variant `Idle` in enum `State`"));
+
+        let recursive = check_error("type Node enum { Next(Node) }\nfunc main() {}\n");
+        assert!(recursive
+            .message
+            .contains("recursive type definition involving `Node`"));
     }
 
     #[test]
