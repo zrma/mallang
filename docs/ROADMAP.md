@@ -998,3 +998,12 @@
 - [x] multi-source merge와 linker expression traversal에 새 AST 연결
 - [x] semantic lowering 전 generic/enum declaration의 명시적 단계 진단 추가
 - [x] parser/semantic 회귀 테스트와 full Rust/Clippy gate 통과
+
+## P126: Owned Checked Program Foundation
+
+- [x] checked function/struct symbol table key를 owned string으로 전환
+- [x] `CheckedProgram`이 checked AST를 `Arc<Program>`으로 소유하도록 전환
+- [x] IR lowerer의 입력 lifetime을 checked program 소유권과 분리
+- [x] closure capture collector를 owned struct symbol table에 연결
+- [x] 기존 standalone/project compiler API 호환성 유지
+- [x] full Rust/Clippy regression gate 통과

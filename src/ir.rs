@@ -15,7 +15,7 @@ use crate::{
     token::Span,
 };
 
-pub fn lower(checked: &CheckedProgram<'_>) -> Result<IrProgram, IrError> {
+pub fn lower(checked: &CheckedProgram) -> Result<IrProgram, IrError> {
     Lowerer::new(checked).lower_program()
 }
 
@@ -307,11 +307,11 @@ impl fmt::Display for IrError {
 impl std::error::Error for IrError {}
 
 struct Lowerer<'a> {
-    checked: &'a CheckedProgram<'a>,
+    checked: &'a CheckedProgram,
 }
 
 impl<'a> Lowerer<'a> {
-    fn new(checked: &'a CheckedProgram<'a>) -> Self {
+    fn new(checked: &'a CheckedProgram) -> Self {
         Self { checked }
     }
 
