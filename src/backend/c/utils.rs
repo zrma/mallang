@@ -77,6 +77,17 @@ pub(super) fn slice_literal_temp_name(expr: &IrExpr) -> String {
     format!("mallang_slice_tmp_{}", expr.span.start)
 }
 
+pub(super) fn variant_constructor_temp_name(expr: &IrExpr) -> String {
+    format!("mallang_variant_tmp_{}_{}", expr.span.start, expr.span.end)
+}
+
+pub(super) fn variant_payload_temp_name(expr: &IrExpr, index: usize) -> String {
+    format!(
+        "mallang_variant_payload_{}_{}_{}",
+        expr.span.start, expr.span.end, index
+    )
+}
+
 pub(super) fn index_source_temp_name(expr: &IrExpr) -> String {
     format!("mallang_index_src_{}_{}", expr.span.start, expr.span.end)
 }

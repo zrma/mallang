@@ -235,6 +235,13 @@ if [[ "$generic_enums_output" != $'7\n-1\n0\n9' ]]; then
   echo "generic enum native build smoke failed: expected 7, -1, 0, 9 got '$generic_enums_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/recursive-enums.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/recursive-enums.mlg -o target/mallang/recursive-enums >/dev/null
+recursive_enums_output="$(target/mallang/recursive-enums)"
+if [[ "$recursive_enums_output" != $'6\n7' ]]; then
+  echo "recursive enum native build smoke failed: expected 6, 7 got '$recursive_enums_output'" >&2
+  exit 1
+fi
 expect_check_failure \
   "closure-borrowed-capture" \
   "tests/fixtures/invalid-closures/borrowed-capture.mlg" \
@@ -905,4 +912,8 @@ expect_sanitized_native_output \
   "generic-enums" \
   "target/mallang/generic-enums.c" \
   $'7\n-1\n0\n9'
+expect_sanitized_native_output \
+  "recursive-enums" \
+  "target/mallang/recursive-enums.c" \
+  $'6\n7'
 expect_all_warning_clean_generated_c

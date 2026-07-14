@@ -1,12 +1,16 @@
 use crate::{
     ir::{
-        IrEnum, IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt, IrStmtKind, IrStruct,
+        IrEnum, IrEnumStorage, IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt,
+        IrStmtKind, IrStruct,
     },
     semantic::Type,
 };
 
 use super::{
-    names::{c_field, drop_fn_name, TypeCName},
+    names::{
+        c_field, drop_fn_name, enum_node_type_name, variant_payload_field, variant_payload_member,
+        TypeCName,
+    },
     utils::push_indented_lines,
     CompileError,
 };
@@ -79,7 +83,7 @@ impl<'a> TypeEmitter<'a> {
     }
 
     fn emit_type_definitions(&self, defined_types: &[Type]) -> Result<String, CompileError> {
-        let mut output = String::new();
+        let mut output = self.owned_enum_forward_declarations();
         let mut emitted = Vec::new();
         for ty in defined_types {
             self.emit_type_def(ty, &mut emitted, &mut Vec::new(), &mut output)?;
@@ -89,6 +93,16 @@ impl<'a> TypeEmitter<'a> {
 
     fn emit_drop_helpers(&self, defined_types: &[Type]) -> Result<String, CompileError> {
         let mut output = String::new();
+        for ty in defined_types.iter().filter(|ty| ty.needs_cleanup()) {
+            output.push_str(&format!(
+                "static void MLG_UNUSED {}({} *mlg_value);\n",
+                drop_fn_name(ty),
+                ty.c_name()
+            ));
+        }
+        if !output.is_empty() {
+            output.push('\n');
+        }
         let mut emitted = Vec::new();
         for ty in defined_types {
             self.emit_drop_helper(ty, &mut emitted, &mut Vec::new(), &mut output)?;
@@ -108,6 +122,13 @@ impl<'a> TypeEmitter<'a> {
             return Ok(());
         }
         if visiting.contains(ty) {
+            if matches!(
+                ty,
+                Type::Enum(name)
+                    if self.enum_def(name)?.storage == IrEnumStorage::Owned
+            ) {
+                return Ok(());
+            }
             return Err(CompileError::new(format!(
                 "recursive type definition involving `{}` is not supported in v0",
                 ty.source_name()
@@ -167,6 +188,25 @@ impl<'a> TypeEmitter<'a> {
         visiting.pop();
         emitted.push(ty.clone());
         Ok(())
+    }
+
+    fn owned_enum_forward_declarations(&self) -> String {
+        let mut output = String::new();
+        for enum_def in self
+            .program
+            .enums
+            .iter()
+            .filter(|enum_def| enum_def.storage == IrEnumStorage::Owned)
+        {
+            let node = enum_node_type_name(&enum_def.name);
+            output.push_str(&format!("typedef struct {node} {node};\n"));
+            output.push_str(&format!(
+                "typedef struct {{\n    {node} *{};\n}} {};\n\n",
+                c_field("node"),
+                Type::Enum(enum_def.name.clone()).c_name()
+            ));
+        }
+        output
     }
 
     fn struct_def(&self, name: &str) -> Result<&IrStruct, CompileError> {
@@ -409,28 +449,46 @@ impl<'a> TypeEmitter<'a> {
     }
 
     fn typedef_for_enum(&self, enum_def: &IrEnum) -> String {
-        let mut output = String::from("typedef struct {\n    int32_t tag;\n");
+        let mut body = String::from("    int32_t tag;\n");
         let payload_variants = enum_def
             .variants
             .iter()
-            .filter_map(|variant| variant.payloads.first().map(|payload| (variant, payload)))
+            .filter(|variant| !variant.payloads.is_empty())
             .collect::<Vec<_>>();
         if !payload_variants.is_empty() {
-            output.push_str("    union {\n");
-            for (variant, payload) in payload_variants {
-                output.push_str(&format!(
-                    "        {} {};\n",
-                    payload.c_name(),
-                    c_field(&variant.name)
-                ));
+            body.push_str("    union {\n");
+            for variant in payload_variants {
+                match variant.payloads.as_slice() {
+                    [payload] => body.push_str(&format!(
+                        "        {} {};\n",
+                        payload.c_name(),
+                        c_field(&variant.name)
+                    )),
+                    payloads => {
+                        body.push_str("        struct {\n");
+                        for (index, payload) in payloads.iter().enumerate() {
+                            body.push_str(&format!(
+                                "            {} {};\n",
+                                payload.c_name(),
+                                variant_payload_field(index)
+                            ));
+                        }
+                        body.push_str(&format!("        }} {};\n", c_field(&variant.name)));
+                    }
+                }
             }
-            output.push_str(&format!("    }} {};\n", c_field("payload")));
+            body.push_str(&format!("    }} {};\n", c_field("payload")));
         }
-        output.push_str(&format!(
-            "}} {};\n",
-            Type::Enum(enum_def.name.clone()).c_name()
-        ));
-        output
+        match enum_def.storage {
+            IrEnumStorage::Inline => format!(
+                "typedef struct {{\n{body}}} {};\n",
+                Type::Enum(enum_def.name.clone()).c_name()
+            ),
+            IrEnumStorage::Owned => format!(
+                "struct {} {{\n{body}}};\n",
+                enum_node_type_name(&enum_def.name)
+            ),
+        }
     }
 
     fn typedef_for_array(&self, ty: &Type) -> Result<String, CompileError> {
@@ -502,10 +560,7 @@ impl<'a> TypeEmitter<'a> {
             return Ok(());
         }
         if visiting.contains(ty) {
-            return Err(CompileError::new(format!(
-                "recursive cleanup helper involving `{}` is not supported in v0",
-                ty.source_name()
-            )));
+            return Ok(());
         }
 
         visiting.push(ty.clone());
@@ -658,23 +713,47 @@ impl<'a> TypeEmitter<'a> {
                 let enum_def = self.enum_def(name)?;
                 let mut output = String::new();
                 for (tag, variant) in enum_def.variants.iter().enumerate() {
-                    let Some(payload) = variant
-                        .payloads
-                        .first()
-                        .filter(|payload| payload.needs_cleanup())
-                    else {
-                        continue;
-                    };
                     if !output.is_empty() {
                         output.push_str("else ");
                     }
-                    output.push_str(&format!(
-                        "if (mlg_value->tag == {tag}) {{\n    {}(&(mlg_value->{}.{}));\n}}",
-                        drop_fn_name(payload),
-                        c_field("payload"),
-                        c_field(&variant.name)
-                    ));
+                    let (tag_access, payload_base) = match enum_def.storage {
+                        IrEnumStorage::Inline =>
+                            ("mlg_value->tag".to_string(), "mlg_value->".to_string()),
+                        IrEnumStorage::Owned => (
+                            "mlg_node->tag".to_string(),
+                            "mlg_node->".to_string(),
+                        ),
+                    };
+                    output.push_str(&format!("if ({tag_access} == {tag}) {{\n"));
+                    for (index, payload) in variant.payloads.iter().enumerate() {
+                        if !payload.needs_cleanup() {
+                            continue;
+                        }
+                        output.push_str(&format!(
+                            "    {}(&({}{}));\n",
+                            drop_fn_name(payload),
+                            payload_base,
+                            variant_payload_member(
+                                &variant.name,
+                                variant.payloads.len(),
+                                index
+                            )
+                        ));
+                    }
+                    output.push('}');
                     output.push('\n');
+                }
+                if !output.is_empty() {
+                    output.push_str("else {\n    mallang_runtime_error(\"invalid enum tag\");\n}\n");
+                }
+                if enum_def.storage == IrEnumStorage::Owned {
+                    output = format!(
+                        "if (mlg_value->{} == NULL) {{\n    return;\n}}\n{} *mlg_node = mlg_value->{};\n{output}free(mlg_node);\nmlg_value->{} = NULL;",
+                        c_field("node"),
+                        enum_node_type_name(&enum_def.name),
+                        c_field("node"),
+                        c_field("node")
+                    );
                 }
                 if output.ends_with('\n') {
                     output.pop();

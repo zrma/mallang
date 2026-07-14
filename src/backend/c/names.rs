@@ -158,6 +158,23 @@ pub(super) fn drop_fn_name(ty: &Type) -> String {
     format!("mlg_drop_{}", mangle_type(ty))
 }
 
+pub(super) fn enum_node_type_name(name: &str) -> String {
+    format!("{}_node", Type::Enum(name.to_string()).c_name())
+}
+
+pub(super) fn variant_payload_field(index: usize) -> String {
+    c_field(&format!("payload_{index}"))
+}
+
+pub(super) fn variant_payload_member(variant: &str, payload_count: usize, index: usize) -> String {
+    let mut member = format!("{}.{}", c_field("payload"), c_field(variant));
+    if payload_count > 1 {
+        member.push('.');
+        member.push_str(&variant_payload_field(index));
+    }
+    member
+}
+
 pub(super) fn callable_thunk_name(function: &str) -> String {
     format!("mallang_callable_thunk_{}", c_ident(function))
 }

@@ -1146,10 +1146,20 @@
 
 ## P141: Multi-Payload and Recursive Enum C Runtime
 
-- [ ] inline multi-payload variant의 C payload struct와 tagged union layout 생성
-- [ ] recursive enum의 compiler-owned node/handle layout과 forward declaration 생성
-- [ ] constructor payload를 left-to-right temporary로 평가하고 allocation failure guard 연결
-- [ ] consuming match가 active payload 전체를 move/bind한 뒤 owned storage shell을 한 번 해제
-- [ ] active variant payload를 순회하는 recursive drop helper와 malformed handle guard 생성
-- [ ] non-recursive zero/single payload C ABI와 native output compatibility 유지
-- [ ] generic recursive enum의 constructor/match/drop native 및 ASan/UBSan acceptance 추가
+- [x] inline multi-payload variant의 C payload struct와 tagged union layout 생성
+- [x] recursive enum의 compiler-owned node/handle layout과 forward declaration 생성
+- [x] constructor payload를 left-to-right temporary로 평가하고 allocation failure guard 연결
+- [x] consuming match가 active payload 전체를 move/bind한 뒤 owned storage shell을 한 번 해제
+- [x] active variant payload를 순회하는 recursive drop helper와 malformed handle guard 생성
+- [x] non-recursive zero/single payload C ABI와 native output compatibility 유지
+- [x] generic recursive enum의 constructor/match/drop native 및 ASan/UBSan acceptance 추가
+
+## P142: Full-Expression Temporary Cleanup
+
+- [ ] cleanup value temporary를 typed IR의 full-expression scope로 모델링
+- [ ] call argument와 discarded expression temporary를 statement 종료 시 정확히 한 번 정리
+- [ ] `if`/`for` condition temporary를 각 평가 직후 정리하고 short-circuit 순서 유지
+- [ ] index/`len`/range source temporary cleanup과 bounds guard 순서 연결
+- [ ] return, `break`/`continue`와 runtime failure 경로의 temporary ownership 계약 고정
+- [ ] 기존 inline slice index/`len`/range 제한을 안전한 temporary cleanup 경로로 교체
+- [ ] strict C, native output와 ASan/UBSan temporary-heavy acceptance 추가

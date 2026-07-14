@@ -10,7 +10,7 @@ use super::{
     names::{
         c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
         callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
-        empty_slice_value_code, COperator, TypeCName,
+        empty_slice_value_code, variant_payload_member, COperator, TypeCName,
     },
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
@@ -20,6 +20,7 @@ use super::{
         index_source_temp_name, index_value_temp_name, match_expr_temp_name,
         match_scrutinee_temp_name, push_indented_lines, runtime_error_call, runtime_guard,
         slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
+        variant_constructor_temp_name, variant_payload_temp_name,
     },
     AppendSourceExpr, CExpr, CGenerator, CompileError,
 };
@@ -88,9 +89,7 @@ impl<'a> CGenerator<'a> {
                 variant,
                 storage,
                 payloads,
-            } => {
-                self.emit_variant_constructor_stmt_expr(&expr.ty, variant, *storage, payloads, env)
-            }
+            } => self.emit_variant_constructor_stmt_expr(expr, variant, *storage, payloads, env),
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(expr, scrutinee, arms, env)
             }
@@ -636,38 +635,93 @@ impl<'a> CGenerator<'a> {
 
     fn emit_variant_constructor_stmt_expr(
         &self,
-        ty: &Type,
+        expr: &IrExpr,
         variant_name: &str,
         storage: crate::ir::IrEnumStorage,
         payloads: &[IrExpr],
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        if storage != crate::ir::IrEnumStorage::Inline {
+        let ty = &expr.ty;
+        let (tag, expected_payloads) = self.adt_variant(ty, variant_name)?;
+        if expected_payloads.len() != payloads.len()
+            || expected_payloads
+                .iter()
+                .zip(payloads)
+                .any(|(expected, payload)| *expected != &payload.ty)
+        {
             return Err(CompileError::new(
-                "C backend does not support owned enum constructors yet",
+                "IR invariant violation: ADT constructor payload mismatch",
             ));
         }
-        let (tag, expected_payload) = self.adt_variant(ty, variant_name)?;
-        match (expected_payload, payloads) {
-            (None, []) => Ok(CExpr::simple(format!(
-                "({}){{ .tag = {tag} }}",
-                ty.c_name()
-            ))),
-            (Some(expected), [payload]) if expected == &payload.ty => {
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
-                Ok(CExpr {
-                    prelude,
-                    code: format!(
-                        "({}){{ .tag = {tag}, .{} = {{ .{} = {code} }} }}",
-                        ty.c_name(),
+
+        let mut prelude = Vec::new();
+        let mut payload_temps = Vec::new();
+        for (index, payload) in payloads.iter().enumerate() {
+            let emitted = self.emit_stmt_expr_with_env(payload, env)?;
+            prelude.extend(emitted.prelude);
+            let temp = variant_payload_temp_name(expr, index);
+            prelude.push(format!(
+                "{} {temp} = {};",
+                payload.ty.c_name(),
+                emitted.code
+            ));
+            payload_temps.push(temp);
+        }
+
+        match storage {
+            crate::ir::IrEnumStorage::Inline => {
+                let payload_initializer = match payload_temps.as_slice() {
+                    [] => String::new(),
+                    [payload] => format!(
+                        ", .{} = {{ .{} = {payload} }}",
                         c_field("payload"),
                         c_field(variant_name)
                     ),
+                    payloads => {
+                        let fields = payloads
+                            .iter()
+                            .enumerate()
+                            .map(|(index, payload)| {
+                                format!(
+                                    ".{} = {payload}",
+                                    super::names::variant_payload_field(index)
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!(
+                            ", .{} = {{ .{} = {{ {fields} }} }}",
+                            c_field("payload"),
+                            c_field(variant_name)
+                        )
+                    }
+                };
+                Ok(CExpr {
+                    prelude,
+                    code: format!("({}){{ .tag = {tag}{payload_initializer} }}", ty.c_name()),
                 })
             }
-            _ => Err(CompileError::new(
-                "IR invariant violation: ADT constructor payload mismatch",
-            )),
+            crate::ir::IrEnumStorage::Owned => {
+                let temp = variant_constructor_temp_name(expr);
+                let node = format!("{temp}.{}", c_field("node"));
+                prelude.push(format!("{} {temp};", ty.c_name()));
+                prelude.push(format!("{node} = malloc(sizeof(*{node}));"));
+                prelude.push(runtime_guard(
+                    format!("{node} == NULL"),
+                    "recursive enum allocation failed",
+                ));
+                prelude.push(format!("{node}->tag = {tag};"));
+                for (index, payload) in payload_temps.iter().enumerate() {
+                    prelude.push(format!(
+                        "{node}->{} = {payload};",
+                        variant_payload_member(variant_name, payload_temps.len(), index)
+                    ));
+                }
+                Ok(CExpr {
+                    prelude,
+                    code: temp,
+                })
+            }
         }
     }
 
@@ -841,6 +895,9 @@ impl<'a> CGenerator<'a> {
                 block.push_str(&format!("if ({}) {{\n", plan.condition));
             } else {
                 block.push_str(&format!(" else if ({}) {{\n", plan.condition));
+            }
+            for line in &plan.setup {
+                push_indented_lines(&mut block, line, 1);
             }
             for line in emitted.prelude {
                 push_indented_lines(&mut block, &line, 1);
