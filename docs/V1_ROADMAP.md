@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: implementation in progress (P147-P150 complete; P151 next)
+상태: implementation in progress (P147-P151 complete; P152 next)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
@@ -223,7 +223,10 @@ library를 제공한다.
   open/read/write/close runtime
 - file success/failure, embedded NUL, allocation accounting/failure injection과
   sanitizer acceptance
-- map runtime body가 아직 없는 intrinsic call의 deterministic backend rejection
+- opaque specialized `Map[K,V]`의 deterministic hash/equality, node-chain growth,
+  owned insert/remove, call-scoped callback와 recursive drop runtime
+- Copy/non-Copy key/value, replacement/removal, all collection function-value
+  thunks, allocation failure와 sanitizer acceptance
 
 완료 조건:
 

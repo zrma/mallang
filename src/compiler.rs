@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_standard_packages_and_unimplemented_runtime_calls() {
+    fn rejects_unknown_standard_packages() {
         let mut unknown_sources = SourceMap::new();
         let unknown_main =
             unknown_sources.add_file("unknown.mlg", "import \"std/unknown\"\nfunc main() {}\n");
@@ -346,18 +346,26 @@ mod tests {
             unknown_error.message,
             "unknown standard package `std/unknown`"
         );
+    }
 
-        let mut runtime_sources = SourceMap::new();
-        let runtime_main = runtime_sources.add_file(
-            "runtime.mlg",
-            "import \"std/collections\"\nfunc main() { result := collections.newMap[int, string]() }\n",
+    #[test]
+    fn generates_owned_map_standard_runtime() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "map.mlg",
+            "import \"std/collections\"\nfunc main() { mut values := collections.newMap[string, int](); collections.insert[string, int](mut values, \"key\", 1); print(collections.count[string, int](con values)); collections.remove[string, int](mut values, con \"key\") }\n",
         );
-        let runtime_error = generate_c_sources(&runtime_sources, &[runtime_main]).unwrap_err();
-        assert_eq!(runtime_error.stage, CompilerStage::Backend);
-        assert_eq!(
-            runtime_error.message,
-            "standard intrinsic `std/collections.newMap` is not implemented in this compiler milestone"
-        );
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+        assert!(c.contains("map bucket allocation failed"));
+        assert!(c.contains("map entry allocation failed"));
+        assert!(c.contains("map capacity overflow"));
+        assert!(c.contains("mallang_std_collections_insert_"));
+        assert!(c.contains("mallang_std_collections_remove_"));
+        assert!(c.contains("mallang_string_equal"));
+        assert!(c.contains("mlg_drop_string(&(mlg_entry->mlg_key));"));
+        assert!(c.contains("mallang_dealloc(mlg_entry);"));
+        assert!(!c.contains("not implemented in this compiler milestone"));
     }
 
     #[test]

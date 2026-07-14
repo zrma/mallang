@@ -12,7 +12,10 @@ use super::{
         callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
         drop_fn_name, empty_slice_value_code, variant_payload_member, COperator, TypeCName,
     },
-    standard_runtime::intrinsic_helper_name,
+    standard_runtime::{
+        intrinsic_callable_thunk_name, intrinsic_helper_name_for_call,
+        intrinsic_helper_name_for_function,
+    },
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
         checked_binary_right_temp_name, checked_int_binary_builtin,
@@ -67,21 +70,16 @@ impl<'a> CGenerator<'a> {
                 self.emit_function_value_stmt_expr(expr, function)
             }
             IrExprKind::IntrinsicFunctionValue { intrinsic } => {
-                if intrinsic_helper_name(*intrinsic).is_none() {
-                    return Err(CompileError::new(format!(
-                        "standard intrinsic `{}` is not implemented in this compiler milestone",
-                        intrinsic.source_name()
-                    )));
-                }
-                if !matches!(expr.ty, Type::Function(_)) {
+                let Type::Function(function) = &expr.ty else {
                     return Err(CompileError::new(
                         "IR invariant violation: intrinsic function value must have function type",
                     ));
-                }
+                };
+                intrinsic_helper_name_for_function(self.program, *intrinsic, function)?;
                 Ok(CExpr::simple(format!(
                     "({}){{ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = {} }}",
                     expr.ty.c_name(),
-                    callable_thunk_name(&intrinsic.internal_name())
+                    intrinsic_callable_thunk_name(*intrinsic, function)
                 )))
             }
             IrExprKind::ClosureValue { closure, captures } => {
@@ -196,12 +194,8 @@ impl<'a> CGenerator<'a> {
                 })
             }
             IrExprKind::IntrinsicCall { intrinsic, args } => {
-                let Some(helper) = intrinsic_helper_name(*intrinsic) else {
-                    return Err(CompileError::new(format!(
-                        "standard intrinsic `{}` is not implemented in this compiler milestone",
-                        intrinsic.source_name()
-                    )));
-                };
+                let helper =
+                    intrinsic_helper_name_for_call(self.program, *intrinsic, &expr.ty, args)?;
                 let mut prelude = Vec::new();
                 let mut arg_codes = Vec::new();
                 let mut postlude = Vec::new();

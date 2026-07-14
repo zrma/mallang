@@ -130,6 +130,12 @@ impl<'a> CGenerator<'a> {
             output.push('\n');
         }
 
+        let drop_helpers = emit_drop_helpers(self.program, &defined_types)?;
+        output.push_str(&drop_helpers);
+        if !drop_helpers.is_empty() {
+            output.push('\n');
+        }
+
         let standard_runtime = emit_standard_runtime(self.program)?;
         output.push_str(&standard_runtime);
         if !standard_runtime.is_empty() {
@@ -139,12 +145,6 @@ impl<'a> CGenerator<'a> {
         let closure_environment_types = self.emit_closure_environment_types();
         output.push_str(&closure_environment_types);
         if !closure_environment_types.is_empty() {
-            output.push('\n');
-        }
-
-        let drop_helpers = emit_drop_helpers(self.program, &defined_types)?;
-        output.push_str(&drop_helpers);
-        if !drop_helpers.is_empty() {
             output.push('\n');
         }
 

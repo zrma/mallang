@@ -193,15 +193,19 @@ if [[ "$standard_ir" != *"StringsByteLen"* || "$standard_ir" != *"CollectionsNew
 fi
 standard_build_stdout="target/mallang/v06-standard-registry.stdout"
 standard_build_stderr="target/mallang/v06-standard-registry.stderr"
-if "${CARGO[@]}" run --quiet --bin mlg -- build "$standard_fixture" >"$standard_build_stdout" 2>"$standard_build_stderr"; then
-  echo "standard registry backend boundary smoke failed: expected unimplemented map rejection" >&2
-  exit 1
-fi
-if [[ -s "$standard_build_stdout" ]] || ! grep -Fq 'standard intrinsic `std/collections.newMap` is not implemented in this compiler milestone' "$standard_build_stderr"; then
-  echo "standard registry backend boundary smoke failed: unexpected diagnostic" >&2
+"${CARGO[@]}" run --quiet --bin mlg -- build "$standard_fixture" -o target/mallang/v06-standard-registry >"$standard_build_stdout" 2>"$standard_build_stderr"
+if [[ "$(cat "$standard_build_stdout")" != "target/mallang/v06-standard-registry" ]] || [[ -s "$standard_build_stderr" ]]; then
+  echo "standard registry native build smoke failed" >&2
+  cat "$standard_build_stdout" >&2
   cat "$standard_build_stderr" >&2
   exit 1
 fi
+standard_registry_output="$(target/mallang/v06-standard-registry)"
+if [[ "$standard_registry_output" != $'7\n0' ]]; then
+  echo "standard registry native output mismatch: got '$standard_registry_output'" >&2
+  exit 1
+fi
+expect_warning_clean_generated_c "v06-standard-registry" "target/mallang/standard-intrinsics.c"
 standard_unused_fixture="tests/fixtures/v06-standard-registry/unused-standard-imports.mlg"
 "${CARGO[@]}" run --quiet --bin mlg -- check "$standard_unused_fixture" >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build "$standard_unused_fixture" -o target/mallang/v06-standard-unused >/dev/null
@@ -234,6 +238,24 @@ scripts/check-process-io-runtime.sh
 "${CARGO[@]}" run --quiet --bin mlg -- check examples/file-io.mlg >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build examples/file-io.mlg -o target/mallang/file-io >/dev/null
 scripts/check-file-io-runtime.sh
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/collections-map.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/collections-map.mlg -o target/mallang/collections-map >/dev/null
+collections_map_output="$(target/mallang/collections-map)"
+if [[ "$collections_map_output" != $'inserted\n1\n1\nKim\n2\ntrue\ntrue\nKim\n3\ntrue\nfalse\nKim\n3\n0' ]]; then
+  echo "collections Map native build smoke output mismatch: got '$collections_map_output'" >&2
+  exit 1
+fi
+collections_growth_fixture="tests/fixtures/v06-collections-map/growth-and-ownership.mlg"
+"${CARGO[@]}" run --quiet --bin mlg -- check "$collections_growth_fixture" >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build "$collections_growth_fixture" -o target/mallang/v06-collections-map-growth >/dev/null
+collections_growth_output="$(target/mallang/v06-collections-map-growth)"
+if [[ "$collections_growth_output" != $'24\n17\ntrue\n3\n23\ntrue\n11\ntrue\n20\ntrue\n7\ntrue\n7\n8\n0' ]]; then
+  echo "collections Map growth native output mismatch: got '$collections_growth_output'" >&2
+  exit 1
+fi
+scripts/check-collections-map-runtime.sh \
+  target/mallang/collections-map.c \
+  target/mallang/growth-and-ownership.c
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

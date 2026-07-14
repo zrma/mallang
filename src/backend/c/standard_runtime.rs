@@ -1,13 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    ir::{IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt, IrStmtKind},
-    semantic::{FunctionType, Type},
+    ast::ParamMode,
+    ir::{IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt, IrStmtKind},
+    semantic::{FunctionParamType, FunctionType, Type},
     standard::{StandardIntrinsic, StandardType},
 };
 
 use super::{
-    names::{c_field, callable_thunk_name, TypeCName},
+    names::{
+        c_field, callable_thunk_name, drop_fn_name, mangle_type, map_entry_type_name, TypeCName,
+    },
     platform_runtime::emit_platform_runtime,
     CompileError,
 };
@@ -36,12 +39,100 @@ pub(super) fn intrinsic_helper_name(intrinsic: StandardIntrinsic) -> Option<&'st
     }
 }
 
+fn collection_map_type_from_call<'a>(
+    intrinsic: StandardIntrinsic,
+    result_ty: &'a Type,
+    args: &'a [IrArg],
+) -> Option<&'a Type> {
+    match intrinsic {
+        StandardIntrinsic::CollectionsNewMap => Some(result_ty),
+        StandardIntrinsic::CollectionsCount
+        | StandardIntrinsic::CollectionsInsert
+        | StandardIntrinsic::CollectionsWith
+        | StandardIntrinsic::CollectionsUpdate
+        | StandardIntrinsic::CollectionsRemove => args.first().map(|arg| &arg.expr.ty),
+        _ => None,
+    }
+}
+
+fn collection_map_type_from_function(
+    intrinsic: StandardIntrinsic,
+    function: &FunctionType,
+) -> Option<&Type> {
+    match intrinsic {
+        StandardIntrinsic::CollectionsNewMap => Some(&function.return_type),
+        StandardIntrinsic::CollectionsCount
+        | StandardIntrinsic::CollectionsInsert
+        | StandardIntrinsic::CollectionsWith
+        | StandardIntrinsic::CollectionsUpdate
+        | StandardIntrinsic::CollectionsRemove => function.params.first().map(|param| &param.ty),
+        _ => None,
+    }
+}
+
+fn collection_helper_name(intrinsic: StandardIntrinsic, map_ty: &Type) -> String {
+    format!(
+        "mallang_std_collections_{}_{}",
+        intrinsic.function_name(),
+        map_ty.c_name()
+    )
+}
+
+pub(super) fn intrinsic_helper_name_for_call(
+    program: &IrProgram,
+    intrinsic: StandardIntrinsic,
+    result_ty: &Type,
+    args: &[IrArg],
+) -> Result<String, CompileError> {
+    if let Some(helper) = intrinsic_helper_name(intrinsic) {
+        return Ok(helper.to_string());
+    }
+    let map_ty = collection_map_type_from_call(intrinsic, result_ty, args)
+        .ok_or_else(|| unimplemented_intrinsic(intrinsic))?;
+    map_type_args(program, map_ty)?;
+    Ok(collection_helper_name(intrinsic, map_ty))
+}
+
+pub(super) fn intrinsic_helper_name_for_function(
+    program: &IrProgram,
+    intrinsic: StandardIntrinsic,
+    function: &FunctionType,
+) -> Result<String, CompileError> {
+    if let Some(helper) = intrinsic_helper_name(intrinsic) {
+        return Ok(helper.to_string());
+    }
+    let map_ty = collection_map_type_from_function(intrinsic, function)
+        .ok_or_else(|| unimplemented_intrinsic(intrinsic))?;
+    map_type_args(program, map_ty)?;
+    Ok(collection_helper_name(intrinsic, map_ty))
+}
+
+pub(super) fn intrinsic_callable_thunk_name(
+    intrinsic: StandardIntrinsic,
+    function: &FunctionType,
+) -> String {
+    let mut name = intrinsic.internal_name();
+    if let Some(map_ty) = collection_map_type_from_function(intrinsic, function) {
+        name.push('_');
+        name.push_str(&mangle_type(map_ty));
+    }
+    callable_thunk_name(&name)
+}
+
+fn unimplemented_intrinsic(intrinsic: StandardIntrinsic) -> CompileError {
+    CompileError::new(format!(
+        "standard intrinsic `{}` is not implemented in this compiler milestone",
+        intrinsic.source_name()
+    ))
+}
+
 pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, CompileError> {
     let used = standard_uses(program);
-    if used
-        .intrinsics
-        .iter()
-        .all(|intrinsic| intrinsic_helper_name(*intrinsic).is_none())
+    if used.map_uses.is_empty()
+        && used
+            .intrinsics
+            .iter()
+            .all(|intrinsic| intrinsic_helper_name(*intrinsic).is_none())
     {
         return Ok(String::new());
     }
@@ -165,8 +256,11 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
         ));
     }
     output.push_str(&emit_platform_runtime(program, &used.intrinsics)?);
-    for (intrinsic, function) in &used.function_values {
-        output.push_str(&emit_callable_thunk(*intrinsic, function)?);
+    for map_use in used.map_uses.values() {
+        output.push_str(&emit_map_runtime(program, map_use)?);
+    }
+    for (intrinsic, function) in used.function_values.values() {
+        output.push_str(&emit_callable_thunk(program, *intrinsic, function)?);
     }
     Ok(output)
 }
@@ -176,15 +270,11 @@ pub(super) fn program_uses_intrinsic(program: &IrProgram, intrinsic: StandardInt
 }
 
 fn emit_callable_thunk(
+    program: &IrProgram,
     intrinsic: StandardIntrinsic,
     function: &FunctionType,
 ) -> Result<String, CompileError> {
-    let helper = intrinsic_helper_name(intrinsic).ok_or_else(|| {
-        CompileError::new(format!(
-            "standard intrinsic `{}` is not implemented in this compiler milestone",
-            intrinsic.source_name()
-        ))
-    })?;
+    let helper = intrinsic_helper_name_for_function(program, intrinsic, function)?;
     let mut params = vec!["void *mlg_env".to_string()];
     params.extend(
         function
@@ -200,7 +290,7 @@ fn emit_callable_thunk(
     let mut output = format!(
         "static {} MLG_UNUSED {}({}) {{\n    (void)mlg_env;\n",
         function.return_type.c_name(),
-        callable_thunk_name(&intrinsic.internal_name()),
+        intrinsic_callable_thunk_name(intrinsic, function),
         params.join(", ")
     );
     if *function.return_type == Type::Unit {
@@ -267,7 +357,13 @@ fn render(template: &str, replacements: &[(&str, String)]) -> String {
 #[derive(Default)]
 struct StandardUses {
     intrinsics: BTreeSet<StandardIntrinsic>,
-    function_values: BTreeMap<StandardIntrinsic, FunctionType>,
+    function_values: BTreeMap<String, (StandardIntrinsic, FunctionType)>,
+    map_uses: BTreeMap<String, MapUse>,
+}
+
+struct MapUse {
+    ty: Type,
+    intrinsics: BTreeSet<StandardIntrinsic>,
 }
 
 fn standard_uses(program: &IrProgram) -> StandardUses {
@@ -371,6 +467,9 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
     match &expression.kind {
         IrExprKind::IntrinsicCall { intrinsic, args } => {
             used.intrinsics.insert(*intrinsic);
+            if let Some(map_ty) = collection_map_type_from_call(*intrinsic, &expression.ty, args) {
+                record_map_use(used, map_ty.clone(), *intrinsic);
+            }
             for arg in args {
                 collect_expr_intrinsics(&arg.expr, used);
             }
@@ -378,9 +477,17 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
         IrExprKind::IntrinsicFunctionValue { intrinsic } => {
             used.intrinsics.insert(*intrinsic);
             if let Type::Function(function) = &expression.ty {
+                if let Some(map_ty) = collection_map_type_from_function(*intrinsic, function) {
+                    record_map_use(used, map_ty.clone(), *intrinsic);
+                }
+                let key = format!(
+                    "{}:{}",
+                    intrinsic.source_name(),
+                    mangle_type(&expression.ty)
+                );
                 used.function_values
-                    .entry(*intrinsic)
-                    .or_insert_with(|| function.clone());
+                    .entry(key)
+                    .or_insert_with(|| (*intrinsic, function.clone()));
             }
         }
         IrExprKind::FullExprTemporary { expr, .. }
@@ -457,6 +564,431 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
         | IrExprKind::Var(_)
         | IrExprKind::FunctionValue { .. } => {}
     }
+}
+
+fn record_map_use(used: &mut StandardUses, map_ty: Type, intrinsic: StandardIntrinsic) {
+    let key = map_ty.c_name();
+    used.map_uses
+        .entry(key)
+        .or_insert_with(|| MapUse {
+            ty: map_ty,
+            intrinsics: BTreeSet::new(),
+        })
+        .intrinsics
+        .insert(intrinsic);
+}
+
+fn map_type_args<'a>(
+    program: &'a IrProgram,
+    map_ty: &Type,
+) -> Result<(&'a Type, &'a Type), CompileError> {
+    let Type::Struct(name) = map_ty else {
+        return Err(CompileError::new(
+            "IR invariant violation: collection intrinsic requires a Map type",
+        ));
+    };
+    let declaration = program
+        .structs
+        .iter()
+        .find(|declaration| declaration.name == *name)
+        .ok_or_else(|| {
+            CompileError::new(format!("IR invariant violation: unknown struct `{name}`"))
+        })?;
+    if declaration.intrinsic != Some(StandardType::Map) {
+        return Err(CompileError::new(
+            "IR invariant violation: collection intrinsic requires a standard Map type",
+        ));
+    }
+    let [key, value] = declaration.intrinsic_args.as_slice() else {
+        return Err(CompileError::new(
+            "IR invariant violation: standard Map must have two type arguments",
+        ));
+    };
+    Ok((key, value))
+}
+
+fn map_internal_helper_name(map_ty: &Type, operation: &str) -> String {
+    format!(
+        "mallang_std_collections_map_{}_{}",
+        operation,
+        map_ty.c_name()
+    )
+}
+
+fn emit_map_runtime(program: &IrProgram, map_use: &MapUse) -> Result<String, CompileError> {
+    let map_ty = &map_use.ty;
+    let (key, value) = map_type_args(program, map_ty)?;
+    let map_name = map_ty.c_name();
+    let entry_name = map_entry_type_name(map_ty);
+    let validate = map_internal_helper_name(map_ty, "validate");
+    let hash = map_internal_helper_name(map_ty, "hash");
+    let equal = map_internal_helper_name(map_ty, "equal");
+    let find = map_internal_helper_name(map_ty, "find");
+    let ensure = map_internal_helper_name(map_ty, "ensure_insert_capacity");
+    let buckets = c_field("buckets");
+    let len = c_field("len");
+    let cap = c_field("cap");
+    let hash_field = c_field("hash");
+    let key_field = c_field("key");
+    let next = c_field("next");
+
+    let hash_body = match key {
+        Type::Int => r#"uint64_t mlg_hash = (uint64_t)(*mlg_key);
+    mlg_hash = (mlg_hash ^ (mlg_hash >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    mlg_hash = (mlg_hash ^ (mlg_hash >> 27)) * UINT64_C(0x94d049bb133111eb);
+    return mlg_hash ^ (mlg_hash >> 31);"#
+            .to_string(),
+        Type::Bool => {
+            "return *mlg_key ? UINT64_C(0x9e3779b97f4a7c15) : UINT64_C(0x243f6a8885a308d3);"
+                .to_string()
+        }
+        Type::String => r#"mallang_validate_string(*mlg_key);
+    uint64_t mlg_hash = UINT64_C(14695981039346656037);
+    const unsigned char *mlg_bytes = (const unsigned char *)mlg_key->mlg_data;
+    for (size_t mlg_i = 0; mlg_i < mlg_key->mlg_len; mlg_i = mlg_i + 1) {
+        mlg_hash = (mlg_hash ^ (uint64_t)mlg_bytes[mlg_i]) * UINT64_C(1099511628211);
+    }
+    return mlg_hash;"#
+            .to_string(),
+        _ => {
+            return Err(CompileError::new(format!(
+                "IR invariant violation: unsupported Map key type `{}`",
+                key.source_name()
+            )))
+        }
+    };
+    let equal_body = match key {
+        Type::String => "return mallang_string_equal(*mlg_left, *mlg_right);".to_string(),
+        Type::Int | Type::Bool => "return *mlg_left == *mlg_right;".to_string(),
+        _ => unreachable!("Map key type was validated above"),
+    };
+
+    let mut output = format!(
+        r#"static void MLG_UNUSED {validate}(const {map_name} *mlg_map) {{
+    if (mlg_map == NULL || mlg_map->{len} < 0 || mlg_map->{cap} < 0 ||
+        mlg_map->{len} > mlg_map->{cap} ||
+        (mlg_map->{cap} == 0 && mlg_map->{buckets} != NULL) ||
+        (mlg_map->{cap} > 0 && mlg_map->{buckets} == NULL)) {{
+        mallang_runtime_error("invalid map storage");
+    }}
+}}
+
+static uint64_t MLG_UNUSED {hash}(const {key_type} *mlg_key) {{
+    if (mlg_key == NULL) {{
+        mallang_runtime_error("invalid map key");
+    }}
+    {hash_body}
+}}
+
+static bool MLG_UNUSED {equal}(
+    const {key_type} *mlg_left,
+    const {key_type} *mlg_right
+) {{
+    if (mlg_left == NULL || mlg_right == NULL) {{
+        mallang_runtime_error("invalid map key");
+    }}
+    {equal_body}
+}}
+
+static {entry_name} *MLG_UNUSED {find}(
+    const {map_name} *mlg_map,
+    const {key_type} *mlg_key,
+    uint64_t mlg_hash
+) {{
+    {validate}(mlg_map);
+    if (mlg_map->{cap} == 0) {{
+        return NULL;
+    }}
+    uint64_t mlg_bucket = mlg_hash % (uint64_t)mlg_map->{cap};
+    {entry_name} *mlg_entry = mlg_map->{buckets}[mlg_bucket];
+    while (mlg_entry != NULL) {{
+        if (mlg_entry->{hash_field} == mlg_hash &&
+            {equal}(&(mlg_entry->{key_field}), mlg_key)) {{
+            return mlg_entry;
+        }}
+        mlg_entry = mlg_entry->{next};
+    }}
+    return NULL;
+}}
+
+static void MLG_UNUSED {ensure}({map_name} *mlg_map) {{
+    {validate}(mlg_map);
+    if (mlg_map->{len} == INT64_MAX) {{
+        mallang_runtime_error("map capacity overflow");
+    }}
+    int64_t mlg_required = mlg_map->{len} + 1;
+    if (mlg_map->{cap} > 0 &&
+        mlg_required <= mlg_map->{cap} - (mlg_map->{cap} / 4)) {{
+        return;
+    }}
+    int64_t mlg_new_cap = 8;
+    if (mlg_map->{cap} > 0) {{
+        if (mlg_map->{cap} > INT64_MAX / 2) {{
+            mallang_runtime_error("map capacity overflow");
+        }}
+        mlg_new_cap = mlg_map->{cap} * 2;
+    }}
+    if ((uint64_t)mlg_new_cap > SIZE_MAX / sizeof({entry_name} *)) {{
+        mallang_runtime_error("map allocation size overflow");
+    }}
+    {entry_name} **mlg_new_buckets = mallang_alloc(
+        sizeof({entry_name} *) * (size_t)mlg_new_cap,
+        "map bucket allocation failed"
+    );
+    memset(
+        mlg_new_buckets,
+        0,
+        sizeof({entry_name} *) * (size_t)mlg_new_cap
+    );
+    for (int64_t mlg_i = 0; mlg_i < mlg_map->{cap}; mlg_i = mlg_i + 1) {{
+        {entry_name} *mlg_entry = mlg_map->{buckets}[mlg_i];
+        while (mlg_entry != NULL) {{
+            {entry_name} *mlg_next = mlg_entry->{next};
+            uint64_t mlg_bucket = mlg_entry->{hash_field} % (uint64_t)mlg_new_cap;
+            mlg_entry->{next} = mlg_new_buckets[mlg_bucket];
+            mlg_new_buckets[mlg_bucket] = mlg_entry;
+            mlg_entry = mlg_next;
+        }}
+    }}
+    mallang_dealloc(mlg_map->{buckets});
+    mlg_map->{buckets} = mlg_new_buckets;
+    mlg_map->{cap} = mlg_new_cap;
+}}
+
+"#,
+        key_type = key.c_name(),
+    );
+
+    for intrinsic in &map_use.intrinsics {
+        match intrinsic {
+            StandardIntrinsic::CollectionsNewMap => output.push_str(&format!(
+                "static {map_name} MLG_UNUSED {}(void) {{\n    return ({map_name}){{ .{buckets} = NULL, .{len} = 0, .{cap} = 0 }};\n}}\n\n",
+                collection_helper_name(*intrinsic, map_ty)
+            )),
+            StandardIntrinsic::CollectionsCount => output.push_str(&format!(
+                "static int64_t MLG_UNUSED {}(const {map_name} *mlg_map) {{\n    {validate}(mlg_map);\n    return mlg_map->{len};\n}}\n\n",
+                collection_helper_name(*intrinsic, map_ty)
+            )),
+            StandardIntrinsic::CollectionsInsert => output.push_str(&emit_map_insert(
+                map_ty,
+                key,
+                value,
+                &entry_name,
+                &hash,
+                &find,
+                &ensure,
+            )),
+            StandardIntrinsic::CollectionsWith => output.push_str(&emit_map_callback(
+                *intrinsic,
+                map_ty,
+                key,
+                value,
+                ParamMode::Con,
+                &hash,
+                &find,
+            )),
+            StandardIntrinsic::CollectionsUpdate => output.push_str(&emit_map_callback(
+                *intrinsic,
+                map_ty,
+                key,
+                value,
+                ParamMode::Mut,
+                &hash,
+                &find,
+            )),
+            StandardIntrinsic::CollectionsRemove => output.push_str(&emit_map_remove(
+                map_ty,
+                key,
+                value,
+                &entry_name,
+                &validate,
+                &hash,
+                &equal,
+            )),
+            _ => {
+                return Err(CompileError::new(
+                    "IR invariant violation: non-collection intrinsic recorded as Map use",
+                ))
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn emit_map_insert(
+    map_ty: &Type,
+    key: &Type,
+    value: &Type,
+    entry_name: &str,
+    hash: &str,
+    find: &str,
+    ensure: &str,
+) -> String {
+    let map_name = map_ty.c_name();
+    let helper = collection_helper_name(StandardIntrinsic::CollectionsInsert, map_ty);
+    let option = Type::Option(Box::new(value.clone()));
+    let buckets = c_field("buckets");
+    let len = c_field("len");
+    let cap = c_field("cap");
+    let hash_field = c_field("hash");
+    let key_field = c_field("key");
+    let value_field = c_field("value");
+    let next = c_field("next");
+    let payload = c_field("payload");
+    let some = c_field("Some");
+    let drop_key = if key.needs_cleanup() {
+        format!("        {}(&mlg_key);\n", drop_fn_name(key))
+    } else {
+        String::new()
+    };
+    format!(
+        r#"static {option_type} MLG_UNUSED {helper}(
+    {map_name} *mlg_map,
+    {key_type} mlg_key,
+    {value_type} mlg_value
+) {{
+    uint64_t mlg_hash = {hash}(&mlg_key);
+    {entry_name} *mlg_existing = {find}(mlg_map, &mlg_key, mlg_hash);
+    if (mlg_existing != NULL) {{
+{drop_key}        {option_type} mlg_result = {{ .tag = 1 }};
+        mlg_result.{payload}.{some} = mlg_existing->{value_field};
+        mlg_existing->{value_field} = mlg_value;
+        return mlg_result;
+    }}
+    {ensure}(mlg_map);
+    uint64_t mlg_bucket = mlg_hash % (uint64_t)mlg_map->{cap};
+    {entry_name} *mlg_entry = mallang_alloc(
+        sizeof({entry_name}),
+        "map entry allocation failed"
+    );
+    mlg_entry->{hash_field} = mlg_hash;
+    mlg_entry->{key_field} = mlg_key;
+    mlg_entry->{value_field} = mlg_value;
+    mlg_entry->{next} = mlg_map->{buckets}[mlg_bucket];
+    mlg_map->{buckets}[mlg_bucket] = mlg_entry;
+    mlg_map->{len} = mlg_map->{len} + 1;
+    return ({option_type}){{ .tag = 0 }};
+}}
+
+"#,
+        option_type = option.c_name(),
+        key_type = key.c_name(),
+        value_type = value.c_name(),
+    )
+}
+
+fn emit_map_callback(
+    intrinsic: StandardIntrinsic,
+    map_ty: &Type,
+    key: &Type,
+    value: &Type,
+    value_mode: ParamMode,
+    hash: &str,
+    find: &str,
+) -> String {
+    let helper = collection_helper_name(intrinsic, map_ty);
+    let callback = Type::Function(FunctionType {
+        mutable: false,
+        params: vec![FunctionParamType {
+            mode: value_mode,
+            ty: value.clone(),
+        }],
+        return_type: Box::new(Type::Unit),
+    });
+    let value_field = c_field("value");
+    format!(
+        r#"static bool MLG_UNUSED {helper}(
+    {map_param} mlg_map,
+    const {key_type} *mlg_key,
+    const {callback_type} *mlg_callback
+) {{
+    uint64_t mlg_hash = {hash}(mlg_key);
+    {entry_type} *mlg_entry = {find}(mlg_map, mlg_key, mlg_hash);
+    if (mlg_entry == NULL) {{
+        return false;
+    }}
+    if (mlg_callback == NULL || mlg_callback->mlg_call == NULL) {{
+        mallang_runtime_error("invalid map callback");
+    }}
+    mlg_callback->mlg_call(mlg_callback->mlg_env, &(mlg_entry->{value_field}));
+    return true;
+}}
+
+"#,
+        map_param = map_ty.c_param_type(if value_mode == ParamMode::Con {
+            ParamMode::Con
+        } else {
+            ParamMode::Mut
+        }),
+        key_type = key.c_name(),
+        callback_type = callback.c_name(),
+        entry_type = map_entry_type_name(map_ty),
+    )
+}
+
+fn emit_map_remove(
+    map_ty: &Type,
+    key: &Type,
+    value: &Type,
+    entry_name: &str,
+    validate: &str,
+    hash: &str,
+    equal: &str,
+) -> String {
+    let map_name = map_ty.c_name();
+    let helper = collection_helper_name(StandardIntrinsic::CollectionsRemove, map_ty);
+    let option = Type::Option(Box::new(value.clone()));
+    let buckets = c_field("buckets");
+    let len = c_field("len");
+    let cap = c_field("cap");
+    let hash_field = c_field("hash");
+    let key_field = c_field("key");
+    let value_field = c_field("value");
+    let next = c_field("next");
+    let payload = c_field("payload");
+    let some = c_field("Some");
+    let drop_key = if key.needs_cleanup() {
+        format!(
+            "            {}(&(mlg_removed->{}));\n",
+            drop_fn_name(key),
+            key_field
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        r#"static {option_type} MLG_UNUSED {helper}(
+    {map_name} *mlg_map,
+    const {key_type} *mlg_key
+) {{
+    {validate}(mlg_map);
+    if (mlg_map->{cap} == 0) {{
+        return ({option_type}){{ .tag = 0 }};
+    }}
+    uint64_t mlg_hash = {hash}(mlg_key);
+    uint64_t mlg_bucket = mlg_hash % (uint64_t)mlg_map->{cap};
+    {entry_name} **mlg_link = &(mlg_map->{buckets}[mlg_bucket]);
+    while (*mlg_link != NULL) {{
+        {entry_name} *mlg_entry = *mlg_link;
+        if (mlg_entry->{hash_field} == mlg_hash &&
+            {equal}(&(mlg_entry->{key_field}), mlg_key)) {{
+            *mlg_link = mlg_entry->{next};
+            {entry_name} *mlg_removed = mlg_entry;
+{drop_key}            {option_type} mlg_result = {{ .tag = 1 }};
+            mlg_result.{payload}.{some} = mlg_removed->{value_field};
+            mallang_dealloc(mlg_removed);
+            mlg_map->{len} = mlg_map->{len} - 1;
+            return mlg_result;
+        }}
+        mlg_link = &(mlg_entry->{next});
+    }}
+    return ({option_type}){{ .tag = 0 }};
+}}
+
+"#,
+        option_type = option.c_name(),
+        key_type = key.c_name(),
+    )
 }
 
 const BYTE_FIND_HELPER: &str = r#"static bool MLG_UNUSED mallang_std_find_bytes(

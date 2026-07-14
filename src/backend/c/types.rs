@@ -4,12 +4,13 @@ use crate::{
         IrStmtKind, IrStruct,
     },
     semantic::Type,
+    standard::StandardType,
 };
 
 use super::{
     names::{
-        c_field, drop_fn_name, enum_node_type_name, variant_payload_field, variant_payload_member,
-        TypeCName,
+        c_field, drop_fn_name, enum_node_type_name, map_entry_type_name, variant_payload_field,
+        variant_payload_member, TypeCName,
     },
     utils::push_indented_lines,
     CompileError,
@@ -46,6 +47,9 @@ impl<'a> TypeEmitter<'a> {
         let mut types = Vec::new();
         for struct_def in &self.program.structs {
             collect_type(&Type::Struct(struct_def.name.clone()), &mut types);
+            for arg in &struct_def.intrinsic_args {
+                collect_type(arg, &mut types);
+            }
             for field in &struct_def.fields {
                 collect_type(&field.ty, &mut types);
             }
@@ -150,10 +154,13 @@ impl<'a> TypeEmitter<'a> {
             }
             Type::Struct(name) => {
                 let struct_def = self.struct_def(name)?;
+                for arg in &struct_def.intrinsic_args {
+                    self.emit_type_def(arg, emitted, visiting, output)?;
+                }
                 for field in &struct_def.fields {
                     self.emit_type_def(&field.ty, emitted, visiting, output)?;
                 }
-                output.push_str(&self.typedef_for_struct(struct_def));
+                output.push_str(&self.typedef_for_struct(struct_def)?);
                 output.push('\n');
             }
             Type::Enum(name) => {
@@ -460,7 +467,41 @@ impl<'a> TypeEmitter<'a> {
         }
     }
 
-    fn typedef_for_struct(&self, struct_def: &IrStruct) -> String {
+    fn typedef_for_struct(&self, struct_def: &IrStruct) -> Result<String, CompileError> {
+        if struct_def.intrinsic == Some(StandardType::Map) {
+            let [key, value] = struct_def.intrinsic_args.as_slice() else {
+                return Err(CompileError::new(
+                    "IR invariant violation: standard Map must have two type arguments",
+                ));
+            };
+            let map_ty = Type::Struct(struct_def.name.clone());
+            let map_name = map_ty.c_name();
+            let entry_name = map_entry_type_name(&map_ty);
+            return Ok(format!(
+                "typedef struct {entry_name} {entry_name};\n\
+                 struct {entry_name} {{\n\
+                     uint64_t {};\n\
+                     {} {};\n\
+                     {} {};\n\
+                     {entry_name} *{};\n\
+                 }};\n\
+                 typedef struct {{\n\
+                     {entry_name} **{};\n\
+                     int64_t {};\n\
+                     int64_t {};\n\
+                 }} {map_name};\n",
+                c_field("hash"),
+                key.c_name(),
+                c_field("key"),
+                value.c_name(),
+                c_field("value"),
+                c_field("next"),
+                c_field("buckets"),
+                c_field("len"),
+                c_field("cap"),
+            ));
+        }
+
         let mut output = String::new();
         output.push_str("typedef struct {\n");
         for field in &struct_def.fields {
@@ -473,7 +514,7 @@ impl<'a> TypeEmitter<'a> {
         output.push_str("} ");
         output.push_str(&Type::Struct(struct_def.name.clone()).c_name());
         output.push_str(";\n");
-        output
+        Ok(output)
     }
 
     fn typedef_for_enum(&self, enum_def: &IrEnum) -> String {
@@ -602,6 +643,9 @@ impl<'a> TypeEmitter<'a> {
             }
             Type::Struct(name) => {
                 let struct_def = self.struct_def(name)?;
+                for arg in &struct_def.intrinsic_args {
+                    self.emit_drop_helper(arg, emitted, visiting, output)?;
+                }
                 for field in &struct_def.fields {
                     self.emit_drop_helper(&field.ty, emitted, visiting, output)?;
                 }
@@ -724,6 +768,14 @@ impl<'a> TypeEmitter<'a> {
             }
             Type::Struct(name) => {
                 let struct_def = self.struct_def(name)?;
+                if struct_def.intrinsic == Some(StandardType::Map) {
+                    let [key, value] = struct_def.intrinsic_args.as_slice() else {
+                        return Err(CompileError::new(
+                            "IR invariant violation: standard Map must have two type arguments",
+                        ));
+                    };
+                    return Ok(self.map_drop_helper_body(ty, key, value));
+                }
                 let mut output = String::new();
                 for field in &struct_def.fields {
                     if !field.ty.needs_cleanup() {
@@ -808,6 +860,50 @@ impl<'a> TypeEmitter<'a> {
                 ty.source_name()
             ))),
         }
+    }
+
+    fn map_drop_helper_body(&self, map: &Type, key: &Type, value: &Type) -> String {
+        let entry = map_entry_type_name(map);
+        let buckets = c_field("buckets");
+        let cap = c_field("cap");
+        let len = c_field("len");
+        let next = c_field("next");
+        let mut entry_cleanup = String::new();
+        if key.needs_cleanup() {
+            entry_cleanup.push_str(&format!(
+                "        {}(&(mlg_entry->{}));\n",
+                drop_fn_name(key),
+                c_field("key")
+            ));
+        }
+        if value.needs_cleanup() {
+            entry_cleanup.push_str(&format!(
+                "        {}(&(mlg_entry->{}));\n",
+                drop_fn_name(value),
+                c_field("value")
+            ));
+        }
+        format!(
+            "if (mlg_value->{len} < 0 || mlg_value->{cap} < 0 ||\n\
+                 mlg_value->{len} > mlg_value->{cap} ||\n\
+                 (mlg_value->{cap} == 0 && mlg_value->{buckets} != NULL) ||\n\
+                 (mlg_value->{cap} > 0 && mlg_value->{buckets} == NULL)) {{\n\
+                 mallang_runtime_error(\"invalid map storage\");\n\
+             }}\n\
+             for (int64_t mlg_i = 0; mlg_i < mlg_value->{cap}; mlg_i = mlg_i + 1) {{\n\
+                 {entry} *mlg_entry = mlg_value->{buckets}[mlg_i];\n\
+                 while (mlg_entry != NULL) {{\n\
+                     {entry} *mlg_next = mlg_entry->{next};\n\
+             {entry_cleanup}\
+                     mallang_dealloc(mlg_entry);\n\
+                     mlg_entry = mlg_next;\n\
+                 }}\n\
+             }}\n\
+             mallang_dealloc(mlg_value->{buckets});\n\
+             mlg_value->{buckets} = NULL;\n\
+             mlg_value->{len} = 0;\n\
+             mlg_value->{cap} = 0;"
+        )
     }
 }
 

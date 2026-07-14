@@ -182,6 +182,14 @@
   숨기지 않는다. NotFound/PermissionDenied/InvalidData mapping, 4 KiB 초과 read growth,
   normal/error strict C, zero-allocation accounting, failure injection, ASan/UBSan harness,
   전체 525개 unit test와 66-program generated C sweep이 P150 완료 조건을 검증한다.
+- v0.6 P151 완료: opaque specialized `Map[K,V]`를 compiler-owned bucket/entry layout으로
+  내리고 `int`/`bool`/UTF-8 string deterministic hash/equality와 node-chain growth를
+  구현했다. `insert` replacement는 incoming key를 정리하고 old value를 반환하며,
+  `remove`는 stored key를 정리한 뒤 value ownership을 이전한다. `with`/`update` callback은
+  저장된 value를 호출 범위에서만 빌리고, map drop은 남은 key/value와 모든 node/bucket을
+  정리한다. Direct/standard function-value 호출, Copy/non-Copy value, 24-entry growth,
+  zero-allocation accounting, failure injection, strict C와 ASan/UBSan harness, 전체 526개
+  unit test와 67-program generated C sweep이 P151 완료 조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -325,7 +333,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P150 implementation evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P151 implementation evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -334,11 +342,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P151에서 specialized opaque `Map[K,V]` storage, hash/equality, growth와 drop을 구현한다.
-2. `newMap`, `count`, `insert`, `with`, `update`, `remove`를 typed intrinsic과 callable
-   thunk에 연결한다.
-3. Copy/non-Copy key/value replacement/removal/callback, borrow conflict, allocation
-   accounting/failure injection과 sanitizer native path를 검증한다.
+1. P152에서 arguments로 input/output을 받는 multi-module reference CLI를 작성한다.
+2. File read, text/Map transformation과 file/stdout write failure를 explicit `match`, stderr,
+   non-zero exit로 처리한다.
+3. 반복되는 `Result` propagation boilerplate를 측정해 `?` syntax decision gate 필요성을
+   evidence로 판정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

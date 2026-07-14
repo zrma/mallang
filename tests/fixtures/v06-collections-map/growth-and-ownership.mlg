@@ -1,0 +1,88 @@
+import "std/collections"
+import "std/strings"
+
+func PrintString(con value string) {
+    print(value)
+}
+
+func PrintInt(con value int) {
+    print(value)
+}
+
+func Increment(mut value int) {
+    value = value + 1
+}
+
+func main() {
+    print_string := PrintString
+    print_int := PrintInt
+    increment := Increment
+    new_numbers := collections.newMap[int, string]
+    new_flags := collections.newMap[bool, int]
+    new_labels := collections.newMap[string, string]
+
+    mut numbers := new_numbers()
+    for mut index := 0; index < 24; index = index + 1 {
+        previous := collections.insert[int, string](
+            mut numbers,
+            index,
+            strings.fromInt(index)
+        )
+        match previous {
+            case None {}
+            case Some(value) {
+                print(value)
+            }
+        }
+    }
+    print(collections.count[int, string](con numbers))
+    print(collections.with[int, string](con numbers, con 17, con print_string))
+    removed_number := collections.remove[int, string](mut numbers, con 3)
+    match removed_number {
+        case None {
+            print("missing number")
+        }
+        case Some(value) {
+            print(value)
+        }
+    }
+    print(collections.count[int, string](con numbers))
+
+    mut flags := new_flags()
+    collections.insert[bool, int](mut flags, true, 10)
+    collections.insert[bool, int](mut flags, false, 20)
+    print(collections.update[bool, int](mut flags, con true, con increment))
+    print(collections.with[bool, int](con flags, con true, con print_int))
+    print(collections.with[bool, int](con flags, con false, con print_int))
+
+    mut labels := new_labels()
+    collections.insert[string, string](
+        mut labels,
+        strings.fromInt(42),
+        strings.fromInt(7)
+    )
+    print(collections.with[string, string](con labels, con "42", con print_string))
+    replaced := collections.insert[string, string](
+        mut labels,
+        strings.fromInt(42),
+        strings.fromInt(8)
+    )
+    match replaced {
+        case None {
+            print("missing label")
+        }
+        case Some(value) {
+            print(value)
+        }
+    }
+    removed_label := collections.remove[string, string](mut labels, con "42")
+    match removed_label {
+        case None {
+            print("missing label removal")
+        }
+        case Some(value) {
+            print(value)
+        }
+    }
+    print(collections.count[string, string](con labels))
+}

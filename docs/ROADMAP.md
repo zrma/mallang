@@ -1246,3 +1246,14 @@
 - [x] NotFound, PermissionDenied, InvalidInput과 InvalidData native regression 추가
 - [x] strict C, zero-allocation accounting과 deterministic failure injection 검증
 - [x] success/error file path ASan/UBSan acceptance 통과
+
+## P151: Owned Map
+
+- [x] specialized opaque `Map[K,V]` handle과 separately allocated entry node layout 구현
+- [x] deterministic `int`/`bool`/UTF-8 string hash/equality와 bucket growth 구현
+- [x] `newMap`, `count`, `insert`, `with`, `update`, `remove` typed runtime 연결
+- [x] direct call과 concrete generic standard function-value thunk 이름 충돌 방지
+- [x] replacement key cleanup, old value return, removal ownership transfer와 remaining-entry drop 구현
+- [x] Copy/non-Copy key/value, 24-entry growth와 callback read/update native regression 추가
+- [x] strict C, zero-allocation accounting, deterministic failure injection과 ASan/UBSan 통과
+- [x] 전체 526개 unit test와 67-program generated C sanitizer sweep 통과

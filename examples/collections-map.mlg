@@ -1,0 +1,72 @@
+import "std/collections"
+
+type Profile struct {
+    name string
+    visits int
+}
+
+func PrintProfile(con profile Profile) {
+    print(profile.name)
+    print(profile.visits)
+}
+
+func VisitProfile(mut profile Profile) {
+    profile.visits = profile.visits + 1
+}
+
+func main() {
+    new_map := collections.newMap[string, Profile]
+    count := collections.count[string, Profile]
+    insert := collections.insert[string, Profile]
+    with := collections.with[string, Profile]
+    update := collections.update[string, Profile]
+    remove := collections.remove[string, Profile]
+    mut profiles := new_map()
+    printer := PrintProfile
+    visitor := VisitProfile
+    first := insert(
+        mut profiles,
+        "kim",
+        Profile{name: "Kim", visits: 1}
+    )
+    match first {
+        case None {
+            print("inserted")
+        }
+        case Some(previous) {
+            print(previous.name)
+        }
+    }
+
+    replaced := insert(
+        mut profiles,
+        "kim",
+        Profile{name: "Kim", visits: 2}
+    )
+    match replaced {
+        case None {
+            print("missing replacement")
+        }
+        case Some(previous) {
+            print(previous.visits)
+        }
+    }
+
+    print(count(con profiles))
+    print(with(con profiles, con "kim", con printer))
+    print(update(mut profiles, con "kim", con visitor))
+    print(with(con profiles, con "kim", con printer))
+    print(with(con profiles, con "lee", con printer))
+
+    removed := remove(mut profiles, con "kim")
+    match removed {
+        case None {
+            print("missing removal")
+        }
+        case Some(profile) {
+            print(profile.name)
+            print(profile.visits)
+        }
+    }
+    print(count(con profiles))
+}

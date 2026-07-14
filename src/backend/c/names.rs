@@ -160,6 +160,10 @@ pub(super) fn enum_node_type_name(name: &str) -> String {
     format!("{}_node", Type::Enum(name.to_string()).c_name())
 }
 
+pub(super) fn map_entry_type_name(ty: &Type) -> String {
+    format!("{}_entry", ty.c_name())
+}
+
 pub(super) fn variant_payload_field(index: usize) -> String {
     c_field(&format!("payload_{index}"))
 }

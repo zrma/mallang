@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147-P150 complete; P151 next)
+상태: implementation in progress (P147-P151 complete; P152 next)
 
 ## 목표
 
@@ -128,6 +128,8 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 - Successful and failing operation을 strict C와 sanitizer native harness에 연결한다.
 
 ### P151: Owned Map
+
+상태: complete (2026-07-15)
 
 - Opaque specialized `Map[K, V]` layout, hash/equality, growth와 drop을 구현한다.
 - `newMap`, `count`, `insert`, `with`, `update`, `remove`를 typed intrinsic으로 연결한다.
