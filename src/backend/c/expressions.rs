@@ -84,8 +84,12 @@ impl<'a> CGenerator<'a> {
                     code: temp,
                 })
             }
-            IrExprKind::VariantConstructor { variant, payload } => {
-                self.emit_variant_constructor_stmt_expr(&expr.ty, variant, payload.as_deref(), env)
+            IrExprKind::VariantConstructor {
+                variant,
+                storage,
+                payloads,
+            } => {
+                self.emit_variant_constructor_stmt_expr(&expr.ty, variant, *storage, payloads, env)
             }
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(expr, scrutinee, arms, env)
@@ -634,16 +638,22 @@ impl<'a> CGenerator<'a> {
         &self,
         ty: &Type,
         variant_name: &str,
-        payload: Option<&IrExpr>,
+        storage: crate::ir::IrEnumStorage,
+        payloads: &[IrExpr],
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
+        if storage != crate::ir::IrEnumStorage::Inline {
+            return Err(CompileError::new(
+                "C backend does not support owned enum constructors yet",
+            ));
+        }
         let (tag, expected_payload) = self.adt_variant(ty, variant_name)?;
-        match (expected_payload, payload) {
-            (None, None) => Ok(CExpr::simple(format!(
+        match (expected_payload, payloads) {
+            (None, []) => Ok(CExpr::simple(format!(
                 "({}){{ .tag = {tag} }}",
                 ty.c_name()
             ))),
-            (Some(expected), Some(payload)) if expected == &payload.ty => {
+            (Some(expected), [payload]) if expected == &payload.ty => {
                 let CExpr { prelude, code } = self.emit_stmt_expr_with_env(payload, env)?;
                 Ok(CExpr {
                     prelude,

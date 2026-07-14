@@ -2424,7 +2424,7 @@ impl<'a> Checker<'a> {
 
         for arm in arms {
             let coverage = self.pattern_coverage(&arm.pattern, scrutinee_ty, arm.span)?;
-            if coverage.leaves.is_subset(&seen) {
+            if coverage_is_subset(&coverage.leaves, &seen) {
                 return Err(SemanticError::new(
                     "match pattern is duplicate or unreachable",
                     arm.span,
@@ -2453,7 +2453,7 @@ impl<'a> Checker<'a> {
 
         for arm in arms {
             let coverage = self.pattern_coverage(&arm.pattern, scrutinee_ty, arm.span)?;
-            if coverage.leaves.is_subset(&seen) {
+            if coverage_is_subset(&coverage.leaves, &seen) {
                 return Err(SemanticError::new(
                     "match pattern is duplicate or unreachable",
                     arm.span,
@@ -2476,16 +2476,26 @@ impl<'a> Checker<'a> {
         expected: &Type,
         span: Span,
     ) -> Result<PatternCoverage<'b>, SemanticError> {
+        self.pattern_coverage_inner(pattern, expected, span, &mut HashSet::new())
+    }
+
+    fn pattern_coverage_inner<'b>(
+        &self,
+        pattern: &'b MatchPattern,
+        expected: &Type,
+        span: Span,
+        visiting: &mut HashSet<Type>,
+    ) -> Result<PatternCoverage<'b>, SemanticError> {
         match pattern {
             MatchPattern::Wildcard => Ok(PatternCoverage {
                 bindings: Vec::new(),
-                leaves: self.coverage_leaves(expected, span)?,
+                leaves: self.coverage_leaves_inner(expected, span, visiting)?,
             }),
             MatchPattern::Binding(name) => {
                 reject_builtin_value_name(name, span)?;
                 Ok(PatternCoverage {
                     bindings: vec![(name.as_str(), expected.clone())],
-                    leaves: self.coverage_leaves(expected, span)?,
+                    leaves: self.coverage_leaves_inner(expected, span, visiting)?,
                 })
             }
             MatchPattern::Variant {
@@ -2508,6 +2518,7 @@ impl<'a> Checker<'a> {
                     variant,
                     payloads.iter().map(AdtPatternPayload::Nested).collect(),
                     span,
+                    visiting,
                 )
             }
             MatchPattern::Some(binding) => self.adt_variant_pattern_coverage(
@@ -2516,16 +2527,23 @@ impl<'a> Checker<'a> {
                 "Some",
                 vec![AdtPatternPayload::Binding(binding)],
                 span,
+                visiting,
             ),
-            MatchPattern::None => {
-                self.adt_variant_pattern_coverage(expected, None, "None", Vec::new(), span)
-            }
+            MatchPattern::None => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                "None",
+                Vec::new(),
+                span,
+                visiting,
+            ),
             MatchPattern::Ok(binding) => self.adt_variant_pattern_coverage(
                 expected,
                 None,
                 "Ok",
                 vec![AdtPatternPayload::Binding(binding)],
                 span,
+                visiting,
             ),
             MatchPattern::Err(binding) => self.adt_variant_pattern_coverage(
                 expected,
@@ -2533,6 +2551,7 @@ impl<'a> Checker<'a> {
                 "Err",
                 vec![AdtPatternPayload::Binding(binding)],
                 span,
+                visiting,
             ),
             MatchPattern::NestedBuiltin { variant, payload } => self.adt_variant_pattern_coverage(
                 expected,
@@ -2540,6 +2559,7 @@ impl<'a> Checker<'a> {
                 variant,
                 vec![AdtPatternPayload::Nested(payload)],
                 span,
+                visiting,
             ),
         }
     }
@@ -2551,6 +2571,7 @@ impl<'a> Checker<'a> {
         variant_name: &str,
         payload_patterns: Vec<AdtPatternPayload<'b>>,
         span: Span,
+        visiting: &mut HashSet<Type>,
     ) -> Result<PatternCoverage<'b>, SemanticError> {
         let Some(adt) = self.adt_sig_view(expected, span)? else {
             return Err(self.pattern_type_error(variant_name, expected, span));
@@ -2605,56 +2626,86 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let mut bindings = Vec::new();
-        let mut seen_bindings = HashSet::new();
-        let mut payload_coverages = Vec::new();
-        for (payload_ty, payload_pattern) in variant.payloads.iter().copied().zip(payload_patterns)
-        {
-            let coverage = match payload_pattern {
-                AdtPatternPayload::Binding(binding) => {
-                    reject_builtin_value_name(binding, span)?;
-                    PatternCoverage {
-                        bindings: vec![(binding, payload_ty.clone())],
-                        leaves: self.coverage_leaves(payload_ty, span)?,
+        let inserted = visiting.insert(expected.clone());
+        let result = (|| {
+            let mut bindings = Vec::new();
+            let mut seen_bindings = HashSet::new();
+            let mut payload_coverages = Vec::new();
+            for (payload_ty, payload_pattern) in
+                variant.payloads.iter().copied().zip(payload_patterns)
+            {
+                let coverage = match payload_pattern {
+                    AdtPatternPayload::Binding(binding) => {
+                        reject_builtin_value_name(binding, span)?;
+                        PatternCoverage {
+                            bindings: vec![(binding, payload_ty.clone())],
+                            leaves: self.coverage_leaves_inner(payload_ty, span, visiting)?,
+                        }
                     }
+                    AdtPatternPayload::Nested(payload_pattern) => {
+                        self.pattern_coverage_inner(payload_pattern, payload_ty, span, visiting)?
+                    }
+                };
+                for (binding, ty) in coverage.bindings {
+                    if !seen_bindings.insert(binding) {
+                        return Err(SemanticError::new(
+                            format!("duplicate pattern binding `{binding}`"),
+                            span,
+                        ));
+                    }
+                    bindings.push((binding, ty));
                 }
-                AdtPatternPayload::Nested(payload_pattern) => {
-                    self.pattern_coverage(payload_pattern, payload_ty, span)?
-                }
-            };
-            for (binding, ty) in coverage.bindings {
-                if !seen_bindings.insert(binding) {
-                    return Err(SemanticError::new(
-                        format!("duplicate pattern binding `{binding}`"),
-                        span,
-                    ));
-                }
-                bindings.push((binding, ty));
+                payload_coverages.push(coverage.leaves);
             }
-            payload_coverages.push(coverage.leaves);
-        }
 
-        Ok(PatternCoverage {
-            bindings,
-            leaves: variant_coverage(&prefix, payload_coverages),
-        })
+            Ok(PatternCoverage {
+                bindings,
+                leaves: variant_coverage(&prefix, payload_coverages),
+            })
+        })();
+        if inserted {
+            visiting.remove(expected);
+        }
+        result
     }
 
     fn coverage_leaves(&self, ty: &Type, span: Span) -> Result<CoverageSet, SemanticError> {
+        self.coverage_leaves_inner(ty, span, &mut HashSet::new())
+    }
+
+    fn coverage_leaves_inner(
+        &self,
+        ty: &Type,
+        span: Span,
+        visiting: &mut HashSet<Type>,
+    ) -> Result<CoverageSet, SemanticError> {
+        if visiting.contains(ty) {
+            let name = self
+                .adt_sig_view(ty, span)?
+                .map_or_else(|| ty.source_name(), |adt| adt.pattern_name.to_string());
+            return Ok(singleton_coverage(&format!("<recursive {name}>")));
+        }
+
+        visiting.insert(ty.clone());
         let Some(adt) = self.adt_sig_view(ty, span)? else {
+            visiting.remove(ty);
             return Ok(CoverageSet::from([CoveragePath::new()]));
         };
-        let mut leaves = CoverageSet::new();
-        for variant in adt.variants {
-            let prefix = format!("{}.{}", adt.pattern_name, variant.name);
-            let payloads = variant
-                .payloads
-                .iter()
-                .map(|payload| self.coverage_leaves(payload, span))
-                .collect::<Result<Vec<_>, _>>()?;
-            leaves.extend(variant_coverage(&prefix, payloads));
-        }
-        Ok(leaves)
+        let result = (|| {
+            let mut leaves = CoverageSet::new();
+            for variant in adt.variants {
+                let prefix = format!("{}.{}", adt.pattern_name, variant.name);
+                let payloads = variant
+                    .payloads
+                    .iter()
+                    .map(|payload| self.coverage_leaves_inner(payload, span, visiting))
+                    .collect::<Result<Vec<_>, _>>()?;
+                leaves.extend(variant_coverage(&prefix, payloads));
+            }
+            Ok(leaves)
+        })();
+        visiting.remove(ty);
+        result
     }
 
     fn adt_sig_view<'b>(
@@ -2714,11 +2765,12 @@ impl<'a> Checker<'a> {
         seen: &CoverageSet,
         span: Span,
     ) -> Result<(), SemanticError> {
-        if all.is_subset(seen) {
+        if coverage_is_subset(all, seen) {
             return Ok(());
         }
         let mut missing = all
-            .difference(seen)
+            .iter()
+            .filter(|path| !coverage_path_is_covered(path, seen))
             .map(|path| path.join(" -> "))
             .collect::<Vec<_>>();
         missing.sort();
@@ -4150,6 +4202,33 @@ fn variant_coverage(prefix: &str, payloads: Vec<CoverageSet>) -> CoverageSet {
             combined
         }
     }
+}
+
+fn coverage_is_subset(required: &CoverageSet, available: &CoverageSet) -> bool {
+    required
+        .iter()
+        .all(|path| coverage_path_is_covered(path, available))
+}
+
+fn coverage_path_is_covered(path: &CoveragePath, available: &CoverageSet) -> bool {
+    available
+        .iter()
+        .any(|candidate| coverage_path_covers(candidate, path))
+}
+
+fn coverage_path_covers(covering: &CoveragePath, path: &CoveragePath) -> bool {
+    for (index, segment) in covering.iter().enumerate() {
+        let Some(path_segment) = path.get(index) else {
+            return false;
+        };
+        if segment.starts_with("<recursive ") {
+            return !path_segment.starts_with("<recursive ") || segment == path_segment;
+        }
+        if segment != path_segment {
+            return false;
+        }
+    }
+    covering.len() == path.len()
 }
 
 struct MatchArmCheck {
@@ -7549,6 +7628,58 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn checks_recursive_enum_match_coverage_finitely() {
+        check_ok(
+            r#"
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+func head(value List[int]) int {
+    return match value {
+        case List.Nil { 0 }
+        case List.Cons(head, tail) { head }
+    }
+}
+
+func main() {}
+"#,
+        );
+
+        let non_exhaustive = check_error(
+            r#"
+type Chain enum { End Next(Chain) }
+func depth(value Chain) int {
+    return match value {
+        case Chain.End { 0 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(non_exhaustive.message.contains("match is not exhaustive"));
+        assert!(non_exhaustive.message.contains("Chain.Next"));
+
+        let unreachable = check_error(
+            r#"
+type Chain enum { End Next(Chain) }
+func depth(value Chain) int {
+    return match value {
+        case Chain.End { 0 }
+        case Chain.Next(tail) { 1 }
+        case Chain.Next(Chain.End) { 2 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(unreachable
+            .message
+            .contains("match pattern is duplicate or unreachable"));
     }
 
     #[test]

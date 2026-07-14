@@ -16,7 +16,7 @@ use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error
 
 use crate::{
     ast::Program,
-    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram},
+    ir::{lower, IrClosure, IrEnum, IrEnumStorage, IrFunction, IrProgram},
     semantic::{check, FunctionParamType, FunctionType, Type},
 };
 
@@ -81,6 +81,7 @@ impl<'a> CGenerator<'a> {
     }
 
     fn generate(self) -> Result<String, CompileError> {
+        self.validate_enum_surface()?;
         let mut output = String::new();
         output.push_str("#include <stdbool.h>\n");
         output.push_str("#include <stdint.h>\n");
@@ -163,6 +164,28 @@ impl<'a> CGenerator<'a> {
         }
 
         Ok(output)
+    }
+
+    fn validate_enum_surface(&self) -> Result<(), CompileError> {
+        for enum_def in &self.program.enums {
+            if enum_def.storage == IrEnumStorage::Owned {
+                return Err(CompileError::new(format!(
+                    "C backend does not support recursive enum `{}` yet",
+                    enum_def.source_name
+                )));
+            }
+            if let Some(variant) = enum_def
+                .variants
+                .iter()
+                .find(|variant| variant.payloads.len() > 1)
+            {
+                return Err(CompileError::new(format!(
+                    "C backend does not support multi-payload enum variant `{}.{}` yet",
+                    enum_def.source_name, variant.name
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn prototype(&self, function: &IrFunction) -> Result<String, CompileError> {

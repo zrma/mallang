@@ -3,8 +3,8 @@ use crate::{
     ast::{ArgMode, ParamMode},
     check,
     ir::{
-        lower, IrArg, IrExpr, IrExprKind, IrForInit, IrFunction, IrMatchBlockArm, IrMatchPattern,
-        IrParam, IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
+        lower, IrArg, IrEnumStorage, IrExpr, IrExprKind, IrForInit, IrFunction, IrMatchBlockArm,
+        IrMatchPattern, IrParam, IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
     },
     parse,
     semantic::{FunctionParamType, FunctionType, Type},
@@ -453,7 +453,8 @@ fn rejects_invalid_ir_option_match_arm() {
                     scrutinee: IrExpr {
                         kind: IrExprKind::VariantConstructor {
                             variant: "None".to_string(),
-                            payload: None,
+                            storage: IrEnumStorage::Inline,
+                            payloads: Vec::new(),
                         },
                         ty: option_int.clone(),
                         span,
@@ -462,10 +463,11 @@ fn rejects_invalid_ir_option_match_arm() {
                         pattern: IrMatchPattern::Variant {
                             ty: Type::Result(Box::new(Type::Int), Box::new(Type::Int)),
                             variant: "Ok".to_string(),
-                            payload: Some(Box::new(IrMatchPattern::Binding {
+                            storage: IrEnumStorage::Inline,
+                            payloads: vec![IrMatchPattern::Binding {
                                 name: "value".to_string(),
                                 ty: Type::Int,
-                            })),
+                            }],
                         },
                         body: Vec::new(),
                         span,
@@ -2330,4 +2332,42 @@ func main() {
     assert!(c.contains("mlg_Function_mut_owned_int_ret_int"));
     assert!(c.contains("(mlg_env->mlg_count) = mallang_checked_result_"));
     assert!(c.contains("mlg_drop_Function_mut_owned_int_ret_int(&(mlg_next));"));
+}
+
+#[test]
+fn rejects_multi_payload_enum_before_c_emission() {
+    let program = parse(
+        r#"
+type Pair enum { Pair(int, string) }
+func main() { value := Pair.Pair(7, "mallang") }
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let error = generate_c_from_ir(&ir).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "C backend does not support multi-payload enum variant `Pair.Pair` yet"
+    );
+}
+
+#[test]
+fn rejects_recursive_enum_before_c_emission() {
+    let program = parse(
+        r#"
+type Chain enum { End Next(Chain) }
+func main() { value := Chain.End }
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let error = generate_c_from_ir(&ir).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "C backend does not support recursive enum `Chain` yet"
+    );
 }
