@@ -36,8 +36,11 @@
   shell이 있다. Typed IR의 named function value/indirect call과 environment-free C
   thunk를 연결했으며 higher-order parameter/return과 반복 호출이 native로 동작한다.
   Return expression은 cleanup 전에 내부 temporary로 평가되어 callable parameter가
-  조기에 drop되지 않는다. Function literal capture 분석과 environment allocation은
-  다음 단계다.
+  조기에 drop되지 않는다. Plain function literal은 lexical free variable을 typed
+  capture metadata로 보존하며 Copy capture는 복사, non-Copy capture는 생성 시 move로
+  검사한다. Borrowed non-Copy capture, active range source capture, plain capture
+  mutation/move-out은 거부한다. Closure environment IR/C allocation과 nested/mutable
+  function literal은 다음 단계다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -176,7 +179,7 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. plain function literal의 free-variable/capture 분석을 추가한다.
+1. checked closure metadata를 typed IR closure/environment에 내린다.
 2. immutable owned capture environment allocation과 exactly-once cleanup을 구현한다.
 3. `func mut` capture mutation과 exclusive native call을 연결한다.
 

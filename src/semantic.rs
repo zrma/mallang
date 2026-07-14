@@ -1,10 +1,14 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, MatchArm,
-        MatchBlockArm, MatchPattern, ParamMode, Program, Stmt, StmtKind, TypeRef, UnaryOp,
-        Visibility,
+        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, ForInit, ForPost, Function, FunctionLiteral,
+        MatchArm, MatchBlockArm, MatchPattern, ParamMode, Program, Stmt, StmtKind, TypeRef,
+        UnaryOp, Visibility,
     },
     package::PackageGraph,
     token::Span,
@@ -27,6 +31,21 @@ pub struct CheckedProgram<'a> {
     pub signatures: HashMap<&'a str, FunctionSig>,
     pub methods: HashMap<MethodKey, MethodSig>,
     pub structs: HashMap<&'a str, StructSig>,
+    pub closures: Vec<CheckedClosure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckedClosure {
+    pub span: Span,
+    pub literal: FunctionLiteral,
+    pub function_type: FunctionType,
+    pub captures: Vec<ClosureCapture>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,6 +223,7 @@ struct Checker<'a> {
     methods: HashMap<MethodKey, MethodSig>,
     method_access: HashMap<MethodKey, MethodAccess>,
     structs: HashMap<&'a str, StructSig>,
+    closures: RefCell<Vec<CheckedClosure>>,
 }
 
 struct MethodAccess {
@@ -220,6 +240,7 @@ impl<'a> Checker<'a> {
             methods: HashMap::new(),
             method_access: HashMap::new(),
             structs: HashMap::new(),
+            closures: RefCell::new(Vec::new()),
         }
     }
 
@@ -242,6 +263,7 @@ impl<'a> Checker<'a> {
             signatures: self.signatures,
             methods: self.methods,
             structs: self.structs,
+            closures: self.closures.into_inner(),
         })
     }
 
@@ -932,10 +954,9 @@ impl<'a> Checker<'a> {
                 self.check_none_constructor(expected, expr.span)
             }
             ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
-            ExprKind::FunctionLiteral(_) => Err(SemanticError::new(
-                "function literals are not implemented yet",
-                expr.span,
-            )),
+            ExprKind::FunctionLiteral(function) => {
+                self.check_function_literal(function, locals, expr.span)
+            }
             ExprKind::If {
                 condition,
                 then_branch,
@@ -993,6 +1014,129 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Binary { op, left, right } => self.check_binary(*op, left, right, locals),
         }
+    }
+
+    fn check_function_literal(
+        &self,
+        function: &FunctionLiteral,
+        outer_locals: &mut HashMap<String, Local>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        if function.mutable {
+            return Err(SemanticError::new(
+                "mutable function literals are not implemented yet",
+                span,
+            ));
+        }
+
+        let capture_names = collect_closure_capture_names(function, outer_locals)?;
+        let mut captures = Vec::new();
+        let mut closure_locals = HashMap::new();
+        for name in capture_names {
+            let local = outer_locals
+                .get(&name)
+                .expect("capture collection only records existing outer locals");
+            if local.moved {
+                return Err(SemanticError::new(
+                    format!("cannot capture moved value `{name}`"),
+                    span,
+                ));
+            }
+            if local.range_source {
+                return Err(SemanticError::new(
+                    format!("cannot capture active range source `{name}`"),
+                    span,
+                ));
+            }
+            if local.borrowed && !local.ty.is_copy() {
+                return Err(SemanticError::new(
+                    format!("cannot capture borrowed non-Copy value `{name}`"),
+                    span,
+                ));
+            }
+
+            captures.push(ClosureCapture {
+                name: name.clone(),
+                ty: local.ty.clone(),
+            });
+            closure_locals.insert(
+                name,
+                Local {
+                    ty: local.ty.clone(),
+                    mutable: false,
+                    borrowed: true,
+                    moved: false,
+                    range_source: false,
+                    scope_depth: 0,
+                },
+            );
+        }
+
+        let mut params = Vec::new();
+        for param in &function.params {
+            let param = self.param_sig(param)?;
+            if closure_locals
+                .insert(
+                    param.name.clone(),
+                    Local {
+                        ty: param.ty.clone(),
+                        mutable: matches!(param.mode, ParamMode::Mut),
+                        borrowed: !matches!(param.mode, ParamMode::Owned),
+                        moved: false,
+                        range_source: false,
+                        scope_depth: 0,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticError::new(
+                    format!("duplicate closure parameter `{}`", param.name),
+                    span,
+                ));
+            }
+            params.push(param);
+        }
+        let return_type = self.type_from_optional_ref(function.return_type.as_ref())?;
+        let returned =
+            self.check_block_statements(&function.body, &mut closure_locals, &return_type, 0, 0)?;
+        if return_type != Type::Unit && !returned {
+            return Err(SemanticError::new(
+                format!(
+                    "function literal must return `{}`",
+                    return_type.source_name()
+                ),
+                span,
+            ));
+        }
+
+        for capture in &captures {
+            if !capture.ty.is_copy() {
+                outer_locals
+                    .get_mut(&capture.name)
+                    .expect("validated capture must remain in outer locals")
+                    .moved = true;
+            }
+        }
+
+        let function_type = FunctionType {
+            mutable: false,
+            params: params
+                .iter()
+                .map(|param| FunctionParamType {
+                    mode: param.mode,
+                    ty: param.ty.clone(),
+                })
+                .collect(),
+            return_type: Box::new(return_type),
+        };
+        self.closures.borrow_mut().push(CheckedClosure {
+            span,
+            literal: function.clone(),
+            function_type: function_type.clone(),
+            captures,
+        });
+
+        Ok(Type::Function(function_type))
     }
 
     fn check_if_expr(
@@ -3459,6 +3603,209 @@ fn is_blank_identifier(name: &str) -> bool {
     name == "_"
 }
 
+fn collect_closure_capture_names(
+    function: &FunctionLiteral,
+    outer_locals: &HashMap<String, Local>,
+) -> Result<Vec<String>, SemanticError> {
+    let mut collector = ClosureCaptureCollector {
+        outer_locals,
+        captures: Vec::new(),
+        seen: HashSet::new(),
+    };
+    let mut bound = function
+        .params
+        .iter()
+        .map(|param| param.name.clone())
+        .collect::<HashSet<_>>();
+    collector.visit_block(&function.body, &mut bound)?;
+    Ok(collector.captures)
+}
+
+struct ClosureCaptureCollector<'a> {
+    outer_locals: &'a HashMap<String, Local>,
+    captures: Vec<String>,
+    seen: HashSet<String>,
+}
+
+impl ClosureCaptureCollector<'_> {
+    fn visit_block(
+        &mut self,
+        block: &Block,
+        bound: &mut HashSet<String>,
+    ) -> Result<(), SemanticError> {
+        for stmt in &block.statements {
+            self.visit_stmt(stmt, bound)?;
+        }
+        Ok(())
+    }
+
+    fn visit_stmt(
+        &mut self,
+        stmt: &Stmt,
+        bound: &mut HashSet<String>,
+    ) -> Result<(), SemanticError> {
+        match &stmt.kind {
+            StmtKind::Let { name, expr, .. } => {
+                self.visit_expr(expr, bound)?;
+                bound.insert(name.clone());
+            }
+            StmtKind::Assign { name, expr } => {
+                self.visit_name(name, bound);
+                self.visit_expr(expr, bound)?;
+            }
+            StmtKind::FieldAssign { base, expr, .. } => {
+                self.visit_expr(base, bound)?;
+                self.visit_expr(expr, bound)?;
+            }
+            StmtKind::IndexAssign { base, index, expr } => {
+                self.visit_expr(base, bound)?;
+                self.visit_expr(index, bound)?;
+                self.visit_expr(expr, bound)?;
+            }
+            StmtKind::Return { expr } | StmtKind::Expr { expr } => {
+                self.visit_expr(expr, bound)?;
+            }
+            StmtKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                self.visit_expr(condition, bound)?;
+                let mut then_bound = bound.clone();
+                self.visit_block(then_block, &mut then_bound)?;
+                if let Some(else_block) = else_block {
+                    let mut else_bound = bound.clone();
+                    self.visit_block(else_block, &mut else_bound)?;
+                }
+            }
+            StmtKind::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                let mut loop_bound = bound.clone();
+                if let Some(ForInit::Let { name, expr, .. }) = init {
+                    self.visit_expr(expr, &loop_bound)?;
+                    loop_bound.insert(name.clone());
+                }
+                if let Some(condition) = condition {
+                    self.visit_expr(condition, &loop_bound)?;
+                }
+                let mut body_bound = loop_bound.clone();
+                self.visit_block(body, &mut body_bound)?;
+                if let Some(ForPost::Assign { target, expr }) = post {
+                    self.visit_expr(target, &loop_bound)?;
+                    self.visit_expr(expr, &loop_bound)?;
+                }
+            }
+            StmtKind::RangeFor {
+                index_name,
+                value_name,
+                source,
+                body,
+            } => {
+                self.visit_expr(source, bound)?;
+                let mut body_bound = bound.clone();
+                if !is_blank_identifier(index_name) {
+                    body_bound.insert(index_name.clone());
+                }
+                if !is_blank_identifier(value_name) {
+                    body_bound.insert(value_name.clone());
+                }
+                self.visit_block(body, &mut body_bound)?;
+            }
+            StmtKind::Match { scrutinee, arms } => {
+                self.visit_expr(scrutinee, bound)?;
+                for arm in arms {
+                    let mut arm_bound = bound.clone();
+                    if let Some(binding) = match_pattern_binding(&arm.pattern) {
+                        arm_bound.insert(binding.to_string());
+                    }
+                    self.visit_block(&arm.block, &mut arm_bound)?;
+                }
+            }
+            StmtKind::Break | StmtKind::Continue => {}
+        }
+        Ok(())
+    }
+
+    fn visit_expr(&mut self, expr: &Expr, bound: &HashSet<String>) -> Result<(), SemanticError> {
+        match &expr.kind {
+            ExprKind::Var(name) => self.visit_name(name, bound),
+            ExprKind::FunctionLiteral(_) => {
+                return Err(SemanticError::new(
+                    "nested function literals are not implemented yet",
+                    expr.span,
+                ));
+            }
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.visit_expr(condition, bound)?;
+                self.visit_expr(then_branch, bound)?;
+                self.visit_expr(else_branch, bound)?;
+            }
+            ExprKind::Match { scrutinee, arms } => {
+                self.visit_expr(scrutinee, bound)?;
+                for arm in arms {
+                    let mut arm_bound = bound.clone();
+                    if let Some(binding) = match_pattern_binding(&arm.pattern) {
+                        arm_bound.insert(binding.to_string());
+                    }
+                    self.visit_expr(&arm.expr, &arm_bound)?;
+                }
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.visit_expr(&field.expr, bound)?;
+                }
+            }
+            ExprKind::ArrayLiteral { elements, .. } => {
+                for element in elements {
+                    self.visit_expr(element, bound)?;
+                }
+            }
+            ExprKind::FieldAccess { base, .. } => self.visit_expr(base, bound)?,
+            ExprKind::Index { base, index } => {
+                self.visit_expr(base, bound)?;
+                self.visit_expr(index, bound)?;
+            }
+            ExprKind::Call { callee, args } => {
+                self.visit_expr(callee, bound)?;
+                for arg in args {
+                    self.visit_expr(&arg.expr, bound)?;
+                }
+            }
+            ExprKind::Unary { expr, .. } => self.visit_expr(expr, bound)?,
+            ExprKind::Binary { left, right, .. } => {
+                self.visit_expr(left, bound)?;
+                self.visit_expr(right, bound)?;
+            }
+            ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => {}
+        }
+        Ok(())
+    }
+
+    fn visit_name(&mut self, name: &str, bound: &HashSet<String>) {
+        if bound.contains(name) || !self.outer_locals.contains_key(name) {
+            return;
+        }
+        if self.seen.insert(name.to_string()) {
+            self.captures.push(name.to_string());
+        }
+    }
+}
+
+fn match_pattern_binding(pattern: &MatchPattern) -> Option<&str> {
+    match pattern {
+        MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => Some(name),
+        MatchPattern::None => None,
+    }
+}
+
 fn const_int_expr(expr: &Expr) -> Option<i64> {
     match &expr.kind {
         ExprKind::Int(value) => Some(*value),
@@ -3743,6 +4090,119 @@ func main() {
 }
 "#,
         );
+    }
+
+    #[test]
+    fn allows_plain_closures_with_owned_copy_captures() {
+        let program = parse(
+            r#"
+func main() {
+    offset := 10
+    add := func(value int) int {
+        return value + offset
+    }
+    print(offset)
+    print(add(2))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert_eq!(checked.closures.len(), 1);
+        assert_eq!(checked.closures[0].captures.len(), 1);
+        assert_eq!(checked.closures[0].captures[0].name, "offset");
+        assert_eq!(checked.closures[0].captures[0].ty, Type::Int);
+        assert_eq!(
+            checked.closures[0].function_type,
+            FunctionType {
+                mutable: false,
+                params: vec![FunctionParamType {
+                    mode: ParamMode::Owned,
+                    ty: Type::Int,
+                }],
+                return_type: Box::new(Type::Int),
+            }
+        );
+    }
+
+    #[test]
+    fn closure_creation_moves_non_copy_captures() {
+        let error = check_error(
+            r#"
+func main() {
+    name := "kim"
+    show := func() int {
+        print(name)
+        return 1
+    }
+    print(name)
+    print(show())
+}
+"#,
+        );
+
+        assert!(error.message.contains("use of moved value `name`"));
+    }
+
+    #[test]
+    fn rejects_borrowed_non_copy_closure_captures() {
+        let error = check_error(
+            r#"
+func Make(con name string) func() int {
+    return func() int {
+        print(name)
+        return 1
+    }
+}
+
+func main() {}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("cannot capture borrowed non-Copy value `name`"));
+    }
+
+    #[test]
+    fn rejects_mutation_of_plain_closure_captures() {
+        let error = check_error(
+            r#"
+func main() {
+    mut count := 0
+    next := func() int {
+        count = count + 1
+        return count
+    }
+    print(next())
+}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("cannot assign to immutable binding `count`"));
+    }
+
+    #[test]
+    fn rejects_nested_function_literals_for_now() {
+        let error = check_error(
+            r#"
+func main() {
+    outer := func() func() int {
+        return func() int {
+            return 1
+        }
+    }
+    print(outer)
+}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("nested function literals are not implemented yet"));
     }
 
     #[test]

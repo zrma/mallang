@@ -922,3 +922,12 @@
 - [x] named function용 environment-free C call thunk 생성
 - [x] higher-order parameter/return과 반복 indirect call native smoke 추가
 - [x] generated C strict warning과 ASan/UBSan smoke 통과
+
+## P118: Plain Closure Capture Semantics
+
+- [x] lexical scope를 반영한 free-variable capture 수집 추가
+- [x] capture 순서, type, function signature를 checked metadata에 보존
+- [x] Copy capture는 원본 재사용을 허용하고 non-Copy capture는 생성 시 move
+- [x] borrowed non-Copy와 active range source capture 거부
+- [x] plain closure capture mutation과 capture value move-out 거부
+- [x] nested/mutable function literal을 후속 lowering 전까지 명시적으로 거부
