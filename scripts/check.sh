@@ -185,6 +185,13 @@ if [[ "$closures_output" != $'12\n15\n7\n7' ]]; then
   echo "closure native build smoke failed: expected 12, 15, 7, 7 got '$closures_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/mutable-closures.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/mutable-closures.mlg -o target/mallang/mutable-closures >/dev/null
+mutable_closures_output="$(target/mallang/mutable-closures)"
+if [[ "$mutable_closures_output" != $'1\n3\n7\n8\n9\n10\n11\n10' ]]; then
+  echo "mutable closure native build smoke failed: expected 1, 3, 7, 8, 9, 10, 11, 10 got '$mutable_closures_output'" >&2
+  exit 1
+fi
 project_input="examples/projects/hello"
 "${CARGO[@]}" run --bin mlg -- check "$project_input" >/dev/null
 project_output_path="$("${CARGO[@]}" run --quiet --bin mlg -- build "$project_input")"
@@ -807,4 +814,8 @@ expect_sanitized_native_output \
   "indexed-slice-field-append" \
   "target/mallang/indexed-slice-field-append.c" \
   $'3\n8\n2\n5'
+expect_sanitized_native_output \
+  "mutable-closures" \
+  "target/mallang/mutable-closures.c" \
+  $'1\n3\n7\n8\n9\n10\n11\n10'
 expect_all_warning_clean_generated_c

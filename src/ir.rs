@@ -29,6 +29,7 @@ pub struct IrProgram {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrClosure {
     pub name: String,
+    pub mutable: bool,
     pub captures: Vec<IrClosureCapture>,
     pub params: Vec<IrParam>,
     pub return_type: Type,
@@ -39,6 +40,7 @@ pub struct IrClosure {
 pub struct IrClosureCapture {
     pub name: String,
     pub ty: Type,
+    pub mutable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -385,12 +387,14 @@ impl<'a> Lowerer<'a> {
 
         Ok(IrClosure {
             name: closure_ir_name(closure.span),
+            mutable: closure.function_type.mutable,
             captures: closure
                 .captures
                 .iter()
                 .map(|capture| IrClosureCapture {
                     name: capture.name.clone(),
                     ty: capture.ty.clone(),
+                    mutable: capture.mutable,
                 })
                 .collect(),
             params,
@@ -6024,9 +6028,11 @@ func main() {
         let ir = lower(&checked).unwrap();
 
         assert_eq!(ir.closures.len(), 1);
+        assert!(!ir.closures[0].mutable);
         assert_eq!(ir.closures[0].captures.len(), 1);
         assert_eq!(ir.closures[0].captures[0].name, "values");
         assert!(matches!(ir.closures[0].captures[0].ty, Type::Slice(_)));
+        assert!(!ir.closures[0].captures[0].mutable);
 
         let make_first = ir
             .functions
@@ -6042,5 +6048,31 @@ func main() {
         assert_eq!(closure, &ir.closures[0].name);
         assert_eq!(captures.len(), 1);
         assert!(matches!(&captures[0].expr.kind, IrExprKind::Var(name) if name == "values"));
+    }
+
+    #[test]
+    fn ir_preserves_mutable_closure_captures() {
+        let program = parse(
+            r#"
+func main() {
+    mut count := 0
+    mut next := func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+    print(next(1))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        assert!(ir.closures[0].mutable);
+        assert!(ir.closures[0].captures[0].mutable);
+        assert!(matches!(
+            &ir.closures[0].body[0].kind,
+            IrStmtKind::Assign { name, .. } if name == "count"
+        ));
     }
 }

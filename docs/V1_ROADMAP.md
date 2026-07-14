@@ -106,7 +106,7 @@ v1로 간주한다.
 
 - function type, function value, higher-order call을 정의한다.
 - closure literal과 capture 규칙을 정의한다.
-- owned, `con`, `mut` capture와 escaping closure의 허용 범위를 결정한다.
+- owned capture, `con`/`mut` call access와 escaping closure의 허용 범위를 결정한다.
 - closure environment의 typed IR, C layout, cleanup을 구현한다.
 - pipeline과 collection operation에서 function value를 사용할 수 있게 한다.
 

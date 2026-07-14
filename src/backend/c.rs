@@ -354,7 +354,7 @@ impl<'a> CGenerator<'a> {
 
     fn closure_callable_type(closure: &IrClosure) -> Type {
         Type::Function(FunctionType {
-            mutable: false,
+            mutable: closure.mutable,
             params: closure
                 .params
                 .iter()

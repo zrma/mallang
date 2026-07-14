@@ -46,6 +46,7 @@ pub struct CheckedClosure {
 pub struct ClosureCapture {
     pub name: String,
     pub ty: Type,
+    pub mutable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1022,17 +1023,12 @@ impl<'a> Checker<'a> {
         outer_locals: &mut HashMap<String, Local>,
         span: Span,
     ) -> Result<Type, SemanticError> {
-        if function.mutable {
-            return Err(SemanticError::new(
-                "mutable function literals are not implemented yet",
-                span,
-            ));
-        }
-
-        let capture_names = collect_closure_capture_names(function, outer_locals)?;
+        let capture_uses =
+            collect_closure_captures(function, outer_locals, &self.methods, &self.structs)?;
         let mut captures = Vec::new();
         let mut closure_locals = HashMap::new();
-        for name in capture_names {
+        for capture_use in capture_uses {
+            let name = capture_use.name;
             let local = outer_locals
                 .get(&name)
                 .expect("capture collection only records existing outer locals");
@@ -1054,16 +1050,23 @@ impl<'a> Checker<'a> {
                     span,
                 ));
             }
+            if function.mutable && capture_use.mutable && !local.mutable {
+                return Err(SemanticError::new(
+                    format!("mutable closure capture `{name}` requires a mutable source binding"),
+                    span,
+                ));
+            }
 
             captures.push(ClosureCapture {
                 name: name.clone(),
                 ty: local.ty.clone(),
+                mutable: capture_use.mutable,
             });
             closure_locals.insert(
                 name,
                 Local {
                     ty: local.ty.clone(),
-                    mutable: false,
+                    mutable: function.mutable && capture_use.mutable,
                     borrowed: true,
                     moved: false,
                     range_source: false,
@@ -1119,7 +1122,7 @@ impl<'a> Checker<'a> {
         }
 
         let function_type = FunctionType {
-            mutable: false,
+            mutable: function.mutable,
             params: params
                 .iter()
                 .map(|param| FunctionParamType {
@@ -3603,14 +3606,24 @@ fn is_blank_identifier(name: &str) -> bool {
     name == "_"
 }
 
-fn collect_closure_capture_names(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClosureCaptureUse {
+    name: String,
+    mutable: bool,
+}
+
+fn collect_closure_captures(
     function: &FunctionLiteral,
     outer_locals: &HashMap<String, Local>,
-) -> Result<Vec<String>, SemanticError> {
+    methods: &HashMap<MethodKey, MethodSig>,
+    structs: &HashMap<&str, StructSig>,
+) -> Result<Vec<ClosureCaptureUse>, SemanticError> {
     let mut collector = ClosureCaptureCollector {
         outer_locals,
+        methods,
+        structs,
         captures: Vec::new(),
-        seen: HashSet::new(),
+        capture_indices: HashMap::new(),
     };
     let mut bound = function
         .params
@@ -3623,8 +3636,10 @@ fn collect_closure_capture_names(
 
 struct ClosureCaptureCollector<'a> {
     outer_locals: &'a HashMap<String, Local>,
-    captures: Vec<String>,
-    seen: HashSet<String>,
+    methods: &'a HashMap<MethodKey, MethodSig>,
+    structs: &'a HashMap<&'a str, StructSig>,
+    captures: Vec<ClosureCaptureUse>,
+    capture_indices: HashMap<String, usize>,
 }
 
 impl ClosureCaptureCollector<'_> {
@@ -3650,15 +3665,15 @@ impl ClosureCaptureCollector<'_> {
                 bound.insert(name.clone());
             }
             StmtKind::Assign { name, expr } => {
-                self.visit_name(name, bound);
+                self.visit_name(name, bound, true);
                 self.visit_expr(expr, bound)?;
             }
             StmtKind::FieldAssign { base, expr, .. } => {
-                self.visit_expr(base, bound)?;
+                self.visit_mutated_place(base, bound)?;
                 self.visit_expr(expr, bound)?;
             }
             StmtKind::IndexAssign { base, index, expr } => {
-                self.visit_expr(base, bound)?;
+                self.visit_mutated_place(base, bound)?;
                 self.visit_expr(index, bound)?;
                 self.visit_expr(expr, bound)?;
             }
@@ -3695,7 +3710,7 @@ impl ClosureCaptureCollector<'_> {
                 let mut body_bound = loop_bound.clone();
                 self.visit_block(body, &mut body_bound)?;
                 if let Some(ForPost::Assign { target, expr }) = post {
-                    self.visit_expr(target, &loop_bound)?;
+                    self.visit_mutated_place(target, &loop_bound)?;
                     self.visit_expr(expr, &loop_bound)?;
                 }
             }
@@ -3732,7 +3747,7 @@ impl ClosureCaptureCollector<'_> {
 
     fn visit_expr(&mut self, expr: &Expr, bound: &HashSet<String>) -> Result<(), SemanticError> {
         match &expr.kind {
-            ExprKind::Var(name) => self.visit_name(name, bound),
+            ExprKind::Var(name) => self.visit_name(name, bound, false),
             ExprKind::FunctionLiteral(_) => {
                 return Err(SemanticError::new(
                     "nested function literals are not implemented yet",
@@ -3774,9 +3789,13 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(index, bound)?;
             }
             ExprKind::Call { callee, args } => {
-                self.visit_expr(callee, bound)?;
+                self.visit_call_callee(callee, bound)?;
                 for arg in args {
-                    self.visit_expr(&arg.expr, bound)?;
+                    if matches!(arg.mode, ArgMode::Mut) {
+                        self.visit_mutated_place(&arg.expr, bound)?;
+                    } else {
+                        self.visit_expr(&arg.expr, bound)?;
+                    }
                 }
             }
             ExprKind::Unary { expr, .. } => self.visit_expr(expr, bound)?,
@@ -3789,13 +3808,96 @@ impl ClosureCaptureCollector<'_> {
         Ok(())
     }
 
-    fn visit_name(&mut self, name: &str, bound: &HashSet<String>) {
+    fn visit_call_callee(
+        &mut self,
+        callee: &Expr,
+        bound: &HashSet<String>,
+    ) -> Result<(), SemanticError> {
+        match &callee.kind {
+            ExprKind::Var(name) => {
+                let mutable = !bound.contains(name)
+                    && matches!(
+                        self.outer_locals.get(name).map(|local| &local.ty),
+                        Some(Type::Function(function)) if function.mutable
+                    );
+                self.visit_name(name, bound, mutable);
+            }
+            ExprKind::FieldAccess { base, field } => {
+                let mutable_receiver = self
+                    .outer_place_type(base, bound)
+                    .and_then(|receiver| {
+                        self.methods.get(&MethodKey {
+                            receiver,
+                            name: field.clone(),
+                        })
+                    })
+                    .is_some_and(|method| matches!(method.receiver.mode, ParamMode::Mut));
+                if mutable_receiver {
+                    self.visit_mutated_place(base, bound)?;
+                } else {
+                    self.visit_expr(base, bound)?;
+                }
+            }
+            _ => self.visit_expr(callee, bound)?,
+        }
+        Ok(())
+    }
+
+    fn visit_mutated_place(
+        &mut self,
+        expr: &Expr,
+        bound: &HashSet<String>,
+    ) -> Result<(), SemanticError> {
+        match &expr.kind {
+            ExprKind::Var(name) => self.visit_name(name, bound, true),
+            ExprKind::FieldAccess { base, .. } => self.visit_mutated_place(base, bound)?,
+            ExprKind::Index { base, index } => {
+                self.visit_mutated_place(base, bound)?;
+                self.visit_expr(index, bound)?;
+            }
+            _ => self.visit_expr(expr, bound)?,
+        }
+        Ok(())
+    }
+
+    fn outer_place_type(&self, expr: &Expr, bound: &HashSet<String>) -> Option<Type> {
+        match &expr.kind {
+            ExprKind::Var(name) if !bound.contains(name) => {
+                self.outer_locals.get(name).map(|local| local.ty.clone())
+            }
+            ExprKind::FieldAccess { base, field } => {
+                let Type::Struct(name) = self.outer_place_type(base, bound)? else {
+                    return None;
+                };
+                self.structs
+                    .get(name.as_str())?
+                    .fields
+                    .iter()
+                    .find(|candidate| candidate.name == *field)
+                    .map(|candidate| candidate.ty.clone())
+            }
+            ExprKind::Index { base, .. } => match self.outer_place_type(base, bound)? {
+                Type::Array { element, .. } | Type::Slice(element) => Some(*element),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn visit_name(&mut self, name: &str, bound: &HashSet<String>, mutable: bool) {
         if bound.contains(name) || !self.outer_locals.contains_key(name) {
             return;
         }
-        if self.seen.insert(name.to_string()) {
-            self.captures.push(name.to_string());
+        if let Some(index) = self.capture_indices.get(name).copied() {
+            self.captures[index].mutable |= mutable;
+            return;
         }
+        self.capture_indices
+            .insert(name.to_string(), self.captures.len());
+        self.captures.push(ClosureCaptureUse {
+            name: name.to_string(),
+            mutable,
+        });
     }
 }
 
@@ -4113,6 +4215,7 @@ func main() {
         assert_eq!(checked.closures[0].captures.len(), 1);
         assert_eq!(checked.closures[0].captures[0].name, "offset");
         assert_eq!(checked.closures[0].captures[0].ty, Type::Int);
+        assert!(!checked.closures[0].captures[0].mutable);
         assert_eq!(
             checked.closures[0].function_type,
             FunctionType {
@@ -4183,6 +4286,122 @@ func main() {
         assert!(error
             .message
             .contains("cannot assign to immutable binding `count`"));
+    }
+
+    #[test]
+    fn allows_mutable_closures_to_update_owned_captures() {
+        let program = parse(
+            r#"
+func MakeCounter() func mut(int) int {
+    mut count := 0
+    return func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+}
+
+func main() {
+    mut counter := MakeCounter()
+    print(counter(1))
+    print(counter(2))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert_eq!(checked.closures.len(), 1);
+        assert_eq!(checked.closures[0].captures.len(), 1);
+        assert_eq!(checked.closures[0].captures[0].name, "count");
+        assert!(checked.closures[0].captures[0].mutable);
+        assert!(checked.closures[0].function_type.mutable);
+    }
+
+    #[test]
+    fn allows_mutable_closures_to_read_immutable_captures() {
+        check_ok(
+            r#"
+func main() {
+    offset := 10
+    mut add := func mut(value int) int {
+        return value + offset
+    }
+    print(add(2))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_mutable_closure_updates_from_immutable_sources() {
+        let error = check_error(
+            r#"
+func main() {
+    count := 0
+    mut next := func mut() int {
+        count = count + 1
+        return count
+    }
+    print(next())
+}
+"#,
+        );
+
+        assert!(error
+            .message
+            .contains("mutable closure capture `count` requires a mutable source binding"));
+    }
+
+    #[test]
+    fn tracks_mut_receiver_access_as_capture_mutation() {
+        let program = parse(
+            r#"
+type Counter struct {
+    value int
+}
+
+func (mut counter Counter) Add(delta int) unit {
+    counter.value = counter.value + delta
+}
+
+func main() {
+    mut counter := Counter{value: 0}
+    mut add := func mut(delta int) int {
+        counter.Add(delta)
+        return counter.value
+    }
+    print(add(2))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert!(checked.closures[0].captures[0].mutable);
+    }
+
+    #[test]
+    fn tracks_mut_argument_access_as_capture_mutation() {
+        let program = parse(
+            r#"
+func Increment(mut value int) unit {
+    value = value + 1
+}
+
+func main() {
+    mut count := 0
+    mut next := func mut() int {
+        Increment(mut count)
+        return count
+    }
+    print(next())
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+
+        assert!(checked.closures[0].captures[0].mutable);
     }
 
     #[test]

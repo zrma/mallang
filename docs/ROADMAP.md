@@ -940,3 +940,12 @@
 - [x] capture type별 cleanup 뒤 environment를 해제하는 drop thunk 생성
 - [x] escaping closure의 Copy/slice capture와 반복 indirect call native smoke 추가
 - [x] generated C strict warning과 ASan/UBSan cleanup smoke 통과
+
+## P120: Mutable Closure Capture and Native Lowering
+
+- [x] 대입, mutable borrow, mutable callable과 `mut` receiver 사용을 변경 캡처로 분류
+- [x] 변경 캡처의 mutable source binding 요구와 plain closure 불변 규칙 고정
+- [x] `func mut` effect와 변경 캡처 metadata를 semantic/typed IR에 보존
+- [x] closure environment field를 mutable call body lvalue로 연결
+- [x] Copy 원본 격리, owned slice 상태, nested callable cleanup native smoke 추가
+- [x] immutable source와 immutable callable access rejection 회귀 검증

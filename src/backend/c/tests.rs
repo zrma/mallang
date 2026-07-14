@@ -2215,3 +2215,28 @@ func main() {
     assert!(c.contains(".mlg_drop = mallang_closure_"));
     assert!(c.contains(".mlg_call = mallang_closure_"));
 }
+
+#[test]
+fn generates_c_for_mutable_closure_environments() {
+    let program = parse(
+        r#"
+func main() {
+    mut count := 0
+    mut next := func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+    print(next(1))
+    print(next(2))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("mlg_Function_mut_owned_int_ret_int"));
+    assert!(c.contains("(mlg_env->mlg_count) = mallang_checked_result_"));
+    assert!(c.contains("mlg_drop_Function_mut_owned_int_ret_int(&(mlg_next));"));
+}
