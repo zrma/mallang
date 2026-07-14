@@ -71,7 +71,7 @@ expect_release_command_failure \
   "$RELEASE_BIN" build examples/first.mlg --wat
 
 help_output="$("$RELEASE_BIN" --help)"
-if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <source-file>"* || "$help_output" != *"$RELEASE_BIN --version"* ]]; then
+if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <input>"* || "$help_output" != *"$RELEASE_BIN --version"* ]]; then
   echo "release binary help smoke failed" >&2
   echo "$help_output" >&2
   exit 1
