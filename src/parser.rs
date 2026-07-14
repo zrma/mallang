@@ -248,20 +248,23 @@ impl Parser {
 
     fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
         let (name, start) = self.expect_ident("expected enum variant name")?;
-        let (payload, end) = if self.eat(TokenTag::LeftParen).is_some() {
-            let payload = self.parse_type_ref()?;
+        let (payloads, end) = if self.eat(TokenTag::LeftParen).is_some() {
+            let mut payloads = vec![self.parse_type_ref()?];
+            while self.eat(TokenTag::Comma).is_some() {
+                payloads.push(self.parse_type_ref()?);
+            }
             let end = self.expect(
                 TokenTag::RightParen,
-                "expected `)` after enum variant payload",
+                "expected `)` after enum variant payloads",
             )?;
-            (Some(payload), end)
+            (payloads, end)
         } else {
-            (None, start)
+            (Vec::new(), start)
         };
 
         Ok(EnumVariant {
             name,
-            payload,
+            payloads,
             span: start.join(end),
         })
     }
@@ -1201,11 +1204,11 @@ impl Parser {
         if segments.len() > 1 {
             let variant = segments.pop().expect("qualified pattern has a variant");
             let type_name = segments.join(".");
-            let payload = self.parse_optional_pattern_payload()?;
+            let payloads = self.parse_optional_pattern_payloads()?;
             return Ok(MatchPattern::Variant {
                 type_name,
                 variant,
-                payload,
+                payloads,
             });
         }
 
@@ -1235,13 +1238,16 @@ impl Parser {
         }
     }
 
-    fn parse_optional_pattern_payload(&mut self) -> Result<Option<Box<MatchPattern>>, ParseError> {
+    fn parse_optional_pattern_payloads(&mut self) -> Result<Vec<MatchPattern>, ParseError> {
         if self.eat(TokenTag::LeftParen).is_none() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        let payload = self.parse_pattern_node(true)?;
-        self.expect(TokenTag::RightParen, "expected `)` after payload pattern")?;
-        Ok(Some(Box::new(payload)))
+        let mut payloads = vec![self.parse_pattern_node(true)?];
+        while self.eat(TokenTag::Comma).is_some() {
+            payloads.push(self.parse_pattern_node(true)?);
+        }
+        self.expect(TokenTag::RightParen, "expected `)` after payload patterns")?;
+        Ok(payloads)
     }
 
     fn parse_required_pattern_payload(
@@ -1773,14 +1779,8 @@ func main() {}
         assert_eq!(program.enums[0].name, "Maybe");
         assert_eq!(program.enums[0].type_params[0].name, "T");
         assert_eq!(program.enums[0].variants.len(), 2);
-        assert!(program.enums[0].variants[0].payload.is_none());
-        assert_eq!(
-            program.enums[0].variants[1]
-                .payload
-                .as_ref()
-                .map(|payload| payload.name.as_str()),
-            Some("T")
-        );
+        assert!(program.enums[0].variants[0].payloads.is_empty());
+        assert_eq!(program.enums[0].variants[1].payloads[0].name.as_str(), "T");
         assert_eq!(program.functions[0].type_params[0].name, "T");
         assert_eq!(
             program.functions[1].receiver.as_ref().unwrap().ty.name,
@@ -1879,23 +1879,65 @@ func main() {
         let MatchPattern::Variant {
             type_name,
             variant,
-            payload,
+            payloads,
         } = &arms[0].pattern
         else {
             panic!("expected qualified variant pattern");
         };
         assert_eq!(type_name, "Maybe");
         assert_eq!(variant, "Some");
-        assert!(matches!(payload.as_deref(), Some(MatchPattern::Ok(name)) if name == "item"));
+        assert!(matches!(payloads.as_slice(), [MatchPattern::Ok(name)] if name == "item"));
         assert!(matches!(
             &arms[1].pattern,
             MatchPattern::Variant {
                 type_name,
                 variant,
-                payload: None,
+                payloads,
             } if type_name == "Maybe" && variant == "None"
+                && payloads.is_empty()
         ));
         assert!(matches!(arms[2].pattern, MatchPattern::Wildcard));
+    }
+
+    #[test]
+    fn parses_multi_payload_enum_variants_and_patterns() {
+        let program = parse(
+            r#"
+type Pairing[T] enum {
+    Empty
+    Pair(T, Option[T])
+}
+
+func main() {
+    match value {
+        case Pairing.Pair(first, Some(second)) {
+            print(first)
+            print(second)
+        }
+        case Pairing.Empty {}
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let variants = &program.enums[0].variants;
+        assert!(variants[0].payloads.is_empty());
+        assert_eq!(variants[1].payloads.len(), 2);
+        assert_eq!(variants[1].payloads[0].name, "T");
+        assert_eq!(variants[1].payloads[1].name, "Option");
+
+        let StmtKind::Match { arms, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected match statement");
+        };
+        let MatchPattern::Variant { payloads, .. } = &arms[0].pattern else {
+            panic!("expected qualified variant pattern");
+        };
+        assert!(matches!(
+            payloads.as_slice(),
+            [MatchPattern::Binding(first), MatchPattern::Some(second)]
+                if first == "first" && second == "second"
+        ));
     }
 
     #[test]

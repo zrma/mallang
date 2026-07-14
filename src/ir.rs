@@ -439,16 +439,36 @@ impl<'a> Lowerer<'a> {
         let mut enums = Vec::new();
         for declaration in &self.checked.program.enums {
             let sig = self.enum_sig(&declaration.name, declaration.span)?;
+            let variants = sig
+                .variants
+                .iter()
+                .map(|variant| {
+                    let payload = match variant.payloads.as_slice() {
+                        [] => None,
+                        [payload] => Some(payload.clone()),
+                        _ => {
+                            return Err(IrError::new(
+                                format!(
+                                    "multi-payload enum variant `{}.{}` is not supported by typed IR yet",
+                                    sig.pattern_name, variant.name
+                                ),
+                                variant
+                                    .payload_spans
+                                    .get(1)
+                                    .copied()
+                                    .unwrap_or(declaration.span),
+                            ));
+                        }
+                    };
+                    Ok(IrEnumVariant {
+                        name: variant.name.clone(),
+                        payload,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             enums.push(IrEnum {
                 name: declaration.name.clone(),
-                variants: sig
-                    .variants
-                    .iter()
-                    .map(|variant| IrEnumVariant {
-                        name: variant.name.clone(),
-                        payload: variant.payload.clone(),
-                    })
-                    .collect(),
+                variants,
             });
         }
         Ok(enums)
@@ -1510,7 +1530,7 @@ impl<'a> Lowerer<'a> {
             MatchPattern::Variant {
                 type_name,
                 variant,
-                payload,
+                payloads,
             } => {
                 let Type::Enum(enum_name) = expected else {
                     return Err(IrError::new(
@@ -1535,12 +1555,24 @@ impl<'a> Lowerer<'a> {
                             span,
                         )
                     })?;
-                let (payload, binding) = match (&variant_sig.payload, payload.as_deref()) {
-                    (None, None) => (None, None),
-                    (Some(payload_ty), Some(pattern)) => {
+                let (payload, binding) = match (
+                    variant_sig.payloads.as_slice(),
+                    payloads.as_slice(),
+                ) {
+                    ([], []) => (None, None),
+                    ([payload_ty], [pattern]) => {
                         let (pattern, binding) =
                             self.lower_adt_match_pattern(pattern, payload_ty, span)?;
                         (Some(Box::new(pattern)), binding)
+                    }
+                    (payloads, _) if payloads.len() > 1 => {
+                        return Err(IrError::new(
+                            format!(
+                                "multi-payload enum variant `{}.{}` is not supported by typed IR yet",
+                                enum_sig.pattern_name, variant_sig.name
+                            ),
+                            span,
+                        ));
                     }
                     _ => {
                         return Err(IrError::new(
@@ -1806,15 +1838,24 @@ impl<'a> Lowerer<'a> {
                     span,
                 )
             })?;
-        let payload = match (&variant.payload, args) {
-            (None, None) => None,
-            (Some(payload_ty), Some(args)) => {
+        let payload = match (variant.payloads.as_slice(), args) {
+            ([], None) => None,
+            ([payload_ty], Some(args)) => {
                 let arg = expect_constructor_arg(variant_name, args, span)?;
                 Some(Box::new(self.lower_expr_with_expected(
                     &arg.expr,
                     locals,
                     Some(payload_ty),
                 )?))
+            }
+            (payloads, _) if payloads.len() > 1 => {
+                return Err(IrError::new(
+                    format!(
+                        "multi-payload enum variant `{}.{variant_name}` is not supported by typed IR yet",
+                        self.enum_sig(enum_name, span)?.pattern_name
+                    ),
+                    span,
+                ));
             }
             _ => {
                 return Err(IrError::new(
@@ -6431,5 +6472,26 @@ func main() {}
         };
         assert_eq!(arms[0].body.len(), 1);
         assert_drop_of(&arms[0].body[0], name);
+    }
+
+    #[test]
+    fn ir_rejects_multi_payload_enum_until_runtime_lowering_exists() {
+        let program = parse(
+            r#"
+type Pair enum { Pair(int, string) }
+
+func main() {
+    value := Pair.Pair(7, "mallang")
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let error = lower(&checked).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("multi-payload enum variant `Pair.Pair`"));
+        assert!(error.message.contains("not supported by typed IR yet"));
     }
 }

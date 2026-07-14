@@ -161,8 +161,8 @@ pub struct EnumSig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariantSig {
     pub name: String,
-    pub payload: Option<Type>,
-    pub payload_span: Option<Span>,
+    pub payloads: Vec<Type>,
+    pub payload_spans: Vec<Span>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -488,15 +488,19 @@ impl<'a> Checker<'a> {
                         variant.span,
                     ));
                 }
-                let payload = variant
-                    .payload
-                    .as_ref()
+                let payloads = variant
+                    .payloads
+                    .iter()
                     .map(|ty| self.type_from_ref(ty))
-                    .transpose()?;
+                    .collect::<Result<Vec<_>, _>>()?;
                 variants.push(EnumVariantSig {
                     name: variant.name.clone(),
-                    payload,
-                    payload_span: variant.payload.as_ref().map(|payload| payload.span),
+                    payloads,
+                    payload_spans: variant
+                        .payloads
+                        .iter()
+                        .map(|payload| payload.span)
+                        .collect(),
                 });
             }
             self.enums
@@ -520,10 +524,14 @@ impl<'a> Checker<'a> {
             let mut visiting = vec![declaration.name.clone()];
             let enum_sig = self.enum_sig(&declaration.name, declaration.span)?;
             for variant in &enum_sig.variants {
-                if let Some(payload) = &variant.payload {
+                for (index, payload) in variant.payloads.iter().enumerate() {
                     self.reject_recursive_type(
                         payload,
-                        variant.payload_span.unwrap_or(declaration.span),
+                        variant
+                            .payload_spans
+                            .get(index)
+                            .copied()
+                            .unwrap_or(declaration.span),
                         &mut visiting,
                     )?;
                 }
@@ -571,7 +579,7 @@ impl<'a> Checker<'a> {
                 visiting.push(name.clone());
                 let enum_sig = self.enum_sig(name, span)?;
                 for variant in &enum_sig.variants {
-                    if let Some(payload) = &variant.payload {
+                    for payload in &variant.payloads {
                         self.reject_recursive_type(payload, span, visiting)?;
                     }
                 }
@@ -1643,37 +1651,73 @@ impl<'a> Checker<'a> {
                 )
             })?;
 
-        match (&variant.payload, args) {
-            (None, None) => {}
-            (None, Some(_)) => {
+        match (variant.payloads.as_slice(), args) {
+            ([], None) => {}
+            ([], Some(_)) => {
                 return Err(SemanticError::new(
                     format!("zero-payload variant `{enum_name}.{variant_name}` is not callable"),
                     span,
                 ));
             }
-            (Some(_), None) => {
+            ([_], None) => {
                 return Err(SemanticError::new(
                     format!("variant `{enum_name}.{variant_name}` requires one payload argument"),
                     span,
                 ));
             }
-            (Some(payload_ty), Some(args)) => {
-                let arg = expect_constructor_arg(variant_name, args, span)?;
-                let actual = self.check_expr_with_expected(
-                    &arg.expr,
-                    locals,
-                    ValueUse::Owned,
-                    Some(payload_ty),
-                )?;
-                if &actual != payload_ty {
-                    return Err(SemanticError::new(
-                        format!(
-                            "payload type mismatch for `{enum_name}.{variant_name}`: expected `{}`, got `{}`",
-                            payload_ty.source_name(),
-                            actual.source_name()
-                        ),
-                        arg.span,
-                    ));
+            (payloads, None) => {
+                return Err(SemanticError::new(
+                    format!(
+                        "variant `{enum_name}.{variant_name}` requires {} payload arguments",
+                        payloads.len()
+                    ),
+                    span,
+                ));
+            }
+            (payloads, Some(args)) if payloads.len() != args.len() => {
+                return Err(SemanticError::new(
+                    format!(
+                        "variant `{enum_name}.{variant_name}` requires {} payload arguments, got {}",
+                        payloads.len(),
+                        args.len()
+                    ),
+                    span,
+                ));
+            }
+            (payloads, Some(args)) => {
+                for (index, (payload_ty, arg)) in payloads.iter().zip(args).enumerate() {
+                    if !matches!(arg.mode, ArgMode::Owned) {
+                        return Err(SemanticError::new(
+                            format!(
+                                "payload argument {} for `{enum_name}.{variant_name}` must be owned",
+                                index + 1
+                            ),
+                            arg.span,
+                        ));
+                    }
+                    let actual = self.check_expr_with_expected(
+                        &arg.expr,
+                        locals,
+                        ValueUse::Owned,
+                        Some(payload_ty),
+                    )?;
+                    if &actual != payload_ty {
+                        let message = if payloads.len() == 1 {
+                            format!(
+                                "payload type mismatch for `{enum_name}.{variant_name}`: expected `{}`, got `{}`",
+                                payload_ty.source_name(),
+                                actual.source_name()
+                            )
+                        } else {
+                            format!(
+                                "payload {} type mismatch for `{enum_name}.{variant_name}`: expected `{}`, got `{}`",
+                                index + 1,
+                                payload_ty.source_name(),
+                                actual.source_name()
+                            )
+                        };
+                        return Err(SemanticError::new(message, arg.span));
+                    }
                 }
             }
         }
@@ -2329,7 +2373,7 @@ impl<'a> Checker<'a> {
             seen.extend(coverage.leaves);
             prepared.push(PreparedMatchArm {
                 expr: &arm.expr,
-                binding: coverage.binding,
+                bindings: coverage.bindings,
             });
         }
 
@@ -2358,7 +2402,7 @@ impl<'a> Checker<'a> {
             seen.extend(coverage.leaves);
             prepared.push(PreparedMatchBlockArm {
                 block: &arm.block,
-                binding: coverage.binding,
+                bindings: coverage.bindings,
             });
         }
 
@@ -2374,20 +2418,20 @@ impl<'a> Checker<'a> {
     ) -> Result<PatternCoverage<'b>, SemanticError> {
         match pattern {
             MatchPattern::Wildcard => Ok(PatternCoverage {
-                binding: None,
+                bindings: Vec::new(),
                 leaves: self.coverage_leaves(expected, span)?,
             }),
             MatchPattern::Binding(name) => {
                 reject_builtin_value_name(name, span)?;
                 Ok(PatternCoverage {
-                    binding: Some((name.as_str(), expected.clone())),
+                    bindings: vec![(name.as_str(), expected.clone())],
                     leaves: self.coverage_leaves(expected, span)?,
                 })
             }
             MatchPattern::Variant {
                 type_name,
                 variant,
-                payload,
+                payloads,
             } => {
                 if !matches!(expected, Type::Enum(_)) {
                     return Err(SemanticError::new(
@@ -2402,9 +2446,7 @@ impl<'a> Checker<'a> {
                     expected,
                     Some(type_name),
                     variant,
-                    payload
-                        .as_deref()
-                        .map_or(AdtPatternPayload::Absent, AdtPatternPayload::Nested),
+                    payloads.iter().map(AdtPatternPayload::Nested).collect(),
                     span,
                 )
             }
@@ -2412,35 +2454,31 @@ impl<'a> Checker<'a> {
                 expected,
                 None,
                 "Some",
-                AdtPatternPayload::Binding(binding),
+                vec![AdtPatternPayload::Binding(binding)],
                 span,
             ),
-            MatchPattern::None => self.adt_variant_pattern_coverage(
-                expected,
-                None,
-                "None",
-                AdtPatternPayload::Absent,
-                span,
-            ),
+            MatchPattern::None => {
+                self.adt_variant_pattern_coverage(expected, None, "None", Vec::new(), span)
+            }
             MatchPattern::Ok(binding) => self.adt_variant_pattern_coverage(
                 expected,
                 None,
                 "Ok",
-                AdtPatternPayload::Binding(binding),
+                vec![AdtPatternPayload::Binding(binding)],
                 span,
             ),
             MatchPattern::Err(binding) => self.adt_variant_pattern_coverage(
                 expected,
                 None,
                 "Err",
-                AdtPatternPayload::Binding(binding),
+                vec![AdtPatternPayload::Binding(binding)],
                 span,
             ),
             MatchPattern::NestedBuiltin { variant, payload } => self.adt_variant_pattern_coverage(
                 expected,
                 None,
                 variant,
-                AdtPatternPayload::Nested(payload),
+                vec![AdtPatternPayload::Nested(payload)],
                 span,
             ),
         }
@@ -2451,7 +2489,7 @@ impl<'a> Checker<'a> {
         expected: &Type,
         source_type_name: Option<&str>,
         variant_name: &str,
-        payload_pattern: AdtPatternPayload<'b>,
+        payload_patterns: Vec<AdtPatternPayload<'b>>,
         span: Span,
     ) -> Result<PatternCoverage<'b>, SemanticError> {
         let Some(adt) = self.adt_sig_view(expected, span)? else {
@@ -2484,36 +2522,62 @@ impl<'a> Checker<'a> {
         };
         let prefix = format!("{}.{variant_name}", adt.pattern_name);
 
-        match (variant.payload, payload_pattern) {
-            (None, AdtPatternPayload::Absent) => Ok(PatternCoverage {
-                binding: None,
-                leaves: singleton_coverage(&prefix),
-            }),
-            (None, AdtPatternPayload::Binding(_) | AdtPatternPayload::Nested(_)) => {
-                Err(SemanticError::new(
-                    format!("zero-payload variant `{prefix}` cannot destructure a payload"),
-                    span,
-                ))
-            }
-            (Some(_), AdtPatternPayload::Absent) => Err(SemanticError::new(
+        if variant.payloads.is_empty() && !payload_patterns.is_empty() {
+            return Err(SemanticError::new(
+                format!("zero-payload variant `{prefix}` cannot destructure a payload"),
+                span,
+            ));
+        }
+        if variant.payloads.len() == 1 && payload_patterns.is_empty() {
+            return Err(SemanticError::new(
                 format!("variant `{prefix}` requires a payload pattern"),
                 span,
-            )),
-            (Some(payload_ty), AdtPatternPayload::Binding(binding)) => {
-                reject_builtin_value_name(binding, span)?;
-                Ok(PatternCoverage {
-                    binding: Some((binding, payload_ty.clone())),
-                    leaves: prefix_coverage(&prefix, self.coverage_leaves(payload_ty, span)?),
-                })
-            }
-            (Some(payload_ty), AdtPatternPayload::Nested(payload_pattern)) => {
-                let nested = self.pattern_coverage(payload_pattern, payload_ty, span)?;
-                Ok(PatternCoverage {
-                    binding: nested.binding,
-                    leaves: prefix_coverage(&prefix, nested.leaves),
-                })
-            }
+            ));
         }
+        if variant.payloads.len() != payload_patterns.len() {
+            return Err(SemanticError::new(
+                format!(
+                    "variant `{prefix}` requires {} payload patterns, got {}",
+                    variant.payloads.len(),
+                    payload_patterns.len()
+                ),
+                span,
+            ));
+        }
+
+        let mut bindings = Vec::new();
+        let mut seen_bindings = HashSet::new();
+        let mut payload_coverages = Vec::new();
+        for (payload_ty, payload_pattern) in variant.payloads.iter().copied().zip(payload_patterns)
+        {
+            let coverage = match payload_pattern {
+                AdtPatternPayload::Binding(binding) => {
+                    reject_builtin_value_name(binding, span)?;
+                    PatternCoverage {
+                        bindings: vec![(binding, payload_ty.clone())],
+                        leaves: self.coverage_leaves(payload_ty, span)?,
+                    }
+                }
+                AdtPatternPayload::Nested(payload_pattern) => {
+                    self.pattern_coverage(payload_pattern, payload_ty, span)?
+                }
+            };
+            for (binding, ty) in coverage.bindings {
+                if !seen_bindings.insert(binding) {
+                    return Err(SemanticError::new(
+                        format!("duplicate pattern binding `{binding}`"),
+                        span,
+                    ));
+                }
+                bindings.push((binding, ty));
+            }
+            payload_coverages.push(coverage.leaves);
+        }
+
+        Ok(PatternCoverage {
+            bindings,
+            leaves: variant_coverage(&prefix, payload_coverages),
+        })
     }
 
     fn coverage_leaves(&self, ty: &Type, span: Span) -> Result<CoverageSet, SemanticError> {
@@ -2523,11 +2587,12 @@ impl<'a> Checker<'a> {
         let mut leaves = CoverageSet::new();
         for variant in adt.variants {
             let prefix = format!("{}.{}", adt.pattern_name, variant.name);
-            let nested = match variant.payload {
-                Some(payload) => self.coverage_leaves(payload, span)?,
-                None => CoverageSet::from([CoveragePath::new()]),
-            };
-            leaves.extend(prefix_coverage(&prefix, nested));
+            let payloads = variant
+                .payloads
+                .iter()
+                .map(|payload| self.coverage_leaves(payload, span))
+                .collect::<Result<Vec<_>, _>>()?;
+            leaves.extend(variant_coverage(&prefix, payloads));
         }
         Ok(leaves)
     }
@@ -2543,11 +2608,11 @@ impl<'a> Checker<'a> {
                 variants: vec![
                     AdtVariantView {
                         name: "None",
-                        payload: None,
+                        payloads: Vec::new(),
                     },
                     AdtVariantView {
                         name: "Some",
-                        payload: Some(inner),
+                        payloads: vec![inner],
                     },
                 ],
             },
@@ -2556,11 +2621,11 @@ impl<'a> Checker<'a> {
                 variants: vec![
                     AdtVariantView {
                         name: "Ok",
-                        payload: Some(ok),
+                        payloads: vec![ok],
                     },
                     AdtVariantView {
                         name: "Err",
-                        payload: Some(err),
+                        payloads: vec![err],
                     },
                 ],
             },
@@ -2573,7 +2638,7 @@ impl<'a> Checker<'a> {
                         .iter()
                         .map(|variant| AdtVariantView {
                             name: &variant.name,
-                            payload: variant.payload.as_ref(),
+                            payloads: variant.payloads.iter().collect(),
                         })
                         .collect(),
                 }
@@ -2662,7 +2727,7 @@ impl<'a> Checker<'a> {
     ) -> Result<MatchArmCheck, SemanticError> {
         let mut arm_locals = locals.clone();
         let arm_scope_depth = nested_scope_depth(locals);
-        if let Some((name, ty)) = &arm.binding {
+        for (name, ty) in &arm.bindings {
             arm_locals.insert(
                 (*name).to_string(),
                 Local {
@@ -2691,7 +2756,7 @@ impl<'a> Checker<'a> {
         scope_depth: usize,
     ) -> Result<MatchBlockArmCheck, SemanticError> {
         let mut arm_locals = locals.clone();
-        if let Some((name, ty)) = &arm.binding {
+        for (name, ty) in &arm.bindings {
             arm_locals.insert(
                 (*name).to_string(),
                 Local {
@@ -3804,14 +3869,14 @@ struct IfBranchCheck {
 
 struct PreparedMatchArm<'a> {
     expr: &'a Expr,
-    binding: Option<(&'a str, Type)>,
+    bindings: Vec<(&'a str, Type)>,
 }
 
 type CoveragePath = Vec<String>;
 type CoverageSet = HashSet<CoveragePath>;
 
 struct PatternCoverage<'a> {
-    binding: Option<(&'a str, Type)>,
+    bindings: Vec<(&'a str, Type)>,
     leaves: CoverageSet,
 }
 
@@ -3822,11 +3887,10 @@ struct AdtSigView<'a> {
 
 struct AdtVariantView<'a> {
     name: &'a str,
-    payload: Option<&'a Type>,
+    payloads: Vec<&'a Type>,
 }
 
 enum AdtPatternPayload<'a> {
-    Absent,
     Binding(&'a str),
     Nested(&'a MatchPattern),
 }
@@ -3845,6 +3909,29 @@ fn prefix_coverage(prefix: &str, leaves: CoverageSet) -> CoverageSet {
         .collect()
 }
 
+fn variant_coverage(prefix: &str, payloads: Vec<CoverageSet>) -> CoverageSet {
+    match payloads.as_slice() {
+        [] => singleton_coverage(prefix),
+        [payload] => prefix_coverage(prefix, payload.clone()),
+        _ => {
+            let mut combined = CoverageSet::from([vec![prefix.to_string()]]);
+            for (index, payload) in payloads.into_iter().enumerate() {
+                let mut next = CoverageSet::new();
+                for path in &combined {
+                    for payload_path in &payload {
+                        let mut joined = path.clone();
+                        joined.push(format!("payload {}", index + 1));
+                        joined.extend(payload_path.iter().cloned());
+                        next.insert(joined);
+                    }
+                }
+                combined = next;
+            }
+            combined
+        }
+    }
+}
+
 struct MatchArmCheck {
     ty: Type,
     locals: HashMap<String, Local>,
@@ -3852,7 +3939,7 @@ struct MatchArmCheck {
 
 struct PreparedMatchBlockArm<'a> {
     block: &'a Block,
-    binding: Option<(&'a str, Type)>,
+    bindings: Vec<(&'a str, Type)>,
 }
 
 struct MatchBlockArmCheck {
@@ -4222,7 +4309,7 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(scrutinee, bound)?;
                 for arm in arms {
                     let mut arm_bound = bound.clone();
-                    if let Some(binding) = match_pattern_binding(&arm.pattern) {
+                    for binding in match_pattern_bindings(&arm.pattern) {
                         arm_bound.insert(binding.to_string());
                     }
                     self.visit_block(&arm.block, &mut arm_bound)?;
@@ -4254,7 +4341,7 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(scrutinee, bound)?;
                 for arm in arms {
                     let mut arm_bound = bound.clone();
-                    if let Some(binding) = match_pattern_binding(&arm.pattern) {
+                    for binding in match_pattern_bindings(&arm.pattern) {
                         arm_bound.insert(binding.to_string());
                     }
                     self.visit_expr(&arm.expr, &arm_bound)?;
@@ -4402,13 +4489,27 @@ impl ClosureCaptureCollector<'_> {
     }
 }
 
-fn match_pattern_binding(pattern: &MatchPattern) -> Option<&str> {
+fn match_pattern_bindings(pattern: &MatchPattern) -> Vec<&str> {
+    let mut bindings = Vec::new();
+    collect_match_pattern_bindings(pattern, &mut bindings);
+    bindings
+}
+
+fn collect_match_pattern_bindings<'a>(pattern: &'a MatchPattern, bindings: &mut Vec<&'a str>) {
     match pattern {
-        MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => Some(name),
-        MatchPattern::Binding(name) => Some(name),
-        MatchPattern::Variant { payload, .. } => payload.as_deref().and_then(match_pattern_binding),
-        MatchPattern::NestedBuiltin { payload, .. } => match_pattern_binding(payload),
-        MatchPattern::None | MatchPattern::Wildcard => None,
+        MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => {
+            bindings.push(name);
+        }
+        MatchPattern::Binding(name) => bindings.push(name),
+        MatchPattern::Variant { payloads, .. } => {
+            for payload in payloads {
+                collect_match_pattern_bindings(payload, bindings);
+            }
+        }
+        MatchPattern::NestedBuiltin { payload, .. } => {
+            collect_match_pattern_bindings(payload, bindings);
+        }
+        MatchPattern::None | MatchPattern::Wildcard => {}
     }
 }
 
@@ -7071,6 +7172,108 @@ func main() { consume(Maybe[int].Some(7)) }
             .message
             .contains("expected `Maybe[string]`, got `Maybe[int]`"));
         assert!(!specialization_mismatch.message.contains("__mlg_spec"));
+    }
+
+    #[test]
+    fn checks_multi_payload_enum_constructors_and_patterns() {
+        check_ok(
+            r#"
+type Pairing enum {
+    Empty
+    Pair(int, Option[string])
+}
+
+func code(value Pairing) int {
+    return match value {
+        case Pairing.Empty { 0 }
+        case Pairing.Pair(left, Some(right)) { left }
+        case Pairing.Pair(_, None) { 0 }
+    }
+}
+
+func main() {
+    value := Pairing.Pair(7, Some("mallang"))
+    print(code(value))
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_multi_payload_enum_constructor_arguments() {
+        let missing = check_error(
+            "type Pair enum { Pair(int, string) }\nfunc main() { value := Pair.Pair(1) }\n",
+        );
+        assert!(missing
+            .message
+            .contains("requires 2 payload arguments, got 1"));
+
+        let wrong_type = check_error(
+            "type Pair enum { Pair(int, string) }\nfunc main() { value := Pair.Pair(1, false) }\n",
+        );
+        assert!(wrong_type.message.contains("payload 2 type mismatch"));
+        assert!(wrong_type.message.contains("expected `string`, got `bool`"));
+
+        let borrowed = check_error(
+            r#"
+type Pair enum { Pair(string, string) }
+func main() {
+    left := "left"
+    value := Pair.Pair(con left, "right")
+}
+"#,
+        );
+        assert!(borrowed
+            .message
+            .contains("payload argument 1 for `Pair.Pair` must be owned"));
+    }
+
+    #[test]
+    fn rejects_invalid_multi_payload_enum_patterns() {
+        let wrong_arity = check_error(
+            r#"
+type Pair enum { Pair(int, string) }
+func code(value Pair) int {
+    return match value {
+        case Pair.Pair(left) { left }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(wrong_arity
+            .message
+            .contains("requires 2 payload patterns, got 1"));
+
+        let duplicate_binding = check_error(
+            r#"
+type Pair enum { Pair(int, Option[int]) }
+func code(value Pair) int {
+    return match value {
+        case Pair.Pair(item, Some(item)) { item }
+        case Pair.Pair(_, None) { 0 }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(duplicate_binding
+            .message
+            .contains("duplicate pattern binding `item`"));
+
+        let non_exhaustive = check_error(
+            r#"
+type Pair enum { Pair(int, Option[int]) }
+func code(value Pair) int {
+    return match value {
+        case Pair.Pair(_, Some(item)) { item }
+    }
+}
+func main() {}
+"#,
+        );
+        assert!(non_exhaustive.message.contains("match is not exhaustive"));
+        assert!(non_exhaustive.message.contains("payload 2 -> Option.None"));
     }
 
     #[test]

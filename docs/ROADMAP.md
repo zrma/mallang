@@ -1117,9 +1117,18 @@
 
 ## P138: Positional Multi-Payload Enum Surface
 
-- [ ] enum variant declaration을 zero/one/multiple payload list로 일반화
-- [ ] constructor argument arity와 payload type source diagnostic 추가
-- [ ] pattern payload list, wildcard와 nested pattern parse/semantic 연결
-- [ ] existing zero/single payload source compatibility regression 유지
-- [ ] specialized generic/imported enum metadata와 linker 경로 일반화
-- [ ] typed IR/backend 전 explicit invariant boundary 유지
+- [x] enum variant declaration을 zero/one/multiple payload list로 일반화
+- [x] constructor argument arity와 payload type source diagnostic 추가
+- [x] pattern payload list, wildcard와 nested pattern parse/semantic 연결
+- [x] existing zero/single payload source compatibility regression 유지
+- [x] specialized generic/imported enum metadata와 linker 경로 일반화
+- [x] typed IR/backend 전 explicit invariant boundary 유지
+
+## P139: Recursive Type Graph Validation
+
+- [ ] concrete struct/user enum payload와 nested wrapper를 포함한 type dependency graph 작성
+- [ ] recursive SCC가 user enum과 non-recursive base variant를 모두 가질 때만 허용
+- [ ] direct/mutual struct-only recursion과 base 없는 enum recursion source diagnostic 유지
+- [ ] built-in `Option`/`Result`만으로 생긴 cycle에는 implicit indirection을 부여하지 않음
+- [ ] generic specialization과 imported enum의 recursive graph를 concrete type 기준으로 검사
+- [ ] accepted recursive enum과 rejected cycle shape semantic regression 추가
