@@ -16,7 +16,7 @@ impl TypeCName for Type {
         match self {
             Self::Int => "int64_t".to_string(),
             Self::Bool => "bool".to_string(),
-            Self::String => "const char *".to_string(),
+            Self::String => "mlg_String".to_string(),
             Self::Unit => "void".to_string(),
             Self::Option(_) | Self::Result(_, _) => format!("mlg_{}", mangle_type(self)),
             Self::Array { .. } | Self::Slice(_) => format!("mlg_{}", mangle_type(self)),
@@ -30,12 +30,10 @@ impl TypeCName for Type {
         match mode {
             ParamMode::Owned => self.c_name(),
             ParamMode::Con => match self {
-                Self::String => "const char * const *".to_string(),
                 Self::Unit => "const void *".to_string(),
                 _ => format!("const {} *", self.c_name()),
             },
             ParamMode::Mut => match self {
-                Self::String => "const char **".to_string(),
                 Self::Unit => "void *".to_string(),
                 _ => format!("{} *", self.c_name()),
             },
@@ -107,12 +105,12 @@ pub(super) fn c_binary_expr(
     right: String,
 ) -> String {
     if matches!(operand_ty, Type::String) && matches!(op, BinaryOp::Equal | BinaryOp::NotEqual) {
-        let comparison = match op {
-            BinaryOp::Equal => "==",
-            BinaryOp::NotEqual => "!=",
+        let negation = match op {
+            BinaryOp::Equal => "",
+            BinaryOp::NotEqual => "!",
             _ => unreachable!("string comparison only supports equality operators"),
         };
-        return format!("(strcmp({left}, {right}) {comparison} 0)");
+        return format!("({negation}mallang_string_equal({left}, {right}))");
     }
 
     debug_assert!(!matches!(result_ty, Type::String));
@@ -216,18 +214,25 @@ pub(super) fn empty_slice_value_code(ty: &Type) -> Option<String> {
 }
 
 pub(super) fn c_string(value: &str) -> String {
-    let mut output = String::from("\"");
+    let mut literal = String::from("\"");
     for ch in value.chars() {
         match ch {
-            '\\' => output.push_str("\\\\"),
-            '"' => output.push_str("\\\""),
-            '\n' => output.push_str("\\n"),
-            '\t' => output.push_str("\\t"),
-            _ => output.push(ch),
+            '\\' => literal.push_str("\\\\"),
+            '"' => literal.push_str("\\\""),
+            '\n' => literal.push_str("\\n"),
+            '\r' => literal.push_str("\\r"),
+            '\t' => literal.push_str("\\t"),
+            _ => literal.push(ch),
         }
     }
-    output.push('"');
-    output
+    literal.push('"');
+    format!(
+        "(mlg_String){{ .{} = {literal}, .{} = {}, .{} = MLG_STRING_STATIC }}",
+        c_field("data"),
+        c_field("len"),
+        value.len(),
+        c_field("storage")
+    )
 }
 
 fn strip_enclosing_parens(code: &str) -> Option<&str> {

@@ -1,6 +1,6 @@
 # Spec: v0.5-ownership-runtime
 
-상태: approved
+상태: implementation in progress (P138-P143 complete)
 
 ## 목표
 
@@ -22,6 +22,8 @@
 - Full-expression temporary cleanup은 source syntax 없이 IR에서 구현한다.
 - `con`/`mut` borrow는 call-scoped로 유지하고 by-reference range를 추가하지 않는다.
 - Fatal runtime failure는 stderr diagnostic과 non-zero no-unwind termination을 사용한다.
+- Static literal과 future heap-backed text는 별도 source type 없이 같은 immutable,
+  move-only `string` value와 drop contract를 사용한다.
 
 ## Recursive Enum Surface
 
@@ -110,6 +112,27 @@ type Node struct {
 - Enum match consumes the whole enum, so binding multiple payloads does not create a partially
   initialized parent value.
 
+## String Runtime Contract
+
+- `string` is one immutable, move-only source type regardless of runtime storage.
+- Static literals and owned buffers carry the same byte-sequence and length value semantics.
+- Storage kind, data address and allocation strategy are compiler/runtime details and are not
+  source-observable.
+- Equality compares length and bytes; `print` writes the same bytes. Both operations borrow for
+  the operation and do not move the value.
+- Move transfers storage responsibility. Drop does not free static storage and frees owned
+  storage exactly once on normal control flow.
+- Parameter, return, local, struct field, enum payload and closure capture use the common cleanup
+  path.
+- Overwrite evaluates the replacement first and the target place once, then drops the old value
+  before storing the replacement.
+- Mutable borrowed parameters and mutable closure captures keep the replacement owned by their
+  external owner after the call.
+- Malformed storage/data, allocation-size overflow and allocation failure are fatal no-unwind
+  runtime errors.
+- String-producing standard-library operations are deferred to v0.6; v0.5 provides their runtime
+  ownership representation and internal allocation contract.
+
 ## Temporary and Cleanup Rules
 
 Every owned value on normal control flow is moved or dropped exactly once.
@@ -149,12 +172,12 @@ Every owned value on normal control flow is moved or dropped exactly once.
 ## 구현 순서
 
 1. Q1-Q7 추천안을 승인하고 이 문서를 확정한다. (완료)
-2. Enum declaration/constructor/pattern을 positional payload list로 일반화한다.
-3. Concrete recursive declaration graph, base-case validation과 diagnostics를 추가한다.
-4. Recursive multi-payload enum typed IR과 ownership transfer를 추가한다.
-5. Compiler-owned recursive enum C layout, constructor, match와 drop을 구현한다.
-6. Full-expression temporary와 loop source cleanup normalization을 완성한다.
-7. Static/owned string runtime representation과 drop contract를 통합한다.
+2. Enum declaration/constructor/pattern을 positional payload list로 일반화한다. (완료: P138)
+3. Concrete recursive declaration graph, base-case validation과 diagnostics를 추가한다. (완료: P139)
+4. Recursive multi-payload enum typed IR과 ownership transfer를 추가한다. (완료: P140)
+5. Compiler-owned recursive enum C layout, constructor, match와 drop을 구현한다. (완료: P141)
+6. Full-expression temporary와 loop source cleanup normalization을 완성한다. (완료: P142)
+7. Static/owned string runtime representation과 drop contract를 통합한다. (완료: P143)
 8. Borrow/range exclusion regression과 normative memory spec을 동기화한다.
 9. Allocation accounting, failure injection, strict C와 sanitizer acceptance를 연결한다.
 

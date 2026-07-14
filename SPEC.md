@@ -277,12 +277,13 @@ Indexing and length rules:
 - Non-literal indexes are checked by generated native code before element access.
   An out-of-bounds runtime index terminates the program with a Mallang runtime
   error instead of performing unchecked C memory access.
-- In this slice, `len(slice)` and `slice[i]` require a local-rooted slice
-  source, such as `values`, `bag.values`, or `matrix[i]`. Inline cleanup
-  temporaries such as `len([]int{1})` are deferred until borrowed temporary
-  cleanup is implemented.
-- Slice element borrow arguments also require a local-rooted slice source in
-  v0, such as `con values[i]`, `mut bag.values[i]`, or `con users[i].tags[j]`.
+- `len(slice)` and `slice[i]` may read either a local-rooted slice source, such
+  as `values`, `bag.values`, or `matrix[i]`, or a computed owned slice. A
+  computed cleanup value is held in a compiler-owned full-expression temporary
+  through the final length or element read and then dropped.
+- Slice element borrow arguments accept local-rooted sources such as
+  `con values[i]`, `mut bag.values[i]`, or `con users[i].tags[j]`. A computed
+  owned source is held in a full-expression temporary through the call.
 - Indexed field assignment such as `users[i].name = expr` is valid for
   local-rooted fixed-size arrays and direct local slices when the root binding is
   mutable. Slice indexed field assignment uses the same negative literal and
@@ -340,8 +341,8 @@ Indexing and length rules:
   compiler-owned allocation and cleanup.
 - Copying a slice header is not a language operation. Assigning, passing, or
   returning an owned slice moves it, following the existing non-copy value rules.
-- Slice fields in structs are supported. Struct drop helpers recursively clean up
-  fields that own cleanup resources.
+- Fields with owned cleanup resources are supported in structs. Struct drop helpers
+  recursively clean up owned strings, slices, ADTs, closures, and nested aggregates.
 
 Implemented slice cleanup model:
 
@@ -352,6 +353,61 @@ Implemented slice cleanup model:
   `if`/`match` outer cleanup root branch moves, expression branch cleanup,
   `for`/`range` body-local cleanup roots, and `for` init cleanup roots via a
   loop-exit cleanup trailer.
+
+Full-expression temporary cleanup:
+
+- A cleanup-valued computed expression used only for a read is materialized as
+  a compiler-owned typed IR temporary. Direct local-rooted places remain
+  borrowed and are not moved.
+- When a read projects a field or indexed element from a computed owner, the
+  compiler keeps the owning root temporary alive through the read and drops the
+  root, not a copied projection.
+- Call argument temporaries live through the call. This includes computed
+  values passed with `con` or `mut`; the caller drops the temporary after the
+  callee returns.
+- Discarded cleanup-valued expression results are dropped at the end of the
+  expression statement.
+- `if` and `for` condition temporaries are dropped after each condition
+  evaluation. `&&` and `||` create and clean up their right-hand temporaries
+  only when short-circuit evaluation selects the right-hand side.
+- Index and `len` source temporaries live through the final read. Index bounds
+  guards run before element access, and normal-flow cleanup follows the access.
+- A computed range source is owned by the loop and remains alive for every
+  iteration. It is dropped once on normal exit, `break`, or an enclosing
+  function return; `continue` keeps it alive for the next iteration.
+- Return values are evaluated before local cleanup and then transferred to the
+  caller. Full-expression temporaries not transferred by the return are
+  cleaned up before returning.
+- Mallang runtime guards use fatal no-unwind termination. A guard failure may
+  terminate before pending cleanup runs; process termination, rather than stack
+  unwinding, is the v0 runtime failure contract.
+
+String runtime contract:
+
+- `string` is one immutable, move-only source type. A static literal and a
+  heap-owned buffer have the same value semantics and use the same parameter,
+  return, local, field, enum payload, and closure capture rules.
+- A string value contains a byte sequence and length. Equality compares length
+  and bytes, and `print` writes exactly that byte sequence. Neither operation
+  moves the string.
+- Static and owned storage are compiler/runtime details. Source code cannot
+  inspect a storage kind or address, and no separate source type or ownership
+  syntax is introduced for heap-backed strings.
+- Moving a string transfers its storage responsibility. Dropping a static
+  string performs no deallocation; dropping an owned string releases its buffer
+  exactly once on normal control flow.
+- Aggregate drop helpers recursively apply this contract to string fields,
+  variant payloads, and closure captures.
+- Replacing a string evaluates the replacement first, evaluates the destination
+  place once, drops the old value, and then stores the replacement. A `mut`
+  parameter or mutable closure capture retains the replacement for its external
+  owner instead of dropping it at the end of the call.
+- Malformed storage, invalid data, allocation-size overflow, and allocation
+  failure are fatal no-unwind runtime errors. Normal execution remains subject
+  to exactly-once cleanup.
+- v0.5 establishes the representation and cleanup contract. Source-level
+  operations that allocate new string buffers are deferred to the v0.6 standard
+  library surface.
 
 Deferred slice and borrow rules:
 
@@ -401,8 +457,9 @@ Rules:
 
 - Struct values are move-only in v0.
 - Struct values are cleanup-capable roots. Structs without cleanup fields lower
-  to no-op drop helpers; structs with owned slice fields recursively drop those
-  fields at scope exit, reassignment, or owned parameter cleanup.
+  to no-op drop helpers; structs with owned string, slice, ADT, closure, or nested
+  cleanup fields recursively drop those fields at scope exit, reassignment, or
+  owned parameter cleanup.
 - Literal fields must name every declared field exactly once.
 - Field access reads a field by name.
 - Field assignment updates a field path rooted in a mutable local struct binding.
@@ -450,8 +507,9 @@ Rules:
 - A method call implicitly passes the receiver according to the method
   declaration.
 - `con` and `mut` method receivers may be direct local variables, local-rooted
-  field paths, or fixed-size array element paths such as `users[i].age()` and
-  `counters[i].inc()`.
+  field paths, fixed-size array element paths such as `users[i].age()` and
+  `counters[i].inc()`, or computed receiver values held in a call-scoped
+  full-expression temporary.
 - Returning or storing borrowed values is still unsupported, so methods with
   `con` receivers cannot return non-copy fields such as `string` by value.
 - v0 does not include method values, interfaces, dynamic dispatch, or receiver
@@ -500,7 +558,9 @@ Rules:
 - Native code passes `con T` and `mut T` as hidden references. Inside the callee,
   reads use normal value syntax, and assignment through a `mut T` parameter
   updates the caller's local variable or field path.
-- Borrow arguments may be local variables or field paths rooted in local variables.
+- Borrow arguments may be local-rooted places or computed values. Computed
+  cleanup values are owned by a caller-side full-expression temporary for the
+  duration of the call.
 - Non-copy borrowed parameters cannot be moved into owned locals, owned
   arguments, or return values. Copy borrowed parameters such as `int` and `bool`
   may still be copied out as values.
@@ -521,10 +581,9 @@ Rules:
 - The argument must have a printable type. v0 printable types are `int`,
   `bool`, `string`, built-in ADTs with printable payloads, and structs whose
   fields are printable.
-- General expression statements cannot discard owned cleanup values in v0. A
-  cleanup value such as `[]T` must be bound, assigned, returned, or otherwise
-  consumed by a checked value path until temporary-result cleanup lowering is
-  implemented.
+- General expression statements may discard an owned cleanup value. The result
+  is held in a compiler-owned full-expression temporary and dropped once at the
+  end of the statement.
 
 ## Expressions
 
@@ -618,9 +677,9 @@ for i := range values {
 Range rules:
 
 - The range source must be a fixed-size array or owned slice.
-- Range over slices requires a local-rooted slice source in this slice.
-  Inline cleanup temporaries such as `range []int{1, 2}` are deferred until
-  borrowed temporary cleanup is implemented.
+- Range over slices accepts local-rooted and computed owned sources. An inline
+  source such as `range []int{1, 2}` is held in a compiler-owned loop temporary
+  and dropped on normal exit, `break`, or enclosing function return.
 - The two-variable range form introduces immutable `int` index and immutable
   element value bindings scoped to the loop body.
 - The one-variable range form introduces only the immutable `int` index binding.

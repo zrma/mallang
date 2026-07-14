@@ -27,6 +27,9 @@ This repository is the Mallang language PoC workspace.
   and `Err` are reserved in user value bindings.
 - Top-level `type` and non-method `func` declarations cannot use the same name.
 - Ownership by default for non-copy values.
+- `string` is one immutable move-only value type across static literals and
+  future heap-owned buffers. Storage kind stays internal; equality, printing,
+  moves, and recursive cleanup share one runtime contract.
 - Explicit `con` and `mut` borrow calls.
 - Borrow mode syntax is canonical in v0; there are no legacy aliases such as
   `in`.
@@ -73,6 +76,10 @@ This repository is the Mallang language PoC workspace.
   a slice field source and leave that source field empty. Ordinary owned value
   positions can also take a slice field, such as `taken := bag.values` or
   `consume(bag.values)`, with the source field reset to empty.
+- Cleanup-valued computed expressions use compiler-owned full-expression
+  temporaries. Inline slice `len`/index/range sources, discarded results, and
+  computed `con`/`mut` call arguments clean up after their final use while
+  preserving logical short-circuit evaluation.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -129,6 +136,7 @@ cargo run --bin mlg -- build examples/for-clause-prelude.mlg -o target/mallang/f
 target/mallang/for-clause-prelude
 cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/string-equality
 target/mallang/string-equality
+cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
 target/mallang/logical-operators
 cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
@@ -286,6 +294,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/non-copy-array-assignment.mlg`: native smoke for replacing non-copy fixed array elements.
 - `examples/for-clause-prelude.mlg`: native smoke for `for` clause condition/post preludes.
 - `examples/string-equality.mlg`: native smoke for `string` equality without moving values.
+- `examples/string-runtime.mlg`: native and sanitizer smoke for static/owned
+  string value semantics, aggregate cleanup, mutable overwrite, and closure capture.
 - `examples/logical-operators.mlg`: native smoke for `bool` operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
@@ -293,6 +303,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/match-temp.mlg`: native smoke for expression scrutinees in `match`.
 - `examples/if-match-expression.mlg`: native smoke for `if` expression branches that need C preludes.
 - `examples/match-arm-prelude.mlg`: native smoke for `match` expression arms that need C preludes.
+- `examples/full-expression-cleanup.mlg`: native and sanitizer smoke for temporary cleanup across calls, conditions, indexing, range loops, early return, and short-circuit evaluation.
 - `examples/slice-field-read.mlg`: native smoke for local-rooted slice field len/index/range/borrow reads.
 - `examples/slice-field-assignment.mlg`: native smoke for local-rooted slice field element assignment.
 - `examples/slice-field-append.mlg`: native smoke for direct slice field append reassignment.
@@ -330,6 +341,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.
 - `src/backend/c/names.rs`: C backend identifier, type-name, and operator helpers.
+- `src/backend/c/runtime.rs`: conditionally emitted string runtime layout,
+  validation, owned allocation, equality, and print helpers.
 - `src/backend/c/expressions.rs`: C backend expression, literal, call,
   borrow-lvalue, and expression-match emission.
 - `src/backend/c/statements.rs`: C backend statement, loop, match, and print emission.

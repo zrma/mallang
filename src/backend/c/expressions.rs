@@ -8,18 +8,18 @@ use crate::{
 
 use super::{
     names::{
-        c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
+        c_arg_code, c_assignment_target, c_binary_expr, c_condition, c_field, c_ident, c_string,
         callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
-        empty_slice_value_code, variant_payload_member, COperator, TypeCName,
+        drop_fn_name, empty_slice_value_code, variant_payload_member, COperator, TypeCName,
     },
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
         checked_binary_right_temp_name, checked_int_binary_builtin,
         checked_unary_operand_temp_name, checked_unary_result_temp_name, closure_env_temp_name,
-        dividend_temp_name, divisor_temp_name, if_expr_temp_block, if_expr_temp_name,
-        index_source_temp_name, index_value_temp_name, match_expr_temp_name,
-        match_scrutinee_temp_name, push_indented_lines, runtime_error_call, runtime_guard,
-        slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
+        dividend_temp_name, divisor_temp_name, if_condition_temp_name, if_expr_temp_block,
+        if_expr_temp_name, index_source_temp_name, index_value_temp_name, logical_temp_name,
+        match_expr_temp_name, match_scrutinee_temp_name, push_indented_lines, runtime_error_call,
+        runtime_guard, slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
         variant_constructor_temp_name, variant_payload_temp_name,
     },
     AppendSourceExpr, CExpr, CGenerator, CompileError,
@@ -40,6 +40,28 @@ impl<'a> CGenerator<'a> {
             IrExprKind::Var(name) => Ok(CExpr::simple(
                 env.get(name).cloned().unwrap_or_else(|| c_ident(name)),
             )),
+            IrExprKind::FullExprTemporary { name, expr: value } => {
+                if value.ty != expr.ty {
+                    return Err(CompileError::new(
+                        "IR invariant violation: full-expression temporary type mismatch",
+                    ));
+                }
+                let emitted = self.emit_stmt_expr_with_env(value, env)?;
+                let name = c_ident(name);
+                let mut prelude = emitted.prelude;
+                prelude.push(format!("{} {name} = {};", expr.ty.c_name(), emitted.code));
+                let mut postlude = if expr.ty.needs_cleanup() {
+                    vec![format!("{}(&({name}));", drop_fn_name(&expr.ty))]
+                } else {
+                    Vec::new()
+                };
+                postlude.extend(emitted.postlude);
+                Ok(CExpr {
+                    prelude,
+                    code: name,
+                    postlude,
+                })
+            }
             IrExprKind::FunctionValue { function } => {
                 self.emit_function_value_stmt_expr(expr, function)
             }
@@ -53,22 +75,34 @@ impl<'a> CGenerator<'a> {
                 else_branch,
                 else_cleanup,
             } => {
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(condition, env)?;
+                let CExpr {
+                    mut prelude,
+                    mut code,
+                    postlude: condition_postlude,
+                } = self.emit_stmt_expr_with_env(condition, env)?;
                 let then_expr = self.emit_stmt_expr_with_env(then_branch, env)?;
                 let else_expr = self.emit_stmt_expr_with_env(else_branch, env)?;
+                if !condition_postlude.is_empty() {
+                    let condition_temp = if_condition_temp_name(expr);
+                    prelude.push(format!("bool {condition_temp} = {};", code));
+                    prelude.extend(condition_postlude);
+                    code = condition_temp;
+                }
                 if then_expr.prelude.is_empty()
                     && else_expr.prelude.is_empty()
+                    && then_expr.postlude.is_empty()
+                    && else_expr.postlude.is_empty()
                     && then_cleanup.is_empty()
                     && else_cleanup.is_empty()
                 {
                     return Ok(CExpr {
                         prelude,
                         code: format!("(({}) ? ({}) : ({}))", code, then_expr.code, else_expr.code),
+                        postlude: Vec::new(),
                     });
                 }
 
                 let temp = if_expr_temp_name(expr);
-                let mut prelude = prelude;
                 let then_cleanup = self.emit_cleanup_stmts(then_cleanup, env)?;
                 let else_cleanup = self.emit_cleanup_stmts(else_cleanup, env)?;
                 prelude.push(format!("{} {temp};", expr.ty.c_name()));
@@ -83,6 +117,7 @@ impl<'a> CGenerator<'a> {
                 Ok(CExpr {
                     prelude,
                     code: temp,
+                    postlude: Vec::new(),
                 })
             }
             IrExprKind::VariantConstructor {
@@ -100,10 +135,15 @@ impl<'a> CGenerator<'a> {
                 self.emit_array_literal_stmt_expr(expr, elements, env)
             }
             IrExprKind::FieldAccess { base, field } => {
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(base, env)?;
+                let CExpr {
+                    prelude,
+                    code,
+                    postlude,
+                } = self.emit_stmt_expr_with_env(base, env)?;
                 Ok(CExpr {
                     prelude,
                     code: format!("({}).{}", code, c_field(field)),
+                    postlude,
                 })
             }
             IrExprKind::SliceFieldTake { source } => {
@@ -123,14 +163,17 @@ impl<'a> CGenerator<'a> {
 
                 let mut prelude = Vec::new();
                 let mut arg_codes = Vec::new();
+                let mut postlude = Vec::new();
                 for arg in args {
                     let emitted = self.emit_call_arg_stmt_expr(arg, env)?;
                     prelude.extend(emitted.prelude);
                     arg_codes.push(emitted.code);
+                    prepend_postlude(&mut postlude, emitted.postlude);
                 }
                 Ok(CExpr {
                     prelude,
                     code: format!("{}({})", c_ident(callee), arg_codes.join(", ")),
+                    postlude,
                 })
             }
             IrExprKind::IndirectCall { callee, args } => {
@@ -197,6 +240,7 @@ impl<'a> CGenerator<'a> {
         let mut prelude = vec![format!(
             "{env_type} *{env_temp} = malloc(sizeof({env_type}));"
         )];
+        let mut postlude = Vec::new();
         prelude.push(runtime_guard(
             format!("{env_temp} == NULL"),
             "closure environment allocation failed",
@@ -214,6 +258,7 @@ impl<'a> CGenerator<'a> {
                 c_field(&capture.name),
                 emitted.code
             ));
+            prepend_postlude(&mut postlude, emitted.postlude);
         }
 
         Ok(CExpr {
@@ -224,6 +269,7 @@ impl<'a> CGenerator<'a> {
                 closure_drop_name(closure_name),
                 closure_call_name(closure_name)
             ),
+            postlude,
         })
     }
 
@@ -249,6 +295,7 @@ impl<'a> CGenerator<'a> {
         let callee = self.emit_stmt_expr_with_env(callee, env)?;
         let temp = callable_temp_name(expr);
         let mut prelude = callee.prelude;
+        let mut postlude = callee.postlude;
         prelude.push(format!("{callable_type} {temp} = {};", callee.code));
         let mut arg_codes = Vec::new();
         for (arg, param) in args.iter().zip(function.params.iter()) {
@@ -266,6 +313,7 @@ impl<'a> CGenerator<'a> {
             let emitted = self.emit_call_arg_stmt_expr(arg, env)?;
             prelude.extend(emitted.prelude);
             arg_codes.push(emitted.code);
+            prepend_postlude(&mut postlude, emitted.postlude);
         }
 
         let mut call_args = vec![format!("{temp}.mlg_env")];
@@ -273,6 +321,7 @@ impl<'a> CGenerator<'a> {
         Ok(CExpr {
             prelude,
             code: format!("{temp}.mlg_call({})", call_args.join(", ")),
+            postlude,
         })
     }
 
@@ -283,7 +332,11 @@ impl<'a> CGenerator<'a> {
         inner: &IrExpr,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(inner, env)?;
+        let CExpr {
+            mut prelude,
+            code,
+            postlude,
+        } = self.emit_stmt_expr_with_env(inner, env)?;
 
         if op == UnaryOp::Negate && expr.ty == Type::Int {
             let operand_temp = checked_unary_operand_temp_name(expr);
@@ -297,12 +350,14 @@ impl<'a> CGenerator<'a> {
             return Ok(CExpr {
                 prelude,
                 code: result_temp,
+                postlude,
             });
         }
 
         Ok(CExpr {
             prelude,
             code: format!("({}{})", op.c_operator(), code),
+            postlude,
         })
     }
 
@@ -317,15 +372,71 @@ impl<'a> CGenerator<'a> {
     ) -> Result<CExpr, CompileError> {
         let left = self.emit_stmt_expr_with_env(left, env)?;
         let right = self.emit_stmt_expr_with_env(right, env)?;
+        let guarded_integer_op = checked_int_binary_builtin(op)
+            .filter(|_| operand_ty == &Type::Int)
+            .is_some()
+            || (matches!(op, BinaryOp::Divide | BinaryOp::Remainder) && operand_ty == &Type::Int);
+        if !guarded_integer_op
+            && left.prelude.is_empty()
+            && left.postlude.is_empty()
+            && right.prelude.is_empty()
+            && right.postlude.is_empty()
+        {
+            return Ok(CExpr {
+                prelude: Vec::new(),
+                code: c_binary_expr(op, &expr.ty, operand_ty, left.code, right.code),
+                postlude: Vec::new(),
+            });
+        }
+        let left_temp = checked_binary_left_temp_name(expr);
+        let right_temp = checked_binary_right_temp_name(expr);
         let mut prelude = left.prelude;
+        prelude.push(format!(
+            "{} {left_temp} = {};",
+            operand_ty.c_name(),
+            left.code
+        ));
+        prelude.extend(left.postlude);
+
+        if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+            let result_temp = logical_temp_name(expr);
+            prelude.push(format!("bool {result_temp} = {};", c_condition(&left_temp)));
+            let branch_condition = if op == BinaryOp::LogicalAnd {
+                result_temp.clone()
+            } else {
+                format!("!{result_temp}")
+            };
+            let mut block = format!("if ({branch_condition}) {{\n");
+            for line in right.prelude {
+                push_indented_lines(&mut block, &line, 1);
+            }
+            push_indented_lines(
+                &mut block,
+                &format!("{result_temp} = {};", c_condition(&right.code)),
+                1,
+            );
+            for line in right.postlude {
+                push_indented_lines(&mut block, &line, 1);
+            }
+            block.push('}');
+            prelude.push(block);
+            return Ok(CExpr {
+                prelude,
+                code: result_temp,
+                postlude: Vec::new(),
+            });
+        }
+
         prelude.extend(right.prelude);
+        prelude.push(format!(
+            "{} {right_temp} = {};",
+            operand_ty.c_name(),
+            right.code
+        ));
+        prelude.extend(right.postlude);
 
         if let Some(builtin) = checked_int_binary_builtin(op).filter(|_| operand_ty == &Type::Int) {
-            let left_temp = checked_binary_left_temp_name(expr);
-            let right_temp = checked_binary_right_temp_name(expr);
             let result_temp = checked_binary_result_temp_name(expr);
-            prelude.push(format!("int64_t {left_temp} = {};", left.code));
-            prelude.push(format!("int64_t {right_temp} = {};", right.code));
             prelude.push(format!("int64_t {result_temp};"));
             prelude.push(runtime_guard(
                 format!("{builtin}({left_temp}, {right_temp}, &{result_temp})"),
@@ -334,14 +445,15 @@ impl<'a> CGenerator<'a> {
             return Ok(CExpr {
                 prelude,
                 code: result_temp,
+                postlude: Vec::new(),
             });
         }
 
         if matches!(op, BinaryOp::Divide | BinaryOp::Remainder) && operand_ty == &Type::Int {
             let dividend_temp = dividend_temp_name(expr);
             let divisor_temp = divisor_temp_name(expr);
-            prelude.push(format!("int64_t {dividend_temp} = {};", left.code));
-            prelude.push(format!("int64_t {divisor_temp} = {};", right.code));
+            prelude.push(format!("int64_t {dividend_temp} = {left_temp};"));
+            prelude.push(format!("int64_t {divisor_temp} = {right_temp};"));
             prelude.push(runtime_guard(
                 format!("{divisor_temp} == 0"),
                 "division by zero",
@@ -353,12 +465,14 @@ impl<'a> CGenerator<'a> {
             return Ok(CExpr {
                 prelude,
                 code: c_binary_expr(op, &expr.ty, operand_ty, dividend_temp, divisor_temp),
+                postlude: Vec::new(),
             });
         }
 
         Ok(CExpr {
             prelude,
-            code: c_binary_expr(op, &expr.ty, operand_ty, left.code, right.code),
+            code: c_binary_expr(op, &expr.ty, operand_ty, left_temp, right_temp),
+            postlude: Vec::new(),
         })
     }
 
@@ -385,10 +499,13 @@ impl<'a> CGenerator<'a> {
                     format!("{index_temp} < 0 || {index_temp} >= {len}"),
                     "array index out of bounds",
                 ));
+                let mut postlude = index.postlude;
+                postlude.extend(base.postlude);
 
                 Ok(CExpr {
                     prelude,
                     code: format!("({source_temp}).mlg_data[{index_temp}]"),
+                    postlude,
                 })
             }
             Type::Slice(_) => {
@@ -409,10 +526,13 @@ impl<'a> CGenerator<'a> {
                     ),
                     "slice index out of bounds",
                 ));
+                let mut postlude = index.postlude;
+                postlude.extend(base.postlude);
 
                 Ok(CExpr {
                     prelude,
                     code: format!("({source_temp}).{}[{index_temp}]", c_field("data")),
+                    postlude,
                 })
             }
             _ => Err(CompileError::new(
@@ -428,19 +548,29 @@ impl<'a> CGenerator<'a> {
     ) -> Result<CExpr, CompileError> {
         match &array.ty {
             Type::Array { len, .. } => {
-                let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
+                let CExpr {
+                    mut prelude,
+                    code,
+                    postlude,
+                } = self.emit_stmt_expr_with_env(array, env)?;
                 prelude.push(format!("(void)({code});"));
 
                 Ok(CExpr {
                     prelude,
                     code: len.to_string(),
+                    postlude,
                 })
             }
             Type::Slice(_) => {
-                let CExpr { prelude, code } = self.emit_stmt_expr_with_env(array, env)?;
+                let CExpr {
+                    prelude,
+                    code,
+                    postlude,
+                } = self.emit_stmt_expr_with_env(array, env)?;
                 Ok(CExpr {
                     prelude,
                     code: format!("({code}).{}", c_field("len")),
+                    postlude,
                 })
             }
             _ => Err(CompileError::new(
@@ -461,7 +591,11 @@ impl<'a> CGenerator<'a> {
             ));
         }
 
-        let CExpr { mut prelude, code } = self.emit_borrow_lvalue_expr(source, env)?;
+        let CExpr {
+            mut prelude,
+            code,
+            postlude,
+        } = self.emit_borrow_lvalue_expr(source, env)?;
         let temp = slice_field_take_temp_name(expr);
         let empty = empty_slice_value_code(&expr.ty).ok_or_else(|| {
             CompileError::new("IR invariant violation: slice field take source must be a slice")
@@ -472,6 +606,7 @@ impl<'a> CGenerator<'a> {
         Ok(CExpr {
             prelude,
             code: temp,
+            postlude,
         })
     }
 
@@ -525,10 +660,13 @@ impl<'a> CGenerator<'a> {
             item.code
         ));
         prelude.push(format!("{temp}.{len_field} = {new_len};"));
+        let mut postlude = item.postlude;
+        postlude.extend(slice.postlude);
 
         Ok(CExpr {
             prelude,
             code: temp,
+            postlude,
         })
     }
 
@@ -538,7 +676,11 @@ impl<'a> CGenerator<'a> {
         env: &HashMap<String, String>,
     ) -> Result<AppendSourceExpr, CompileError> {
         if matches!(slice.kind, IrExprKind::FieldAccess { .. }) {
-            let CExpr { prelude, code } = self.emit_borrow_lvalue_expr(slice, env)?;
+            let CExpr {
+                prelude,
+                code,
+                postlude,
+            } = self.emit_borrow_lvalue_expr(slice, env)?;
             let clear_source = format!(
                 "{code} = {};",
                 empty_slice_value_code(&slice.ty).ok_or_else(|| {
@@ -549,14 +691,20 @@ impl<'a> CGenerator<'a> {
                 prelude,
                 code,
                 clear_source: Some(clear_source),
+                postlude,
             });
         }
 
-        let CExpr { prelude, code } = self.emit_stmt_expr_with_env(slice, env)?;
+        let CExpr {
+            prelude,
+            code,
+            postlude,
+        } = self.emit_stmt_expr_with_env(slice, env)?;
         Ok(AppendSourceExpr {
             prelude,
             code,
             clear_source: None,
+            postlude,
         })
     }
 
@@ -565,13 +713,23 @@ impl<'a> CGenerator<'a> {
         arg: &IrArg,
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
-        let CExpr { prelude, code } = match arg.mode {
+        let CExpr {
+            prelude,
+            code,
+            postlude,
+        } = match arg.mode {
             ArgMode::Owned => self.emit_stmt_expr_with_env(&arg.expr, env)?,
+            ArgMode::Con | ArgMode::Mut
+                if matches!(arg.expr.kind, IrExprKind::FullExprTemporary { .. }) =>
+            {
+                self.emit_stmt_expr_with_env(&arg.expr, env)?
+            }
             ArgMode::Con | ArgMode::Mut => self.emit_borrow_lvalue_expr(&arg.expr, env)?,
         };
         Ok(CExpr {
             prelude,
             code: c_arg_code(arg.mode, code),
+            postlude,
         })
     }
 
@@ -581,12 +739,18 @@ impl<'a> CGenerator<'a> {
         env: &HashMap<String, String>,
     ) -> Result<CExpr, CompileError> {
         match &expr.kind {
+            IrExprKind::FullExprTemporary { .. } => self.emit_stmt_expr_with_env(expr, env),
             IrExprKind::Var(name) => Ok(CExpr::simple(c_assignment_target(name, env))),
             IrExprKind::FieldAccess { base, field } => {
-                let CExpr { prelude, code } = self.emit_borrow_lvalue_expr(base, env)?;
+                let CExpr {
+                    prelude,
+                    code,
+                    postlude,
+                } = self.emit_borrow_lvalue_expr(base, env)?;
                 Ok(CExpr {
                     prelude,
                     code: format!("({}).{}", code, c_field(field)),
+                    postlude,
                 })
             }
             IrExprKind::Index { base, index } => match &base.ty {
@@ -595,12 +759,15 @@ impl<'a> CGenerator<'a> {
                     let index = self.emit_stmt_expr_with_env(index, env)?;
                     let mut prelude = base.prelude;
                     prelude.extend(index.prelude);
+                    let mut postlude = index.postlude;
+                    postlude.extend(base.postlude);
                     Ok(CExpr {
                         prelude,
                         code: format!(
                             "({}).mlg_data[mallang_check_index({}, {len})]",
                             base.code, index.code
                         ),
+                        postlude,
                     })
                 }
                 Type::Slice(_) => {
@@ -618,9 +785,12 @@ impl<'a> CGenerator<'a> {
                         ),
                         "slice index out of bounds",
                     ));
+                    let mut postlude = index.postlude;
+                    postlude.extend(base.postlude);
                     Ok(CExpr {
                         prelude,
                         code: format!("({}).{}[{index_temp}]", base.code, c_field("data")),
+                        postlude,
                     })
                 }
                 _ => Err(CompileError::new(
@@ -656,6 +826,7 @@ impl<'a> CGenerator<'a> {
 
         let mut prelude = Vec::new();
         let mut payload_temps = Vec::new();
+        let mut postlude = Vec::new();
         for (index, payload) in payloads.iter().enumerate() {
             let emitted = self.emit_stmt_expr_with_env(payload, env)?;
             prelude.extend(emitted.prelude);
@@ -666,6 +837,7 @@ impl<'a> CGenerator<'a> {
                 emitted.code
             ));
             payload_temps.push(temp);
+            prepend_postlude(&mut postlude, emitted.postlude);
         }
 
         match storage {
@@ -699,6 +871,7 @@ impl<'a> CGenerator<'a> {
                 Ok(CExpr {
                     prelude,
                     code: format!("({}){{ .tag = {tag}{payload_initializer} }}", ty.c_name()),
+                    postlude,
                 })
             }
             crate::ir::IrEnumStorage::Owned => {
@@ -720,6 +893,7 @@ impl<'a> CGenerator<'a> {
                 Ok(CExpr {
                     prelude,
                     code: temp,
+                    postlude,
                 })
             }
         }
@@ -733,10 +907,12 @@ impl<'a> CGenerator<'a> {
     ) -> Result<CExpr, CompileError> {
         let mut prelude = Vec::new();
         let mut field_codes = Vec::new();
+        let mut postlude = Vec::new();
         for field in fields {
             let emitted = self.emit_stmt_expr_with_env(&field.expr, env)?;
             prelude.extend(emitted.prelude);
             field_codes.push(format!(".{} = {}", c_field(&field.name), emitted.code));
+            prepend_postlude(&mut postlude, emitted.postlude);
         }
 
         Ok(CExpr {
@@ -746,6 +922,7 @@ impl<'a> CGenerator<'a> {
                 Type::Struct(type_name.to_string()).c_name(),
                 field_codes.join(", ")
             ),
+            postlude,
         })
     }
 
@@ -766,10 +943,12 @@ impl<'a> CGenerator<'a> {
 
                 let mut prelude = Vec::new();
                 let mut element_codes = Vec::new();
+                let mut postlude = Vec::new();
                 for element in elements {
                     let emitted = self.emit_stmt_expr_with_env(element, env)?;
                     prelude.extend(emitted.prelude);
                     element_codes.push(emitted.code);
+                    prepend_postlude(&mut postlude, emitted.postlude);
                 }
 
                 let code = if *len == 0 {
@@ -783,7 +962,11 @@ impl<'a> CGenerator<'a> {
                     )
                 };
 
-                Ok(CExpr { prelude, code })
+                Ok(CExpr {
+                    prelude,
+                    code,
+                    postlude,
+                })
             }
             Type::Slice(element) => {
                 let temp = slice_literal_temp_name(expr);
@@ -798,6 +981,7 @@ impl<'a> CGenerator<'a> {
                     return Ok(CExpr {
                         prelude,
                         code: temp,
+                        postlude: Vec::new(),
                     });
                 }
 
@@ -818,15 +1002,18 @@ impl<'a> CGenerator<'a> {
                 prelude.push(format!("{temp}.{len_field} = {};", elements.len()));
                 prelude.push(format!("{temp}.{cap_field} = {};", elements.len()));
 
+                let mut postlude = Vec::new();
                 for (index, element) in elements.iter().enumerate() {
                     let emitted = self.emit_stmt_expr_with_env(element, env)?;
                     prelude.extend(emitted.prelude);
                     prelude.push(format!("{temp}.{data_field}[{index}] = {};", emitted.code));
+                    prepend_postlude(&mut postlude, emitted.postlude);
                 }
 
                 Ok(CExpr {
                     prelude,
                     code: temp,
+                    postlude,
                 })
             }
             _ => Err(CompileError::new(
@@ -848,9 +1035,14 @@ impl<'a> CGenerator<'a> {
                 env.get(name).cloned().unwrap_or_else(|| c_ident(name)),
             )
         } else {
-            let CExpr { mut prelude, code } = self.emit_stmt_expr_with_env(scrutinee, env)?;
+            let CExpr {
+                mut prelude,
+                code,
+                postlude,
+            } = self.emit_stmt_expr_with_env(scrutinee, env)?;
             let temp = match_scrutinee_temp_name(scrutinee);
             prelude.push(format!("{} {temp} = {code};", scrutinee.ty.c_name()));
+            prelude.extend(postlude);
             (prelude, temp)
         };
 
@@ -903,6 +1095,9 @@ impl<'a> CGenerator<'a> {
                 push_indented_lines(&mut block, &line, 1);
             }
             push_indented_lines(&mut block, &format!("{temp} = {};", emitted.code), 1);
+            for line in emitted.postlude {
+                push_indented_lines(&mut block, &line, 1);
+            }
             for line in cleanup {
                 push_indented_lines(&mut block, &line, 1);
             }
@@ -916,6 +1111,12 @@ impl<'a> CGenerator<'a> {
         Ok(CExpr {
             prelude,
             code: temp,
+            postlude: Vec::new(),
         })
     }
+}
+
+fn prepend_postlude(target: &mut Vec<String>, mut postlude: Vec<String>) {
+    postlude.append(target);
+    *target = postlude;
 }

@@ -245,14 +245,14 @@ impl Type {
 
     pub fn needs_cleanup(&self) -> bool {
         match self {
-            Self::Slice(_) => true,
+            Self::String | Self::Slice(_) => true,
             Self::Option(inner) => inner.needs_cleanup(),
             Self::Result(ok, err) => ok.needs_cleanup() || err.needs_cleanup(),
             Self::Array { element, .. } => element.needs_cleanup(),
             Self::Struct(_) => true,
             Self::Enum(_) => true,
             Self::Function(_) => true,
-            Self::Int | Self::Bool | Self::String | Self::Unit => false,
+            Self::Int | Self::Bool | Self::Unit => false,
         }
     }
 }
@@ -1080,17 +1080,79 @@ impl<'a> Checker<'a> {
             }
         }
 
-        let ty = self.check_expr(expr, locals, ValueUse::Owned)?;
-        if ty.needs_cleanup() {
-            return Err(SemanticError::new(
-                format!(
-                    "expression statements cannot discard cleanup value of type `{}` in v0",
-                    ty.source_name()
-                ),
-                expr.span,
-            ));
+        self.check_expr(expr, locals, ValueUse::Owned)
+    }
+
+    fn check_full_expr_read(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+    ) -> Result<Type, SemanticError> {
+        self.check_full_expr_read_with_expected(expr, locals, None)
+    }
+
+    fn check_full_expr_read_with_expected(
+        &self,
+        expr: &Expr,
+        locals: &mut HashMap<String, Local>,
+        expected: Option<&Type>,
+    ) -> Result<Type, SemanticError> {
+        let value_use = if is_direct_borrow_expr(expr) {
+            return self.check_expr_with_expected(expr, locals, ValueUse::Borrow, expected);
+        } else {
+            ValueUse::Owned
+        };
+
+        match &expr.kind {
+            ExprKind::FieldAccess { base, field } => {
+                let base_ty = self.check_full_expr_read(base, locals)?;
+                let Type::Struct(type_name) = base_ty else {
+                    return Err(SemanticError::new(
+                        format!(
+                            "field access requires a struct value, got `{}`",
+                            base_ty.source_name()
+                        ),
+                        base.span,
+                    ));
+                };
+                let struct_sig = self.struct_sig(&type_name, expr.span)?;
+                let Some(field_sig) = struct_sig
+                    .fields
+                    .iter()
+                    .find(|candidate| candidate.name == *field)
+                else {
+                    return Err(SemanticError::new(
+                        format!("unknown field `{field}` on `{type_name}`"),
+                        expr.span,
+                    ));
+                };
+                Ok(field_sig.ty.clone())
+            }
+            ExprKind::Index { base, index } => {
+                let base_ty = self.check_full_expr_read(base, locals)?;
+                let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
+                match base_ty {
+                    Type::Array { len, element } => {
+                        self.validate_index_type_and_bounds(index, &index_ty, len)?;
+                        Ok(*element)
+                    }
+                    Type::Slice(element) => {
+                        self.validate_index_type_and_non_negative_literal(
+                            index, &index_ty, "slice",
+                        )?;
+                        Ok(*element)
+                    }
+                    _ => Err(SemanticError::new(
+                        format!(
+                            "indexing requires a fixed-size array or slice, got `{}`",
+                            base_ty.source_name()
+                        ),
+                        base.span,
+                    )),
+                }
+            }
+            _ => self.check_expr_with_expected(expr, locals, value_use, expected),
         }
-        Ok(ty)
     }
 
     fn check_let_binding(
@@ -1873,18 +1935,10 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let source_ty = self.check_expr(parts.source, locals, ValueUse::Borrow)?;
+        let source_ty = self.check_full_expr_read(parts.source, locals)?;
         let element = match &source_ty {
             Type::Array { element, .. } => element,
-            Type::Slice(element) => {
-                if !is_direct_borrow_expr(parts.source) {
-                    return Err(SemanticError::new(
-                        "range over slices requires a local-rooted slice source in v0",
-                        parts.source.span,
-                    ));
-                }
-                element
-            }
+            Type::Slice(element) => element,
             _ => {
                 return Err(SemanticError::new(
                     format!(
@@ -1982,10 +2036,16 @@ impl<'a> Checker<'a> {
             ));
         };
 
-        if matches!(value_use, ValueUse::Owned)
-            && !field_sig.ty.is_copy()
-            && !(matches!(field_sig.ty, Type::Slice(_)) && is_direct_borrow_expr(base))
-        {
+        if matches!(value_use, ValueUse::Owned) && !field_sig.ty.is_copy() {
+            if matches!(field_sig.ty, Type::Slice(_)) && is_direct_borrow_expr(base) {
+                return Ok(field_sig.ty.clone());
+            }
+            if !is_direct_borrow_expr(base) {
+                return Err(SemanticError::new(
+                    "moving a non-copy field out of a computed struct value is not supported without destructuring",
+                    span,
+                ));
+            }
             self.mark_field_base_moved(base)?;
         }
 
@@ -2000,7 +2060,7 @@ impl<'a> Checker<'a> {
         value_use: ValueUse,
         span: Span,
     ) -> Result<Type, SemanticError> {
-        let base_ty = self.check_expr(base, locals, ValueUse::Borrow)?;
+        let base_ty = self.check_full_expr_read(base, locals)?;
         let index_ty = self.check_expr(index, locals, ValueUse::Owned)?;
         match base_ty {
             Type::Array { len, element } => {
@@ -2019,12 +2079,6 @@ impl<'a> Checker<'a> {
                 Ok(*element)
             }
             Type::Slice(element) => {
-                if !is_direct_borrow_expr(base) {
-                    return Err(SemanticError::new(
-                        "slice indexing requires a local-rooted slice source in v0",
-                        base.span,
-                    ));
-                }
                 self.validate_index_type_and_non_negative_literal(index, &index_ty, "slice")?;
 
                 if matches!(value_use, ValueUse::Owned) && !element.is_copy() {
@@ -3148,7 +3202,7 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
+        let arg_ty = self.check_full_expr_read(&args[0].expr, locals)?;
         if !self.is_printable_type(&arg_ty) {
             return Err(SemanticError::new(
                 format!(
@@ -3180,17 +3234,10 @@ impl<'a> Checker<'a> {
             ));
         }
 
-        let arg_ty = self.check_expr(&args[0].expr, locals, ValueUse::Borrow)?;
+        let arg_ty = self.check_full_expr_read(&args[0].expr, locals)?;
         match &arg_ty {
             Type::Array { .. } => {}
-            Type::Slice(_) => {
-                if !is_direct_borrow_expr(&args[0].expr) {
-                    return Err(SemanticError::new(
-                        "`len` on slices requires a local-rooted slice source in v0",
-                        args[0].span,
-                    ));
-                }
-            }
+            Type::Slice(_) => {}
             _ => {
                 return Err(SemanticError::new(
                     format!(
@@ -3303,8 +3350,12 @@ impl<'a> Checker<'a> {
                 }
             }
             ParamMode::Con => {
-                register_receiver_borrow(base, &mut call_borrows, BorrowKind::Shared)?;
-                let receiver_ty = self.check_receiver_borrow(base, locals, false)?;
+                let receiver_ty = if is_direct_borrow_expr(base) {
+                    register_receiver_borrow(base, &mut call_borrows, BorrowKind::Shared)?;
+                    self.check_receiver_borrow(base, locals, false)?
+                } else {
+                    self.check_full_expr_read_with_expected(base, locals, Some(&sig.receiver.ty))?
+                };
                 if receiver_ty != sig.receiver.ty {
                     return Err(SemanticError::new(
                         format!(
@@ -3317,8 +3368,12 @@ impl<'a> Checker<'a> {
                 }
             }
             ParamMode::Mut => {
-                register_receiver_borrow(base, &mut call_borrows, BorrowKind::Exclusive)?;
-                let receiver_ty = self.check_receiver_borrow(base, locals, true)?;
+                let receiver_ty = if is_direct_borrow_expr(base) {
+                    register_receiver_borrow(base, &mut call_borrows, BorrowKind::Exclusive)?;
+                    self.check_receiver_borrow(base, locals, true)?
+                } else {
+                    self.check_full_expr_read_with_expected(base, locals, Some(&sig.receiver.ty))?
+                };
                 if receiver_ty != sig.receiver.ty {
                     return Err(SemanticError::new(
                         format!(
@@ -3378,7 +3433,8 @@ impl<'a> Checker<'a> {
         if is_direct_borrow_expr(receiver) {
             return self.resolve_borrow_expr_type(receiver, locals);
         }
-        self.check_expr(receiver, locals, ValueUse::Borrow)
+        let mut probe_locals = locals.clone();
+        self.check_full_expr_read(receiver, &mut probe_locals)
     }
 
     fn check_call_args(
@@ -3410,12 +3466,20 @@ impl<'a> Checker<'a> {
                     Some(&param.ty),
                 )?,
                 (ParamMode::Con, ArgMode::Con) => {
-                    self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Shared)?;
-                    self.check_borrow_arg(arg, locals, false)?
+                    if is_direct_borrow_expr(&arg.expr) {
+                        self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Shared)?;
+                        self.check_borrow_arg(arg, locals, false)?
+                    } else {
+                        self.check_full_expr_read_with_expected(&arg.expr, locals, Some(&param.ty))?
+                    }
                 }
                 (ParamMode::Mut, ArgMode::Mut) => {
-                    self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Exclusive)?;
-                    self.check_borrow_arg(arg, locals, true)?
+                    if is_direct_borrow_expr(&arg.expr) {
+                        self.register_call_borrow(arg, &mut call_borrows, BorrowKind::Exclusive)?;
+                        self.check_borrow_arg(arg, locals, true)?
+                    } else {
+                        self.check_full_expr_read_with_expected(&arg.expr, locals, Some(&param.ty))?
+                    }
                 }
                 (ParamMode::Owned, _) => {
                     return Err(SemanticError::new(
@@ -3618,7 +3682,7 @@ impl<'a> Checker<'a> {
                     Type::Slice(element) => {
                         if !is_direct_borrow_expr(base) {
                             return Err(SemanticError::new(
-                                "slice element borrow requires a local-rooted slice source in v0",
+                                "direct slice element borrow requires a stable local-rooted slice source",
                                 base.span,
                             ));
                         }
@@ -3638,7 +3702,7 @@ impl<'a> Checker<'a> {
                 }
             }
             _ => Err(SemanticError::new(
-                "borrow arguments must be direct local variables, direct local fields, or direct local array/slice elements in v0",
+                "direct borrow arguments must use a stable local variable, field, or array/slice element",
                 expr.span,
             )),
         }
@@ -4303,7 +4367,7 @@ const INDEX_BORROW_SEGMENT: &str = "[]";
 fn borrow_arg_place(arg: &Arg) -> Result<BorrowPlace, SemanticError> {
     direct_borrow_place(
         &arg.expr,
-        "borrow arguments must be direct local variables, direct local fields, or direct local array/slice elements in v0",
+        "direct borrow arguments must use a stable local variable, field, or array/slice element",
     )
 }
 
@@ -8110,8 +8174,8 @@ func main() {
     }
 
     #[test]
-    fn rejects_discarded_cleanup_expression_statement() {
-        let error = check_error(
+    fn allows_discarded_cleanup_expression_statement() {
+        check_ok(
             r#"
 func main() {
     values := []int{1}
@@ -8119,9 +8183,6 @@ func main() {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("expression statements cannot discard cleanup value of type `[]int`"));
     }
 
     #[test]
@@ -8261,8 +8322,8 @@ func main() {
     }
 
     #[test]
-    fn rejects_inline_slice_len_until_temporary_cleanup_exists() {
-        let error = check_error(
+    fn allows_inline_slice_len_with_temporary_cleanup() {
+        check_ok(
             r#"
 func main() {
     count := len([]int{1, 2})
@@ -8270,14 +8331,11 @@ func main() {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("`len` on slices requires a local-rooted slice source"));
     }
 
     #[test]
-    fn rejects_inline_slice_index_until_temporary_cleanup_exists() {
-        let error = check_error(
+    fn allows_inline_slice_index_with_temporary_cleanup() {
+        check_ok(
             r#"
 func main() {
     value := []int{1, 2}[0]
@@ -8285,13 +8343,11 @@ func main() {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("slice indexing requires a local-rooted slice source"));
     }
 
     #[test]
     fn classifies_internal_slice_types_as_cleanup_resources() {
+        assert!(Type::String.needs_cleanup());
         assert!(Type::Slice(Box::new(Type::Int)).needs_cleanup());
         assert!(Type::Struct("Bag".to_string()).needs_cleanup());
         assert!(Type::Option(Box::new(Type::Slice(Box::new(Type::Int)))).needs_cleanup());
@@ -8747,8 +8803,8 @@ func main() {
     }
 
     #[test]
-    fn rejects_inline_slice_range_until_temporary_cleanup_exists() {
-        let error = check_error(
+    fn allows_inline_slice_range_with_temporary_cleanup() {
+        check_ok(
             r#"
 func main() {
     for i, value := range []int{1, 2} {
@@ -8757,9 +8813,6 @@ func main() {
 }
 "#,
         );
-        assert!(error
-            .message
-            .contains("range over slices requires a local-rooted slice source"));
     }
 
     #[test]

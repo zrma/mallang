@@ -1,0 +1,63 @@
+type Message enum {
+    Empty
+    Text(string)
+}
+
+type Label struct {
+    value string
+}
+
+func identity(value string) string {
+    return value
+}
+
+func show(con value string) {
+    print(value)
+}
+
+func replace(mut value string) {
+    value = "mutated"
+}
+
+func main() {
+    print("literal")
+
+    returned := identity("returned")
+    show(con returned)
+    print(returned == "returned")
+
+    mut label := Label{value: "field"}
+    print(label.value)
+    label.value = "replaced"
+    print(label.value)
+
+    mut calls := 0
+    mut next := func mut() int {
+        calls = calls + 1
+        print(calls)
+        return 0
+    }
+    mut labels := []Label{Label{value: "indexed-before"}}
+    labels[next()].value = "indexed-after"
+    print(labels[0].value)
+
+    message := Message.Text("enum")
+    match message {
+        case Message.Empty {
+            print("empty")
+        }
+        case Message.Text(text) {
+            print(text)
+        }
+    }
+
+    captured := "closure"
+    render := func() {
+        print(captured)
+    }
+    render()
+
+    mut mutable := "before"
+    replace(mut mutable)
+    print(mutable)
+}
