@@ -1108,8 +1108,18 @@
 ## P137: v0.5 Ownership and Runtime Decision Gate
 
 - [x] current Copy/move/drop, heap allocation과 cleanup path inventory 작성
-- [x] owned recursive heap abstraction 이름과 source surface 추천안 작성
-- [x] partial move/replace, temporary cleanup과 control-flow drop 경계 작성
+- [x] user-visible `Box`/`Heap` 없이 transparent recursive ADT 방향 확정
+- [x] positional multi-payload enum과 compiler-owned recursive representation 확정
+- [x] general partial move/`replace` 제외와 temporary cleanup 경계 작성
 - [x] first-class reference, range borrow와 fatal runtime failure 추천안 작성
 - [x] memory-safety acceptance와 implementation order 초안 작성
-- [ ] 사용자 승인 뒤 v0.5 language/runtime contract 확정
+- [x] 사용자 승인 뒤 v0.5 language/runtime contract 확정
+
+## P138: Positional Multi-Payload Enum Surface
+
+- [ ] enum variant declaration을 zero/one/multiple payload list로 일반화
+- [ ] constructor argument arity와 payload type source diagnostic 추가
+- [ ] pattern payload list, wildcard와 nested pattern parse/semantic 연결
+- [ ] existing zero/single payload source compatibility regression 유지
+- [ ] specialized generic/imported enum metadata와 linker 경로 일반화
+- [ ] typed IR/backend 전 explicit invariant boundary 유지
