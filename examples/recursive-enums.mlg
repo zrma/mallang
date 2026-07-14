@@ -1,0 +1,41 @@
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+type Pair enum {
+    Pair(int, string)
+}
+
+func sum(value List[int]) int {
+    return match value {
+        case List.Nil { 0 }
+        case List.Cons(head, tail) { head + sum(tail) }
+    }
+}
+
+func pairCode(value Pair) int {
+    return match value {
+        case Pair.Pair(code, name) { if name == "mallang" { code } else { 0 } }
+    }
+}
+
+func discardSlices(value List[[]int]) {
+    match value {
+        case List.Nil {}
+        case List.Cons(_, tail) { discardSlices(tail) }
+    }
+}
+
+func main() {
+    tail := List[int].Nil
+    middle := List[int].Cons(2, tail)
+    values := List[int].Cons(4, middle)
+    print(sum(values))
+
+    print(pairCode(Pair.Pair(7, "mallang")))
+
+    sliceTail := List[[]int].Nil
+    slices := List[[]int].Cons([]int{1, 2, 3}, sliceTail)
+    discardSlices(slices)
+}

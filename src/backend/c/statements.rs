@@ -538,6 +538,9 @@ impl<'a> CGenerator<'a> {
             } else {
                 output.push_str(&format!(" else if ({}) {{\n", plan.condition));
             }
+            for line in &plan.setup {
+                push_indented_lines(&mut output, line, 1);
+            }
             self.emit_match_stmt_body(&arm.body, &plan.env, continue_label, &mut output)?;
             output.push('}');
         }

@@ -2335,7 +2335,7 @@ func main() {
 }
 
 #[test]
-fn rejects_multi_payload_enum_before_c_emission() {
+fn generates_c_for_multi_payload_enum_layout_and_constructor() {
     let program = parse(
         r#"
 type Pair enum { Pair(int, string) }
@@ -2345,29 +2345,45 @@ func main() { value := Pair.Pair(7, "mallang") }
     .unwrap();
     let checked = check(&program).unwrap();
     let ir = lower(&checked).unwrap();
-    let error = generate_c_from_ir(&ir).unwrap_err();
+    let c = generate_c_from_ir(&ir).unwrap();
 
-    assert_eq!(
-        error.message,
-        "C backend does not support multi-payload enum variant `Pair.Pair` yet"
-    );
+    assert!(c.contains("int64_t mlg_payload_0;"));
+    assert!(c.contains("const char * mlg_payload_1;"));
+    assert!(c.contains(".mlg_Pair = { .mlg_payload_0 = mallang_variant_payload_"));
+    assert!(c.contains(".mlg_payload_1 = mallang_variant_payload_"));
+    let first = c.find("int64_t mallang_variant_payload_").unwrap();
+    let second = c.find("const char * mallang_variant_payload_").unwrap();
+    let constructor = c.find("mlg_enum_Pair mlg_value =").unwrap();
+    assert!(first < second && second < constructor);
 }
 
 #[test]
-fn rejects_recursive_enum_before_c_emission() {
+fn generates_c_for_recursive_enum_handle_constructor_and_drop() {
     let program = parse(
         r#"
 type Chain enum { End Next(Chain) }
-func main() { value := Chain.End }
+func consume(value Chain) {
+    match value {
+        case Chain.End {}
+        case Chain.Next(tail) { consume(tail) }
+    }
+}
+func main() {
+    value := Chain.End
+    consume(value)
+}
 "#,
     )
     .unwrap();
     let checked = check(&program).unwrap();
     let ir = lower(&checked).unwrap();
-    let error = generate_c_from_ir(&ir).unwrap_err();
+    let c = generate_c_from_ir(&ir).unwrap();
 
-    assert_eq!(
-        error.message,
-        "C backend does not support recursive enum `Chain` yet"
-    );
+    assert!(c.contains("typedef struct mlg_enum_Chain_node mlg_enum_Chain_node;"));
+    assert!(c.contains("mlg_enum_Chain_node *mlg_node;"));
+    assert!(c.contains("mlg_node->tag == 1"));
+    assert!(c.contains("mlg_drop_Enum_Chain(&(mlg_node->mlg_payload.mlg_Next));"));
+    assert!(c.contains("recursive enum allocation failed"));
+    assert!(c.contains("invalid recursive enum handle"));
+    assert!(c.contains("free(mlg_node);"));
 }

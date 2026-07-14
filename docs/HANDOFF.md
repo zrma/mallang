@@ -107,9 +107,17 @@
   보존한다. Match lowering은 모든 payload binding과 owned wildcard를 순회해 arm cleanup에
   연결하며 recursive generic enum의 constructor/pattern도 같은 IR로 내려간다. Recursive
   coverage는 유한한 opaque frontier를 사용하고 그 frontier 뒤의 구체 패턴을 wildcard
-  coverage와 비교해 non-exhaustive 및 unreachable 진단을 유지한다. C backend는 다음 runtime
-  단계 전까지 owned recursive enum과 multi-payload enum을 source 이름이 포함된 명시적
-  diagnostic으로 거부한다.
+  coverage와 비교해 non-exhaustive 및 unreachable 진단을 유지한다.
+- v0.5 P141 완료: C backend는 inline multi-payload variant를 positional payload struct가
+  포함된 tagged union으로 생성하고, recursive enum을 compiler-owned node pointer handle로
+  표현한다. Constructor는 payload를 left-to-right temporary에 평가한 뒤 inline storage 또는
+  allocation-guarded node로 이동한다. Consuming match는 active payload 전체를 arm-local로
+  이동하고 recursive storage shell을 한 번 해제하며, nested cleanup binding은 기존 IR drop
+  경로를 사용한다. Drop helper prototype을 먼저 생성해 direct/mutual recursion을 허용하고,
+  active payload를 재귀적으로 정리한 뒤 node를 해제한다. Null handle과 invalid tag는 stable
+  runtime diagnostic으로 중단한다. `examples/recursive-enums.mlg`는 generic `List[int]`,
+  `List[[]int]`와 non-recursive multi-payload enum을 native, strict C와 ASan/UBSan 경로에서
+  검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
