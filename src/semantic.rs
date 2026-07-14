@@ -879,6 +879,10 @@ impl<'a> Checker<'a> {
                 self.check_none_constructor(expected, expr.span)
             }
             ExprKind::Var(name) => self.check_var(name, locals, value_use, expr.span),
+            ExprKind::FunctionLiteral(_) => Err(SemanticError::new(
+                "function literals are not implemented yet",
+                expr.span,
+            )),
             ExprKind::If {
                 condition,
                 then_branch,
@@ -3239,6 +3243,7 @@ fn is_stable_place_index_expr(expr: &Expr) -> bool {
         | ExprKind::Match { .. }
         | ExprKind::StructLiteral { .. }
         | ExprKind::ArrayLiteral { .. }
+        | ExprKind::FunctionLiteral(_)
         | ExprKind::Call { .. } => false,
     }
 }

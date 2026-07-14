@@ -3,8 +3,9 @@ use std::fmt;
 use crate::{
     ast::{
         Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, ForInit, ForPost,
-        Function, ImportDecl, MatchArm, MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode,
-        Program, SourceUnit, Stmt, StmtKind, StructDecl, TypeRef, UnaryOp, Visibility,
+        Function, FunctionLiteral, FunctionTypeParam, FunctionTypeRef, ImportDecl, MatchArm,
+        MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode, Program, SourceUnit, Stmt,
+        StmtKind, StructDecl, TypeRef, UnaryOp, Visibility,
     },
     lexer::{lex, lex_with_source, LexError},
     token::{Keyword, SourceId, Span, Token, TokenKind},
@@ -275,6 +276,9 @@ impl Parser {
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, ParseError> {
+        if self.at_keyword(Keyword::Func) {
+            return self.parse_function_type_ref();
+        }
         if self.at(TokenTag::LeftBracket) {
             return self.parse_array_type_ref();
         }
@@ -311,6 +315,58 @@ impl Parser {
             args,
             array_len: None,
             slice: false,
+            function: None,
+            span,
+        })
+    }
+
+    fn parse_function_type_ref(&mut self) -> Result<TypeRef, ParseError> {
+        let start = self.expect_keyword(Keyword::Func, "expected `func` in function type")?;
+        let mutable = self.eat_keyword(Keyword::Mut).is_some();
+        self.expect(TokenTag::LeftParen, "expected `(` after function type")?;
+
+        let mut params = Vec::new();
+        if !self.at(TokenTag::RightParen) {
+            loop {
+                let prefix_mode = self.eat_param_mode();
+                let ty = self.parse_type_ref()?;
+                let (mode, param_start) = prefix_mode.unwrap_or((ParamMode::Owned, ty.span));
+                params.push(FunctionTypeParam {
+                    mode,
+                    span: param_start.join(ty.span),
+                    ty,
+                });
+                if self.eat(TokenTag::Comma).is_none() {
+                    break;
+                }
+            }
+        }
+
+        let params_end = self.expect(
+            TokenTag::RightParen,
+            "expected `)` after function type parameters",
+        )?;
+        if !self.starts_type_ref() {
+            return Err(ParseError::new(
+                "expected function return type; use `unit` for no value",
+                params_end,
+            ));
+        }
+        let return_type = Box::new(self.parse_type_ref()?);
+        let end = return_type.span;
+        let span = start.join(end);
+
+        Ok(TypeRef {
+            name: "func".to_string(),
+            args: Vec::new(),
+            array_len: None,
+            slice: false,
+            function: Some(FunctionTypeRef {
+                mutable,
+                params,
+                return_type,
+                span,
+            }),
             span,
         })
     }
@@ -325,6 +381,7 @@ impl Parser {
                 args: vec![element],
                 array_len: None,
                 slice: true,
+                function: None,
                 span,
             });
         }
@@ -348,12 +405,13 @@ impl Parser {
             args: vec![element],
             array_len: Some(length),
             slice: false,
+            function: None,
             span,
         })
     }
 
     fn starts_type_ref(&self) -> bool {
-        self.at(TokenTag::Ident) || self.at(TokenTag::LeftBracket)
+        self.at(TokenTag::Ident) || self.at(TokenTag::LeftBracket) || self.at_keyword(Keyword::Func)
     }
 
     fn parse_block(&mut self) -> Result<Block, ParseError> {
@@ -790,6 +848,7 @@ impl Parser {
             }),
             TokenKind::Keyword(Keyword::If) => self.finish_if_expr(token.span),
             TokenKind::Keyword(Keyword::Match) => self.finish_match_expr(token.span),
+            TokenKind::Keyword(Keyword::Func) => self.finish_function_literal(token.span),
             TokenKind::Minus => {
                 let expr = self.parse_precedence(6)?;
                 let span = token.span.join(expr.span);
@@ -819,6 +878,42 @@ impl Parser {
             }
             _ => Err(ParseError::new("expected expression", token.span)),
         }
+    }
+
+    fn finish_function_literal(&mut self, start: Span) -> Result<Expr, ParseError> {
+        let mutable = self.eat_keyword(Keyword::Mut).is_some();
+        self.expect(TokenTag::LeftParen, "expected `(` after `func`")?;
+
+        let mut params = Vec::new();
+        if !self.at(TokenTag::RightParen) {
+            loop {
+                params.push(self.parse_param()?);
+                if self.eat(TokenTag::Comma).is_none() {
+                    break;
+                }
+            }
+        }
+        self.expect(
+            TokenTag::RightParen,
+            "expected `)` after closure parameters",
+        )?;
+        let return_type = if self.starts_type_ref() {
+            Some(self.parse_type_ref()?)
+        } else {
+            None
+        };
+        let body = self.parse_block()?;
+        let span = start.join(body.span);
+
+        Ok(Expr {
+            kind: ExprKind::FunctionLiteral(Box::new(FunctionLiteral {
+                mutable,
+                params,
+                return_type,
+                body,
+            })),
+            span,
+        })
     }
 
     fn parse_array_literal(&mut self) -> Result<Expr, ParseError> {
@@ -2095,6 +2190,100 @@ func main() {}
         assert_eq!(result_ty.args.len(), 2);
         assert_eq!(result_ty.args[0].name, "string");
         assert_eq!(result_ty.args[1].name, "int");
+    }
+
+    #[test]
+    fn parses_function_type_refs_with_modes_and_mutability() {
+        let program = parse(
+            r#"
+type Handler struct {
+    apply func(int, con string) bool
+}
+
+func Wrap(transform func(int) int) func mut(mut Counter) int {
+    return transform
+}
+"#,
+        )
+        .unwrap();
+
+        let function = program.structs[0].fields[0]
+            .ty
+            .function
+            .as_ref()
+            .expect("expected function type");
+        assert!(!function.mutable);
+        assert_eq!(function.params.len(), 2);
+        assert_eq!(function.params[0].mode, ParamMode::Owned);
+        assert_eq!(function.params[0].ty.name, "int");
+        assert_eq!(function.params[1].mode, ParamMode::Con);
+        assert_eq!(function.params[1].ty.name, "string");
+        assert_eq!(function.return_type.name, "bool");
+
+        let return_type = program.functions[0]
+            .return_type
+            .as_ref()
+            .and_then(|ty| ty.function.as_ref())
+            .expect("expected mutable function return type");
+        assert!(return_type.mutable);
+        assert_eq!(return_type.params[0].mode, ParamMode::Mut);
+        assert_eq!(return_type.params[0].ty.name, "Counter");
+    }
+
+    #[test]
+    fn requires_explicit_function_type_return_type() {
+        let error = parse("func Use(callback func(int)) {}\n").unwrap_err();
+
+        assert!(error
+            .message
+            .contains("expected function return type; use `unit` for no value"));
+    }
+
+    #[test]
+    fn parses_plain_and_mutable_function_literals() {
+        let program = parse(
+            r#"
+func main() {
+    plain := func(value int) int {
+        return value * 2
+    }
+    mut count := 0
+    mut counter := func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr: plain, .. } = &program.functions[0].body.statements[0].kind
+        else {
+            panic!("expected plain closure binding");
+        };
+        let ExprKind::FunctionLiteral(function) = &plain.kind else {
+            panic!("expected plain function literal");
+        };
+        assert!(!function.mutable);
+        assert_eq!(function.params[0].name, "value");
+        assert_eq!(function.params[0].ty.name, "int");
+        assert_eq!(
+            function.return_type.as_ref().map(|ty| ty.name.as_str()),
+            Some("int")
+        );
+
+        let StmtKind::Let { expr: counter, .. } = &program.functions[0].body.statements[2].kind
+        else {
+            panic!("expected mutable closure binding");
+        };
+        let ExprKind::FunctionLiteral(function) = &counter.kind else {
+            panic!("expected mutable function literal");
+        };
+        assert!(function.mutable);
+        assert!(matches!(
+            function.body.statements[0].kind,
+            StmtKind::Assign { .. }
+        ));
     }
 
     #[test]

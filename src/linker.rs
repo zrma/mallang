@@ -303,6 +303,13 @@ impl<'a> Linker<'a> {
         context: &FileContext,
         declaration_name: &str,
     ) -> Result<(), LinkError> {
+        if let Some(function) = &ty.function {
+            for param in &function.params {
+                self.validate_public_type(&param.ty, context, declaration_name)?;
+            }
+            self.validate_public_type(&function.return_type, context, declaration_name)?;
+            return Ok(());
+        }
         for arg in &ty.args {
             self.validate_public_type(arg, context, declaration_name)?;
         }
@@ -337,6 +344,13 @@ impl<'a> Linker<'a> {
     }
 
     fn link_type_ref(&self, ty: &mut TypeRef, context: &FileContext) -> Result<(), LinkError> {
+        if let Some(function) = &mut ty.function {
+            for param in &mut function.params {
+                self.link_type_ref(&mut param.ty, context)?;
+            }
+            self.link_type_ref(&mut function.return_type, context)?;
+            return Ok(());
+        }
         for arg in &mut ty.args {
             self.link_type_ref(arg, context)?;
         }
@@ -496,6 +510,23 @@ impl<'a> Linker<'a> {
         match &mut expr.kind {
             ExprKind::Int(_) | ExprKind::String(_) | ExprKind::Bool(_) | ExprKind::Nil => {}
             ExprKind::Var(_) => {}
+            ExprKind::FunctionLiteral(function) => {
+                for param in function.params.iter_mut() {
+                    self.link_type_ref(&mut param.ty, context)?;
+                }
+                if let Some(return_type) = &mut function.return_type {
+                    self.link_type_ref(return_type, context)?;
+                }
+                let mut closure_scopes = scopes.to_vec();
+                closure_scopes.push(
+                    function
+                        .params
+                        .iter()
+                        .map(|param| param.name.clone())
+                        .collect(),
+                );
+                self.link_block(&mut function.body, context, &mut closure_scopes, false)?;
+            }
             ExprKind::If {
                 condition,
                 then_branch,

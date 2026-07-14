@@ -896,3 +896,11 @@
 - [x] mutable closure call effect와 exclusive access 추천안 기록
 - [x] callable C ABI와 cleanup 구현 순서 기록
 - [x] 사용자 승인 뒤 v0.3 language surface 확정
+
+## P115: Function Type and Literal Syntax
+
+- [x] `func(T) U`와 `func mut(T) U` function type AST/parser 추가
+- [x] function type parameter mode를 type syntax에 보존
+- [x] no-value function type의 explicit `unit` return 규칙 추가
+- [x] plain/mutable `func(...) { ... }` literal AST/parser 추가
+- [x] function literal body를 boxed AST node로 유지해 enum 크기 안정화

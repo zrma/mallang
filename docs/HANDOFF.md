@@ -27,6 +27,9 @@
   `mlg build`, `mlg run`으로 연결했으며 direct `.mlg` standalone 동작은 유지한다.
   두 package의 function/struct/method native smoke, import cycle 위치 diagnostic,
   project generated C warning-clean gate가 v0.2 acceptance를 검증한다.
+- v0.3 진행: 승인된 `func(T) U`, `func mut(T) U` function type과 plain/mutable
+  function literal을 AST/parser에 추가했다. Function type은 return type을 필수로
+  하며 no-value signature는 `unit`을 쓴다. Semantic과 callable ABI는 아직 연결 중이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작

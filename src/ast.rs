@@ -81,6 +81,22 @@ pub struct TypeRef {
     pub args: Vec<TypeRef>,
     pub array_len: Option<usize>,
     pub slice: bool,
+    pub function: Option<FunctionTypeRef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionTypeRef {
+    pub mutable: bool,
+    pub params: Vec<FunctionTypeParam>,
+    pub return_type: Box<TypeRef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionTypeParam {
+    pub mode: ParamMode,
+    pub ty: TypeRef,
     pub span: Span,
 }
 
@@ -169,12 +185,21 @@ pub struct Expr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionLiteral {
+    pub mutable: bool,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeRef>,
+    pub body: Block,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExprKind {
     Int(i64),
     String(String),
     Bool(bool),
     Nil,
     Var(String),
+    FunctionLiteral(Box<FunctionLiteral>),
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,

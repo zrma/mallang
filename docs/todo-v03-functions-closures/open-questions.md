@@ -10,6 +10,8 @@
 
 - Go-like declaration과 가장 가깝고 parameter mode를 ABI contract에 보존한다.
 - `func mut`은 capture 변경 가능성을 function type에 명시한다.
+- Function type은 field/list 경계를 모호하지 않게 하기 위해 return type을 필수로
+  하며 반환값이 없으면 `unit`을 쓴다.
 
 대안:
 
