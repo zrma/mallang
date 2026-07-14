@@ -238,13 +238,9 @@ impl<'a> CGenerator<'a> {
         let env_type = closure_env_type_name(closure_name);
         let env_temp = closure_env_temp_name(expr);
         let mut prelude = vec![format!(
-            "{env_type} *{env_temp} = malloc(sizeof({env_type}));"
+            "{env_type} *{env_temp} = mallang_alloc(sizeof({env_type}), \"closure environment allocation failed\");"
         )];
         let mut postlude = Vec::new();
-        prelude.push(runtime_guard(
-            format!("{env_temp} == NULL"),
-            "closure environment allocation failed",
-        ));
         for (capture, expected) in captures.iter().zip(closure.captures.iter()) {
             if capture.name != expected.name || capture.expr.ty != expected.ty {
                 return Err(CompileError::new(
@@ -650,9 +646,8 @@ impl<'a> CGenerator<'a> {
         ));
         prelude.push(format!("int64_t {new_len} = {temp}.{len_field} + 1;"));
         prelude.push(format!(
-            "if ({temp}.{cap_field} < {new_len}) {{\n    int64_t {new_cap} = ({temp}.{cap_field} == 0) ? 1 : {temp}.{cap_field};\n    while ({new_cap} < {new_len}) {{\n        if ({new_cap} > INT64_MAX / 2) {{\n            {new_cap} = {new_len};\n            break;\n        }}\n        {new_cap} = {new_cap} * 2;\n    }}\n    if ((uint64_t){new_cap} > UINT64_MAX / sizeof({element_ty})) {{\n        {allocation_size_error}\n    }}\n    void *{data_temp} = realloc({temp}.{data_field}, sizeof({element_ty}) * (uint64_t){new_cap});\n    if ({data_temp} == NULL) {{\n        {allocation_failed_error}\n    }}\n    {temp}.{data_field} = {data_temp};\n    {temp}.{cap_field} = {new_cap};\n}}",
+            "if ({temp}.{cap_field} < {new_len}) {{\n    int64_t {new_cap} = ({temp}.{cap_field} == 0) ? 1 : {temp}.{cap_field};\n    while ({new_cap} < {new_len}) {{\n        if ({new_cap} > INT64_MAX / 2) {{\n            {new_cap} = {new_len};\n            break;\n        }}\n        {new_cap} = {new_cap} * 2;\n    }}\n    if ((uint64_t){new_cap} > UINT64_MAX / sizeof({element_ty})) {{\n        {allocation_size_error}\n    }}\n    void *{data_temp} = mallang_realloc({temp}.{data_field}, sizeof({element_ty}) * (uint64_t){new_cap}, \"slice allocation failed\");\n    {temp}.{data_field} = {data_temp};\n    {temp}.{cap_field} = {new_cap};\n}}",
             allocation_size_error = runtime_error_call("slice allocation size overflow"),
-            allocation_failed_error = runtime_error_call("slice allocation failed"),
             element_ty = element.c_name()
         ));
         prelude.push(format!(
@@ -878,10 +873,8 @@ impl<'a> CGenerator<'a> {
                 let temp = variant_constructor_temp_name(expr);
                 let node = format!("{temp}.{}", c_field("node"));
                 prelude.push(format!("{} {temp};", ty.c_name()));
-                prelude.push(format!("{node} = malloc(sizeof(*{node}));"));
-                prelude.push(runtime_guard(
-                    format!("{node} == NULL"),
-                    "recursive enum allocation failed",
+                prelude.push(format!(
+                    "{node} = mallang_alloc(sizeof(*{node}), \"recursive enum allocation failed\");"
                 ));
                 prelude.push(format!("{node}->tag = {tag};"));
                 for (index, payload) in payload_temps.iter().enumerate() {
@@ -992,12 +985,8 @@ impl<'a> CGenerator<'a> {
                     allocation_size_error = runtime_error_call("slice allocation size overflow"),
                 ));
                 prelude.push(format!(
-                    "{temp}.{data_field} = malloc(sizeof({element_ty}) * {});",
+                    "{temp}.{data_field} = mallang_alloc(sizeof({element_ty}) * {}, \"slice allocation failed\");",
                     elements.len()
-                ));
-                prelude.push(runtime_guard(
-                    format!("{temp}.{data_field} == NULL"),
-                    "slice allocation failed",
                 ));
                 prelude.push(format!("{temp}.{len_field} = {};", elements.len()));
                 prelude.push(format!("{temp}.{cap_field} = {};", elements.len()));

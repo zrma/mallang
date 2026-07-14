@@ -409,11 +409,30 @@ String runtime contract:
   operations that allocate new string buffers are deferred to the v0.6 standard
   library surface.
 
+Compiler-owned allocation contract:
+
+- Slice buffers, closure environments, recursive enum nodes, and owned string
+  buffers use one compiler runtime allocation boundary. Raw allocation handles,
+  counters, and failure controls are not Mallang source values or APIs.
+- A successful allocation that creates a new owned storage lifetime increments
+  the live allocation count. Growing an existing allocation preserves that
+  lifetime; growing an empty buffer creates one. Releasing a non-null owned
+  allocation decrements the count exactly once.
+- Deallocating null storage is a no-op. Deallocating non-null storage when no
+  live allocation is recorded is an internal fatal accounting error.
+- Internal test builds can deterministically fail a selected allocation attempt.
+  The resulting diagnostic remains specific to the source operation, such as
+  slice, closure, recursive enum, or string allocation failure. This test hook
+  is not part of the source language or stable native ABI.
+- A normal return from Mallang `main` must leave no compiler-owned live
+  allocations. Fatal runtime failure remains no-unwind and does not promise
+  cleanup or a zero live count before process termination.
+
 Deferred slice and borrow rules:
 
-- Mutable range values and by-reference iteration remain deferred.
-- Borrowed slice views, first-class references, and sharing a backing buffer
-  across multiple owned slice values are deferred beyond this v0 direction.
+- Mutable range values, by-reference iteration, borrowed slice views,
+  first-class references, and sharing a backing buffer across multiple owned
+  slice values are not part of v1.
 
 `unit` is the implicit return type of functions that do not return a value.
 

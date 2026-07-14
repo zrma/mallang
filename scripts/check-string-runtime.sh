@@ -107,7 +107,8 @@ expect_failure() {
 expect_failure malformed "invalid string data"
 expect_failure overflow "string allocation size overflow"
 
-if ! rg -q 'mallang_runtime_error\("string allocation failed"\)' "$GENERATED_C"; then
+if ! rg -q 'mallang_alloc\(' "$GENERATED_C" || \
+  ! rg -q '"string allocation failed"' "$GENERATED_C"; then
   echo "string runtime allocation failure guard missing" >&2
   exit 1
 fi

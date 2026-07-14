@@ -1186,11 +1186,22 @@
 
 ## P145: Allocation Accounting and Failure Injection
 
-- [ ] slice, closure, recursive enum과 owned string allocation/free path inventory 작성
-- [ ] compiler runtime allocation을 공통 accounting 가능한 helper contract로 연결
-- [ ] source surface에 노출하지 않는 deterministic allocation failure injection 경로 추가
-- [ ] normal exit에서 allocation/free count가 일치하는 cleanup-heavy native harness 추가
-- [ ] allocation size overflow와 injected failure의 stable fatal no-unwind diagnostic 고정
-- [ ] return, branch, loop, overwrite와 nested aggregate cleanup accounting regression 추가
-- [ ] strict C, full project gate와 generated C ASan/UBSan sweep 통과
-- [ ] v0.5 completion evidence와 v0.6 decision gate 문서 동기화
+- [x] slice, closure, recursive enum과 owned string allocation/free path inventory 작성
+- [x] compiler runtime allocation을 공통 accounting 가능한 helper contract로 연결
+- [x] source surface에 노출하지 않는 deterministic allocation failure injection 경로 추가
+- [x] normal exit에서 allocation/free count가 일치하는 cleanup-heavy native harness 추가
+- [x] allocation size overflow와 injected failure의 stable fatal no-unwind diagnostic 고정
+- [x] return, branch, loop, overwrite와 nested aggregate cleanup accounting regression 추가
+- [x] strict C, full project gate와 generated C ASan/UBSan sweep 통과
+- [x] v0.5 completion evidence와 v0.6 decision gate 문서 동기화
+
+## P146: v0.6 Standard Library Decision Gate
+
+- [ ] standard package namespace, resolution과 runtime/compiler ownership 추천안 승인
+- [ ] process arguments/environment와 `main` signature 경계 승인
+- [ ] UTF-8 string operation, byte index와 allocation semantics 승인
+- [ ] file/stream I/O, standard `Error`와 `Result` API surface 승인
+- [ ] error propagation syntax 도입 여부 승인
+- [ ] owned key-value collection type, key restriction과 mutation API 승인
+- [ ] platform support와 standard-library native acceptance matrix 승인
+- [ ] 승인 결정을 v0.6 implementation order와 compatibility contract로 확정

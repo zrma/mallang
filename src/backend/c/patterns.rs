@@ -108,7 +108,7 @@ impl<'a> CGenerator<'a> {
                     )?;
                 }
                 if let Some(node) = node {
-                    setup.push(format!("free({node});"));
+                    setup.push(format!("mallang_dealloc({node});"));
                     setup.push(format!("{node} = NULL;"));
                 }
             }

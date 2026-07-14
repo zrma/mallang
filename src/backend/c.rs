@@ -12,7 +12,7 @@ use names::{
     c_field, c_ident, c_param_decl, callable_thunk_name, closure_call_name, closure_drop_name,
     closure_env_type_name, drop_fn_name, TypeCName,
 };
-use runtime::emit_string_runtime;
+use runtime::{emit_allocation_runtime, emit_string_runtime};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
 
@@ -103,6 +103,7 @@ impl<'a> CGenerator<'a> {
         output.push_str("    fprintf(stderr, \"mallang runtime error: %s\\n\", message);\n");
         output.push_str("    exit(1);\n");
         output.push_str("}\n\n");
+        output.push_str(&emit_allocation_runtime());
         output.push_str(
             "static int64_t MLG_UNUSED mallang_check_index(int64_t index, int64_t len) {\n",
         );
@@ -294,7 +295,7 @@ impl<'a> CGenerator<'a> {
                     ));
                 }
             }
-            output.push_str("    free(mlg_env);\n}\n\n");
+            output.push_str("    mallang_dealloc(mlg_env);\n}\n\n");
         }
         output
     }

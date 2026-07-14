@@ -1,5 +1,73 @@
 use crate::semantic::Type;
 
+pub(super) fn emit_allocation_runtime() -> String {
+    r#"#ifndef MLG_ALLOCATION_FAIL_AFTER
+#define MLG_ALLOCATION_FAIL_AFTER UINT64_MAX
+#endif
+
+static uint64_t mallang_allocation_attempts = 0;
+static uint64_t mallang_live_allocations = 0;
+
+static bool MLG_UNUSED mallang_should_fail_allocation(void) {
+    bool mlg_should_fail = mallang_allocation_attempts == MLG_ALLOCATION_FAIL_AFTER;
+    mallang_allocation_attempts = mallang_allocation_attempts + 1;
+    return mlg_should_fail;
+}
+
+static void *MLG_UNUSED mallang_alloc(size_t mlg_size, const char *mlg_failure_message) {
+    if (mallang_should_fail_allocation()) {
+        mallang_runtime_error(mlg_failure_message);
+    }
+    void *mlg_allocation = malloc(mlg_size);
+    if (mlg_allocation == NULL) {
+        mallang_runtime_error(mlg_failure_message);
+    }
+    mallang_live_allocations = mallang_live_allocations + 1;
+    return mlg_allocation;
+}
+
+static void *MLG_UNUSED mallang_realloc(
+    void *mlg_allocation,
+    size_t mlg_size,
+    const char *mlg_failure_message
+) {
+    bool mlg_creates_allocation = mlg_allocation == NULL;
+    if (mallang_should_fail_allocation()) {
+        mallang_runtime_error(mlg_failure_message);
+    }
+    void *mlg_resized = realloc(mlg_allocation, mlg_size);
+    if (mlg_resized == NULL) {
+        mallang_runtime_error(mlg_failure_message);
+    }
+    if (mlg_creates_allocation) {
+        mallang_live_allocations = mallang_live_allocations + 1;
+    }
+    return mlg_resized;
+}
+
+static void MLG_UNUSED mallang_dealloc(void *mlg_allocation) {
+    if (mlg_allocation == NULL) {
+        return;
+    }
+    if (mallang_live_allocations == 0) {
+        mallang_runtime_error("allocation accounting underflow");
+    }
+    mallang_live_allocations = mallang_live_allocations - 1;
+    free(mlg_allocation);
+}
+
+static uint64_t MLG_UNUSED mallang_allocation_attempt_count(void) {
+    return mallang_allocation_attempts;
+}
+
+static uint64_t MLG_UNUSED mallang_live_allocation_count(void) {
+    return mallang_live_allocations;
+}
+
+"#
+    .to_string()
+}
+
 pub(super) fn emit_string_runtime(defined_types: &[Type]) -> String {
     if !defined_types.contains(&Type::String) {
         return String::new();
@@ -31,10 +99,10 @@ static mlg_String MLG_UNUSED mallang_string_owned_copy(mlg_String mlg_source) {
     if (mlg_source.mlg_len == SIZE_MAX) {
         mallang_runtime_error("string allocation size overflow");
     }
-    char *mlg_data = malloc(mlg_source.mlg_len + 1);
-    if (mlg_data == NULL) {
-        mallang_runtime_error("string allocation failed");
-    }
+    char *mlg_data = mallang_alloc(
+        mlg_source.mlg_len + 1,
+        "string allocation failed"
+    );
     if (mlg_source.mlg_len > 0) {
         memcpy(mlg_data, mlg_source.mlg_data, mlg_source.mlg_len);
     }

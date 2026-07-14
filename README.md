@@ -83,6 +83,9 @@ This repository is the Mallang language PoC workspace.
   temporaries. Inline slice `len`/index/range sources, discarded results, and
   computed `con`/`mut` call arguments clean up after their final use while
   preserving logical short-circuit evaluation.
+- Compiler-owned slice, closure, recursive enum, and string allocations share
+  one internal accounting/failure boundary. Normal program return is checked
+  against zero live allocations without exposing allocator APIs in Mallang.
 - Integer division and remainder guard zero divisors before native execution can
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
@@ -141,6 +144,7 @@ cargo run --bin mlg -- build examples/string-equality.mlg -o target/mallang/stri
 target/mallang/string-equality
 cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- run examples/borrow-range-contract.mlg
+cargo run --bin mlg -- run examples/allocation-accounting.mlg
 cargo run --bin mlg -- build examples/logical-operators.mlg -o target/mallang/logical-operators
 target/mallang/logical-operators
 cargo run --bin mlg -- build examples/pipeline.mlg -o target/mallang/pipeline
@@ -260,6 +264,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
+- `docs/todo-v06-standard-library/`: v0.6 standard package/API decision gate draft.
 - `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
@@ -302,6 +307,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
   string value semantics, aggregate cleanup, mutable overwrite, and closure capture.
 - `examples/borrow-range-contract.mlg`: native and sanitizer smoke for non-copy
   index-only range with direct indexed `con`/`mut` call access.
+- `examples/allocation-accounting.mlg`: native accounting and sanitizer smoke
+  for slice, closure, recursive enum, branch, loop, and overwrite cleanup.
 - `examples/logical-operators.mlg`: native smoke for `bool` operators and short-circuiting.
 - `examples/pipeline.mlg`: native smoke for `|>` pipeline call sugar.
 - `examples/adt.mlg`: native smoke for `Option` / `Result` constructors and `match`.
@@ -347,8 +354,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `src/backend/mod.rs`: backend public API boundary.
 - `src/backend/c.rs`: C backend for typed IR in the first native subset.
 - `src/backend/c/names.rs`: C backend identifier, type-name, and operator helpers.
-- `src/backend/c/runtime.rs`: conditionally emitted string runtime layout,
-  validation, owned allocation, equality, and print helpers.
+- `src/backend/c/runtime.rs`: common allocation accounting/failure helpers and
+  conditionally emitted string layout, validation, equality, and print runtime.
 - `src/backend/c/expressions.rs`: C backend expression, literal, call,
   borrow-lvalue, and expression-match emission.
 - `src/backend/c/statements.rs`: C backend statement, loop, match, and print emission.

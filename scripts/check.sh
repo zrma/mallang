@@ -264,6 +264,14 @@ if [[ "$borrow_range_contract_output" != $'kim\n1\nvisited\n2\nlee\n3\nvisited\n
   echo "borrow/range contract native build smoke output mismatch: got '$borrow_range_contract_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/allocation-accounting.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/allocation-accounting.mlg -o target/mallang/allocation-accounting >/dev/null
+allocation_accounting_output="$(target/mallang/allocation-accounting)"
+if [[ "$allocation_accounting_output" != $'4\n5\n3\n2\n2\n6' ]]; then
+  echo "allocation accounting native build smoke output mismatch: got '$allocation_accounting_output'" >&2
+  exit 1
+fi
+scripts/check-allocation-runtime.sh target/mallang/allocation-accounting.c
 expect_check_failure \
   "v05-first-class-borrow" \
   "tests/fixtures/invalid-v05-ownership/first-class-borrow.mlg" \
