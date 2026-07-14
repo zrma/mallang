@@ -245,17 +245,13 @@
 
 - The nine planned release milestones from `v0.2.0` through `v1.0.0` are owned
   by `docs/V1_ROADMAP.md`.
-- `v0.2.0: Projects and Modules` is implemented locally; release publication is
-  still pending.
-- `v0.3.0: Functions and Closures` is implemented locally; release publication
-  is still pending.
-- `v0.4.0: Generic Data Model` is implemented locally; release publication is
-  still pending.
-- `v0.5.0: Ownership and Runtime` is implemented locally; release publication
-  is still pending.
-- `v0.6.0: Standard Library` has complete P147-P153 implementation and native
-  acceptance on macOS arm64 and Ubuntu Linux x86_64; release publication is
-  still pending.
+- `v0.2.0: Projects and Modules` was released on 2026-07-15.
+- `v0.3.0: Functions and Closures` was released on 2026-07-15.
+- `v0.4.0: Generic Data Model` was released on 2026-07-15.
+- `v0.5.0: Ownership and Runtime` was released on 2026-07-15.
+- `v0.6.0: Standard Library` completed P147-P153 implementation and native
+  acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
+  2026-07-15.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

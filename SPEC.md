@@ -1,11 +1,10 @@
-# Mallang v0.1 Specification
+# Mallang v0.6 Specification
 
-This is the Mallang v0.1 language specification published with the 0.1.0
-source release.
+This is the Mallang language specification through the 0.6.0 source release.
 
-Post-v0 milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
+Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 
-## Planned v0.2 Project Model
+## Published v0.2 Project Model
 
 The approved v0.2 project surface extends the existing standalone `.mlg` mode
 without changing it:
@@ -29,8 +28,7 @@ without changing it:
 
 The v0.2 surface intentionally excludes import aliases, dot or wildcard imports,
 remote dependencies, a package registry, lockfiles, and package initialization
-hooks. The compiler and native acceptance path implement these rules. They become
-normative with the v0.2 release.
+hooks. The compiler and native acceptance path implement these normative rules.
 
 ## Implemented v0.6 Standard Library
 
@@ -139,13 +137,13 @@ day-to-day command is intentionally short.
 - Compile to native binaries.
 - Start with a C backend before committing to LLVM or Cranelift.
 
-## Non-goals for Published v0.1
+## Non-goals for Published v0.6
 
 - No goroutines.
 - No interfaces.
-- No user-defined generics beyond built-in `Option[T]` and `Result[T, E]`.
-- No closures.
 - No user-visible lifetimes.
+- No first-class borrowed references or statement-spanning borrows.
+- No error-propagation operator.
 - No garbage collector.
 - No raw pointer or address-of syntax.
 

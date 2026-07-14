@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: P147-P153 implementation and acceptance complete; release pending
+상태: released as v0.6.0 (2026-07-15; P147-P153 complete)
 
 ## 목표
 

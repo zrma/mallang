@@ -255,7 +255,8 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0"
+VERSION=0.7.0
+scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
 The finalizer fetches `origin` before the expensive local verification and
@@ -275,19 +276,20 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
+VERSION=0.7.0
+scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
 ## Layout
 
-- `SPEC.md`: v0 language specification.
+- `SPEC.md`: language specification through v0.6.
 - `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
 - `docs/todo-v07-tooling-platforms/`: proposed v0.7 tooling and platform decision gate.
-- `docs/releases/v0-rc.md`: v0.1.0 release notes and verification record.
+- `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

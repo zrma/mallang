@@ -1,6 +1,6 @@
 # Spec: v0.4-generic-data-model
 
-상태: approved, implementation complete
+상태: released as v0.4.0 (2026-07-15)
 
 ## 목표
 

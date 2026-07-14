@@ -1,6 +1,6 @@
 # Spec: v0.2-project-model
 
-상태: implemented, release pending
+상태: released as v0.2.0 (2026-07-15)
 
 ## 목표
 

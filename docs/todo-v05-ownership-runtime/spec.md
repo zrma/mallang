@@ -1,6 +1,6 @@
 # Spec: v0.5-ownership-runtime
 
-상태: implementation complete, release pending (P138-P145 complete)
+상태: released as v0.5.0 (2026-07-15; P138-P145 complete)
 
 ## 목표
 

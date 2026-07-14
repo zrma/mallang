@@ -1281,4 +1281,5 @@
 - [x] published `main`의 Ubuntu Linux x86_64 CI success 확인
 - [x] v0.6 completion evidence와 P154-P160 v0.7 decision gate 초안 작성
 
-P153 complete: local macOS arm64와 published Ubuntu Linux x86_64 acceptance가 모두 통과했다.
+P153 complete: local macOS arm64와 published Ubuntu Linux x86_64 acceptance가 모두 통과했고,
+v0.6.0 GitHub source release가 2026-07-15에 공개됐다.

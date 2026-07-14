@@ -1,6 +1,6 @@
 # Spec: v0.3-functions-closures
 
-상태: implemented, release pending
+상태: released as v0.3.0 (2026-07-15)
 
 ## 목표
 

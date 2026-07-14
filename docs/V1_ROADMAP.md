@@ -66,7 +66,7 @@ v1로 간주한다.
 
 ## v0.2.0: Projects and Modules
 
-상태: implementation complete, release pending
+상태: released (2026-07-15)
 
 목표: 단일 source file 언어에서 multi-file project 언어로 전환한다.
 
@@ -98,7 +98,7 @@ v1로 간주한다.
 
 ## v0.3.0: Functions and Closures
 
-상태: implementation complete, release pending
+상태: released (2026-07-15)
 
 목표: Mallang의 함수형 value style을 first-class function까지 확장한다.
 
@@ -125,7 +125,7 @@ v1로 간주한다.
 
 ## v0.4.0: Generic Data Model
 
-상태: implementation complete, release pending
+상태: released (2026-07-15)
 
 목표: built-in `Option`/`Result` 전용 모델을 일반적인 user-defined data model로
 확장한다.
@@ -157,7 +157,7 @@ v1로 간주한다.
 
 ## v0.5.0: Ownership and Runtime
 
-상태: implementation complete, release pending
+상태: released (2026-07-15)
 
 목표: v1 language surface 전체에 적용할 memory model과 runtime ownership 경계를
 닫는다.
@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: implementation and P153 acceptance complete; release pending
+상태: released after P153 acceptance (2026-07-15)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
