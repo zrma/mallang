@@ -151,12 +151,13 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
 5. User-defined enum constructor, exhaustiveness와 nested pattern diagnostics를 일반화한다.
    (완료: expression/statement, wildcard, nested user/built-in payload와 package qualifier 포함)
 6. Specialized typed IR, concrete layout, constructor/match C lowering을 추가한다.
-   (진행 중: specialized enum metadata, constructor, recursive pattern tree와 match payload
-   cleanup은 typed IR에 연결 완료; concrete C layout과 constructor/match lowering 미완료)
+   (완료: specialized enum metadata, recursive pattern tree와 payload cleanup을 typed IR에
+   보존하고 tag/union layout, recursive drop, constructor와 expression/statement nested
+   match를 C backend에 연결)
 7. Built-in `Option`/`Result`를 공통 generic enum 경로로 이전한다.
 8. Cross-package positive smoke, invalid fixture, strict C와 sanitizer gate를 추가한다.
-   (진행 중: generic struct/function/receiver positive native gate 완료, enum과 invalid
-   fixture 미완료)
+   (진행 중: generic struct/function/receiver와 standalone enum positive native, strict C,
+   sanitizer gate 완료; cross-package enum native와 invalid CLI fixture 미완료)
 
 ## 제외
 

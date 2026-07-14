@@ -2,6 +2,7 @@ use std::fmt;
 
 mod expressions;
 mod names;
+mod patterns;
 mod statements;
 mod types;
 mod utils;
@@ -15,7 +16,7 @@ use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error
 
 use crate::{
     ast::Program,
-    ir::{lower, IrClosure, IrFunction, IrProgram},
+    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram},
     semantic::{check, FunctionParamType, FunctionType, Type},
 };
 
@@ -91,7 +92,9 @@ impl<'a> CGenerator<'a> {
         output.push_str("#else\n");
         output.push_str("#define MLG_UNUSED\n");
         output.push_str("#endif\n\n");
-        output.push_str("static void MLG_UNUSED mallang_runtime_error(const char *message) {\n");
+        output.push_str(
+            "static _Noreturn void MLG_UNUSED mallang_runtime_error(const char *message) {\n",
+        );
         output.push_str("    fprintf(stderr, \"mallang runtime error: %s\\n\", message);\n");
         output.push_str("    exit(1);\n");
         output.push_str("}\n\n");
@@ -386,6 +389,16 @@ impl<'a> CGenerator<'a> {
             .find(|struct_def| struct_def.name == name)
             .ok_or_else(|| {
                 CompileError::new(format!("IR invariant violation: unknown struct `{name}`"))
+            })
+    }
+
+    fn enum_def(&self, name: &str) -> Result<&IrEnum, CompileError> {
+        self.program
+            .enums
+            .iter()
+            .find(|enum_def| enum_def.name == name)
+            .ok_or_else(|| {
+                CompileError::new(format!("IR invariant violation: unknown enum `{name}`"))
             })
     }
 }

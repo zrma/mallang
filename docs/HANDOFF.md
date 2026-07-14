@@ -76,7 +76,10 @@
   non-exhaustive path는 source diagnostic으로 거부한다. Typed IR은 concrete variant
   metadata, constructor payload와 recursive pattern tree를 보존한다. Cleanup이 필요한
   wildcard payload는 내부 owned binding으로 정규화하고 expression/statement arm의
-  cleanup에 연결한다. Enum C layout과 constructor/match codegen은 아직 구현 전이다.
+  cleanup에 연결한다. C backend는 specialized enum마다 tag/payload union과 recursive
+  drop helper를 생성하고 constructor 및 expression/statement nested match를 공통 pattern
+  planner로 lowering한다. `examples/generic-enums.mlg`는 generic/user/built-in nested
+  pattern과 slice payload cleanup을 native, warning-clean, ASan/UBSan 경로에서 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -219,9 +222,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. C tag/union layout과 recursive drop helper를 specialized enum마다 생성한다.
-2. User enum constructor와 expression/statement nested match를 C로 lowering한다.
-3. Built-in `Option`/`Result`를 공통 enum 경로로 이전한다.
+1. Cross-package public generic enum을 native acceptance와 invalid CLI fixture에 연결한다.
+2. Built-in `Option`/`Result`를 공통 enum metadata/IR/backend 경로로 이전한다.
+3. v0.4 전체 스펙·진단·sanitizer acceptance를 마감한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

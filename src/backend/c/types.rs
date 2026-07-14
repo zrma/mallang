@@ -1,5 +1,7 @@
 use crate::{
-    ir::{IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt, IrStmtKind, IrStruct},
+    ir::{
+        IrEnum, IrExpr, IrExprKind, IrForInit, IrForPost, IrProgram, IrStmt, IrStmtKind, IrStruct,
+    },
     semantic::Type,
 };
 
@@ -42,6 +44,14 @@ impl<'a> TypeEmitter<'a> {
             collect_type(&Type::Struct(struct_def.name.clone()), &mut types);
             for field in &struct_def.fields {
                 collect_type(&field.ty, &mut types);
+            }
+        }
+        for enum_def in &self.program.enums {
+            collect_type(&Type::Enum(enum_def.name.clone()), &mut types);
+            for variant in &enum_def.variants {
+                if let Some(payload) = &variant.payload {
+                    collect_type(payload, &mut types);
+                }
             }
         }
         for function in &self.program.functions {
@@ -125,10 +135,15 @@ impl<'a> TypeEmitter<'a> {
                 output.push_str(&self.typedef_for_struct(struct_def));
                 output.push('\n');
             }
-            Type::Enum(_) => {
-                return Err(CompileError::new(
-                    "user-defined enum types require v0.4 C lowering",
-                ));
+            Type::Enum(name) => {
+                let enum_def = self.enum_def(name)?;
+                for variant in &enum_def.variants {
+                    if let Some(payload) = &variant.payload {
+                        self.emit_type_def(payload, emitted, visiting, output)?;
+                    }
+                }
+                output.push_str(&self.typedef_for_enum(enum_def));
+                output.push('\n');
             }
             Type::Array { .. } => {
                 output.push_str(&self.typedef_for_array(ty)?);
@@ -161,6 +176,16 @@ impl<'a> TypeEmitter<'a> {
             .find(|struct_def| struct_def.name == name)
             .ok_or_else(|| {
                 CompileError::new(format!("IR invariant violation: unknown struct `{name}`"))
+            })
+    }
+
+    fn enum_def(&self, name: &str) -> Result<&IrEnum, CompileError> {
+        self.program
+            .enums
+            .iter()
+            .find(|enum_def| enum_def.name == name)
+            .ok_or_else(|| {
+                CompileError::new(format!("IR invariant violation: unknown enum `{name}`"))
             })
     }
 
@@ -383,6 +408,31 @@ impl<'a> TypeEmitter<'a> {
         output
     }
 
+    fn typedef_for_enum(&self, enum_def: &IrEnum) -> String {
+        let mut output = String::from("typedef struct {\n    int32_t tag;\n");
+        let payload_variants = enum_def
+            .variants
+            .iter()
+            .filter_map(|variant| variant.payload.as_ref().map(|payload| (variant, payload)))
+            .collect::<Vec<_>>();
+        if !payload_variants.is_empty() {
+            output.push_str("    union {\n");
+            for (variant, payload) in payload_variants {
+                output.push_str(&format!(
+                    "        {} {};\n",
+                    payload.c_name(),
+                    c_field(&variant.name)
+                ));
+            }
+            output.push_str(&format!("    }} {};\n", c_field("payload")));
+        }
+        output.push_str(&format!(
+            "}} {};\n",
+            Type::Enum(enum_def.name.clone()).c_name()
+        ));
+        output
+    }
+
     fn typedef_for_array(&self, ty: &Type) -> Result<String, CompileError> {
         let Type::Array { len, element } = ty else {
             return Err(CompileError::new("internal error: expected array type"));
@@ -473,7 +523,14 @@ impl<'a> TypeEmitter<'a> {
                     self.emit_drop_helper(&field.ty, emitted, visiting, output)?;
                 }
             }
-            Type::Enum(_) => {}
+            Type::Enum(name) => {
+                let enum_def = self.enum_def(name)?;
+                for variant in &enum_def.variants {
+                    if let Some(payload) = &variant.payload {
+                        self.emit_drop_helper(payload, emitted, visiting, output)?;
+                    }
+                }
+            }
             Type::Function(_) => {}
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
@@ -591,9 +648,33 @@ impl<'a> TypeEmitter<'a> {
                 }
                 Ok(output)
             }
-            Type::Enum(_) => Err(CompileError::new(
-                "user-defined enum cleanup requires v0.4 C lowering",
-            )),
+            Type::Enum(name) => {
+                let enum_def = self.enum_def(name)?;
+                let mut output = String::new();
+                for (tag, variant) in enum_def.variants.iter().enumerate() {
+                    let Some(payload) = variant
+                        .payload
+                        .as_ref()
+                        .filter(|payload| payload.needs_cleanup())
+                    else {
+                        continue;
+                    };
+                    if !output.is_empty() {
+                        output.push_str("else ");
+                    }
+                    output.push_str(&format!(
+                        "if (mlg_value->tag == {tag}) {{\n    {}(&(mlg_value->{}.{}));\n}}",
+                        drop_fn_name(payload),
+                        c_field("payload"),
+                        c_field(&variant.name)
+                    ));
+                    output.push('\n');
+                }
+                if output.ends_with('\n') {
+                    output.pop();
+                }
+                Ok(output)
+            }
             Type::Function(_) => Ok(
                 "if (mlg_value->mlg_drop != NULL) {\n    mlg_value->mlg_drop(mlg_value->mlg_env);\n}\nmlg_value->mlg_env = NULL;\nmlg_value->mlg_drop = NULL;\nmlg_value->mlg_call = NULL;"
                     .to_string(),

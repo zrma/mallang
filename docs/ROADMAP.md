@@ -1064,3 +1064,14 @@
 - [x] expression/statement match arm-local payload move와 cleanup insertion 연결
 - [x] typed IR 구조와 non-Copy wildcard payload cleanup 회귀 테스트 추가
 - [x] C backend가 새 enum IR을 지원하기 전 명시적 invariant error 경계 유지
+
+## P133: User Enum Native C Backend
+
+- [x] specialized enum마다 concrete tag와 payload union C layout 생성
+- [x] active variant tag에 따라 non-Copy payload를 정리하는 recursive drop helper 생성
+- [x] zero/single-payload user enum constructor를 designated initializer로 lowering
+- [x] expression/statement match가 공유하는 recursive pattern condition/binding planner 추가
+- [x] nested user enum과 `Option`/`Result` payload의 short-circuit tag 검사 연결
+- [x] malformed runtime tag trap과 malformed enum constructor IR 회귀 검사 추가
+- [x] generic enum, nested pattern, wildcard slice cleanup native example 추가
+- [x] native output, full generated C warning-clean, ASan/UBSan gate 연결

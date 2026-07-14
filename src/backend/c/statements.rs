@@ -13,7 +13,7 @@ use super::{
     utils::{
         finish_with_prelude, for_post_label, index_assign_value_temp_name, index_value_temp_name,
         is_blank_identifier, match_scrutinee_temp_name, print_temp_name, push_indented_lines,
-        range_index_temp_name, range_source_temp_name, runtime_guard,
+        range_index_temp_name, range_source_temp_name, runtime_error_call, runtime_guard,
     },
     CExpr, CGenerator, CompileError,
 };
@@ -511,10 +511,49 @@ impl<'a> CGenerator<'a> {
             Type::Result(_, _) => {
                 self.emit_result_match_stmt(&scrutinee_code, arms, env, continue_label, output)
             }
+            Type::Enum(_) => self.emit_user_enum_match_stmt(
+                &scrutinee.ty,
+                &scrutinee_code,
+                arms,
+                env,
+                continue_label,
+                output,
+            ),
             _ => Err(CompileError::new(
                 "IR invariant violation: match on non-ADT value",
             )),
         }
+    }
+
+    fn emit_user_enum_match_stmt(
+        &self,
+        scrutinee_ty: &Type,
+        scrutinee: &str,
+        arms: &[IrMatchBlockArm],
+        env: &HashMap<String, String>,
+        continue_label: Option<&str>,
+        mut output: String,
+    ) -> Result<String, CompileError> {
+        if arms.is_empty() {
+            return Err(CompileError::new(
+                "IR invariant violation: user enum match requires at least one arm",
+            ));
+        }
+
+        for (index, arm) in arms.iter().enumerate() {
+            let plan = self.plan_user_enum_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            if index == 0 {
+                output.push_str(&format!("if ({}) {{\n", plan.condition));
+            } else {
+                output.push_str(&format!(" else if ({}) {{\n", plan.condition));
+            }
+            self.emit_match_stmt_body(&arm.body, &plan.env, continue_label, &mut output)?;
+            output.push('}');
+        }
+        output.push_str(" else {\n");
+        push_indented_lines(&mut output, &runtime_error_call("invalid enum tag"), 1);
+        output.push('}');
+        Ok(output)
     }
 
     fn emit_option_match_stmt(
