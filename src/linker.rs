@@ -1424,6 +1424,44 @@ pub type Maybe[T] enum {
     }
 
     #[test]
+    fn links_cross_package_recursive_generic_enums() {
+        let project = TempProject::new("recursive-generic-enum-api");
+        project.write(
+            "src/main.mlg",
+            r#"package main
+import "hello/model"
+
+func main() {
+    tail := model.List[int].Nil
+    values := model.List[int].Cons(1, tail)
+}
+"#,
+        );
+        project.write(
+            "src/model/model.mlg",
+            r#"package model
+
+pub type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+"#,
+        );
+
+        let (_, _, linked, graph) = project.link().unwrap();
+        let checked = check_project(&linked, &graph).unwrap();
+        assert_eq!(checked.enums.len(), 1);
+        let (list_name, list) = checked.enums.iter().next().unwrap();
+        assert!(checked.recursive_enums.contains(list_name));
+        assert_eq!(list.pattern_name, internal_symbol("hello/model", "List"));
+        assert_eq!(list.variants[1].payloads.len(), 2);
+        assert!(matches!(
+            list.variants[1].payloads[1],
+            crate::semantic::Type::Enum(_)
+        ));
+    }
+
+    #[test]
     fn links_package_function_values_and_closure_returns() {
         let project = TempProject::new("function-values");
         project.write(

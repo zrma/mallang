@@ -80,6 +80,7 @@ pub struct CheckedProgram {
     pub methods: HashMap<MethodKey, MethodSig>,
     pub structs: HashMap<String, StructSig>,
     pub enums: HashMap<String, EnumSig>,
+    pub recursive_enums: HashSet<String>,
     pub closures: Vec<CheckedClosure>,
 }
 
@@ -325,7 +326,7 @@ impl<'a> Checker<'a> {
         self.collect_enum_names()?;
         self.collect_structs()?;
         self.collect_enums()?;
-        self.reject_recursive_types()?;
+        let recursive_enums = self.validate_recursive_types()?;
         self.collect_signatures()?;
         for function in &self.program.functions {
             self.check_function(function)?;
@@ -337,6 +338,7 @@ impl<'a> Checker<'a> {
             methods: self.methods,
             structs: self.structs,
             enums: self.enums,
+            recursive_enums,
             closures: self.closures.into_inner(),
         })
     }
@@ -511,90 +513,148 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn reject_recursive_types(&self) -> Result<(), SemanticError> {
-        for struct_decl in &self.program.structs {
-            let mut visiting = vec![struct_decl.name.clone()];
-            let struct_sig = self.struct_sig(&struct_decl.name, struct_decl.span)?;
-            for field_sig in &struct_sig.fields {
-                self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, &mut visiting)?;
+    fn validate_recursive_types(&self) -> Result<HashSet<String>, SemanticError> {
+        let graph = self.recursive_type_graph()?;
+        let mut recursive_enums = HashSet::new();
+        for component in strongly_connected_components(&graph) {
+            if !is_cyclic_component(&component, &graph) {
+                continue;
+            }
+
+            let members = component.iter().copied().collect::<HashSet<_>>();
+            if let Some(node_index) = find_struct_only_cycle(&component, &members, &graph) {
+                let node = &graph[node_index];
+                return Err(SemanticError::new(
+                    format!(
+                        "recursive type definition involving `{}` has no user enum indirection boundary",
+                        node.name
+                    ),
+                    recursive_edge_span(node_index, &members, &graph, true),
+                ));
+            }
+
+            let enum_nodes = component
+                .iter()
+                .copied()
+                .filter(|index| graph[*index].kind == RecursiveTypeKind::Enum)
+                .collect::<Vec<_>>();
+            if enum_nodes.is_empty() {
+                let node_index = component[0];
+                let node = &graph[node_index];
+                return Err(SemanticError::new(
+                    format!(
+                        "recursive type definition involving `{}` has no user enum indirection boundary",
+                        node.name
+                    ),
+                    recursive_edge_span(node_index, &members, &graph, false),
+                ));
+            }
+
+            let has_base_variant = enum_nodes.iter().any(|index| {
+                graph[*index].variants.iter().any(|variant| {
+                    variant
+                        .dependencies
+                        .iter()
+                        .all(|dependency| !members.contains(dependency))
+                })
+            });
+            if !has_base_variant {
+                let node = &graph[enum_nodes[0]];
+                return Err(SemanticError::new(
+                    format!(
+                        "recursive enum component involving `{}` has no non-recursive base variant",
+                        node.name
+                    ),
+                    node.span,
+                ));
+            }
+
+            recursive_enums.extend(
+                enum_nodes
+                    .into_iter()
+                    .map(|index| graph[index].name.clone()),
+            );
+        }
+
+        Ok(recursive_enums)
+    }
+
+    fn recursive_type_graph(&self) -> Result<Vec<RecursiveTypeNode>, SemanticError> {
+        let mut graph = self
+            .program
+            .structs
+            .iter()
+            .map(|declaration| RecursiveTypeNode {
+                name: declaration.name.clone(),
+                kind: RecursiveTypeKind::Struct,
+                span: declaration.span,
+                edges: Vec::new(),
+                variants: Vec::new(),
+            })
+            .chain(
+                self.program
+                    .enums
+                    .iter()
+                    .map(|declaration| RecursiveTypeNode {
+                        name: declaration.name.clone(),
+                        kind: RecursiveTypeKind::Enum,
+                        span: declaration.span,
+                        edges: Vec::new(),
+                        variants: Vec::new(),
+                    }),
+            )
+            .collect::<Vec<_>>();
+        let indices = graph
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.name.clone(), index))
+            .collect::<HashMap<_, _>>();
+
+        for declaration in &self.program.structs {
+            let node_index = indices[&declaration.name];
+            let signature = self.struct_sig(&declaration.name, declaration.span)?;
+            for field in &signature.fields {
+                let mut dependencies = Vec::new();
+                collect_type_dependencies(&field.ty, &indices, &mut dependencies);
+                graph[node_index]
+                    .edges
+                    .extend(dependencies.into_iter().map(|target| RecursiveTypeEdge {
+                        target,
+                        span: field.ty_span,
+                    }));
             }
         }
 
         for declaration in &self.program.enums {
-            let mut visiting = vec![declaration.name.clone()];
-            let enum_sig = self.enum_sig(&declaration.name, declaration.span)?;
-            for variant in &enum_sig.variants {
-                for (index, payload) in variant.payloads.iter().enumerate() {
-                    self.reject_recursive_type(
-                        payload,
-                        variant
-                            .payload_spans
-                            .get(index)
+            let node_index = indices[&declaration.name];
+            let signature = self.enum_sig(&declaration.name, declaration.span)?;
+            for variant in &signature.variants {
+                let mut variant_dependencies = Vec::new();
+                for (payload_index, payload) in variant.payloads.iter().enumerate() {
+                    let mut dependencies = Vec::new();
+                    collect_type_dependencies(payload, &indices, &mut dependencies);
+                    let span = variant
+                        .payload_spans
+                        .get(payload_index)
+                        .copied()
+                        .unwrap_or(declaration.span);
+                    graph[node_index].edges.extend(
+                        dependencies
+                            .iter()
                             .copied()
-                            .unwrap_or(declaration.span),
-                        &mut visiting,
-                    )?;
+                            .map(|target| RecursiveTypeEdge { target, span }),
+                    );
+                    variant_dependencies.extend(dependencies);
                 }
+                graph[node_index]
+                    .variants
+                    .push(RecursiveVariantDependencies {
+                        dependencies: variant_dependencies,
+                    });
             }
         }
 
-        Ok(())
-    }
-
-    fn reject_recursive_type(
-        &self,
-        ty: &Type,
-        span: Span,
-        visiting: &mut Vec<String>,
-    ) -> Result<(), SemanticError> {
-        match ty {
-            Type::Struct(name) => {
-                if visiting.contains(name) {
-                    return Err(SemanticError::new(
-                        format!(
-                            "recursive type definition involving `{name}` is not supported in v0"
-                        ),
-                        span,
-                    ));
-                }
-
-                visiting.push(name.clone());
-                let struct_sig = self.struct_sig(name, span)?;
-                for field_sig in &struct_sig.fields {
-                    self.reject_recursive_type(&field_sig.ty, field_sig.ty_span, visiting)?;
-                }
-                visiting.pop();
-                Ok(())
-            }
-            Type::Enum(name) => {
-                if visiting.contains(name) {
-                    return Err(SemanticError::new(
-                        format!(
-                            "recursive type definition involving `{name}` is not supported in v0"
-                        ),
-                        span,
-                    ));
-                }
-
-                visiting.push(name.clone());
-                let enum_sig = self.enum_sig(name, span)?;
-                for variant in &enum_sig.variants {
-                    for payload in &variant.payloads {
-                        self.reject_recursive_type(payload, span, visiting)?;
-                    }
-                }
-                visiting.pop();
-                Ok(())
-            }
-            Type::Option(inner) | Type::Array { element: inner, .. } | Type::Slice(inner) => {
-                self.reject_recursive_type(inner, span, visiting)
-            }
-            Type::Result(ok, err) => {
-                self.reject_recursive_type(ok, span, visiting)?;
-                self.reject_recursive_type(err, span, visiting)
-            }
-            Type::Int | Type::Bool | Type::String | Type::Unit | Type::Function(_) => Ok(()),
-        }
+        Ok(graph)
     }
 
     fn collect_signatures(&mut self) -> Result<(), SemanticError> {
@@ -3870,6 +3930,166 @@ struct IfBranchCheck {
 struct PreparedMatchArm<'a> {
     expr: &'a Expr,
     bindings: Vec<(&'a str, Type)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecursiveTypeKind {
+    Struct,
+    Enum,
+}
+
+struct RecursiveTypeNode {
+    name: String,
+    kind: RecursiveTypeKind,
+    span: Span,
+    edges: Vec<RecursiveTypeEdge>,
+    variants: Vec<RecursiveVariantDependencies>,
+}
+
+struct RecursiveTypeEdge {
+    target: usize,
+    span: Span,
+}
+
+struct RecursiveVariantDependencies {
+    dependencies: Vec<usize>,
+}
+
+fn collect_type_dependencies(
+    ty: &Type,
+    indices: &HashMap<String, usize>,
+    dependencies: &mut Vec<usize>,
+) {
+    match ty {
+        Type::Struct(name) | Type::Enum(name) => {
+            dependencies.push(indices[name]);
+        }
+        Type::Option(inner) | Type::Array { element: inner, .. } | Type::Slice(inner) => {
+            collect_type_dependencies(inner, indices, dependencies);
+        }
+        Type::Result(ok, err) => {
+            collect_type_dependencies(ok, indices, dependencies);
+            collect_type_dependencies(err, indices, dependencies);
+        }
+        Type::Int | Type::Bool | Type::String | Type::Unit | Type::Function(_) => {}
+    }
+}
+
+fn strongly_connected_components(graph: &[RecursiveTypeNode]) -> Vec<Vec<usize>> {
+    fn visit(node: usize, graph: &[RecursiveTypeNode], seen: &mut [bool], order: &mut Vec<usize>) {
+        if seen[node] {
+            return;
+        }
+        seen[node] = true;
+        for edge in &graph[node].edges {
+            visit(edge.target, graph, seen, order);
+        }
+        order.push(node);
+    }
+
+    fn collect(node: usize, reverse: &[Vec<usize>], seen: &mut [bool], component: &mut Vec<usize>) {
+        if seen[node] {
+            return;
+        }
+        seen[node] = true;
+        component.push(node);
+        for dependency in &reverse[node] {
+            collect(*dependency, reverse, seen, component);
+        }
+    }
+
+    let mut seen = vec![false; graph.len()];
+    let mut order = Vec::with_capacity(graph.len());
+    for node in 0..graph.len() {
+        visit(node, graph, &mut seen, &mut order);
+    }
+
+    let mut reverse = vec![Vec::new(); graph.len()];
+    for (source, node) in graph.iter().enumerate() {
+        for edge in &node.edges {
+            reverse[edge.target].push(source);
+        }
+    }
+
+    seen.fill(false);
+    let mut components = Vec::new();
+    for node in order.into_iter().rev() {
+        if seen[node] {
+            continue;
+        }
+        let mut component = Vec::new();
+        collect(node, &reverse, &mut seen, &mut component);
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
+}
+
+fn is_cyclic_component(component: &[usize], graph: &[RecursiveTypeNode]) -> bool {
+    component.len() > 1
+        || graph[component[0]]
+            .edges
+            .iter()
+            .any(|edge| edge.target == component[0])
+}
+
+fn find_struct_only_cycle(
+    component: &[usize],
+    members: &HashSet<usize>,
+    graph: &[RecursiveTypeNode],
+) -> Option<usize> {
+    fn visit(
+        node: usize,
+        members: &HashSet<usize>,
+        graph: &[RecursiveTypeNode],
+        states: &mut [u8],
+    ) -> Option<usize> {
+        states[node] = 1;
+        for edge in &graph[node].edges {
+            if !members.contains(&edge.target)
+                || graph[edge.target].kind != RecursiveTypeKind::Struct
+            {
+                continue;
+            }
+            match states[edge.target] {
+                1 => return Some(edge.target),
+                0 => {
+                    if let Some(cycle) = visit(edge.target, members, graph, states) {
+                        return Some(cycle);
+                    }
+                }
+                _ => {}
+            }
+        }
+        states[node] = 2;
+        None
+    }
+
+    let mut states = vec![0; graph.len()];
+    for node in component.iter().copied() {
+        if graph[node].kind == RecursiveTypeKind::Struct && states[node] == 0 {
+            if let Some(cycle) = visit(node, members, graph, &mut states) {
+                return Some(cycle);
+            }
+        }
+    }
+    None
+}
+
+fn recursive_edge_span(
+    node: usize,
+    members: &HashSet<usize>,
+    graph: &[RecursiveTypeNode],
+    structs_only: bool,
+) -> Span {
+    graph[node]
+        .edges
+        .iter()
+        .find(|edge| {
+            members.contains(&edge.target)
+                && (!structs_only || graph[edge.target].kind == RecursiveTypeKind::Struct)
+        })
+        .map_or(graph[node].span, |edge| edge.span)
 }
 
 type CoveragePath = Vec<String>;
@@ -7289,9 +7509,94 @@ func main() {}
             .contains("duplicate variant `Idle` in enum `State`"));
 
         let recursive = check_error("type Node enum { Next(Node) }\nfunc main() {}\n");
-        assert!(recursive
+        assert!(recursive.message.contains(
+            "recursive enum component involving `Node` has no non-recursive base variant"
+        ));
+    }
+
+    #[test]
+    fn allows_recursive_enums_with_non_recursive_base_variants() {
+        check_ok(
+            r#"
+type List[T] enum {
+    Nil
+    Cons(T, List[T])
+}
+
+type Entry struct {
+    rest Chain
+}
+
+type Chain enum {
+    End
+    More(Entry)
+}
+
+type Left enum {
+    ToRight(Right)
+}
+
+type Right enum {
+    Done
+    ToLeft(Left)
+}
+
+func main() {
+    tail := List[int].Nil
+    values := List[int].Cons(1, tail)
+    chain := Chain.End
+    right := Right.Done
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn rejects_non_productive_recursive_enum_components() {
+        let direct = check_error("type Loop enum { Again(Loop) }\nfunc main() {}\n");
+        assert!(direct.message.contains(
+            "recursive enum component involving `Loop` has no non-recursive base variant"
+        ));
+
+        let wrapped = check_error("type Loop enum { Again(Option[Loop]) }\nfunc main() {}\n");
+        assert!(wrapped
             .message
-            .contains("recursive type definition involving `Node`"));
+            .contains("has no non-recursive base variant"));
+
+        let mutual = check_error(
+            r#"
+type Left enum { ToRight(Right) }
+type Right enum { ToLeft(Left) }
+func main() {}
+"#,
+        );
+        assert!(mutual.message.contains("has no non-recursive base variant"));
+    }
+
+    #[test]
+    fn rejects_struct_only_subcycles_inside_mixed_recursive_components() {
+        let error = check_error(
+            r#"
+type Left struct {
+    right Right
+    marker Marker
+}
+
+type Right struct {
+    left Left
+}
+
+type Marker enum {
+    End
+    Link(Left)
+}
+
+func main() {}
+"#,
+        );
+        assert!(error
+            .message
+            .contains("has no user enum indirection boundary"));
     }
 
     #[test]
