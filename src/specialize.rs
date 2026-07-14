@@ -323,7 +323,7 @@ impl Specializer {
             .cloned()
         {
             for variant in &mut declaration.variants {
-                if let Some(payload) = &mut variant.payload {
+                for payload in &mut variant.payloads {
                     self.rewrite_type_ref(payload, &HashMap::new())?;
                 }
             }
@@ -876,7 +876,7 @@ impl Specializer {
         specialized.name = specialized_name.clone();
         specialized.type_params.clear();
         for variant in &mut specialized.variants {
-            if let Some(payload) = &mut variant.payload {
+            for payload in &mut variant.payloads {
                 self.substitute_and_rewrite_type_ref(payload, &substitutions)?;
             }
         }
@@ -1259,6 +1259,52 @@ func main() {
                 args: None,
                 ..
             } if variant == "None"
+        ));
+    }
+
+    #[test]
+    fn specializes_all_generic_enum_payloads() {
+        let program = parse(
+            r#"
+type Pairing[T] enum {
+    Empty
+    Pair(T, Option[T])
+}
+
+func main() {
+    value := Pairing[int].Pair(7, Some(8))
+}
+"#,
+        )
+        .unwrap();
+
+        let specialized = specialize(&program).unwrap();
+        assert_eq!(specialized.enums.len(), 1);
+        let pair = specialized.enums[0]
+            .variants
+            .iter()
+            .find(|variant| variant.name == "Pair")
+            .unwrap();
+        assert_eq!(pair.payloads.len(), 2);
+        assert_eq!(pair.payloads[0].name, "int");
+        assert_eq!(pair.payloads[1].name, "Option");
+        assert_eq!(pair.payloads[1].args[0].name, "int");
+
+        let main = specialized
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let StmtKind::Let { expr, .. } = &main.body.statements[0].kind else {
+            panic!("expected constructor binding");
+        };
+        assert!(matches!(
+            &expr.kind,
+            ExprKind::EnumConstructor {
+                variant,
+                args: Some(args),
+                ..
+            } if variant == "Pair" && args.len() == 2
         ));
     }
 

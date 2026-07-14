@@ -88,6 +88,14 @@
   tag/payload union, pattern planner와 cleanup backend를 사용한다. `Some`/`None`/`Ok`/`Err`
   source spelling과 native print output은 호환성을 유지하며, built-in 전용 IR node와 match
   emitter는 제거했다.
+- v0.5 P138 완료: user enum declaration, constructor와 qualified pattern을 zero/one/multiple
+  positional payload로 일반화했다. Constructor는 payload 개수, owned argument mode와 각
+  위치의 type을 검사하고, match는 여러 binding, wildcard와 nested ADT pattern의 Cartesian
+  exhaustiveness를 검사한다. Generic specialization과 cross-package linker는 모든 payload
+  type과 pattern binding을 순회한다. Existing zero/single payload는 전체 회귀 테스트로
+  호환성을 유지한다. Typed IR/backend는 아직 single payload 구조이므로 multi-payload enum은
+  semantic `check`까지 허용하되 IR lowering에서 enum/variant를 명시한 invariant diagnostic으로
+  중단한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -231,9 +239,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Enum declaration/constructor/pattern을 positional multi-payload로 일반화한다.
-2. Existing zero/single payload와 generic/imported enum compatibility를 유지한다.
-3. Typed IR/backend 변경 전 explicit invariant boundary와 source diagnostic을 고정한다.
+1. Concrete struct/user enum payload의 recursive type dependency graph를 만든다.
+2. User enum과 base variant가 있는 SCC만 transparent recursive representation 대상으로 허용한다.
+3. Struct-only, base 없는 cycle과 built-in wrapper만으로 생긴 cycle을 source diagnostic으로 거부한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -181,7 +181,7 @@ impl<'a> Linker<'a> {
                 .map(|param| param.name.clone())
                 .collect::<BTreeSet<_>>();
             for variant in &mut declaration.variants {
-                if let Some(payload) = &mut variant.payload {
+                for payload in &mut variant.payloads {
                     self.link_type_ref(payload, context, &type_params)?;
                 }
             }
@@ -321,7 +321,7 @@ impl<'a> Linker<'a> {
                 .map(|param| param.name.clone())
                 .collect::<BTreeSet<_>>();
             for variant in &declaration.variants {
-                if let Some(payload) = &variant.payload {
+                for payload in &variant.payloads {
                     self.validate_public_type(payload, context, &declaration.name, &type_params)?;
                 }
             }
@@ -587,7 +587,7 @@ impl<'a> Linker<'a> {
                     self.link_pattern(&mut arm.pattern, context, arm.span)?;
                     let mut arm_scopes = scopes.clone();
                     arm_scopes.push(BTreeSet::new());
-                    if let Some(binding) = pattern_binding(&arm.pattern) {
+                    for binding in pattern_bindings(&arm.pattern) {
                         arm_scopes
                             .last_mut()
                             .expect("match arm link scope exists")
@@ -677,7 +677,7 @@ impl<'a> Linker<'a> {
                     self.link_pattern(&mut arm.pattern, context, arm.span)?;
                     let mut arm_scopes = scopes.to_vec();
                     arm_scopes.push(BTreeSet::new());
-                    if let Some(binding) = pattern_binding(&arm.pattern) {
+                    for binding in pattern_bindings(&arm.pattern) {
                         arm_scopes
                             .last_mut()
                             .expect("match expression link scope exists")
@@ -974,7 +974,9 @@ impl<'a> Linker<'a> {
     ) -> Result<(), LinkError> {
         match pattern {
             MatchPattern::Variant {
-                type_name, payload, ..
+                type_name,
+                payloads,
+                ..
             } => {
                 if let Some((qualifier, name)) = type_name.split_once('.') {
                     let declaration = self.imported_declaration(context, qualifier, name, span)?;
@@ -998,7 +1000,7 @@ impl<'a> Linker<'a> {
                         *type_name = internal_symbol(&context.package_path, type_name);
                     }
                 }
-                if let Some(payload) = payload {
+                for payload in payloads {
                     self.link_pattern(payload, context, span)?;
                 }
             }
@@ -1172,15 +1174,27 @@ fn enum_constructor_base(expr: &Expr) -> Option<&Expr> {
     Some(base)
 }
 
-fn pattern_binding(pattern: &MatchPattern) -> Option<&str> {
+fn pattern_bindings(pattern: &MatchPattern) -> Vec<&str> {
+    let mut bindings = Vec::new();
+    collect_pattern_bindings(pattern, &mut bindings);
+    bindings
+}
+
+fn collect_pattern_bindings<'a>(pattern: &'a MatchPattern, bindings: &mut Vec<&'a str>) {
     match pattern {
         MatchPattern::Some(binding) | MatchPattern::Ok(binding) | MatchPattern::Err(binding) => {
-            Some(binding)
+            bindings.push(binding);
         }
-        MatchPattern::Binding(binding) => Some(binding),
-        MatchPattern::Variant { payload, .. } => payload.as_deref().and_then(pattern_binding),
-        MatchPattern::NestedBuiltin { payload, .. } => pattern_binding(payload),
-        MatchPattern::None | MatchPattern::Wildcard => None,
+        MatchPattern::Binding(binding) => bindings.push(binding),
+        MatchPattern::Variant { payloads, .. } => {
+            for payload in payloads {
+                collect_pattern_bindings(payload, bindings);
+            }
+        }
+        MatchPattern::NestedBuiltin { payload, .. } => {
+            collect_pattern_bindings(payload, bindings);
+        }
+        MatchPattern::None | MatchPattern::Wildcard => {}
     }
 }
 
@@ -1373,7 +1387,7 @@ pub func (mut box Box[T]) Replace(value T) {
 import "hello/model"
 
 func main() {
-    value := model.Maybe[int].Some(7)
+    value := model.Maybe[int].Both(7, Some(8))
     empty := model.Maybe[string].None
     print(unwrap(value))
 }
@@ -1381,6 +1395,8 @@ func main() {
 func unwrap(value model.Maybe[int]) int {
     return match value {
         case model.Maybe.Some(item) { item }
+        case model.Maybe.Both(first, Some(second)) { first + second }
+        case model.Maybe.Both(first, None) { first }
         case model.Maybe.None { 0 }
     }
 }
@@ -1393,6 +1409,7 @@ func unwrap(value model.Maybe[int]) int {
 pub type Maybe[T] enum {
     None
     Some(T)
+    Both(T, Option[T])
 }
 "#,
         );

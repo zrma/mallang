@@ -57,7 +57,7 @@ pub struct EnumDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
     pub name: String,
-    pub payload: Option<TypeRef>,
+    pub payloads: Vec<TypeRef>,
     pub span: Span,
 }
 
@@ -308,7 +308,7 @@ pub enum MatchPattern {
     Variant {
         type_name: String,
         variant: String,
-        payload: Option<Box<MatchPattern>>,
+        payloads: Vec<MatchPattern>,
     },
     NestedBuiltin {
         variant: String,
