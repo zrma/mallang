@@ -4,10 +4,10 @@ use crate::{
     check,
     ir::{
         lower, IrArg, IrExpr, IrExprKind, IrForInit, IrFunction, IrMatchBlockArm, IrMatchPattern,
-        IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
+        IrParam, IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
     },
     parse,
-    semantic::Type,
+    semantic::{FunctionParamType, FunctionType, Type},
 };
 
 #[test]
@@ -2112,4 +2112,37 @@ print(name)
     assert!(c.contains("]).mlg_name));"));
     assert!(c.contains("(*mlg_name) = \"park\";"));
     assert!(c.contains("mlg_drop_Slice_Struct_User(&(mlg_users));"));
+}
+
+#[test]
+fn generates_callable_value_type_and_drop_helper() {
+    let callable = Type::Function(FunctionType {
+        mutable: false,
+        params: vec![FunctionParamType {
+            mode: ParamMode::Owned,
+            ty: Type::Int,
+        }],
+        return_type: Box::new(Type::Int),
+    });
+    let program = IrProgram {
+        structs: Vec::new(),
+        functions: vec![IrFunction {
+            name: "accept".to_string(),
+            params: vec![IrParam {
+                name: "transform".to_string(),
+                mode: ParamMode::Owned,
+                ty: callable,
+            }],
+            return_type: Type::Unit,
+            body: Vec::new(),
+        }],
+    };
+
+    let c = generate_c_from_ir(&program).unwrap();
+
+    assert!(c.contains("void *mlg_env;"));
+    assert!(c.contains("void (*mlg_drop)(void *);"));
+    assert!(c.contains("int64_t (*mlg_call)(void *mlg_env, int64_t mlg_arg_0);"));
+    assert!(c.contains("if (mlg_value->mlg_drop != NULL)"));
+    assert!(c.contains("mlg_value->mlg_call = NULL;"));
 }

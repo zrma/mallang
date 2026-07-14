@@ -13,11 +13,15 @@
 
 ## 현재 구현 기반
 
-- Named function은 direct call만 가능하며 value position에서는 해석되지 않는다.
+- Named function은 value position에서 signature를 가진 fresh move-only function value로
+  해석된다.
 - `con`과 `mut`는 call-scoped read/exclusive borrow이고 non-copy value는 기본 move다.
 - Struct, owned slice, built-in ADT cleanup이 typed IR와 C backend에 연결돼 있다.
 - Package linker가 qualified direct call과 public declaration visibility를 처리한다.
-- Function type, indirect call, closure AST/IR, callable C ABI는 아직 없다.
+- Function type과 closure literal AST/parser, function value/indirect call semantic,
+  callable C value layout/drop shell이 있다.
+- Typed IR indirect call, native callable thunk, capture 분석과 closure environment는
+  아직 없다.
 
 ## 추천 surface
 
@@ -122,7 +126,7 @@ Owned capture만 허용하면 escaping closure의 environment가 stack local을 
 ## 구현 순서
 
 1. function type과 plain function literal token/AST/parser를 추가한다. (완료)
-2. named function value, function parameter/return, indirect call semantic을 추가한다.
+2. named function value, function parameter/return, indirect call semantic을 추가한다. (완료)
 3. typed IR와 non-capturing callable C ABI를 추가한다.
 4. immutable owned capture 분석과 environment lowering/cleanup을 추가한다.
 5. `func mut` type/literal과 exclusive call/capture mutation을 추가한다.

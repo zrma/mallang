@@ -904,3 +904,12 @@
 - [x] no-value function type의 explicit `unit` return 규칙 추가
 - [x] plain/mutable `func(...) { ... }` literal AST/parser 추가
 - [x] function literal body를 boxed AST node로 유지해 enum 크기 안정화
+
+## P116: Function Value Semantics and Callable Type Shell
+
+- [x] function type을 semantic `Type`과 signature 비교에 연결
+- [x] named function identifier를 fresh move-only function value로 해석
+- [x] function parameter, return, local binding의 ownership 검사 추가
+- [x] plain/mutable indirect call의 shared/exclusive access와 argument mode 검사 추가
+- [x] local value가 동명의 top-level function call을 shadow하도록 일관성 유지
+- [x] typed callable C value layout과 cleanup helper shell 추가

@@ -68,7 +68,7 @@ pub struct Param {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ParamMode {
     Owned,
     Con,

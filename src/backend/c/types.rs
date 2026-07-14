@@ -122,6 +122,14 @@ impl<'a> TypeEmitter<'a> {
                 output.push_str(&self.typedef_for_slice(ty)?);
                 output.push('\n');
             }
+            Type::Function(function) => {
+                for param in &function.params {
+                    self.emit_type_def(&param.ty, emitted, visiting, output)?;
+                }
+                self.emit_type_def(&function.return_type, emitted, visiting, output)?;
+                output.push_str(&self.typedef_for_function(ty)?);
+                output.push('\n');
+            }
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
         visiting.pop();
@@ -382,6 +390,23 @@ impl<'a> TypeEmitter<'a> {
         ))
     }
 
+    fn typedef_for_function(&self, ty: &Type) -> Result<String, CompileError> {
+        let Type::Function(function) = ty else {
+            return Err(CompileError::new("internal error: expected function type"));
+        };
+        let mut params = vec!["void *mlg_env".to_string()];
+        params.extend(function.params.iter().enumerate().map(|(index, param)| {
+            format!("{} mlg_arg_{index}", param.ty.c_param_type(param.mode))
+        }));
+
+        Ok(format!(
+            "typedef struct {{\n    void *mlg_env;\n    void (*mlg_drop)(void *);\n    {} (*mlg_call)({});\n}} {};\n",
+            function.return_type.c_name(),
+            params.join(", "),
+            ty.c_name()
+        ))
+    }
+
     fn emit_drop_helper(
         &self,
         ty: &Type,
@@ -414,6 +439,7 @@ impl<'a> TypeEmitter<'a> {
                     self.emit_drop_helper(&field.ty, emitted, visiting, output)?;
                 }
             }
+            Type::Function(_) => {}
             Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
         visiting.pop();
@@ -530,6 +556,10 @@ impl<'a> TypeEmitter<'a> {
                 }
                 Ok(output)
             }
+            Type::Function(_) => Ok(
+                "if (mlg_value->mlg_drop != NULL) {\n    mlg_value->mlg_drop(mlg_value->mlg_env);\n}\nmlg_value->mlg_env = NULL;\nmlg_value->mlg_drop = NULL;\nmlg_value->mlg_call = NULL;"
+                    .to_string(),
+            ),
             Type::Int | Type::Bool | Type::String | Type::Unit => Err(CompileError::new(format!(
                 "IR invariant violation: drop helper requested for non-cleanup type `{}`",
                 ty.source_name()
@@ -566,6 +596,15 @@ fn collect_type(ty: &Type, types: &mut Vec<Type>) {
         }
         Type::Slice(element) => {
             collect_type(element, types);
+            if !types.contains(ty) {
+                types.push(ty.clone());
+            }
+        }
+        Type::Function(function) => {
+            for param in &function.params {
+                collect_type(&param.ty, types);
+            }
+            collect_type(&function.return_type, types);
             if !types.contains(ty) {
                 types.push(ty.clone());
             }
