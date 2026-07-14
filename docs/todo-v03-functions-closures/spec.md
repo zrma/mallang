@@ -24,6 +24,7 @@
 ### Function type과 value
 
 - Go 형태의 `func(<parameter-types>) <return-type>`을 사용한다.
+- Function type의 return type은 필수이며 반환값이 없으면 `unit`을 쓴다.
 - Parameter mode는 function type의 일부다. 이름은 type에서 생략한다.
 - Named function은 같은 signature의 function value로 사용할 수 있다.
 - Package-qualified named function도 value position에서 사용할 수 있다.
@@ -120,7 +121,7 @@ Owned capture만 허용하면 escaping closure의 environment가 stack local을 
 
 ## 구현 순서
 
-1. function type과 plain function literal token/AST/parser를 추가한다.
+1. function type과 plain function literal token/AST/parser를 추가한다. (완료)
 2. named function value, function parameter/return, indirect call semantic을 추가한다.
 3. typed IR와 non-capturing callable C ABI를 추가한다.
 4. immutable owned capture 분석과 environment lowering/cleanup을 추가한다.

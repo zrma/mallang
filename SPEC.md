@@ -36,7 +36,8 @@ normative with the v0.2 release.
 
 The approved v0.3 surface adds first-class function values and owned closures:
 
-- Function types use `func(int) int`; parameter modes are part of the type.
+- Function types use `func(int) int`; parameter modes are part of the type and
+  the return type is required. A no-value function type ends in `unit`.
 - Named functions and package-qualified named functions can be used as values.
 - Closure literals use `func(value int) int { ... }`.
 - Mutable closure types and literals use `func mut(int) int` and

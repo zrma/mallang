@@ -655,6 +655,12 @@ impl<'a> Lowerer<'a> {
                     (IrExprKind::Var(name.clone()), ty)
                 }
             }
+            ExprKind::FunctionLiteral(_) => {
+                return Err(IrError::new(
+                    "function literal should have been rejected by semantic analysis",
+                    expr.span,
+                ));
+            }
             ExprKind::If {
                 condition,
                 then_branch,
