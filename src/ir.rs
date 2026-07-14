@@ -12,6 +12,7 @@ use crate::{
         CheckedClosure, CheckedProgram, EnumSig, FunctionParamType, FunctionSig, FunctionType,
         MethodKey, MethodSig, ParamSig, StructSig, Type,
     },
+    standard::{StandardIntrinsic, StandardType},
     token::Span,
 };
 
@@ -47,6 +48,8 @@ pub struct IrClosureCapture {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrStruct {
     pub name: String,
+    pub intrinsic: Option<StandardType>,
+    pub intrinsic_args: Vec<Type>,
     pub fields: Vec<IrStructField>,
 }
 
@@ -195,6 +198,9 @@ pub enum IrExprKind {
     FunctionValue {
         function: String,
     },
+    IntrinsicFunctionValue {
+        intrinsic: StandardIntrinsic,
+    },
     ClosureValue {
         closure: String,
         captures: Vec<IrClosureCaptureValue>,
@@ -242,6 +248,10 @@ pub enum IrExprKind {
     },
     Call {
         callee: String,
+        args: Vec<IrArg>,
+    },
+    IntrinsicCall {
+        intrinsic: StandardIntrinsic,
         args: Vec<IrArg>,
     },
     IndirectCall {
@@ -350,6 +360,9 @@ impl<'a> Lowerer<'a> {
         let enums = self.lower_enums()?;
         let mut functions = Vec::new();
         for function in &self.checked.program.functions {
+            if function.intrinsic.is_some() {
+                continue;
+            }
             let (receiver, sig, ir_name) = self.callable_sig(function)?;
             let mut locals = HashMap::new();
             if let Some(receiver) = receiver {
@@ -456,6 +469,8 @@ impl<'a> Lowerer<'a> {
             let sig = self.struct_sig(&struct_decl.name, struct_decl.span)?;
             structs.push(IrStruct {
                 name: struct_decl.name.clone(),
+                intrinsic: sig.intrinsic,
+                intrinsic_args: sig.intrinsic_args.clone(),
                 fields: sig
                     .fields
                     .iter()
@@ -816,8 +831,14 @@ impl<'a> Lowerer<'a> {
                 } else {
                     let sig = self.function_sig(name, expr.span)?;
                     (
-                        IrExprKind::FunctionValue {
-                            function: name.clone(),
+                        if let Some(intrinsic) = self.checked.intrinsics.get(name) {
+                            IrExprKind::IntrinsicFunctionValue {
+                                intrinsic: *intrinsic,
+                            }
+                        } else {
+                            IrExprKind::FunctionValue {
+                                function: name.clone(),
+                            }
                         },
                         Type::Function(sig.function_type(false)),
                     )
@@ -2080,9 +2101,16 @@ impl<'a> Lowerer<'a> {
             });
         }
         Ok((
-            IrExprKind::Call {
-                callee: name.clone(),
-                args: lowered_args,
+            if let Some(intrinsic) = self.checked.intrinsics.get(name) {
+                IrExprKind::IntrinsicCall {
+                    intrinsic: *intrinsic,
+                    args: lowered_args,
+                }
+            } else {
+                IrExprKind::Call {
+                    callee: name.clone(),
+                    args: lowered_args,
+                }
             },
             sig.return_type.clone(),
         ))
@@ -3324,6 +3352,27 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 .collect();
             IrExprKind::Call { callee, args }
         }
+        IrExprKind::IntrinsicCall { intrinsic, args } => {
+            let mut active = active.to_vec();
+            let args = args
+                .into_iter()
+                .map(|arg| {
+                    let insertion = if arg.mode == ArgMode::Owned {
+                        insert_expr_cleanup_drops(arg.expr, &active)
+                    } else {
+                        insert_place_expr_cleanup_drops(arg.expr, &active)
+                    };
+                    moved_roots.extend(insertion.moved_roots.iter().cloned());
+                    active = cleanup_bindings_after_moved_roots(&active, &insertion.moved_roots);
+                    IrArg {
+                        mode: arg.mode,
+                        expr: insertion.expr,
+                        span: arg.span,
+                    }
+                })
+                .collect();
+            IrExprKind::IntrinsicCall { intrinsic, args }
+        }
         IrExprKind::IndirectCall { callee, args } => {
             let callee = insert_place_expr_cleanup_drops(*callee, active);
             moved_roots.extend(callee.moved_roots.iter().cloned());
@@ -3384,6 +3433,9 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
         IrExprKind::String(value) => IrExprKind::String(value),
         IrExprKind::Bool(value) => IrExprKind::Bool(value),
         IrExprKind::FunctionValue { function } => IrExprKind::FunctionValue { function },
+        IrExprKind::IntrinsicFunctionValue { intrinsic } => {
+            IrExprKind::IntrinsicFunctionValue { intrinsic }
+        }
         IrExprKind::ClosureValue { closure, captures } => {
             let mut active = active.to_vec();
             let captures = captures
@@ -3836,7 +3888,7 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
         IrExprKind::SliceFieldTake { source } => {
             collect_cleanup_moved_roots(source, roots);
         }
-        IrExprKind::Call { args, .. } => {
+        IrExprKind::Call { args, .. } | IrExprKind::IntrinsicCall { args, .. } => {
             for arg in args {
                 if arg.mode == ArgMode::Owned {
                     collect_cleanup_moved_roots(&arg.expr, roots);
@@ -3897,6 +3949,7 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
         | IrExprKind::String(_)
         | IrExprKind::Bool(_)
         | IrExprKind::FunctionValue { .. }
+        | IrExprKind::IntrinsicFunctionValue { .. }
         | IrExprKind::Var(_) => {}
     }
 }

@@ -7,8 +7,11 @@ use crate::{
     ast::{Program, SourceUnit, Visibility},
     project::Project,
     source::SourceMap,
+    standard::{self, STANDARD_PREFIX},
     token::{SourceId, Span},
 };
+
+pub const STANDALONE_PACKAGE_PATH: &str = "standalone";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageGraph {
@@ -66,6 +69,7 @@ pub struct PackageDeclaration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageDeclarationKind {
     Struct,
+    Opaque,
     Enum,
     Function,
     Method,
@@ -168,8 +172,64 @@ pub fn build_package_graph(
         collect_file_imports(unit, &identity.path, &mut pending_imports)?;
     }
 
+    connect_standard_packages(&mut packages, &pending_imports)?;
     connect_imports(&mut packages, pending_imports)?;
-    collect_declarations(&mut packages, &source_packages, program)?;
+    collect_declarations(&mut packages, &source_packages, program, true)?;
+    let build_order = topological_order(&packages)?;
+
+    Ok(PackageGraph {
+        packages,
+        source_packages,
+        build_order,
+    })
+}
+
+pub fn build_standalone_package_graph(
+    sources: &SourceMap,
+    program: &Program,
+) -> Result<PackageGraph, PackageError> {
+    let mut packages = BTreeMap::from([(
+        STANDALONE_PACKAGE_PATH.to_string(),
+        Package {
+            path: STANDALONE_PACKAGE_PATH.to_string(),
+            name: "main".to_string(),
+            source_ids: Vec::new(),
+            imports: Vec::new(),
+            declarations: BTreeMap::new(),
+            methods: BTreeMap::new(),
+        },
+    )]);
+    let mut source_packages = BTreeMap::new();
+    let mut pending_imports = Vec::new();
+
+    for unit in &program.source_units {
+        let source_id = unit.span.source;
+        if sources.file(source_id).is_none() {
+            return Err(PackageError::new(
+                format!("source ID {} is not registered", source_id.index()),
+                None,
+            ));
+        }
+        if source_packages
+            .insert(source_id, STANDALONE_PACKAGE_PATH.to_string())
+            .is_some()
+        {
+            return Err(PackageError::new(
+                format!("source ID {} appears more than once", source_id.index()),
+                Some(unit.span),
+            ));
+        }
+        packages
+            .get_mut(STANDALONE_PACKAGE_PATH)
+            .expect("the standalone root package is initialized")
+            .source_ids
+            .push(source_id);
+        collect_file_imports(unit, STANDALONE_PACKAGE_PATH, &mut pending_imports)?;
+    }
+
+    connect_standard_packages(&mut packages, &pending_imports)?;
+    connect_imports(&mut packages, pending_imports)?;
+    collect_declarations(&mut packages, &source_packages, program, false)?;
     let build_order = topological_order(&packages)?;
 
     Ok(PackageGraph {
@@ -293,10 +353,12 @@ fn connect_imports(
 ) -> Result<(), PackageError> {
     for pending_import in pending {
         if !packages.contains_key(&pending_import.import.path) {
-            return Err(PackageError::new(
-                format!("unresolved import `{}`", pending_import.import.path),
-                Some(pending_import.import.span),
-            ));
+            let message = if pending_import.import.path.starts_with(STANDARD_PREFIX) {
+                format!("unknown standard package `{}`", pending_import.import.path)
+            } else {
+                format!("unresolved import `{}`", pending_import.import.path)
+            };
+            return Err(PackageError::new(message, Some(pending_import.import.span)));
         }
 
         let package = packages
@@ -319,10 +381,40 @@ fn connect_imports(
     Ok(())
 }
 
+fn connect_standard_packages(
+    packages: &mut BTreeMap<String, Package>,
+    pending: &[PendingImport],
+) -> Result<(), PackageError> {
+    for pending_import in pending {
+        let Some(package) =
+            standard::package(&pending_import.import.path, pending_import.import.span)
+        else {
+            continue;
+        };
+        if packages
+            .get(&pending_import.import.path)
+            .is_some_and(|existing| !existing.source_ids.is_empty())
+        {
+            return Err(PackageError::new(
+                format!(
+                    "source package `{}` shadows a reserved standard package",
+                    pending_import.import.path
+                ),
+                Some(pending_import.import.span),
+            ));
+        }
+        packages
+            .entry(pending_import.import.path.clone())
+            .or_insert(package);
+    }
+    Ok(())
+}
+
 fn collect_declarations(
     packages: &mut BTreeMap<String, Package>,
     source_packages: &BTreeMap<SourceId, String>,
     program: &Program,
+    reject_duplicates: bool,
 ) -> Result<(), PackageError> {
     for declaration in &program.structs {
         let package = package_for_declaration(packages, source_packages, declaration.span)?;
@@ -340,6 +432,7 @@ fn collect_declarations(
                 span: declaration.span,
             },
             &package.path,
+            reject_duplicates,
         )?;
     }
 
@@ -359,6 +452,7 @@ fn collect_declarations(
                 span: declaration.span,
             },
             &package.path,
+            reject_duplicates,
         )?;
     }
 
@@ -383,12 +477,18 @@ fn collect_declarations(
 
         if let Some(receiver) = &declaration.receiver {
             let methods = package.methods.entry(receiver.ty.name.clone()).or_default();
-            insert_declaration(methods, package_declaration, &package_path)?;
+            insert_declaration(
+                methods,
+                package_declaration,
+                &package_path,
+                reject_duplicates,
+            )?;
         } else {
             insert_declaration(
                 &mut package.declarations,
                 package_declaration,
                 &package_path,
+                reject_duplicates,
             )?;
         }
     }
@@ -419,8 +519,12 @@ fn insert_declaration(
     declarations: &mut BTreeMap<String, PackageDeclaration>,
     declaration: PackageDeclaration,
     package_path: &str,
+    reject_duplicates: bool,
 ) -> Result<(), PackageError> {
     if declarations.contains_key(&declaration.name) {
+        if !reject_duplicates {
+            return Ok(());
+        }
         return Err(PackageError::new(
             format!(
                 "duplicate declaration `{}` in package `{package_path}`",
@@ -636,6 +740,26 @@ mod tests {
             invalid_error.message,
             "invalid import path `hello/not-valid`"
         );
+    }
+
+    #[test]
+    fn resolves_compiler_owned_standard_packages() {
+        let project = TempProject::new("standard-package");
+        project.write(
+            "src/main.mlg",
+            "package main\nimport \"std/strings\"\nfunc main() {}\n",
+        );
+
+        let graph = project.graph().unwrap();
+        let strings = graph.package("std/strings").unwrap();
+
+        assert!(strings.source_ids.is_empty());
+        assert_eq!(strings.name, "strings");
+        assert_eq!(
+            strings.declarations["byteLen"].kind,
+            PackageDeclarationKind::Function
+        );
+        assert_eq!(graph.build_order(), &["std/strings", "hello"]);
     }
 
     #[test]

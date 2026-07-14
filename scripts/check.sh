@@ -184,6 +184,33 @@ if [[ -n "$missing_example_smokes" ]]; then
   echo "$missing_example_smokes" >&2
   exit 1
 fi
+standard_fixture="tests/fixtures/v06-standard-registry/standard-intrinsics.mlg"
+"${CARGO[@]}" run --quiet --bin mlg -- check "$standard_fixture" >/dev/null
+standard_ir="$("${CARGO[@]}" run --quiet --bin mlg -- ir "$standard_fixture")"
+if [[ "$standard_ir" != *"StringsByteLen"* || "$standard_ir" != *"CollectionsNewMap"* || "$standard_ir" != *"CollectionsCount"* ]]; then
+  echo "standard registry IR smoke failed: typed intrinsic identity is missing" >&2
+  exit 1
+fi
+standard_build_stdout="target/mallang/v06-standard-registry.stdout"
+standard_build_stderr="target/mallang/v06-standard-registry.stderr"
+if "${CARGO[@]}" run --quiet --bin mlg -- build "$standard_fixture" >"$standard_build_stdout" 2>"$standard_build_stderr"; then
+  echo "standard registry backend boundary smoke failed: expected P147 runtime rejection" >&2
+  exit 1
+fi
+if [[ -s "$standard_build_stdout" ]] || ! grep -Fq 'standard intrinsic `std/strings.byteLen` is not implemented in this compiler milestone' "$standard_build_stderr"; then
+  echo "standard registry backend boundary smoke failed: unexpected diagnostic" >&2
+  cat "$standard_build_stderr" >&2
+  exit 1
+fi
+standard_unused_fixture="tests/fixtures/v06-standard-registry/unused-standard-imports.mlg"
+"${CARGO[@]}" run --quiet --bin mlg -- check "$standard_unused_fixture" >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build "$standard_unused_fixture" -o target/mallang/v06-standard-unused >/dev/null
+standard_unused_output="$(target/mallang/v06-standard-unused)"
+if [[ "$standard_unused_output" != "1" ]]; then
+  echo "unused standard import native smoke failed: expected 1, got '$standard_unused_output'" >&2
+  exit 1
+fi
+expect_warning_clean_generated_c "v06-standard-unused" "target/mallang/unused-standard-imports.c"
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

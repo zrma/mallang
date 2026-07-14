@@ -392,7 +392,7 @@ impl<'a> TypeEmitter<'a> {
                 self.collect_expr_types(slice, types);
                 self.collect_expr_types(item, types);
             }
-            IrExprKind::Call { args, .. } => {
+            IrExprKind::Call { args, .. } | IrExprKind::IntrinsicCall { args, .. } => {
                 for arg in args {
                     self.collect_expr_types(&arg.expr, types);
                 }
@@ -417,6 +417,7 @@ impl<'a> TypeEmitter<'a> {
             | IrExprKind::String(_)
             | IrExprKind::Bool(_)
             | IrExprKind::FunctionValue { .. }
+            | IrExprKind::IntrinsicFunctionValue { .. }
             | IrExprKind::Var(_) => {}
         }
     }

@@ -78,6 +78,10 @@ pub enum ProjectError {
         path: PathBuf,
         name: String,
     },
+    ReservedProjectName {
+        path: PathBuf,
+        name: String,
+    },
     MissingSourceRoot {
         path: PathBuf,
     },
@@ -125,6 +129,11 @@ impl std::fmt::Display for ProjectError {
                 "{}: invalid project name `{name}`; expected a lowercase path name",
                 path.display()
             ),
+            Self::ReservedProjectName { path, name } => write!(
+                formatter,
+                "{}: project name `{name}` is reserved for compiler-owned standard packages",
+                path.display()
+            ),
             Self::MissingSourceRoot { path } => {
                 write!(
                     formatter,
@@ -158,6 +167,7 @@ impl std::error::Error for ProjectError {
             Self::UnsupportedInput { .. }
             | Self::ManifestNotFound { .. }
             | Self::InvalidProjectName { .. }
+            | Self::ReservedProjectName { .. }
             | Self::MissingSourceRoot { .. }
             | Self::MissingEntrypoint { .. } => None,
         }
@@ -213,6 +223,12 @@ fn load_project(manifest_path: PathBuf) -> Result<Project, ProjectError> {
 
     if !is_valid_project_name(&manifest.project.name) {
         return Err(ProjectError::InvalidProjectName {
+            path: manifest_path,
+            name: manifest.project.name,
+        });
+    }
+    if manifest.project.name == "std" {
+        return Err(ProjectError::ReservedProjectName {
             path: manifest_path,
             name: manifest.project.name,
         });
@@ -424,6 +440,17 @@ mod tests {
         let error = discover_project(&project.root).unwrap_err();
 
         assert!(matches!(error, ProjectError::InvalidProjectName { .. }));
+    }
+
+    #[test]
+    fn rejects_reserved_standard_project_name() {
+        let project = valid_project("reserved-name");
+        project.write("mallang.toml", "[project]\nname = \"std\"\n");
+
+        let error = discover_project(&project.root).unwrap_err();
+
+        assert!(matches!(error, ProjectError::ReservedProjectName { .. }));
+        assert!(error.to_string().contains("reserved"));
     }
 
     #[test]

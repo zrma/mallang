@@ -1209,9 +1209,20 @@
 
 ## P147: Standard Package Registry and Intrinsic ABI
 
-- [ ] reserved `std/...` package registry와 exact import resolution 추가
-- [ ] project/standalone compilation을 shared standard-aware linking path로 연결
-- [ ] standard public type/function signature와 explicit generic specialization 연결
-- [ ] standard call target을 typed intrinsic identity로 semantic/IR에 보존
-- [ ] unknown standard package, shadow, wrong arity/mode/type와 internal-name access 진단 추가
-- [ ] project/standalone CLI check와 IR acceptance, existing project compatibility 검증
+- [x] reserved `std/...` package registry와 exact import resolution 추가
+- [x] project/standalone compilation을 shared standard-aware linking path로 연결
+- [x] standard public type/function signature와 explicit generic specialization 연결
+- [x] standard call target과 function value를 typed intrinsic identity로 semantic/IR에 보존
+- [x] opaque `Map[K,V]`, supported key type와 direct construction restriction을 semantic에 보존
+- [x] unknown standard package, shadow, wrong arity/mode/type와 internal-name access 진단 추가
+- [x] project/standalone CLI check와 IR acceptance, existing project compatibility 검증
+- [x] runtime body가 없는 intrinsic call의 deterministic backend invariant diagnostic 고정
+
+## P148: UTF-8 Text and Standard Error
+
+- [ ] `errors.Kind`/`errors.Error` native representation과 platform-independent category mapping 추가
+- [ ] string byte/scalar count, contains/find와 UTF-8 validation runtime 구현
+- [ ] split/join과 int/bool conversion/parse intrinsic 구현
+- [ ] owned string/slice/error result를 allocation accounting와 cleanup에 연결
+- [ ] invalid UTF-8, parse overflow와 empty separator semantics regression 추가
+- [ ] strict C, sanitizer와 allocation failure injection acceptance 통과

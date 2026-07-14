@@ -32,6 +32,24 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
+## Implemented v0.6 Standard Registry Foundation
+
+The approved v0.6 standard-library contract currently implements its compiler
+foundation:
+
+- `import "std/..."` works in project and manifest-free standalone source for
+  the six approved standard packages.
+- Project name `std` and identifiers beginning with `__mlg_` are reserved for
+  compiler-owned packages and symbols.
+- Standard declarations use exact public signatures and ordinary argument mode,
+  type, ownership, visibility, and explicit generic specialization checks.
+- `collections.Map[K,V]` is opaque, move-only, restricted to `int`, `bool`, or
+  `string` keys, and cannot be directly constructed as a struct literal.
+- Accepted standard calls and function values retain a typed intrinsic identity
+  in IR. Runtime implementations land in P148-P151; until then, `mlg check` and
+  `mlg ir` accept valid source while `mlg build` reports a deterministic missing
+  intrinsic implementation error.
+
 ## Implemented v0.3 Function Values and Closures
 
 The approved v0.3 surface adds first-class function values and owned closures:

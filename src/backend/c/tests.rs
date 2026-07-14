@@ -116,6 +116,8 @@ fn generates_c_drop_helpers_for_internal_cleanup_types() {
         enums: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
+            intrinsic: None,
+            intrinsic_args: Vec::new(),
             fields: vec![
                 IrStructField {
                     name: "values".to_string(),
@@ -213,6 +215,8 @@ fn generates_c_for_explicit_internal_cleanup_field_drop_statement() {
         enums: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
+            intrinsic: None,
+            intrinsic_args: Vec::new(),
             fields: vec![IrStructField {
                 name: "values".to_string(),
                 ty: slice_ty.clone(),

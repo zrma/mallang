@@ -293,7 +293,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 standard package/API contract
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147 registry/intrinsic ABI evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -302,12 +302,12 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P147에서 reserved `std/...` package registry와 standalone/project import resolution을
+1. P148에서 `errors.Kind`/`errors.Error` native representation과 stable category mapping을
    구현한다.
-2. Standard public signature와 explicit generic specialization을 ordinary type/ownership
-   checking에 연결하고 call target을 typed intrinsic identity로 IR에 보존한다.
-3. Runtime body는 P148-P151이 소유하며 P147에서는 missing implementation을 compiler
-   invariant로 유지한다.
+2. `std/strings`의 UTF-8 byte/scalar/search/split/join/conversion intrinsic을 backend/runtime에
+   연결한다.
+3. Owned string/slice/error result를 cleanup, allocation accounting/failure injection과 strict C
+   sanitizer acceptance에 연결한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

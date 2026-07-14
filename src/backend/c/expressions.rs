@@ -65,6 +65,10 @@ impl<'a> CGenerator<'a> {
             IrExprKind::FunctionValue { function } => {
                 self.emit_function_value_stmt_expr(expr, function)
             }
+            IrExprKind::IntrinsicFunctionValue { intrinsic } => Err(CompileError::new(format!(
+                "standard intrinsic `{}` is not implemented in this compiler milestone",
+                intrinsic.source_name()
+            ))),
             IrExprKind::ClosureValue { closure, captures } => {
                 self.emit_closure_value_stmt_expr(expr, closure, captures, env)
             }
@@ -176,6 +180,10 @@ impl<'a> CGenerator<'a> {
                     postlude,
                 })
             }
+            IrExprKind::IntrinsicCall { intrinsic, .. } => Err(CompileError::new(format!(
+                "standard intrinsic `{}` is not implemented in this compiler milestone",
+                intrinsic.source_name()
+            ))),
             IrExprKind::IndirectCall { callee, args } => {
                 self.emit_indirect_call_stmt_expr(expr, callee, args, env)
             }

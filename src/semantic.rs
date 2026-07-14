@@ -13,6 +13,7 @@ use crate::{
     },
     package::PackageGraph,
     specialize::{specialize_for_checking, specialize_for_validation},
+    standard::{StandardIntrinsic, StandardType},
     token::Span,
 };
 
@@ -77,6 +78,7 @@ fn needs_specialization(program: &Program) -> bool {
 pub struct CheckedProgram {
     pub program: Arc<Program>,
     pub signatures: HashMap<String, FunctionSig>,
+    pub intrinsics: HashMap<String, StandardIntrinsic>,
     pub methods: HashMap<MethodKey, MethodSig>,
     pub structs: HashMap<String, StructSig>,
     pub enums: HashMap<String, EnumSig>,
@@ -143,6 +145,8 @@ pub struct ParamSig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructSig {
+    pub intrinsic: Option<StandardType>,
+    pub intrinsic_args: Vec<Type>,
     pub fields: Vec<FieldSig>,
 }
 
@@ -288,6 +292,7 @@ struct Checker<'a> {
     program: &'a Program,
     package_graph: Option<&'a PackageGraph>,
     signatures: HashMap<String, FunctionSig>,
+    intrinsics: HashMap<String, StandardIntrinsic>,
     methods: HashMap<MethodKey, MethodSig>,
     method_access: HashMap<MethodKey, MethodAccess>,
     structs: HashMap<String, StructSig>,
@@ -306,6 +311,7 @@ impl<'a> Checker<'a> {
             program,
             package_graph: None,
             signatures: HashMap::new(),
+            intrinsics: HashMap::new(),
             methods: HashMap::new(),
             method_access: HashMap::new(),
             structs: HashMap::new(),
@@ -335,6 +341,7 @@ impl<'a> Checker<'a> {
         Ok(CheckedProgram {
             program: Arc::new(self.program.clone()),
             signatures: self.signatures,
+            intrinsics: self.intrinsics,
             methods: self.methods,
             structs: self.structs,
             enums: self.enums,
@@ -436,8 +443,14 @@ impl<'a> Checker<'a> {
                     struct_decl.span,
                 ));
             }
-            self.structs
-                .insert(struct_decl.name.clone(), StructSig { fields: Vec::new() });
+            self.structs.insert(
+                struct_decl.name.clone(),
+                StructSig {
+                    intrinsic: struct_decl.intrinsic,
+                    intrinsic_args: Vec::new(),
+                    fields: Vec::new(),
+                },
+            );
         }
 
         for struct_decl in &self.program.structs {
@@ -459,9 +472,39 @@ impl<'a> Checker<'a> {
                     ty_span: field.ty.span,
                 });
             }
+            let intrinsic_args = struct_decl
+                .intrinsic_args
+                .iter()
+                .map(|arg| self.type_from_ref(arg))
+                .collect::<Result<Vec<_>, _>>()?;
+            if struct_decl.intrinsic == Some(StandardType::Map) {
+                let [key, _value] = intrinsic_args.as_slice() else {
+                    return Err(SemanticError::new(
+                        "compiler-owned collections.Map must have two type arguments",
+                        struct_decl.span,
+                    ));
+                };
+                if !matches!(key, Type::Int | Type::Bool | Type::String)
+                    && !matches!(key, Type::Struct(name) if name.starts_with("__mlg_symbolic_type_"))
+                {
+                    return Err(SemanticError::new(
+                        format!(
+                            "collections.Map key type must be `int`, `bool`, or `string`, got `{}`",
+                            key.source_name()
+                        ),
+                        struct_decl.span,
+                    ));
+                }
+            }
 
-            self.structs
-                .insert(struct_decl.name.clone(), StructSig { fields });
+            self.structs.insert(
+                struct_decl.name.clone(),
+                StructSig {
+                    intrinsic: struct_decl.intrinsic,
+                    intrinsic_args,
+                    fields,
+                },
+            );
         }
 
         Ok(())
@@ -771,6 +814,9 @@ impl<'a> Checker<'a> {
                     ));
                 }
                 self.signatures.insert(function.name.clone(), function_sig);
+                if let Some(intrinsic) = function.intrinsic {
+                    self.intrinsics.insert(function.name.clone(), intrinsic);
+                }
             }
         }
 
@@ -785,6 +831,9 @@ impl<'a> Checker<'a> {
     }
 
     fn check_function(&self, function: &Function) -> Result<(), SemanticError> {
+        if function.intrinsic.is_some() {
+            return Ok(());
+        }
         let (receiver, sig) = self.callable_sig(function)?;
         let mut locals = HashMap::new();
         if let Some(receiver) = receiver {

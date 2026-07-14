@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: design approved, implementation pending
+상태: implementation in progress (P147 registry/intrinsic ABI complete)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
@@ -205,6 +205,13 @@ library를 제공한다.
 - `Option`/`Result` 기반 error propagation과 최소 error type convention
 - core, standard library, runtime implementation의 module 경계
 - platform-specific runtime code를 안전한 Mallang API 뒤에 격리하는 규칙
+
+현재 구현:
+
+- compiler-owned `std/...` registry와 project/standalone import resolution
+- exact public signature, explicit generic specialization과 opaque `Map[K,V]` type metadata
+- semantic ownership/type checking 뒤 typed standard intrinsic call/function value IR
+- runtime body가 아직 없는 intrinsic call의 deterministic backend rejection
 
 완료 조건:
 

@@ -107,7 +107,7 @@ impl<'a> Lexer<'a> {
             '|' if self.match_char('>') => TokenKind::PipeGreater,
             '"' => self.string_token(start)?,
             ch if ch.is_ascii_digit() => self.int_token(start),
-            ch if is_ident_start(ch) => self.ident_or_keyword(start),
+            ch if is_ident_start(ch) => self.ident_or_keyword(start)?,
             _ => {
                 return Err(self.error(start, self.cursor, format!("unexpected character `{ch}`")));
             }
@@ -178,16 +178,23 @@ impl<'a> Lexer<'a> {
         TokenKind::Int(self.source[start..self.cursor].to_string())
     }
 
-    fn ident_or_keyword(&mut self, start: usize) -> TokenKind {
+    fn ident_or_keyword(&mut self, start: usize) -> Result<TokenKind, LexError> {
         while matches!(self.peek_char(), Some(ch) if is_ident_continue(ch)) {
             self.advance_char();
         }
 
         let ident = &self.source[start..self.cursor];
+        if ident.starts_with("__mlg_") {
+            return Err(self.error(
+                start,
+                self.cursor,
+                "identifiers beginning with `__mlg_` are reserved for the compiler",
+            ));
+        }
         if let Some(keyword) = Keyword::from_ident(ident) {
-            TokenKind::Keyword(keyword)
+            Ok(TokenKind::Keyword(keyword))
         } else {
-            TokenKind::Ident(ident.to_string())
+            Ok(TokenKind::Ident(ident.to_string()))
         }
     }
 
@@ -351,5 +358,16 @@ mod tests {
 
         let error = lex_with_source("@", source_id).unwrap_err();
         assert_eq!(error.span.source, source_id);
+    }
+
+    #[test]
+    fn rejects_compiler_internal_identifier_prefix() {
+        let error = lex("func __mlg_pkg_hidden() {}").unwrap_err();
+
+        assert_eq!(
+            error.message,
+            "identifiers beginning with `__mlg_` are reserved for the compiler"
+        );
+        assert_eq!(error.span.start, 5);
     }
 }

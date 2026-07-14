@@ -5,11 +5,12 @@ use crate::{
     backend::generate_c_from_ir,
     frontend::parse_sources,
     ir::{lower, IrProgram},
-    linker::{display_linked_message, link_project},
-    package::{build_package_graph, PackageGraph},
+    linker::{display_linked_message, link_project, link_standalone},
+    package::{build_package_graph, build_standalone_package_graph, PackageGraph},
     project::Project,
-    semantic::{check, check_project},
+    semantic::check_project,
     source::SourceMap,
+    standard::augment_program,
     token::{SourceId, Span},
 };
 
@@ -64,9 +65,14 @@ pub fn check_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<Program, CompilerError> {
-    let program = parse_program(sources, source_ids)?;
-    check(&program)
-        .map_err(|error| CompilerError::new(CompilerStage::Semantic, error.message, error.span))?;
+    let (program, graph) = link_standalone_sources(sources, source_ids)?;
+    check_project(&program, &graph).map_err(|error| {
+        CompilerError::new(
+            CompilerStage::Semantic,
+            display_linked_message(&error.message),
+            error.span,
+        )
+    })?;
     Ok(program)
 }
 
@@ -74,11 +80,21 @@ pub fn lower_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<IrProgram, CompilerError> {
-    let program = parse_program(sources, source_ids)?;
-    let checked = check(&program)
-        .map_err(|error| CompilerError::new(CompilerStage::Semantic, error.message, error.span))?;
-    lower(&checked)
-        .map_err(|error| CompilerError::new(CompilerStage::Ir, error.message, error.span))
+    let (program, graph) = link_standalone_sources(sources, source_ids)?;
+    let checked = check_project(&program, &graph).map_err(|error| {
+        CompilerError::new(
+            CompilerStage::Semantic,
+            display_linked_message(&error.message),
+            error.span,
+        )
+    })?;
+    lower(&checked).map_err(|error| {
+        CompilerError::new(
+            CompilerStage::Ir,
+            display_linked_message(&error.message),
+            error.span,
+        )
+    })
 }
 
 pub fn generate_c_sources(
@@ -151,8 +167,22 @@ fn link_project_sources(
     let program = parse_program(sources, source_ids)?;
     let graph = build_package_graph(project, sources, &program)
         .map_err(|error| CompilerError::new(CompilerStage::Package, error.message, error.span))?;
-    let program = link_project(project, &graph, &program)
+    let mut program = link_project(project, &graph, &program)
         .map_err(|error| CompilerError::new(CompilerStage::Link, error.message, error.span))?;
+    augment_program(&mut program, &graph);
+    Ok((program, graph))
+}
+
+fn link_standalone_sources(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<(Program, PackageGraph), CompilerError> {
+    let program = parse_program(sources, source_ids)?;
+    let graph = build_standalone_package_graph(sources, &program)
+        .map_err(|error| CompilerError::new(CompilerStage::Package, error.message, error.span))?;
+    let mut program = link_standalone(&graph, &program)
+        .map_err(|error| CompilerError::new(CompilerStage::Link, error.message, error.span))?;
+    augment_program(&mut program, &graph);
     Ok((program, graph))
 }
 
@@ -170,7 +200,12 @@ mod tests {
     };
 
     use super::*;
-    use crate::{discover_project, load_source_files};
+    use crate::{
+        discover_project,
+        ir::{IrExprKind, IrStmtKind},
+        load_source_files,
+        standard::{StandardIntrinsic, StandardType},
+    };
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -257,6 +292,190 @@ mod tests {
 
         assert_eq!(error.stage, CompilerStage::Semantic);
         assert_eq!(error.span.map(|span| span.source), Some(duplicate));
+    }
+
+    #[test]
+    fn lowers_standalone_standard_calls_to_typed_intrinsics() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "main.mlg",
+            "import \"std/strings\"\nfunc main() { text := \"hello\"; size := strings.byteLen(con text); print(size) }\n",
+        );
+
+        let ir = lower_sources(&sources, &[main]).unwrap();
+        let IrStmtKind::Let { expr, .. } = &ir.functions[0].body[1].kind else {
+            panic!("expected standard call initializer");
+        };
+        let IrExprKind::IntrinsicCall { intrinsic, args } = &expr.kind else {
+            panic!("expected typed standard intrinsic call, got {expr:?}");
+        };
+
+        assert_eq!(*intrinsic, StandardIntrinsic::StringsByteLen);
+        assert_eq!(args.len(), 1);
+    }
+
+    #[test]
+    fn rejects_standard_signature_mode_and_type_mismatches() {
+        let mut mode_sources = SourceMap::new();
+        let mode_main = mode_sources.add_file(
+            "mode.mlg",
+            "import \"std/strings\"\nfunc main() { text := \"hello\"; print(strings.byteLen(text)) }\n",
+        );
+        let mode_error = check_sources(&mode_sources, &[mode_main]).unwrap_err();
+        assert_eq!(mode_error.stage, CompilerStage::Semantic);
+        assert!(mode_error.message.contains("expects `con` argument"));
+
+        let mut type_sources = SourceMap::new();
+        let type_main = type_sources.add_file(
+            "type.mlg",
+            "import \"std/strings\"\nfunc main() { value := 1; print(strings.byteLen(con value)) }\n",
+        );
+        let type_error = check_sources(&type_sources, &[type_main]).unwrap_err();
+        assert_eq!(type_error.stage, CompilerStage::Semantic);
+        assert!(type_error.message.contains("expected `string`"));
+    }
+
+    #[test]
+    fn rejects_unknown_standard_packages_and_unimplemented_runtime_calls() {
+        let mut unknown_sources = SourceMap::new();
+        let unknown_main =
+            unknown_sources.add_file("unknown.mlg", "import \"std/unknown\"\nfunc main() {}\n");
+        let unknown_error = check_sources(&unknown_sources, &[unknown_main]).unwrap_err();
+        assert_eq!(unknown_error.stage, CompilerStage::Package);
+        assert_eq!(
+            unknown_error.message,
+            "unknown standard package `std/unknown`"
+        );
+
+        let mut runtime_sources = SourceMap::new();
+        let runtime_main = runtime_sources.add_file(
+            "runtime.mlg",
+            "import \"std/strings\"\nfunc main() { text := \"hello\"; print(strings.byteLen(con text)) }\n",
+        );
+        let runtime_error = generate_c_sources(&runtime_sources, &[runtime_main]).unwrap_err();
+        assert_eq!(runtime_error.stage, CompilerStage::Backend);
+        assert_eq!(
+            runtime_error.message,
+            "standard intrinsic `std/strings.byteLen` is not implemented in this compiler milestone"
+        );
+    }
+
+    #[test]
+    fn checks_and_lowers_explicit_map_specializations() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "map.mlg",
+            "import \"std/collections\"\nfunc main() { values := collections.newMap[string, int](); print(collections.count[string, int](con values)) }\n",
+        );
+
+        check_sources(&sources, &[main]).unwrap();
+        let ir = lower_sources(&sources, &[main]).unwrap();
+        let debug = format!("{ir:?}");
+        assert!(debug.contains("CollectionsNewMap"));
+        assert!(debug.contains("CollectionsCount"));
+        let map = ir
+            .structs
+            .iter()
+            .find(|declaration| declaration.intrinsic == Some(StandardType::Map))
+            .unwrap();
+        assert_eq!(
+            map.intrinsic_args,
+            [crate::semantic::Type::String, crate::semantic::Type::Int]
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_standard_generic_arity() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "map-arity.mlg",
+            "import \"std/collections\"\nfunc main() { values := collections.newMap[string](); print(values) }\n",
+        );
+
+        let error = check_sources(&sources, &[main]).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Semantic);
+        assert!(
+            error.message.contains("expects 2 type argument(s), got 1"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_map_key_types() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "map-key.mlg",
+            "import \"std/collections\"\nfunc main() { values := collections.newMap[[]int, string](); print(values) }\n",
+        );
+
+        let error = check_sources(&sources, &[main]).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Semantic);
+        assert!(error
+            .message
+            .contains("collections.Map key type must be `int`, `bool`, or `string`"));
+    }
+
+    #[test]
+    fn compiles_unused_standard_imports_without_runtime_bodies() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "unused.mlg",
+            "import \"std/strings\"\nfunc main() { print(1) }\n",
+        );
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+
+        assert!(c.contains("int main(void)"));
+        assert!(!c.contains("mlg_byteLen"));
+    }
+
+    #[test]
+    fn checks_project_standard_imports_through_the_shared_linker() {
+        let temp = TempProject::new("standard-project");
+        temp.write("mallang.toml", "[project]\nname = \"hello\"\n");
+        temp.write(
+            "src/main.mlg",
+            "package main\nimport \"std/strings\"\nfunc main() { text := \"hello\"; print(strings.byteLen(con text)) }\n",
+        );
+        let (project, loaded) = temp.load();
+
+        check_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
+        let ir = lower_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
+
+        assert!(format!("{ir:?}").contains("StringsByteLen"));
+    }
+
+    #[test]
+    fn preserves_intrinsic_identity_for_standard_function_values() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "function-value.mlg",
+            "import \"std/strings\"\nfunc main() { read := strings.byteLen; text := \"hello\"; print(read(con text)) }\n",
+        );
+
+        let ir = lower_sources(&sources, &[main]).unwrap();
+
+        assert!(format!("{ir:?}").contains("IntrinsicFunctionValue"));
+    }
+
+    #[test]
+    fn rejects_direct_construction_of_opaque_standard_types() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "opaque.mlg",
+            "import \"std/collections\"\nfunc main() { values := collections.Map[string, int]{}; print(values) }\n",
+        );
+
+        let error = check_sources(&sources, &[main]).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Link);
+        assert_eq!(
+            error.message,
+            "type `collections.Map` is opaque and cannot be constructed directly"
+        );
     }
 
     #[test]

@@ -1,0 +1,11 @@
+import "std/strings"
+import "std/collections"
+
+func main() {
+    text := "mallang"
+    size := strings.byteLen(con text)
+    values := collections.newMap[string, int]()
+    count := collections.count[string, int](con values)
+    print(size)
+    print(count)
+}

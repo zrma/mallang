@@ -82,13 +82,6 @@ impl Parser {
         } else {
             None
         };
-        if package.is_none() && self.at_keyword(Keyword::Import) {
-            return Err(ParseError::new(
-                "import declarations require a package declaration",
-                self.peek().span,
-            ));
-        }
-
         let mut imports = Vec::new();
         while self.at_keyword(Keyword::Import) {
             imports.push(self.parse_import_decl()?);
@@ -214,6 +207,8 @@ impl Parser {
         Ok(ParsedTypeDecl::Struct(StructDecl {
             visibility,
             name,
+            intrinsic: None,
+            intrinsic_args: Vec::new(),
             type_params,
             fields,
             span: start.join(end),
@@ -338,6 +333,7 @@ impl Parser {
         Ok(Function {
             visibility,
             name,
+            intrinsic: None,
             type_params,
             receiver,
             params,
@@ -1997,12 +1993,10 @@ func main() {}
     }
 
     #[test]
-    fn rejects_invalid_project_header_order() {
-        let missing_package = parse("import \"hello/greet\"\nfunc main() {}\n").unwrap_err();
-        assert_eq!(
-            missing_package.message,
-            "import declarations require a package declaration"
-        );
+    fn allows_standalone_imports_and_rejects_late_headers() {
+        let standalone = parse("import \"std/strings\"\nfunc main() {}\n").unwrap();
+        assert!(standalone.source_units[0].package.is_none());
+        assert_eq!(standalone.source_units[0].imports[0].path, "std/strings");
 
         let late_package = parse("func main() {}\npackage main\n").unwrap_err();
         assert_eq!(

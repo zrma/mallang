@@ -1,4 +1,7 @@
-use crate::token::Span;
+use crate::{
+    standard::{StandardIntrinsic, StandardType},
+    token::Span,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
@@ -39,6 +42,8 @@ pub enum Visibility {
 pub struct StructDecl {
     pub visibility: Visibility,
     pub name: String,
+    pub intrinsic: Option<StandardType>,
+    pub intrinsic_args: Vec<TypeRef>,
     pub type_params: Vec<TypeParam>,
     pub fields: Vec<FieldDecl>,
     pub span: Span,
@@ -78,6 +83,7 @@ pub struct FieldDecl {
 pub struct Function {
     pub visibility: Visibility,
     pub name: String,
+    pub intrinsic: Option<StandardIntrinsic>,
     pub type_params: Vec<TypeParam>,
     pub receiver: Option<Param>,
     pub params: Vec<Param>,

@@ -42,7 +42,17 @@ pub fn link_project(
     graph: &PackageGraph,
     program: &Program,
 ) -> Result<Program, LinkError> {
-    let linker = Linker::new(project, graph, program)?;
+    let linker = Linker::new(project.name(), true, graph, program)?;
+    linker.link(program)
+}
+
+pub fn link_standalone(graph: &PackageGraph, program: &Program) -> Result<Program, LinkError> {
+    let linker = Linker::new(
+        crate::package::STANDALONE_PACKAGE_PATH,
+        false,
+        graph,
+        program,
+    )?;
     linker.link(program)
 }
 
@@ -107,14 +117,16 @@ struct FileContext {
 }
 
 struct Linker<'a> {
-    project: &'a Project,
+    root_package: &'a str,
+    internalize_root: bool,
     graph: &'a PackageGraph,
     contexts: BTreeMap<SourceId, FileContext>,
 }
 
 impl<'a> Linker<'a> {
     fn new(
-        project: &'a Project,
+        root_package: &'a str,
+        internalize_root: bool,
         graph: &'a PackageGraph,
         program: &Program,
     ) -> Result<Self, LinkError> {
@@ -147,7 +159,8 @@ impl<'a> Linker<'a> {
         }
 
         let linker = Self {
-            project,
+            root_package,
+            internalize_root,
             graph,
             contexts,
         };
@@ -170,7 +183,7 @@ impl<'a> Linker<'a> {
             for field in &mut declaration.fields {
                 self.link_type_ref(&mut field.ty, context, &type_params)?;
             }
-            declaration.name = internal_symbol(&context.package_path, &declaration.name);
+            declaration.name = self.declaration_symbol(&context.package_path, &declaration.name);
         }
 
         for declaration in &mut linked.enums {
@@ -185,7 +198,7 @@ impl<'a> Linker<'a> {
                     self.link_type_ref(payload, context, &type_params)?;
                 }
             }
-            declaration.name = internal_symbol(&context.package_path, &declaration.name);
+            declaration.name = self.declaration_symbol(&context.package_path, &declaration.name);
         }
 
         for function in &mut linked.functions {
@@ -282,7 +295,7 @@ impl<'a> Linker<'a> {
                 }
                 if declaration.kind == PackageDeclarationKind::Function
                     && declaration.name == "main"
-                    && package.path != self.project.name()
+                    && package.path != self.root_package
                 {
                     return Err(LinkError::new(
                         "`main` may only be declared in the project root package",
@@ -413,7 +426,9 @@ impl<'a> Linker<'a> {
         if let Some(referenced) = referenced {
             if matches!(
                 referenced.kind,
-                PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+                PackageDeclarationKind::Struct
+                    | PackageDeclarationKind::Opaque
+                    | PackageDeclarationKind::Enum
             ) && referenced.visibility != Visibility::Public
             {
                 return Err(LinkError::new(
@@ -479,11 +494,13 @@ impl<'a> Linker<'a> {
             .is_some_and(|declaration| {
                 matches!(
                     declaration.kind,
-                    PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+                    PackageDeclarationKind::Struct
+                        | PackageDeclarationKind::Opaque
+                        | PackageDeclarationKind::Enum
                 )
             })
         {
-            ty.name = internal_symbol(&context.package_path, &ty.name);
+            ty.name = self.declaration_symbol(&context.package_path, &ty.name);
         }
         Ok(())
     }
@@ -819,10 +836,12 @@ impl<'a> Linker<'a> {
                 if package.declarations.get(name).is_some_and(|declaration| {
                     matches!(
                         declaration.kind,
-                        PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+                        PackageDeclarationKind::Struct
+                            | PackageDeclarationKind::Opaque
+                            | PackageDeclarationKind::Enum
                     )
                 }) {
-                    *name = internal_symbol(&context.package_path, name);
+                    *name = self.declaration_symbol(&context.package_path, name);
                 }
                 Ok(())
             }
@@ -942,6 +961,12 @@ impl<'a> Linker<'a> {
         }
         if let Some((qualifier, name)) = source_name.split_once('.') {
             let declaration = self.imported_declaration(context, qualifier, name, span)?;
+            if declaration.kind == PackageDeclarationKind::Opaque {
+                return Err(LinkError::new(
+                    format!("type `{source_name}` is opaque and cannot be constructed directly"),
+                    span,
+                ));
+            }
             self.require_kind(declaration, PackageDeclarationKind::Struct, "struct", span)?;
             self.require_public(context, qualifier, declaration, span)?;
             let package_path = context
@@ -960,7 +985,7 @@ impl<'a> Linker<'a> {
             .get(source_name)
             .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Struct)
         {
-            Ok(internal_symbol(&context.package_path, source_name))
+            Ok(self.declaration_symbol(&context.package_path, source_name))
         } else {
             Ok(source_name.to_string())
         }
@@ -997,7 +1022,7 @@ impl<'a> Linker<'a> {
                         .get(type_name)
                         .is_some_and(|declaration| declaration.kind == PackageDeclarationKind::Enum)
                     {
-                        *type_name = internal_symbol(&context.package_path, type_name);
+                        *type_name = self.declaration_symbol(&context.package_path, type_name);
                     }
                 }
                 for payload in payloads {
@@ -1107,7 +1132,9 @@ impl<'a> Linker<'a> {
     ) -> Result<(), LinkError> {
         if !matches!(
             declaration.kind,
-            PackageDeclarationKind::Struct | PackageDeclarationKind::Enum
+            PackageDeclarationKind::Struct
+                | PackageDeclarationKind::Opaque
+                | PackageDeclarationKind::Enum
         ) {
             return Err(LinkError::new(
                 format!("`{}` is not a type declaration", declaration.name),
@@ -1141,15 +1168,25 @@ impl<'a> Linker<'a> {
     }
 
     fn function_symbol(&self, package_path: &str, name: &str) -> String {
-        if package_path == self.project.name() && name == "main" {
+        if package_path == self.root_package && name == "main" {
             "main".to_string()
+        } else if package_path == self.root_package && !self.internalize_root {
+            name.to_string()
+        } else {
+            internal_symbol(package_path, name)
+        }
+    }
+
+    fn declaration_symbol(&self, package_path: &str, name: &str) -> String {
+        if package_path == self.root_package && !self.internalize_root {
+            name.to_string()
         } else {
             internal_symbol(package_path, name)
         }
     }
 }
 
-fn internal_symbol(package_path: &str, name: &str) -> String {
+pub(crate) fn internal_symbol(package_path: &str, name: &str) -> String {
     let mut encoded = String::with_capacity(package_path.len() * 2);
     for byte in package_path.bytes() {
         use std::fmt::Write as _;

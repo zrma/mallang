@@ -313,6 +313,9 @@ impl Specializer {
             for field in &mut declaration.fields {
                 self.rewrite_type_ref(&mut field.ty, &HashMap::new())?;
             }
+            for arg in &mut declaration.intrinsic_args {
+                self.rewrite_type_ref(arg, &HashMap::new())?;
+            }
             output.structs.push(declaration);
         }
 
@@ -442,6 +445,8 @@ impl Specializer {
                 output.structs.push(StructDecl {
                     visibility: Visibility::Package,
                     name: name.clone(),
+                    intrinsic: None,
+                    intrinsic_args: Vec::new(),
                     type_params: Vec::new(),
                     fields: vec![FieldDecl {
                         name: "__non_printable".to_string(),
@@ -815,6 +820,9 @@ impl Specializer {
         for field in &mut specialized.fields {
             self.substitute_and_rewrite_type_ref(&mut field.ty, &substitutions)?;
         }
+        for arg in &mut specialized.intrinsic_args {
+            self.substitute_and_rewrite_type_ref(arg, &substitutions)?;
+        }
 
         let methods = self.generic_methods.get(name).cloned().unwrap_or_default();
         for mut method in methods {
@@ -926,6 +934,15 @@ impl Specializer {
             .map(|(param, arg)| (param.name.clone(), arg))
             .collect::<HashMap<_, _>>();
         let mut specialized = declaration;
+        if specialized.intrinsic.is_some() {
+            specialized.span = span;
+            for param in &mut specialized.params {
+                param.ty.span = span;
+            }
+            if let Some(return_type) = &mut specialized.return_type {
+                return_type.span = span;
+            }
+        }
         specialized.name = specialized_name.clone();
         specialized.type_params.clear();
         self.rewrite_function(&mut specialized, &substitutions)?;
