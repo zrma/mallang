@@ -143,7 +143,7 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
 
 1. Q1-Q7 language decision을 승인받고 이 문서를 확정한다.
 2. Generic parameter와 enum declaration, specialized constructor/pattern AST를
-   추가한다.
+   추가한다. (완료)
 3. Package symbol/visibility와 generic type/function/method resolution을 추가한다.
 4. Symbolic generic checker와 concrete specialization worklist를 추가한다.
 5. User-defined enum exhaustiveness와 nested pattern diagnostics를 일반화한다.

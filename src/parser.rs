@@ -2,10 +2,10 @@ use std::fmt;
 
 use crate::{
     ast::{
-        Arg, ArgMode, BinaryOp, Block, Expr, ExprKind, FieldDecl, FieldInit, ForInit, ForPost,
-        Function, FunctionLiteral, FunctionTypeParam, FunctionTypeRef, ImportDecl, MatchArm,
-        MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode, Program, SourceUnit, Stmt,
-        StmtKind, StructDecl, TypeRef, UnaryOp, Visibility,
+        Arg, ArgMode, BinaryOp, Block, EnumDecl, EnumVariant, Expr, ExprKind, FieldDecl, FieldInit,
+        ForInit, ForPost, Function, FunctionLiteral, FunctionTypeParam, FunctionTypeRef,
+        ImportDecl, MatchArm, MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode, Program,
+        SourceUnit, Stmt, StmtKind, StructDecl, TypeParam, TypeRef, UnaryOp, Visibility,
     },
     lexer::{lex, lex_with_source, LexError},
     token::{Keyword, SourceId, Span, Token, TokenKind},
@@ -61,6 +61,11 @@ pub struct Parser {
     allow_struct_literals: bool,
 }
 
+enum ParsedTypeDecl {
+    Struct(StructDecl),
+    Enum(EnumDecl),
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -90,6 +95,7 @@ impl Parser {
         }
 
         let mut structs = Vec::new();
+        let mut enums = Vec::new();
         let mut functions = Vec::new();
 
         while !self.at(TokenTag::Eof) {
@@ -101,7 +107,10 @@ impl Parser {
             };
 
             if self.at_keyword(Keyword::Type) {
-                structs.push(self.parse_type_decl(visibility, public_span)?);
+                match self.parse_type_decl(visibility, public_span)? {
+                    ParsedTypeDecl::Struct(declaration) => structs.push(declaration),
+                    ParsedTypeDecl::Enum(declaration) => enums.push(declaration),
+                }
             } else if self.at_keyword(Keyword::Func) {
                 functions.push(self.parse_function(visibility, public_span)?);
             } else if public_span.is_some() {
@@ -136,6 +145,7 @@ impl Parser {
                 span,
             }],
             structs,
+            enums,
             functions,
             source_spans: vec![span],
             span,
@@ -166,11 +176,32 @@ impl Parser {
         &mut self,
         visibility: Visibility,
         public_span: Option<Span>,
-    ) -> Result<StructDecl, ParseError> {
+    ) -> Result<ParsedTypeDecl, ParseError> {
         let type_span = self.expect_keyword(Keyword::Type, "expected `type` declaration")?;
         let start = public_span.unwrap_or(type_span);
         let (name, _) = self.expect_ident("expected type name")?;
-        self.expect_keyword(Keyword::Struct, "expected `struct` after type name")?;
+        let type_params = self.parse_type_params()?;
+
+        if self.eat_keyword(Keyword::Struct).is_some() {
+            return self.parse_struct_decl(visibility, name, type_params, start);
+        }
+        if self.eat_keyword(Keyword::Enum).is_some() {
+            return self.parse_enum_decl(visibility, name, type_params, start);
+        }
+
+        Err(ParseError::new(
+            "expected `struct` or `enum` after type name",
+            self.peek().span,
+        ))
+    }
+
+    fn parse_struct_decl(
+        &mut self,
+        visibility: Visibility,
+        name: String,
+        type_params: Vec<TypeParam>,
+        start: Span,
+    ) -> Result<ParsedTypeDecl, ParseError> {
         self.expect(TokenTag::LeftBrace, "expected `{` before struct fields")?;
 
         let mut fields = Vec::new();
@@ -180,12 +211,78 @@ impl Parser {
         }
 
         let end = self.expect(TokenTag::RightBrace, "expected `}` after struct fields")?;
-        Ok(StructDecl {
+        Ok(ParsedTypeDecl::Struct(StructDecl {
             visibility,
             name,
+            type_params,
             fields,
             span: start.join(end),
+        }))
+    }
+
+    fn parse_enum_decl(
+        &mut self,
+        visibility: Visibility,
+        name: String,
+        type_params: Vec<TypeParam>,
+        start: Span,
+    ) -> Result<ParsedTypeDecl, ParseError> {
+        self.expect(TokenTag::LeftBrace, "expected `{` before enum variants")?;
+
+        let mut variants = Vec::new();
+        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
+            variants.push(self.parse_enum_variant()?);
+            while self.eat(TokenTag::Comma).is_some() || self.eat(TokenTag::Semicolon).is_some() {}
+        }
+
+        let end = self.expect(TokenTag::RightBrace, "expected `}` after enum variants")?;
+        Ok(ParsedTypeDecl::Enum(EnumDecl {
+            visibility,
+            name,
+            type_params,
+            variants,
+            span: start.join(end),
+        }))
+    }
+
+    fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
+        let (name, start) = self.expect_ident("expected enum variant name")?;
+        let (payload, end) = if self.eat(TokenTag::LeftParen).is_some() {
+            let payload = self.parse_type_ref()?;
+            let end = self.expect(
+                TokenTag::RightParen,
+                "expected `)` after enum variant payload",
+            )?;
+            (Some(payload), end)
+        } else {
+            (None, start)
+        };
+
+        Ok(EnumVariant {
+            name,
+            payload,
+            span: start.join(end),
         })
+    }
+
+    fn parse_type_params(&mut self) -> Result<Vec<TypeParam>, ParseError> {
+        if self.eat(TokenTag::LeftBracket).is_none() {
+            return Ok(Vec::new());
+        }
+        if self.at(TokenTag::RightBracket) {
+            return Err(ParseError::new("expected type parameter", self.peek().span));
+        }
+
+        let mut params = Vec::new();
+        loop {
+            let (name, span) = self.expect_ident("expected type parameter name")?;
+            params.push(TypeParam { name, span });
+            if self.eat(TokenTag::Comma).is_none() {
+                break;
+            }
+        }
+        self.expect(TokenTag::RightBracket, "expected `]` after type parameters")?;
+        Ok(params)
     }
 
     fn parse_field_decl(&mut self) -> Result<FieldDecl, ParseError> {
@@ -209,6 +306,7 @@ impl Parser {
             None
         };
         let (name, _) = self.expect_ident("expected function name")?;
+        let type_params = self.parse_type_params()?;
         self.expect(TokenTag::LeftParen, "expected `(` after function name")?;
 
         let mut params = Vec::new();
@@ -236,6 +334,7 @@ impl Parser {
         Ok(Function {
             visibility,
             name,
+            type_params,
             receiver,
             params,
             return_type,
@@ -749,6 +848,14 @@ impl Parser {
         let mut left = self.parse_prefix()?;
 
         loop {
+            if self.allow_struct_literals && self.at(TokenTag::LeftBrace) {
+                if let Some((type_name, type_args)) = type_application_parts(&left) {
+                    let start = left.span;
+                    left = self.finish_struct_literal(type_name, type_args, start)?;
+                    continue;
+                }
+            }
+
             if self.at(TokenTag::LeftParen) {
                 left = self.finish_call(left)?;
                 continue;
@@ -824,9 +931,9 @@ impl Parser {
                 {
                     self.advance();
                     let (selected, _) = self.expect_ident("expected struct type name after `.`")?;
-                    self.finish_struct_literal(format!("{name}.{selected}"), token.span)
+                    self.finish_struct_literal(format!("{name}.{selected}"), Vec::new(), token.span)
                 } else if self.allow_struct_literals && self.at(TokenTag::LeftBrace) {
-                    self.finish_struct_literal(name, token.span)
+                    self.finish_struct_literal(name, Vec::new(), token.span)
                 } else {
                     Ok(Expr {
                         kind: ExprKind::Var(name),
@@ -1008,6 +1115,7 @@ impl Parser {
     fn finish_struct_literal(
         &mut self,
         type_name: String,
+        type_args: Vec<TypeRef>,
         start: Span,
     ) -> Result<Expr, ParseError> {
         self.expect(
@@ -1028,7 +1136,11 @@ impl Parser {
             "expected `}` after struct literal fields",
         )?;
         Ok(Expr {
-            kind: ExprKind::StructLiteral { type_name, fields },
+            kind: ExprKind::StructLiteral {
+                type_name,
+                type_args,
+                fields,
+            },
             span: start.join(end),
         })
     }
@@ -1070,39 +1182,85 @@ impl Parser {
     }
 
     fn parse_match_pattern(&mut self) -> Result<MatchPattern, ParseError> {
-        let (name, span) = self.expect_ident("expected match pattern")?;
+        self.parse_pattern_node(false)
+    }
+
+    fn parse_pattern_node(&mut self, allow_binding: bool) -> Result<MatchPattern, ParseError> {
+        let (first, span) = self.expect_ident("expected match pattern")?;
+        if first == "_" {
+            return Ok(MatchPattern::Wildcard);
+        }
+
+        let mut segments = vec![first];
+        while self.eat(TokenTag::Dot).is_some() {
+            let (segment, _) = self.expect_ident("expected variant name after `.`")?;
+            segments.push(segment);
+        }
+
+        if segments.len() > 1 {
+            let variant = segments.pop().expect("qualified pattern has a variant");
+            let type_name = segments.join(".");
+            let payload = self.parse_optional_pattern_payload()?;
+            return Ok(MatchPattern::Variant {
+                type_name,
+                variant,
+                payload,
+            });
+        }
+
+        let name = segments.pop().expect("pattern has one segment");
         match name.as_str() {
             "None" => Ok(MatchPattern::None),
-            "Some" => {
-                let binding = self.parse_payload_pattern("Some")?;
-                Ok(MatchPattern::Some(binding))
+            "Some" | "Ok" | "Err" => {
+                let payload = self.parse_required_pattern_payload(&name)?;
+                if let MatchPattern::Binding(binding) = payload {
+                    return Ok(match name.as_str() {
+                        "Some" => MatchPattern::Some(binding),
+                        "Ok" => MatchPattern::Ok(binding),
+                        "Err" => MatchPattern::Err(binding),
+                        _ => unreachable!("matched built-in payload variant"),
+                    });
+                }
+                Ok(MatchPattern::NestedBuiltin {
+                    variant: name,
+                    payload: Box::new(payload),
+                })
             }
-            "Ok" => {
-                let binding = self.parse_payload_pattern("Ok")?;
-                Ok(MatchPattern::Ok(binding))
-            }
-            "Err" => {
-                let binding = self.parse_payload_pattern("Err")?;
-                Ok(MatchPattern::Err(binding))
-            }
+            _ if allow_binding => Ok(MatchPattern::Binding(name)),
             _ => Err(ParseError::new(
-                "expected `Some`, `None`, `Ok`, or `Err` pattern",
+                "expected qualified enum variant, `Some`, `None`, `Ok`, `Err`, or `_` pattern",
                 span,
             )),
         }
     }
 
-    fn parse_payload_pattern(&mut self, constructor: &str) -> Result<String, ParseError> {
-        self.expect(TokenTag::LeftParen, "expected `(` in payload pattern")?;
-        let (binding, _) = self.expect_ident("expected payload binding")?;
+    fn parse_optional_pattern_payload(&mut self) -> Result<Option<Box<MatchPattern>>, ParseError> {
+        if self.eat(TokenTag::LeftParen).is_none() {
+            return Ok(None);
+        }
+        let payload = self.parse_pattern_node(true)?;
         self.expect(TokenTag::RightParen, "expected `)` after payload pattern")?;
-        if matches!(binding.as_str(), "Some" | "None" | "Ok" | "Err") {
+        Ok(Some(Box::new(payload)))
+    }
+
+    fn parse_required_pattern_payload(
+        &mut self,
+        constructor: &str,
+    ) -> Result<MatchPattern, ParseError> {
+        self.expect(TokenTag::LeftParen, "expected `(` in payload pattern")?;
+        let payload = self.parse_pattern_node(true)?;
+        self.expect(TokenTag::RightParen, "expected `)` after payload pattern")?;
+        if matches!(
+            &payload,
+            MatchPattern::Binding(binding)
+                if matches!(binding.as_str(), "Some" | "None" | "Ok" | "Err")
+        ) {
             return Err(ParseError::new(
-                format!("`{binding}` cannot be used as a `{constructor}` payload binding"),
+                format!("built-in variant cannot be used as a `{constructor}` payload binding"),
                 self.peek().span,
             ));
         }
-        Ok(binding)
+        Ok(payload)
     }
 
     fn parse_match_branch_expr(&mut self) -> Result<(Expr, Span), ParseError> {
@@ -1192,6 +1350,10 @@ impl Parser {
     }
 
     fn finish_index(&mut self, base: Expr) -> Result<Expr, ParseError> {
+        if self.bracket_has_top_level_comma() {
+            return self.finish_type_apply(base);
+        }
+
         self.expect(TokenTag::LeftBracket, "expected `[` in index expression")?;
         let index = self.parse_expression()?;
         let end = self.expect(
@@ -1207,6 +1369,48 @@ impl Parser {
             },
             span,
         })
+    }
+
+    fn finish_type_apply(&mut self, base: Expr) -> Result<Expr, ParseError> {
+        self.expect(TokenTag::LeftBracket, "expected `[` before type arguments")?;
+        let mut args = Vec::new();
+        loop {
+            args.push(self.parse_type_ref()?);
+            if self.eat(TokenTag::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self.expect(TokenTag::RightBracket, "expected `]` after type arguments")?;
+        let span = base.span.join(end);
+        Ok(Expr {
+            kind: ExprKind::TypeApply {
+                base: Box::new(base),
+                args,
+            },
+            span,
+        })
+    }
+
+    fn bracket_has_top_level_comma(&self) -> bool {
+        let mut bracket_depth = 0usize;
+        let mut paren_depth = 0usize;
+        for token in &self.tokens[self.cursor..] {
+            match token.kind {
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => {
+                    if bracket_depth == 1 {
+                        return false;
+                    }
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                }
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => paren_depth = paren_depth.saturating_sub(1),
+                TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => return true,
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     fn parse_arg(&mut self) -> Result<Arg, ParseError> {
@@ -1346,6 +1550,65 @@ impl Parser {
     }
 }
 
+fn type_application_parts(expr: &Expr) -> Option<(String, Vec<TypeRef>)> {
+    match &expr.kind {
+        ExprKind::Index { base, index } => Some((
+            expression_type_path(base)?,
+            vec![expression_as_type_ref(index)?],
+        )),
+        ExprKind::TypeApply { base, args } => Some((expression_type_path(base)?, args.clone())),
+        _ => None,
+    }
+}
+
+fn expression_type_path(expr: &Expr) -> Option<String> {
+    match &expr.kind {
+        ExprKind::Var(name) => Some(name.clone()),
+        ExprKind::FieldAccess { base, field } => {
+            Some(format!("{}.{}", expression_type_path(base)?, field))
+        }
+        _ => None,
+    }
+}
+
+fn expression_as_type_ref(expr: &Expr) -> Option<TypeRef> {
+    match &expr.kind {
+        ExprKind::Var(name) => Some(TypeRef {
+            name: name.clone(),
+            args: Vec::new(),
+            array_len: None,
+            slice: false,
+            function: None,
+            span: expr.span,
+        }),
+        ExprKind::FieldAccess { .. } => Some(TypeRef {
+            name: expression_type_path(expr)?,
+            args: Vec::new(),
+            array_len: None,
+            slice: false,
+            function: None,
+            span: expr.span,
+        }),
+        ExprKind::Index { base, index } => Some(TypeRef {
+            name: expression_type_path(base)?,
+            args: vec![expression_as_type_ref(index)?],
+            array_len: None,
+            slice: false,
+            function: None,
+            span: expr.span,
+        }),
+        ExprKind::TypeApply { base, args } => Some(TypeRef {
+            name: expression_type_path(base)?,
+            args: args.clone(),
+            array_len: None,
+            slice: false,
+            function: None,
+            span: expr.span,
+        }),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TokenTag {
     Ident,
@@ -1461,6 +1724,170 @@ func main() {
         assert_eq!(program.functions[0].visibility, Visibility::Public);
         assert!(program.functions[0].receiver.is_some());
         assert_eq!(program.functions[1].visibility, Visibility::Package);
+    }
+
+    #[test]
+    fn parses_generic_struct_enum_function_and_receiver_declarations() {
+        let program = parse(
+            r#"
+pub type Pair[A, B] struct {
+    first A
+    second B
+}
+
+pub type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+pub func Identity[T](value T) T {
+    return value
+}
+
+func (con pair Pair[A, B]) IsPair() bool {
+    return true
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.structs[0].name, "Pair");
+        assert_eq!(
+            program.structs[0]
+                .type_params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["A", "B"]
+        );
+        assert_eq!(program.enums[0].name, "Maybe");
+        assert_eq!(program.enums[0].type_params[0].name, "T");
+        assert_eq!(program.enums[0].variants.len(), 2);
+        assert!(program.enums[0].variants[0].payload.is_none());
+        assert_eq!(
+            program.enums[0].variants[1]
+                .payload
+                .as_ref()
+                .map(|payload| payload.name.as_str()),
+            Some("T")
+        );
+        assert_eq!(program.functions[0].type_params[0].name, "T");
+        assert_eq!(
+            program.functions[1].receiver.as_ref().unwrap().ty.name,
+            "Pair"
+        );
+        assert_eq!(
+            program.functions[1]
+                .receiver
+                .as_ref()
+                .unwrap()
+                .ty
+                .args
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn parses_generic_value_and_struct_applications() {
+        let program = parse(
+            r#"
+func main() {
+    pair := Pair[int, string]{first: 7, second: "mallang"}
+    maybe := Maybe[int].Some(7)
+    identity := Identity[int]
+    combined := Combine[int, string](7, "mallang")
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Let { expr: pair, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected pair binding");
+        };
+        let ExprKind::StructLiteral {
+            type_name,
+            type_args,
+            fields,
+        } = &pair.kind
+        else {
+            panic!("expected generic struct literal");
+        };
+        assert_eq!(type_name, "Pair");
+        assert_eq!(type_args.len(), 2);
+        assert_eq!(fields.len(), 2);
+
+        let StmtKind::Let { expr: maybe, .. } = &program.functions[0].body.statements[1].kind
+        else {
+            panic!("expected enum constructor binding");
+        };
+        let ExprKind::Call { callee, .. } = &maybe.kind else {
+            panic!("expected enum constructor call");
+        };
+        let ExprKind::FieldAccess { base, field } = &callee.kind else {
+            panic!("expected qualified enum variant");
+        };
+        assert_eq!(field, "Some");
+        assert!(matches!(base.kind, ExprKind::Index { .. }));
+
+        let StmtKind::Let { expr: identity, .. } = &program.functions[0].body.statements[2].kind
+        else {
+            panic!("expected generic function value binding");
+        };
+        assert!(matches!(identity.kind, ExprKind::Index { .. }));
+
+        let StmtKind::Let { expr: combined, .. } = &program.functions[0].body.statements[3].kind
+        else {
+            panic!("expected generic function call binding");
+        };
+        let ExprKind::Call { callee, .. } = &combined.kind else {
+            panic!("expected generic function call");
+        };
+        assert!(matches!(callee.kind, ExprKind::TypeApply { .. }));
+    }
+
+    #[test]
+    fn parses_qualified_nested_and_wildcard_patterns() {
+        let program = parse(
+            r#"
+func main() {
+    match value {
+        case Maybe.Some(Ok(item)) {
+            print(item)
+        }
+        case Maybe.None {}
+        case _ {}
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let StmtKind::Match { arms, .. } = &program.functions[0].body.statements[0].kind else {
+            panic!("expected match statement");
+        };
+        let MatchPattern::Variant {
+            type_name,
+            variant,
+            payload,
+        } = &arms[0].pattern
+        else {
+            panic!("expected qualified variant pattern");
+        };
+        assert_eq!(type_name, "Maybe");
+        assert_eq!(variant, "Some");
+        assert!(matches!(payload.as_deref(), Some(MatchPattern::Ok(name)) if name == "item"));
+        assert!(matches!(
+            &arms[1].pattern,
+            MatchPattern::Variant {
+                type_name,
+                variant,
+                payload: None,
+            } if type_name == "Maybe" && variant == "None"
+        ));
+        assert!(matches!(arms[2].pattern, MatchPattern::Wildcard));
     }
 
     #[test]
@@ -2083,7 +2510,10 @@ func main() {
         let StmtKind::Let { expr, .. } = &program.functions[0].body.statements[0].kind else {
             panic!("expected let statement");
         };
-        let ExprKind::StructLiteral { type_name, fields } = &expr.kind else {
+        let ExprKind::StructLiteral {
+            type_name, fields, ..
+        } = &expr.kind
+        else {
             panic!("expected struct literal");
         };
         assert_eq!(type_name, "User");

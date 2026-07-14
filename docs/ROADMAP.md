@@ -987,3 +987,14 @@
 - [x] project-wide monomorphization과 generic ownership/cleanup 계약 기록
 - [x] generic receiver와 excluded feature 경계 기록
 - [x] 사용자 승인 뒤 v0.4 language surface 확정
+
+## P125: Generic Declaration and Pattern Syntax Shell
+
+- [x] `enum` keyword와 `Program.enums` declaration AST 추가
+- [x] generic struct/function type parameter declaration parser 추가
+- [x] zero/single-payload enum variant parser와 source span 보존
+- [x] generic struct literal과 one/multi type argument value application AST 보존
+- [x] qualified, nested, wildcard match pattern parser 추가
+- [x] multi-source merge와 linker expression traversal에 새 AST 연결
+- [x] semantic lowering 전 generic/enum declaration의 명시적 단계 진단 추가
+- [x] parser/semantic 회귀 테스트와 full Rust/Clippy gate 통과

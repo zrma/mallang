@@ -4,6 +4,7 @@ use crate::token::Span;
 pub struct Program {
     pub source_units: Vec<SourceUnit>,
     pub structs: Vec<StructDecl>,
+    pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub source_spans: Vec<Span>,
     pub span: Span,
@@ -38,7 +39,30 @@ pub enum Visibility {
 pub struct StructDecl {
     pub visibility: Visibility,
     pub name: String,
+    pub type_params: Vec<TypeParam>,
     pub fields: Vec<FieldDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub visibility: Visibility,
+    pub name: String,
+    pub type_params: Vec<TypeParam>,
+    pub variants: Vec<EnumVariant>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariant {
+    pub name: String,
+    pub payload: Option<TypeRef>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeParam {
+    pub name: String,
     pub span: Span,
 }
 
@@ -53,6 +77,7 @@ pub struct FieldDecl {
 pub struct Function {
     pub visibility: Visibility,
     pub name: String,
+    pub type_params: Vec<TypeParam>,
     pub receiver: Option<Param>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeRef>,
@@ -211,6 +236,7 @@ pub enum ExprKind {
     },
     StructLiteral {
         type_name: String,
+        type_args: Vec<TypeRef>,
         fields: Vec<FieldInit>,
     },
     ArrayLiteral {
@@ -224,6 +250,10 @@ pub enum ExprKind {
     Index {
         base: Box<Expr>,
         index: Box<Expr>,
+    },
+    TypeApply {
+        base: Box<Expr>,
+        args: Vec<TypeRef>,
     },
     Call {
         callee: Box<Expr>,
@@ -267,6 +297,17 @@ pub enum MatchPattern {
     None,
     Ok(String),
     Err(String),
+    Wildcard,
+    Binding(String),
+    Variant {
+        type_name: String,
+        variant: String,
+        payload: Option<Box<MatchPattern>>,
+    },
+    NestedBuiltin {
+        variant: String,
+        payload: Box<MatchPattern>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
