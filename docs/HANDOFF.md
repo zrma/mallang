@@ -302,9 +302,12 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P146에서 standard package namespace/resolution과 runtime/compiler ownership 경계를 승인한다.
-2. Program arguments, UTF-8 text/index, file I/O와 standard `Error`/`Result` API를 승인한다.
-3. Error propagation syntax와 owned key-value collection surface를 승인한 뒤 v0.6 implementation order를 확정한다.
+1. P146의 `open-questions.md` Q1-Q8에서 exact `std/...` import, compiler-owned typed intrinsic
+   boundary와 standalone/project resolution을 승인한다.
+2. UTF-8 때문에 failure-aware인 arguments/environment, text conversion, file/stream I/O와
+   `errors.Error`/`Result` API를 승인한다.
+3. Explicit `match` error flow, opaque owned `Map` callback API와 macOS/Linux acceptance를
+   승인한 뒤 P147-P153 implementation order를 확정한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

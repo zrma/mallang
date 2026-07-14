@@ -1197,6 +1197,7 @@
 
 ## P146: v0.6 Standard Library Decision Gate
 
+- [x] current package/linker/semantic/IR/backend feasibility와 roadmap scope gap inventory 작성
 - [ ] standard package namespace, resolution과 runtime/compiler ownership 추천안 승인
 - [ ] process arguments/environment와 `main` signature 경계 승인
 - [ ] UTF-8 string operation, byte index와 allocation semantics 승인
@@ -1204,4 +1205,4 @@
 - [ ] error propagation syntax 도입 여부 승인
 - [ ] owned key-value collection type, key restriction과 mutation API 승인
 - [ ] platform support와 standard-library native acceptance matrix 승인
-- [ ] 승인 결정을 v0.6 implementation order와 compatibility contract로 확정
+- [ ] Q1-Q8 승인 결정을 P147-P153 implementation order와 compatibility contract로 확정
