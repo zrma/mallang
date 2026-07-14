@@ -1,6 +1,6 @@
 # Completion Evidence: v0.6 Standard Library
 
-상태: local acceptance complete; Ubuntu CI confirmation pending publication
+상태: complete
 
 ## Implemented surface
 
@@ -26,23 +26,23 @@ The repository-owned local gates pass on the supported macOS arm64 host:
 | `scripts/check-release-binary.sh` | optimized compiler binary rebuilds and runs process/file/Map/reference-CLI programs |
 | `scripts/check-generated-c-sanitizers.sh --assume-generated` | 67 generated C programs pass the deep sanitizer sweep |
 
-The repository publication diff gate also passes for the P153 candidate.
+The repository publication push gate passed for the P153 stack.
 
 ## Platform matrix
 
 | Platform | Status | Gate |
 | --- | --- | --- |
 | macOS arm64 | verified locally | repository check, release binary, strict C, ASan/UBSan |
-| Ubuntu Linux x86_64 | configured, confirmation pending | `.github/workflows/ci.yml` runs `scripts/check.sh` on `ubuntu-latest` |
+| Ubuntu Linux x86_64 | verified in CI | `.github/workflows/ci.yml` runs `scripts/check.sh` on `ubuntu-latest` |
 
-The Ubuntu row is not considered observed until the P153 candidate is published
-and its GitHub Actions run succeeds. A local non-native emulation result is not
-used as a substitute for that CI evidence.
+GitHub Actions `CI` run `29358952361` passed on published commit
+`e61ac8f4509c968b2552d92ba08ed0776a2d30f1`. The successful `check` job ran the
+canonical repository gate on an Ubuntu Linux x86_64 runner. A local non-native
+emulation result was not used as a substitute for this evidence.
 
-## Remaining publication gate
+## Completion result
 
-1. Publish the approved local stack without changing the v0.6 implementation.
-2. Confirm the repository CI run succeeds on `ubuntu-latest`.
-3. Update this evidence and the P153 status to complete.
+The approved implementation stack is published, the local macOS arm64 gates
+pass, and the Ubuntu Linux x86_64 CI gate passes. P153 is complete.
 
-No version bump, tag, release, or package publication is part of this gate.
+No version bump, tag, release, or package publication was part of this gate.

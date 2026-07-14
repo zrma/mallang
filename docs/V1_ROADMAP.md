@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: P153 local acceptance complete; Ubuntu CI confirmation pending publication
+상태: implementation and P153 acceptance complete; release pending
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.

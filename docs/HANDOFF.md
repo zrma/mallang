@@ -198,13 +198,12 @@
   대체되지 않으므로 v0.6 syntax는 유지한다. Stdout/output-file, usage exit 2,
   missing/invalid input, write failure, strict C, zero-allocation accounting과 ASan/UBSan
   harness가 P152 완료 조건을 검증한다.
-- v0.6 P153 local acceptance 완료: `docs/STANDARD_LIBRARY.md`에 exact API와 ownership/failure
+- v0.6 P153 완료: `docs/STANDARD_LIBRARY.md`에 exact API와 ownership/failure
   semantics를 정리하고 `SPEC.md`, README와 roadmap을 구현에 동기화했다. Optimized release
   compiler가 process/file/Map/reference CLI를 다시 build/run하며 local macOS arm64 canonical,
-  strict C, zero-allocation과 ASan/UBSan gate가 통과한다. Ubuntu `ubuntu-latest`는 같은
-  `scripts/check.sh`를 실행하도록 구성되어 있으나, 현재 local stack은 아직 publication 전이므로
-  remote CI success는 미확인이다. P153 complete 판정은 push 뒤 CI 확인과 evidence status
-  갱신까지 보류한다.
+  strict C, zero-allocation과 ASan/UBSan gate가 통과한다. Published `main`의 Ubuntu Linux
+  x86_64 GitHub Actions run에서도 같은 `scripts/check.sh`가 통과해 native platform
+  acceptance를 닫았다. Version bump, tag와 release publication은 별도 경계다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -348,7 +347,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and local P147-P153 acceptance evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
 - `docs/todo-v07-tooling-platforms/`: proposed P154-P160 tooling/platform decision gate
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
@@ -358,9 +357,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Approved local stack을 publish하고 Ubuntu x86_64 CI success를 확인한다.
-2. P153 completion evidence/status를 complete로 갱신한다.
-3. P154에서 v0.7 Q1-Q6 feasibility를 검토하고 승인 뒤 implementation을 시작한다.
+1. P154에서 v0.7 Q1-Q6 feasibility와 compatibility impact를 검토한다.
+2. Q1-Q6 승인 뒤 P155 canonical formatter implementation을 시작한다.
+3. v0.6.0 version bump, tag와 release publication은 별도 승인 경계로 유지한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
