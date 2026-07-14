@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{ArgMode, BinaryOp, ParamMode, UnaryOp},
-    ir::{IrAdtConstructor, IrParam},
+    ir::IrParam,
     semantic::Type,
 };
 
@@ -39,21 +39,6 @@ impl TypeCName for Type {
                 Self::Unit => "void *".to_string(),
                 _ => format!("{} *", self.c_name()),
             },
-        }
-    }
-}
-
-pub(super) trait IrAdtConstructorCName {
-    fn c_name(self) -> &'static str;
-}
-
-impl IrAdtConstructorCName for IrAdtConstructor {
-    fn c_name(self) -> &'static str {
-        match self {
-            Self::Some => "Some",
-            Self::None => "None",
-            Self::Ok => "Ok",
-            Self::Err => "Err",
         }
     }
 }

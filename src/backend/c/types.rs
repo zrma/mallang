@@ -306,12 +306,7 @@ impl<'a> TypeEmitter<'a> {
                     self.collect_stmt_types(stmt, types);
                 }
             }
-            IrExprKind::AdtConstructor { payload, .. } => {
-                if let Some(payload) = payload {
-                    self.collect_expr_types(payload, types);
-                }
-            }
-            IrExprKind::EnumConstructor { payload, .. } => {
+            IrExprKind::VariantConstructor { payload, .. } => {
                 if let Some(payload) = payload {
                     self.collect_expr_types(payload, types);
                 }
@@ -378,14 +373,19 @@ impl<'a> TypeEmitter<'a> {
     fn typedef_for_adt(&self, ty: &Type) -> Result<String, CompileError> {
         match ty {
             Type::Option(inner) => Ok(format!(
-                "typedef struct {{\n    int32_t tag;\n    {} some;\n}} {};\n",
+                "typedef struct {{\n    int32_t tag;\n    union {{\n        {} {};\n    }} {};\n}} {};\n",
                 inner.c_name(),
+                c_field("Some"),
+                c_field("payload"),
                 ty.c_name()
             )),
             Type::Result(ok, err) => Ok(format!(
-                "typedef struct {{\n    int32_t tag;\n    {} ok;\n    {} err;\n}} {};\n",
+                "typedef struct {{\n    int32_t tag;\n    union {{\n        {} {};\n        {} {};\n    }} {};\n}} {};\n",
                 ok.c_name(),
+                c_field("Ok"),
                 err.c_name(),
+                c_field("Err"),
+                c_field("payload"),
                 ty.c_name()
             )),
             _ => Err(CompileError::new("internal error: expected ADT type")),
@@ -589,16 +589,20 @@ impl<'a> TypeEmitter<'a> {
                     return Ok(String::new());
                 }
                 Ok(format!(
-                    "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->some));\n}}",
-                    drop_fn_name(inner)
+                    "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->{}.{}));\n}}",
+                    drop_fn_name(inner),
+                    c_field("payload"),
+                    c_field("Some")
                 ))
             }
             Type::Result(ok, err) => {
                 let mut output = String::new();
                 if ok.needs_cleanup() {
                     output.push_str(&format!(
-                        "if (mlg_value->tag == 0) {{\n    {}(&(mlg_value->ok));\n}}\n",
-                        drop_fn_name(ok)
+                        "if (mlg_value->tag == 0) {{\n    {}(&(mlg_value->{}.{}));\n}}\n",
+                        drop_fn_name(ok),
+                        c_field("payload"),
+                        c_field("Ok")
                     ));
                 }
                 if err.needs_cleanup() {
@@ -606,8 +610,10 @@ impl<'a> TypeEmitter<'a> {
                         output.push_str("else ");
                     }
                     output.push_str(&format!(
-                        "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->err));\n}}",
-                        drop_fn_name(err)
+                        "if (mlg_value->tag == 1) {{\n    {}(&(mlg_value->{}.{}));\n}}",
+                        drop_fn_name(err),
+                        c_field("payload"),
+                        c_field("Err")
                     ));
                 }
                 Ok(output)

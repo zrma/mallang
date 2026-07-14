@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ir::{
-        IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrMatchBlockArm, IrMatchPattern, IrStmt,
-        IrStmtKind,
-    },
+    ir::{IrArg, IrExpr, IrExprKind, IrForInit, IrForPost, IrMatchBlockArm, IrStmt, IrStmtKind},
     semantic::Type,
 };
 
@@ -505,13 +502,7 @@ impl<'a> CGenerator<'a> {
         };
 
         match &scrutinee.ty {
-            Type::Option(_) => {
-                self.emit_option_match_stmt(&scrutinee_code, arms, env, continue_label, output)
-            }
-            Type::Result(_, _) => {
-                self.emit_result_match_stmt(&scrutinee_code, arms, env, continue_label, output)
-            }
-            Type::Enum(_) => self.emit_user_enum_match_stmt(
+            Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => self.emit_adt_match_stmt(
                 &scrutinee.ty,
                 &scrutinee_code,
                 arms,
@@ -525,7 +516,7 @@ impl<'a> CGenerator<'a> {
         }
     }
 
-    fn emit_user_enum_match_stmt(
+    fn emit_adt_match_stmt(
         &self,
         scrutinee_ty: &Type,
         scrutinee: &str,
@@ -541,7 +532,7 @@ impl<'a> CGenerator<'a> {
         }
 
         for (index, arm) in arms.iter().enumerate() {
-            let plan = self.plan_user_enum_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            let plan = self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
             if index == 0 {
                 output.push_str(&format!("if ({}) {{\n", plan.condition));
             } else {
@@ -552,90 +543,6 @@ impl<'a> CGenerator<'a> {
         }
         output.push_str(" else {\n");
         push_indented_lines(&mut output, &runtime_error_call("invalid enum tag"), 1);
-        output.push('}');
-        Ok(output)
-    }
-
-    fn emit_option_match_stmt(
-        &self,
-        scrutinee: &str,
-        arms: &[IrMatchBlockArm],
-        env: &HashMap<String, String>,
-        continue_label: Option<&str>,
-        mut output: String,
-    ) -> Result<String, CompileError> {
-        output.push_str(&format!("switch (({scrutinee}).tag) {{\n"));
-        for arm in arms {
-            match &arm.pattern {
-                IrMatchPattern::Some(binding) => {
-                    output.push_str("case 1: {\n");
-                    let mut arm_env = env.clone();
-                    arm_env.insert(binding.clone(), format!("({scrutinee}).some"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
-                    output.push_str("    break;\n");
-                    output.push_str("}\n");
-                }
-                IrMatchPattern::None => {
-                    output.push_str("case 0: {\n");
-                    self.emit_match_stmt_body(&arm.body, env, continue_label, &mut output)?;
-                    output.push_str("    break;\n");
-                    output.push_str("}\n");
-                }
-                IrMatchPattern::Ok(_) | IrMatchPattern::Err(_) => {
-                    return Err(CompileError::new(
-                        "IR invariant violation: invalid Option match arm",
-                    ));
-                }
-                _ => {
-                    return Err(CompileError::new(
-                        "IR invariant violation: invalid Option match arm",
-                    ));
-                }
-            }
-        }
-        output.push('}');
-        Ok(output)
-    }
-
-    fn emit_result_match_stmt(
-        &self,
-        scrutinee: &str,
-        arms: &[IrMatchBlockArm],
-        env: &HashMap<String, String>,
-        continue_label: Option<&str>,
-        mut output: String,
-    ) -> Result<String, CompileError> {
-        output.push_str(&format!("switch (({scrutinee}).tag) {{\n"));
-        for arm in arms {
-            match &arm.pattern {
-                IrMatchPattern::Ok(binding) => {
-                    output.push_str("case 0: {\n");
-                    let mut arm_env = env.clone();
-                    arm_env.insert(binding.clone(), format!("({scrutinee}).ok"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
-                    output.push_str("    break;\n");
-                    output.push_str("}\n");
-                }
-                IrMatchPattern::Err(binding) => {
-                    output.push_str("case 1: {\n");
-                    let mut arm_env = env.clone();
-                    arm_env.insert(binding.clone(), format!("({scrutinee}).err"));
-                    self.emit_match_stmt_body(&arm.body, &arm_env, continue_label, &mut output)?;
-                    output.push_str("    break;\n");
-                    output.push_str("}\n");
-                }
-                IrMatchPattern::Some(_) | IrMatchPattern::None => {
-                    return Err(CompileError::new(
-                        "IR invariant violation: invalid Result match arm",
-                    ));
-                }
-                _ => {
-                    return Err(CompileError::new(
-                        "IR invariant violation: invalid Result match arm",
-                    ));
-                }
-            }
-        }
         output.push('}');
         Ok(output)
     }
@@ -748,7 +655,11 @@ impl<'a> CGenerator<'a> {
                 push_indented_lines(output, "printf(\"Some(\");", level + 1);
                 self.push_print_value_fragment(
                     inner,
-                    &format!("({code}).some"),
+                    &format!(
+                        "({code}).{}.{}",
+                        c_field("payload"),
+                        c_field("Some")
+                    ),
                     output,
                     level + 1,
                 )?;
@@ -761,11 +672,21 @@ impl<'a> CGenerator<'a> {
             Type::Result(ok, err) => {
                 push_indented_lines(output, &format!("if (({code}).tag == 0) {{"), level);
                 push_indented_lines(output, "printf(\"Ok(\");", level + 1);
-                self.push_print_value_fragment(ok, &format!("({code}).ok"), output, level + 1)?;
+                self.push_print_value_fragment(
+                    ok,
+                    &format!("({code}).{}.{}", c_field("payload"), c_field("Ok")),
+                    output,
+                    level + 1,
+                )?;
                 push_indented_lines(output, "printf(\")\");", level + 1);
                 push_indented_lines(output, "} else {", level);
                 push_indented_lines(output, "printf(\"Err(\");", level + 1);
-                self.push_print_value_fragment(err, &format!("({code}).err"), output, level + 1)?;
+                self.push_print_value_fragment(
+                    err,
+                    &format!("({code}).{}.{}", c_field("payload"), c_field("Err")),
+                    output,
+                    level + 1,
+                )?;
                 push_indented_lines(output, "printf(\")\");", level + 1);
                 push_indented_lines(output, "}", level);
                 Ok(())

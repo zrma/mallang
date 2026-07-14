@@ -2275,9 +2275,9 @@ impl<'a> Checker<'a> {
         span: Span,
     ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
         match scrutinee_ty {
-            Type::Option(inner) => self.prepare_option_match_arms(inner, arms, span),
-            Type::Result(ok, err) => self.prepare_result_match_arms(ok, err, arms, span),
-            Type::Enum(name) => self.prepare_enum_match_arms(name, arms, span),
+            Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => {
+                self.prepare_adt_match_arms(scrutinee_ty, arms, span)
+            }
             _ => Err(SemanticError::new(
                 format!(
                     "match scrutinee must be an enum, `Option`, or `Result`, got `{}`",
@@ -2295,9 +2295,9 @@ impl<'a> Checker<'a> {
         span: Span,
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
         match scrutinee_ty {
-            Type::Option(inner) => self.prepare_option_match_block_arms(inner, arms, span),
-            Type::Result(ok, err) => self.prepare_result_match_block_arms(ok, err, arms, span),
-            Type::Enum(name) => self.prepare_enum_match_block_arms(name, arms, span),
+            Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => {
+                self.prepare_adt_match_block_arms(scrutinee_ty, arms, span)
+            }
             _ => Err(SemanticError::new(
                 format!(
                     "match scrutinee must be an enum, `Option`, or `Result`, got `{}`",
@@ -2308,275 +2308,18 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn prepare_option_match_arms<'b>(
+    fn prepare_adt_match_arms<'b>(
         &self,
-        inner: &Type,
+        scrutinee_ty: &Type,
         arms: &'b [MatchArm],
         span: Span,
     ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
-        let mut prepared = Vec::new();
-        let mut seen_some = false;
-        let mut seen_none = false;
-
-        for arm in arms {
-            match &arm.pattern {
-                MatchPattern::Some(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_some {
-                        return Err(SemanticError::new(
-                            "Option match must contain exactly one `Some` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_some = true;
-                    prepared.push(PreparedMatchArm {
-                        expr: &arm.expr,
-                        binding: Some((binding.as_str(), inner.clone())),
-                    });
-                }
-                MatchPattern::None => {
-                    if seen_none {
-                        return Err(SemanticError::new(
-                            "Option match must contain exactly one `None` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_none = true;
-                    prepared.push(PreparedMatchArm {
-                        expr: &arm.expr,
-                        binding: None,
-                    });
-                }
-                MatchPattern::Ok(_) | MatchPattern::Err(_) => {
-                    return Err(SemanticError::new(
-                        "Option match patterns must be `Some(name)` and `None`",
-                        arm.span,
-                    ));
-                }
-                _ => {
-                    return Err(SemanticError::new(
-                        "user-defined and nested patterns require v0.4 semantic lowering",
-                        arm.span,
-                    ));
-                }
-            }
-        }
-
-        if !seen_some || !seen_none {
-            return Err(SemanticError::new(
-                "Option match must include `Some(name)` and `None` arms",
-                span,
-            ));
-        }
-        Ok(prepared)
-    }
-
-    fn prepare_result_match_arms<'b>(
-        &self,
-        ok: &Type,
-        err: &Type,
-        arms: &'b [MatchArm],
-        span: Span,
-    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
-        let mut prepared = Vec::new();
-        let mut seen_ok = false;
-        let mut seen_err = false;
-
-        for arm in arms {
-            match &arm.pattern {
-                MatchPattern::Ok(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_ok {
-                        return Err(SemanticError::new(
-                            "Result match must contain exactly one `Ok` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_ok = true;
-                    prepared.push(PreparedMatchArm {
-                        expr: &arm.expr,
-                        binding: Some((binding.as_str(), ok.clone())),
-                    });
-                }
-                MatchPattern::Err(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_err {
-                        return Err(SemanticError::new(
-                            "Result match must contain exactly one `Err` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_err = true;
-                    prepared.push(PreparedMatchArm {
-                        expr: &arm.expr,
-                        binding: Some((binding.as_str(), err.clone())),
-                    });
-                }
-                MatchPattern::Some(_) | MatchPattern::None => {
-                    return Err(SemanticError::new(
-                        "Result match patterns must be `Ok(name)` and `Err(name)`",
-                        arm.span,
-                    ));
-                }
-                _ => {
-                    return Err(SemanticError::new(
-                        "user-defined and nested patterns require v0.4 semantic lowering",
-                        arm.span,
-                    ));
-                }
-            }
-        }
-
-        if !seen_ok || !seen_err {
-            return Err(SemanticError::new(
-                "Result match must include `Ok(name)` and `Err(name)` arms",
-                span,
-            ));
-        }
-        Ok(prepared)
-    }
-
-    fn prepare_option_match_block_arms<'b>(
-        &self,
-        inner: &Type,
-        arms: &'b [MatchBlockArm],
-        span: Span,
-    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
-        let mut prepared = Vec::new();
-        let mut seen_some = false;
-        let mut seen_none = false;
-
-        for arm in arms {
-            match &arm.pattern {
-                MatchPattern::Some(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_some {
-                        return Err(SemanticError::new(
-                            "Option match must contain exactly one `Some` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_some = true;
-                    prepared.push(PreparedMatchBlockArm {
-                        block: &arm.block,
-                        binding: Some((binding.as_str(), inner.clone())),
-                    });
-                }
-                MatchPattern::None => {
-                    if seen_none {
-                        return Err(SemanticError::new(
-                            "Option match must contain exactly one `None` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_none = true;
-                    prepared.push(PreparedMatchBlockArm {
-                        block: &arm.block,
-                        binding: None,
-                    });
-                }
-                MatchPattern::Ok(_) | MatchPattern::Err(_) => {
-                    return Err(SemanticError::new(
-                        "Option match patterns must be `Some(name)` and `None`",
-                        arm.span,
-                    ));
-                }
-                _ => {
-                    return Err(SemanticError::new(
-                        "user-defined and nested patterns require v0.4 semantic lowering",
-                        arm.span,
-                    ));
-                }
-            }
-        }
-
-        if !seen_some || !seen_none {
-            return Err(SemanticError::new(
-                "Option match must include `Some(name)` and `None` arms",
-                span,
-            ));
-        }
-        Ok(prepared)
-    }
-
-    fn prepare_result_match_block_arms<'b>(
-        &self,
-        ok: &Type,
-        err: &Type,
-        arms: &'b [MatchBlockArm],
-        span: Span,
-    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
-        let mut prepared = Vec::new();
-        let mut seen_ok = false;
-        let mut seen_err = false;
-
-        for arm in arms {
-            match &arm.pattern {
-                MatchPattern::Ok(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_ok {
-                        return Err(SemanticError::new(
-                            "Result match must contain exactly one `Ok` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_ok = true;
-                    prepared.push(PreparedMatchBlockArm {
-                        block: &arm.block,
-                        binding: Some((binding.as_str(), ok.clone())),
-                    });
-                }
-                MatchPattern::Err(binding) => {
-                    reject_builtin_value_name(binding, arm.span)?;
-                    if seen_err {
-                        return Err(SemanticError::new(
-                            "Result match must contain exactly one `Err` arm",
-                            arm.span,
-                        ));
-                    }
-                    seen_err = true;
-                    prepared.push(PreparedMatchBlockArm {
-                        block: &arm.block,
-                        binding: Some((binding.as_str(), err.clone())),
-                    });
-                }
-                MatchPattern::Some(_) | MatchPattern::None => {
-                    return Err(SemanticError::new(
-                        "Result match patterns must be `Ok(name)` and `Err(name)`",
-                        arm.span,
-                    ));
-                }
-                _ => {
-                    return Err(SemanticError::new(
-                        "user-defined and nested patterns require v0.4 semantic lowering",
-                        arm.span,
-                    ));
-                }
-            }
-        }
-
-        if !seen_ok || !seen_err {
-            return Err(SemanticError::new(
-                "Result match must include `Ok(name)` and `Err(name)` arms",
-                span,
-            ));
-        }
-        Ok(prepared)
-    }
-
-    fn prepare_enum_match_arms<'b>(
-        &self,
-        name: &str,
-        arms: &'b [MatchArm],
-        span: Span,
-    ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
-        let scrutinee_ty = Type::Enum(name.to_string());
-        let all = self.coverage_leaves(&scrutinee_ty, span)?;
+        let all = self.coverage_leaves(scrutinee_ty, span)?;
         let mut seen = CoverageSet::new();
         let mut prepared = Vec::new();
 
         for arm in arms {
-            let coverage = self.pattern_coverage(&arm.pattern, &scrutinee_ty, arm.span)?;
+            let coverage = self.pattern_coverage(&arm.pattern, scrutinee_ty, arm.span)?;
             if coverage.leaves.is_subset(&seen) {
                 return Err(SemanticError::new(
                     "match pattern is duplicate or unreachable",
@@ -2594,19 +2337,18 @@ impl<'a> Checker<'a> {
         Ok(prepared)
     }
 
-    fn prepare_enum_match_block_arms<'b>(
+    fn prepare_adt_match_block_arms<'b>(
         &self,
-        name: &str,
+        scrutinee_ty: &Type,
         arms: &'b [MatchBlockArm],
         span: Span,
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
-        let scrutinee_ty = Type::Enum(name.to_string());
-        let all = self.coverage_leaves(&scrutinee_ty, span)?;
+        let all = self.coverage_leaves(scrutinee_ty, span)?;
         let mut seen = CoverageSet::new();
         let mut prepared = Vec::new();
 
         for arm in arms {
-            let coverage = self.pattern_coverage(&arm.pattern, &scrutinee_ty, arm.span)?;
+            let coverage = self.pattern_coverage(&arm.pattern, scrutinee_ty, arm.span)?;
             if coverage.leaves.is_subset(&seen) {
                 return Err(SemanticError::new(
                     "match pattern is duplicate or unreachable",
@@ -2647,7 +2389,7 @@ impl<'a> Checker<'a> {
                 variant,
                 payload,
             } => {
-                let Type::Enum(enum_name) = expected else {
+                if !matches!(expected, Type::Enum(_)) {
                     return Err(SemanticError::new(
                         format!(
                             "pattern `{type_name}.{variant}` requires an enum payload, got `{}`",
@@ -2655,153 +2397,190 @@ impl<'a> Checker<'a> {
                         ),
                         span,
                     ));
-                };
-                let enum_sig = self.enum_sig(enum_name, span)?;
-                if type_name != &enum_sig.pattern_name {
-                    return Err(SemanticError::new(
-                        format!(
-                            "pattern type `{type_name}` does not match `{}`",
-                            enum_sig.pattern_name
-                        ),
-                        span,
-                    ));
                 }
-                let variant_sig = enum_sig
-                    .variants
-                    .iter()
-                    .find(|candidate| candidate.name == *variant)
-                    .ok_or_else(|| {
-                        SemanticError::new(
-                            format!("enum `{type_name}` has no variant `{variant}`"),
-                            span,
-                        )
-                    })?;
-                let prefix = format!("{}.{variant}", enum_sig.pattern_name);
-                self.variant_pattern_coverage(
-                    &prefix,
-                    &variant_sig.payload,
-                    payload.as_deref(),
+                self.adt_variant_pattern_coverage(
+                    expected,
+                    Some(type_name),
+                    variant,
+                    payload
+                        .as_deref()
+                        .map_or(AdtPatternPayload::Absent, AdtPatternPayload::Nested),
                     span,
                 )
             }
-            MatchPattern::Some(binding) => {
-                let Type::Option(inner) = expected else {
-                    return Err(self.pattern_type_error("Some", expected, span));
-                };
-                reject_builtin_value_name(binding, span)?;
-                Ok(PatternCoverage {
-                    binding: Some((binding.as_str(), inner.as_ref().clone())),
-                    leaves: prefix_coverage("Option.Some", self.coverage_leaves(inner, span)?),
-                })
-            }
-            MatchPattern::None => {
-                if !matches!(expected, Type::Option(_)) {
-                    return Err(self.pattern_type_error("None", expected, span));
-                }
-                Ok(PatternCoverage {
-                    binding: None,
-                    leaves: singleton_coverage("Option.None"),
-                })
-            }
-            MatchPattern::Ok(binding) => {
-                let Type::Result(ok, _) = expected else {
-                    return Err(self.pattern_type_error("Ok", expected, span));
-                };
-                reject_builtin_value_name(binding, span)?;
-                Ok(PatternCoverage {
-                    binding: Some((binding.as_str(), ok.as_ref().clone())),
-                    leaves: prefix_coverage("Result.Ok", self.coverage_leaves(ok, span)?),
-                })
-            }
-            MatchPattern::Err(binding) => {
-                let Type::Result(_, err) = expected else {
-                    return Err(self.pattern_type_error("Err", expected, span));
-                };
-                reject_builtin_value_name(binding, span)?;
-                Ok(PatternCoverage {
-                    binding: Some((binding.as_str(), err.as_ref().clone())),
-                    leaves: prefix_coverage("Result.Err", self.coverage_leaves(err, span)?),
-                })
-            }
-            MatchPattern::NestedBuiltin { variant, payload } => {
-                let (prefix, payload_ty) = match (variant.as_str(), expected) {
-                    ("Some", Type::Option(inner)) => ("Option.Some", inner.as_ref()),
-                    ("Ok", Type::Result(ok, _)) => ("Result.Ok", ok.as_ref()),
-                    ("Err", Type::Result(_, err)) => ("Result.Err", err.as_ref()),
-                    _ => return Err(self.pattern_type_error(variant, expected, span)),
-                };
-                let nested = self.pattern_coverage(payload, payload_ty, span)?;
-                Ok(PatternCoverage {
-                    binding: nested.binding,
-                    leaves: prefix_coverage(prefix, nested.leaves),
-                })
-            }
+            MatchPattern::Some(binding) => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                "Some",
+                AdtPatternPayload::Binding(binding),
+                span,
+            ),
+            MatchPattern::None => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                "None",
+                AdtPatternPayload::Absent,
+                span,
+            ),
+            MatchPattern::Ok(binding) => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                "Ok",
+                AdtPatternPayload::Binding(binding),
+                span,
+            ),
+            MatchPattern::Err(binding) => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                "Err",
+                AdtPatternPayload::Binding(binding),
+                span,
+            ),
+            MatchPattern::NestedBuiltin { variant, payload } => self.adt_variant_pattern_coverage(
+                expected,
+                None,
+                variant,
+                AdtPatternPayload::Nested(payload),
+                span,
+            ),
         }
     }
 
-    fn variant_pattern_coverage<'b>(
+    fn adt_variant_pattern_coverage<'b>(
         &self,
-        prefix: &str,
-        payload_ty: &Option<Type>,
-        payload_pattern: Option<&'b MatchPattern>,
+        expected: &Type,
+        source_type_name: Option<&str>,
+        variant_name: &str,
+        payload_pattern: AdtPatternPayload<'b>,
         span: Span,
     ) -> Result<PatternCoverage<'b>, SemanticError> {
-        match (payload_ty, payload_pattern) {
-            (None, None) => Ok(PatternCoverage {
+        let Some(adt) = self.adt_sig_view(expected, span)? else {
+            return Err(self.pattern_type_error(variant_name, expected, span));
+        };
+        if let Some(source_type_name) = source_type_name {
+            if source_type_name != adt.pattern_name {
+                return Err(SemanticError::new(
+                    format!(
+                        "pattern type `{source_type_name}` does not match `{}`",
+                        adt.pattern_name
+                    ),
+                    span,
+                ));
+            }
+        }
+        let Some(variant) = adt
+            .variants
+            .iter()
+            .find(|candidate| candidate.name == variant_name)
+        else {
+            return if let Some(source_type_name) = source_type_name {
+                Err(SemanticError::new(
+                    format!("enum `{source_type_name}` has no variant `{variant_name}`"),
+                    span,
+                ))
+            } else {
+                Err(self.pattern_type_error(variant_name, expected, span))
+            };
+        };
+        let prefix = format!("{}.{variant_name}", adt.pattern_name);
+
+        match (variant.payload, payload_pattern) {
+            (None, AdtPatternPayload::Absent) => Ok(PatternCoverage {
                 binding: None,
-                leaves: singleton_coverage(prefix),
+                leaves: singleton_coverage(&prefix),
             }),
-            (None, Some(_)) => Err(SemanticError::new(
-                format!("zero-payload variant `{prefix}` cannot destructure a payload"),
-                span,
-            )),
-            (Some(_), None) => Err(SemanticError::new(
+            (None, AdtPatternPayload::Binding(_) | AdtPatternPayload::Nested(_)) => {
+                Err(SemanticError::new(
+                    format!("zero-payload variant `{prefix}` cannot destructure a payload"),
+                    span,
+                ))
+            }
+            (Some(_), AdtPatternPayload::Absent) => Err(SemanticError::new(
                 format!("variant `{prefix}` requires a payload pattern"),
                 span,
             )),
-            (Some(payload_ty), Some(payload_pattern)) => {
+            (Some(payload_ty), AdtPatternPayload::Binding(binding)) => {
+                reject_builtin_value_name(binding, span)?;
+                Ok(PatternCoverage {
+                    binding: Some((binding, payload_ty.clone())),
+                    leaves: prefix_coverage(&prefix, self.coverage_leaves(payload_ty, span)?),
+                })
+            }
+            (Some(payload_ty), AdtPatternPayload::Nested(payload_pattern)) => {
                 let nested = self.pattern_coverage(payload_pattern, payload_ty, span)?;
                 Ok(PatternCoverage {
                     binding: nested.binding,
-                    leaves: prefix_coverage(prefix, nested.leaves),
+                    leaves: prefix_coverage(&prefix, nested.leaves),
                 })
             }
         }
     }
 
     fn coverage_leaves(&self, ty: &Type, span: Span) -> Result<CoverageSet, SemanticError> {
-        match ty {
+        let Some(adt) = self.adt_sig_view(ty, span)? else {
+            return Ok(CoverageSet::from([CoveragePath::new()]));
+        };
+        let mut leaves = CoverageSet::new();
+        for variant in adt.variants {
+            let prefix = format!("{}.{}", adt.pattern_name, variant.name);
+            let nested = match variant.payload {
+                Some(payload) => self.coverage_leaves(payload, span)?,
+                None => CoverageSet::from([CoveragePath::new()]),
+            };
+            leaves.extend(prefix_coverage(&prefix, nested));
+        }
+        Ok(leaves)
+    }
+
+    fn adt_sig_view<'b>(
+        &'b self,
+        ty: &'b Type,
+        span: Span,
+    ) -> Result<Option<AdtSigView<'b>>, SemanticError> {
+        let view = match ty {
+            Type::Option(inner) => AdtSigView {
+                pattern_name: "Option",
+                variants: vec![
+                    AdtVariantView {
+                        name: "None",
+                        payload: None,
+                    },
+                    AdtVariantView {
+                        name: "Some",
+                        payload: Some(inner),
+                    },
+                ],
+            },
+            Type::Result(ok, err) => AdtSigView {
+                pattern_name: "Result",
+                variants: vec![
+                    AdtVariantView {
+                        name: "Ok",
+                        payload: Some(ok),
+                    },
+                    AdtVariantView {
+                        name: "Err",
+                        payload: Some(err),
+                    },
+                ],
+            },
             Type::Enum(name) => {
                 let enum_sig = self.enum_sig(name, span)?;
-                let mut leaves = CoverageSet::new();
-                for variant in &enum_sig.variants {
-                    let prefix = format!("{}.{}", enum_sig.pattern_name, variant.name);
-                    let nested = match &variant.payload {
-                        Some(payload) => self.coverage_leaves(payload, span)?,
-                        None => CoverageSet::from([CoveragePath::new()]),
-                    };
-                    leaves.extend(prefix_coverage(&prefix, nested));
+                AdtSigView {
+                    pattern_name: &enum_sig.pattern_name,
+                    variants: enum_sig
+                        .variants
+                        .iter()
+                        .map(|variant| AdtVariantView {
+                            name: &variant.name,
+                            payload: variant.payload.as_ref(),
+                        })
+                        .collect(),
                 }
-                Ok(leaves)
             }
-            Type::Option(inner) => {
-                let mut leaves = singleton_coverage("Option.None");
-                leaves.extend(prefix_coverage(
-                    "Option.Some",
-                    self.coverage_leaves(inner, span)?,
-                ));
-                Ok(leaves)
-            }
-            Type::Result(ok, err) => {
-                let mut leaves = prefix_coverage("Result.Ok", self.coverage_leaves(ok, span)?);
-                leaves.extend(prefix_coverage(
-                    "Result.Err",
-                    self.coverage_leaves(err, span)?,
-                ));
-                Ok(leaves)
-            }
-            _ => Ok(CoverageSet::from([CoveragePath::new()])),
-        }
+            _ => return Ok(None),
+        };
+        Ok(Some(view))
     }
 
     fn require_exhaustive_coverage(
@@ -4034,6 +3813,22 @@ type CoverageSet = HashSet<CoveragePath>;
 struct PatternCoverage<'a> {
     binding: Option<(&'a str, Type)>,
     leaves: CoverageSet,
+}
+
+struct AdtSigView<'a> {
+    pattern_name: &'a str,
+    variants: Vec<AdtVariantView<'a>>,
+}
+
+struct AdtVariantView<'a> {
+    name: &'a str,
+    payload: Option<&'a Type>,
+}
+
+enum AdtPatternPayload<'a> {
+    Absent,
+    Binding(&'a str),
+    Nested(&'a MatchPattern),
 }
 
 fn singleton_coverage(segment: &str) -> CoverageSet {
@@ -6990,6 +6785,30 @@ func main() {
     }
 
     #[test]
+    fn allows_nested_builtin_and_wildcard_adt_patterns() {
+        check_ok(
+            r#"
+func unwrap(value Option[Result[int, string]]) int {
+    return match value {
+        case Some(Ok(item)) { item }
+        case Some(Err(message)) { 0 }
+        case None { 0 }
+    }
+}
+
+func code(value Option[int]) int {
+    return match value {
+        case Some(item) { item }
+        case _ { 0 }
+    }
+}
+
+func main() {}
+"#,
+        );
+    }
+
+    #[test]
     fn allows_result_match_expression() {
         check_ok(
             r#"
@@ -7088,7 +6907,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("Option match must include `Some(name)` and `None` arms"));
+            .contains("match is not exhaustive; missing Option.None"));
     }
 
     #[test]
@@ -7107,7 +6926,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("Option match must include `Some(name)` and `None` arms"));
+            .contains("match is not exhaustive; missing Option.None"));
     }
 
     #[test]
@@ -7151,7 +6970,7 @@ func main() {
         );
         assert!(error
             .message
-            .contains("Option match patterns must be `Some(name)` and `None`"));
+            .contains("pattern `Ok` does not match payload type `Option[int]`"));
     }
 
     #[test]
