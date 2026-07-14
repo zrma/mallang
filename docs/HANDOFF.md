@@ -196,9 +196,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Generic parameter, user-defined enum과 nested pattern AST/parser를 추가한다.
-2. Generic type/function resolution과 project-wide monomorphization을 구현한다.
-3. Specialized typed IR/C backend와 native ownership acceptance를 완료한다.
+1. Generic type/enum declaration을 package symbol과 public API visibility에 연결한다.
+2. Symbolic generic type/function checker와 project-wide monomorphization을 구현한다.
+3. User-defined enum pattern semantic과 specialized typed IR/C backend를 완료한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

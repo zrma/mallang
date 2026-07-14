@@ -253,6 +253,7 @@ impl<'a> Checker<'a> {
     }
 
     fn check(mut self) -> Result<CheckedProgram<'a>, SemanticError> {
+        self.reject_unlowered_generic_declarations()?;
         self.collect_structs()?;
         self.collect_signatures()?;
         for function in &self.program.functions {
@@ -266,6 +267,38 @@ impl<'a> Checker<'a> {
             structs: self.structs,
             closures: self.closures.into_inner(),
         })
+    }
+
+    fn reject_unlowered_generic_declarations(&self) -> Result<(), SemanticError> {
+        if let Some(declaration) = self.program.enums.first() {
+            return Err(SemanticError::new(
+                "user-defined enum declarations require v0.4 semantic lowering",
+                declaration.span,
+            ));
+        }
+        if let Some(declaration) = self
+            .program
+            .structs
+            .iter()
+            .find(|declaration| !declaration.type_params.is_empty())
+        {
+            return Err(SemanticError::new(
+                "generic struct declarations require v0.4 specialization",
+                declaration.span,
+            ));
+        }
+        if let Some(function) = self
+            .program
+            .functions
+            .iter()
+            .find(|function| !function.type_params.is_empty())
+        {
+            return Err(SemanticError::new(
+                "generic function declarations require v0.4 specialization",
+                function.span,
+            ));
+        }
+        Ok(())
     }
 
     fn collect_structs(&mut self) -> Result<(), SemanticError> {
@@ -981,7 +1014,17 @@ impl<'a> Checker<'a> {
             ExprKind::Match { scrutinee, arms } => {
                 self.check_match_expr(scrutinee, arms, locals, value_use, expected, expr.span)
             }
-            ExprKind::StructLiteral { type_name, fields } => {
+            ExprKind::StructLiteral {
+                type_name,
+                type_args,
+                fields,
+            } => {
+                if !type_args.is_empty() {
+                    return Err(SemanticError::new(
+                        "generic struct literals require v0.4 specialization",
+                        expr.span,
+                    ));
+                }
                 self.check_struct_literal(type_name, fields, locals, expected, expr.span)
             }
             ExprKind::ArrayLiteral { ty, elements } => {
@@ -993,6 +1036,10 @@ impl<'a> Checker<'a> {
             ExprKind::Index { base, index } => {
                 self.check_index_access(base, index, locals, value_use, expr.span)
             }
+            ExprKind::TypeApply { .. } => Err(SemanticError::new(
+                "generic value application requires v0.4 specialization",
+                expr.span,
+            )),
             ExprKind::Call { callee, args } => {
                 self.check_call(callee, args, locals, expected, expr.span)
             }
@@ -2018,6 +2065,12 @@ impl<'a> Checker<'a> {
                         arm.span,
                     ));
                 }
+                _ => {
+                    return Err(SemanticError::new(
+                        "user-defined and nested patterns require v0.4 semantic lowering",
+                        arm.span,
+                    ));
+                }
             }
         }
 
@@ -2074,6 +2127,12 @@ impl<'a> Checker<'a> {
                 MatchPattern::Some(_) | MatchPattern::None => {
                     return Err(SemanticError::new(
                         "Result match patterns must be `Ok(name)` and `Err(name)`",
+                        arm.span,
+                    ));
+                }
+                _ => {
+                    return Err(SemanticError::new(
+                        "user-defined and nested patterns require v0.4 semantic lowering",
                         arm.span,
                     ));
                 }
@@ -2134,6 +2193,12 @@ impl<'a> Checker<'a> {
                         arm.span,
                     ));
                 }
+                _ => {
+                    return Err(SemanticError::new(
+                        "user-defined and nested patterns require v0.4 semantic lowering",
+                        arm.span,
+                    ));
+                }
             }
         }
 
@@ -2190,6 +2255,12 @@ impl<'a> Checker<'a> {
                 MatchPattern::Some(_) | MatchPattern::None => {
                     return Err(SemanticError::new(
                         "Result match patterns must be `Ok(name)` and `Err(name)`",
+                        arm.span,
+                    ));
+                }
+                _ => {
+                    return Err(SemanticError::new(
+                        "user-defined and nested patterns require v0.4 semantic lowering",
                         arm.span,
                     ));
                 }
@@ -3544,6 +3615,7 @@ fn is_stable_place_index_expr(expr: &Expr) -> bool {
         ExprKind::Index { base, index } => {
             is_stable_place_index_expr(base) && is_stable_place_index_expr(index)
         }
+        ExprKind::TypeApply { .. } => false,
         ExprKind::If { .. }
         | ExprKind::Match { .. }
         | ExprKind::StructLiteral { .. }
@@ -3810,6 +3882,7 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(base, bound)?;
                 self.visit_expr(index, bound)?;
             }
+            ExprKind::TypeApply { base, .. } => self.visit_expr(base, bound)?,
             ExprKind::Call { callee, args } => {
                 self.visit_call_callee(callee, bound)?;
                 for arg in args {
@@ -3932,7 +4005,10 @@ impl ClosureCaptureCollector<'_> {
 fn match_pattern_binding(pattern: &MatchPattern) -> Option<&str> {
     match pattern {
         MatchPattern::Some(name) | MatchPattern::Ok(name) | MatchPattern::Err(name) => Some(name),
-        MatchPattern::None => None,
+        MatchPattern::Binding(name) => Some(name),
+        MatchPattern::Variant { payload, .. } => payload.as_deref().and_then(match_pattern_binding),
+        MatchPattern::NestedBuiltin { payload, .. } => match_pattern_binding(payload),
+        MatchPattern::None | MatchPattern::Wildcard => None,
     }
 }
 
@@ -6506,6 +6582,28 @@ func main() {
 "#,
         );
         assert!(error.message.contains("use of moved value `value`"));
+    }
+
+    #[test]
+    fn reports_unlowered_v04_declarations_at_the_semantic_boundary() {
+        let enum_error = check_error("type Maybe[T] enum { None Some(T) }\nfunc main() {}\n");
+        assert_eq!(
+            enum_error.message,
+            "user-defined enum declarations require v0.4 semantic lowering"
+        );
+
+        let struct_error = check_error("type Box[T] struct { value T }\nfunc main() {}\n");
+        assert_eq!(
+            struct_error.message,
+            "generic struct declarations require v0.4 specialization"
+        );
+
+        let function_error =
+            check_error("func Identity[T](value T) T { return value }\nfunc main() {}\n");
+        assert_eq!(
+            function_error.message,
+            "generic function declarations require v0.4 specialization"
+        );
     }
 
     #[test]

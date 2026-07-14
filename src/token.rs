@@ -99,6 +99,7 @@ pub enum Keyword {
     True,
     False,
     Struct,
+    Enum,
     Type,
     Nil,
 }
@@ -124,6 +125,7 @@ impl Keyword {
             "true" => Some(Self::True),
             "false" => Some(Self::False),
             "struct" => Some(Self::Struct),
+            "enum" => Some(Self::Enum),
             "type" => Some(Self::Type),
             "nil" => Some(Self::Nil),
             _ => None,

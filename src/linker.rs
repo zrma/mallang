@@ -554,8 +554,15 @@ impl<'a> Linker<'a> {
                     self.link_expr(&mut arm.expr, context, &arm_scopes)?;
                 }
             }
-            ExprKind::StructLiteral { type_name, fields } => {
+            ExprKind::StructLiteral {
+                type_name,
+                type_args,
+                fields,
+            } => {
                 *type_name = self.resolve_struct_name(context, type_name, expr.span)?;
+                for type_arg in type_args {
+                    self.link_type_ref(type_arg, context)?;
+                }
                 for field in fields {
                     self.link_expr(&mut field.expr, context, scopes)?;
                 }
@@ -580,6 +587,12 @@ impl<'a> Linker<'a> {
             ExprKind::Index { base, index } => {
                 self.link_expr(base, context, scopes)?;
                 self.link_expr(index, context, scopes)?;
+            }
+            ExprKind::TypeApply { base, args } => {
+                self.link_expr(base, context, scopes)?;
+                for arg in args {
+                    self.link_type_ref(arg, context)?;
+                }
             }
             ExprKind::Call { callee, args } => {
                 let package_call = match &callee.kind {
@@ -796,7 +809,10 @@ fn pattern_binding(pattern: &MatchPattern) -> Option<&str> {
         MatchPattern::Some(binding) | MatchPattern::Ok(binding) | MatchPattern::Err(binding) => {
             Some(binding)
         }
-        MatchPattern::None => None,
+        MatchPattern::Binding(binding) => Some(binding),
+        MatchPattern::Variant { payload, .. } => payload.as_deref().and_then(pattern_binding),
+        MatchPattern::NestedBuiltin { payload, .. } => pattern_binding(payload),
+        MatchPattern::None | MatchPattern::Wildcard => None,
     }
 }
 

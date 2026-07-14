@@ -804,9 +804,11 @@ impl<'a> Lowerer<'a> {
             ExprKind::Match { scrutinee, arms } => {
                 self.lower_match_expr(scrutinee, arms, locals, expected, expr.span)?
             }
-            ExprKind::StructLiteral { type_name, fields } => {
-                self.lower_struct_literal(type_name, fields, locals, expected, expr.span)?
-            }
+            ExprKind::StructLiteral {
+                type_name,
+                type_args: _,
+                fields,
+            } => self.lower_struct_literal(type_name, fields, locals, expected, expr.span)?,
             ExprKind::ArrayLiteral { ty, elements } => {
                 self.lower_array_literal(ty, elements, locals, expected, expr.span)?
             }
@@ -815,6 +817,12 @@ impl<'a> Lowerer<'a> {
             }
             ExprKind::Index { base, index } => {
                 self.lower_index_access(base, index, locals, expr.span)?
+            }
+            ExprKind::TypeApply { .. } => {
+                return Err(IrError::new(
+                    "semantic analysis accepted unresolved generic value application",
+                    expr.span,
+                ));
             }
             ExprKind::Call { callee, args } => {
                 self.lower_call(callee, args, locals, expected, expr.span)?
@@ -1438,6 +1446,12 @@ impl<'a> Lowerer<'a> {
                         arm.span,
                     ));
                 }
+                _ => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unresolved v0.4 pattern",
+                        arm.span,
+                    ));
+                }
             }
         }
 
@@ -1495,6 +1509,12 @@ impl<'a> Lowerer<'a> {
                 MatchPattern::Some(_) | MatchPattern::None => {
                     return Err(IrError::new(
                         "semantic analysis accepted invalid Result match pattern",
+                        arm.span,
+                    ));
+                }
+                _ => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unresolved v0.4 pattern",
                         arm.span,
                     ));
                 }
@@ -1557,6 +1577,12 @@ impl<'a> Lowerer<'a> {
                         arm.span,
                     ));
                 }
+                _ => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unresolved v0.4 pattern",
+                        arm.span,
+                    ));
+                }
             }
         }
 
@@ -1614,6 +1640,12 @@ impl<'a> Lowerer<'a> {
                 MatchPattern::Some(_) | MatchPattern::None => {
                     return Err(IrError::new(
                         "semantic analysis accepted invalid Result match pattern",
+                        arm.span,
+                    ));
+                }
+                _ => {
+                    return Err(IrError::new(
+                        "semantic analysis accepted unresolved v0.4 pattern",
                         arm.span,
                     ));
                 }
