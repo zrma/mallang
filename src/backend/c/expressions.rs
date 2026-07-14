@@ -9,15 +9,17 @@ use crate::{
 use super::{
     names::{
         c_arg_code, c_assignment_target, c_binary_expr, c_field, c_ident, c_string,
-        callable_thunk_name, empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
+        callable_thunk_name, closure_call_name, closure_drop_name, closure_env_type_name,
+        empty_slice_value_code, COperator, IrAdtConstructorCName, TypeCName,
     },
     utils::{
         callable_temp_name, checked_binary_left_temp_name, checked_binary_result_temp_name,
         checked_binary_right_temp_name, checked_int_binary_builtin,
-        checked_unary_operand_temp_name, checked_unary_result_temp_name, dividend_temp_name,
-        divisor_temp_name, if_expr_temp_block, if_expr_temp_name, index_source_temp_name,
-        index_value_temp_name, match_expr_temp_name, match_scrutinee_temp_name, runtime_error_call,
-        runtime_guard, slice_append_temp_name, slice_field_take_temp_name, slice_literal_temp_name,
+        checked_unary_operand_temp_name, checked_unary_result_temp_name, closure_env_temp_name,
+        dividend_temp_name, divisor_temp_name, if_expr_temp_block, if_expr_temp_name,
+        index_source_temp_name, index_value_temp_name, match_expr_temp_name,
+        match_scrutinee_temp_name, runtime_error_call, runtime_guard, slice_append_temp_name,
+        slice_field_take_temp_name, slice_literal_temp_name,
     },
     AppendSourceExpr, CExpr, CGenerator, CompileError,
 };
@@ -39,6 +41,9 @@ impl<'a> CGenerator<'a> {
             )),
             IrExprKind::FunctionValue { function } => {
                 self.emit_function_value_stmt_expr(expr, function)
+            }
+            IrExprKind::ClosureValue { closure, captures } => {
+                self.emit_closure_value_stmt_expr(expr, closure, captures, env)
             }
             IrExprKind::If {
                 condition,
@@ -162,6 +167,64 @@ impl<'a> CGenerator<'a> {
             expr.ty.c_name(),
             callable_thunk_name(function)
         )))
+    }
+
+    fn emit_closure_value_stmt_expr(
+        &self,
+        expr: &IrExpr,
+        closure_name: &str,
+        captures: &[crate::ir::IrClosureCaptureValue],
+        env: &HashMap<String, String>,
+    ) -> Result<CExpr, CompileError> {
+        let closure = self.closure_def(closure_name)?;
+        if expr.ty != Self::closure_callable_type(closure)
+            || captures.len() != closure.captures.len()
+        {
+            return Err(CompileError::new(
+                "IR invariant violation: closure value signature mismatch",
+            ));
+        }
+        if captures.is_empty() {
+            return Ok(CExpr::simple(format!(
+                "({}){{ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = {} }}",
+                expr.ty.c_name(),
+                closure_call_name(closure_name)
+            )));
+        }
+
+        let env_type = closure_env_type_name(closure_name);
+        let env_temp = closure_env_temp_name(expr);
+        let mut prelude = vec![format!(
+            "{env_type} *{env_temp} = malloc(sizeof({env_type}));"
+        )];
+        prelude.push(runtime_guard(
+            format!("{env_temp} == NULL"),
+            "closure environment allocation failed",
+        ));
+        for (capture, expected) in captures.iter().zip(closure.captures.iter()) {
+            if capture.name != expected.name || capture.expr.ty != expected.ty {
+                return Err(CompileError::new(
+                    "IR invariant violation: closure capture mismatch",
+                ));
+            }
+            let emitted = self.emit_stmt_expr_with_env(&capture.expr, env)?;
+            prelude.extend(emitted.prelude);
+            prelude.push(format!(
+                "{env_temp}->{} = {};",
+                c_field(&capture.name),
+                emitted.code
+            ));
+        }
+
+        Ok(CExpr {
+            prelude,
+            code: format!(
+                "({}){{ .mlg_env = {env_temp}, .mlg_drop = {}, .mlg_call = {} }}",
+                expr.ty.c_name(),
+                closure_drop_name(closure_name),
+                closure_call_name(closure_name)
+            ),
+        })
     }
 
     fn emit_indirect_call_stmt_expr(

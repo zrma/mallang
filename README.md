@@ -38,8 +38,9 @@ This repository is the Mallang language PoC workspace.
   `break` / `continue`, `else if` sugar, `bool` operators, `|>`
   pipeline call sugar, `Option`, `Result`, and expression/statement `match`.
 - Named functions are move-only first-class values with typed higher-order
-  parameters, returns, and native indirect calls. Capturing function literals
-  remain under v0.3 implementation.
+  parameters, returns, and native indirect calls. Plain function literals use
+  owned-by-value captures with heap environments and exactly-once cleanup.
+  Mutable and nested function literals remain under v0.3 implementation.
 - `Option` and `Result` values with printable payloads can be printed natively.
 - `mlg check` rejects `print` for non-printable values such as fixed-size
   arrays and composites containing fixed-size arrays, and rejects `print` in
@@ -87,6 +88,7 @@ cargo run --bin mlg -- ir examples/adt.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
 cargo run --bin mlg -- run examples/function-values.mlg
+cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- build examples/if.mlg -o target/mallang/if
 target/mallang/if
 cargo run --bin mlg -- build examples/int-division.mlg -o target/mallang/int-division
@@ -238,6 +240,8 @@ scripts/finalize-and-push.sh --message "chore: publish mallang 0.1.0" --no-push
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,
   higher-order parameters, returns, and repeated indirect calls.
+- `examples/closures.mlg`: native smoke for escaping plain closures with Copy
+  and owned slice captures.
 - `examples/projects/hello`: two-package project smoke for imported functions,
   structs, and methods.
 - `examples/if.mlg`: native smoke for `if` expressions.

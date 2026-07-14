@@ -178,6 +178,13 @@ if [[ "$function_values_output" != $'20\n22\n42' ]]; then
   echo "function value native build smoke failed: expected 20, 22, 42 got '$function_values_output'" >&2
   exit 1
 fi
+"${CARGO[@]}" run --bin mlg -- check examples/closures.mlg >/dev/null
+"${CARGO[@]}" run --bin mlg -- build examples/closures.mlg -o target/mallang/closures >/dev/null
+closures_output="$(target/mallang/closures)"
+if [[ "$closures_output" != $'12\n15\n7\n7' ]]; then
+  echo "closure native build smoke failed: expected 12, 15, 7, 7 got '$closures_output'" >&2
+  exit 1
+fi
 project_input="examples/projects/hello"
 "${CARGO[@]}" run --bin mlg -- check "$project_input" >/dev/null
 project_output_path="$("${CARGO[@]}" run --quiet --bin mlg -- build "$project_input")"

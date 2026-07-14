@@ -6,13 +6,16 @@ mod statements;
 mod types;
 mod utils;
 
-use names::{c_ident, c_param_decl, callable_thunk_name, TypeCName};
+use names::{
+    c_field, c_ident, c_param_decl, callable_thunk_name, closure_call_name, closure_drop_name,
+    closure_env_type_name, drop_fn_name, TypeCName,
+};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
-use utils::{param_env, push_indented_lines, runtime_error_call};
+use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
 
 use crate::{
     ast::Program,
-    ir::{lower, IrFunction, IrProgram},
+    ir::{lower, IrClosure, IrFunction, IrProgram},
     semantic::{check, FunctionParamType, FunctionType, Type},
 };
 
@@ -112,9 +115,21 @@ impl<'a> CGenerator<'a> {
             output.push('\n');
         }
 
+        let closure_environment_types = self.emit_closure_environment_types();
+        output.push_str(&closure_environment_types);
+        if !closure_environment_types.is_empty() {
+            output.push('\n');
+        }
+
         let drop_helpers = emit_drop_helpers(self.program, &defined_types)?;
         output.push_str(&drop_helpers);
         if !drop_helpers.is_empty() {
+            output.push('\n');
+        }
+
+        let closure_drop_helpers = self.emit_closure_drop_helpers();
+        output.push_str(&closure_drop_helpers);
+        if !closure_drop_helpers.is_empty() {
             output.push('\n');
         }
 
@@ -131,6 +146,11 @@ impl<'a> CGenerator<'a> {
             .filter(|function| function.name != "main")
         {
             output.push_str(&self.emit_callable_thunk(function));
+            output.push('\n');
+        }
+
+        for closure in &self.program.closures {
+            output.push_str(&self.emit_closure_function(closure)?);
             output.push('\n');
         }
 
@@ -218,6 +238,93 @@ impl<'a> CGenerator<'a> {
         output
     }
 
+    fn emit_closure_environment_types(&self) -> String {
+        let mut output = String::new();
+        for closure in self
+            .program
+            .closures
+            .iter()
+            .filter(|closure| !closure.captures.is_empty())
+        {
+            output.push_str("typedef struct {\n");
+            for capture in &closure.captures {
+                output.push_str(&format!(
+                    "    {} {};\n",
+                    capture.ty.c_name(),
+                    c_field(&capture.name)
+                ));
+            }
+            output.push_str(&format!("}} {};\n\n", closure_env_type_name(&closure.name)));
+        }
+        output
+    }
+
+    fn emit_closure_drop_helpers(&self) -> String {
+        let mut output = String::new();
+        for closure in self
+            .program
+            .closures
+            .iter()
+            .filter(|closure| !closure.captures.is_empty())
+        {
+            let env_type = closure_env_type_name(&closure.name);
+            output.push_str(&format!(
+                "static void MLG_UNUSED {}(void *mlg_raw_env) {{\n",
+                closure_drop_name(&closure.name)
+            ));
+            output.push_str("    if (mlg_raw_env == NULL) {\n        return;\n    }\n");
+            output.push_str(&format!(
+                "    {env_type} *mlg_env = ({env_type} *)mlg_raw_env;\n"
+            ));
+            for capture in &closure.captures {
+                if capture.ty.needs_cleanup() {
+                    output.push_str(&format!(
+                        "    {}(&(mlg_env->{}));\n",
+                        drop_fn_name(&capture.ty),
+                        c_field(&capture.name)
+                    ));
+                }
+            }
+            output.push_str("    free(mlg_env);\n}\n\n");
+        }
+        output
+    }
+
+    fn emit_closure_function(&self, closure: &IrClosure) -> Result<String, CompileError> {
+        let mut params = vec!["void *mlg_raw_env".to_string()];
+        params.extend(closure.params.iter().map(c_param_decl));
+        let mut output = format!(
+            "static {} MLG_UNUSED {}({}) {{\n",
+            closure.return_type.c_name(),
+            closure_call_name(&closure.name),
+            params.join(", ")
+        );
+        let mut env = param_env_from_params(&closure.params);
+        if closure.captures.is_empty() {
+            output.push_str("    (void)mlg_raw_env;\n");
+        } else {
+            let env_type = closure_env_type_name(&closure.name);
+            output.push_str(&format!(
+                "    {env_type} *mlg_env = ({env_type} *)mlg_raw_env;\n"
+            ));
+            for capture in &closure.captures {
+                env.insert(
+                    capture.name.clone(),
+                    format!("(mlg_env->{})", c_field(&capture.name)),
+                );
+            }
+        }
+        for param in &closure.params {
+            output.push_str(&format!("    (void){};\n", c_ident(&param.name)));
+        }
+        for stmt in &closure.body {
+            let line = self.emit_stmt_with_env(stmt, &env)?;
+            push_indented_lines(&mut output, &line, 1);
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
     fn function_def(&self, name: &str) -> Result<&IrFunction, CompileError> {
         self.program
             .functions
@@ -243,6 +350,33 @@ impl<'a> CGenerator<'a> {
                 .collect(),
             return_type: Box::new(function.return_type.clone()),
         })
+    }
+
+    fn closure_callable_type(closure: &IrClosure) -> Type {
+        Type::Function(FunctionType {
+            mutable: false,
+            params: closure
+                .params
+                .iter()
+                .map(|param| FunctionParamType {
+                    mode: param.mode,
+                    ty: param.ty.clone(),
+                })
+                .collect(),
+            return_type: Box::new(closure.return_type.clone()),
+        })
+    }
+
+    fn closure_def(&self, name: &str) -> Result<&IrClosure, CompileError> {
+        self.program
+            .closures
+            .iter()
+            .find(|closure| closure.name == name)
+            .ok_or_else(|| {
+                CompileError::new(format!(
+                    "IR invariant violation: unknown closure value `{name}`"
+                ))
+            })
     }
 
     fn struct_def(&self, name: &str) -> Result<&crate::ir::IrStruct, CompileError> {

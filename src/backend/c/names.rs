@@ -175,6 +175,18 @@ pub(super) fn callable_thunk_name(function: &str) -> String {
     format!("mallang_callable_thunk_{}", c_ident(function))
 }
 
+pub(super) fn closure_env_type_name(closure: &str) -> String {
+    format!("mallang_{}_env", c_type_ident(closure))
+}
+
+pub(super) fn closure_call_name(closure: &str) -> String {
+    format!("mallang_{}_call", c_type_ident(closure))
+}
+
+pub(super) fn closure_drop_name(closure: &str) -> String {
+    format!("mallang_{}_drop", c_type_ident(closure))
+}
+
 pub(super) fn c_ident(name: &str) -> String {
     if name == "main" {
         return name.to_string();

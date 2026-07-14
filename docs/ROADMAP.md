@@ -931,3 +931,12 @@
 - [x] borrowed non-Copy와 active range source capture 거부
 - [x] plain closure capture mutation과 capture value move-out 거부
 - [x] nested/mutable function literal을 후속 lowering 전까지 명시적으로 거부
+
+## P119: Owned Closure Environment Native Lowering
+
+- [x] typed IR에 closure definition, capture field, closure value 추가
+- [x] capture 있는 closure용 typed heap environment와 allocation failure guard 생성
+- [x] environment pointer를 capture local로 해석하는 C call body 생성
+- [x] capture type별 cleanup 뒤 environment를 해제하는 drop thunk 생성
+- [x] escaping closure의 Copy/slice capture와 반복 indirect call native smoke 추가
+- [x] generated C strict warning과 ASan/UBSan cleanup smoke 통과
