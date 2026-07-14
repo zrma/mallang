@@ -1075,3 +1075,12 @@
 - [x] malformed runtime tag trap과 malformed enum constructor IR 회귀 검사 추가
 - [x] generic enum, nested pattern, wildcard slice cleanup native example 추가
 - [x] native output, full generated C warning-clean, ASan/UBSan gate 연결
+
+## P134: Generic Enum Package and Diagnostic Acceptance
+
+- [x] public generic enum declaration을 imported package metadata와 specialization에 연결
+- [x] imported generic enum constructor와 package-qualified pattern native smoke 추가
+- [x] cross-package owned slice payload wildcard cleanup을 sanitizer gate에 연결
+- [x] nested non-exhaustive path와 constructor payload mismatch CLI fixture 추가
+- [x] invalid fixture의 source file/line/column과 source generic spelling 검증
+- [x] project generated C warning-clean 및 ASan/UBSan acceptance 통과

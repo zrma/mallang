@@ -1,0 +1,8 @@
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+func main() {
+    value := Maybe[int].Some("wrong")
+}
