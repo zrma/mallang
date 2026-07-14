@@ -157,6 +157,8 @@ v1로 간주한다.
 
 ## v0.5.0: Ownership and Runtime
 
+상태: decision gate proposed
+
 목표: v1 language surface 전체에 적용할 memory model과 runtime ownership 경계를
 닫는다.
 
