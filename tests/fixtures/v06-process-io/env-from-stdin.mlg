@@ -1,0 +1,21 @@
+import "std/io"
+import "std/os"
+
+func main() {
+    match io.readStdin() {
+        case Ok(name) {
+            match os.env(con name) {
+                case Ok(_) {
+                    unexpected := "unexpected"
+                    print(unexpected)
+                }
+                case Err(error) {
+                    print(error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}

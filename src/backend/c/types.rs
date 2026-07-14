@@ -424,6 +424,10 @@ impl<'a> TypeEmitter<'a> {
 
     fn typedef_for_adt(&self, ty: &Type) -> Result<String, CompileError> {
         match ty {
+            Type::Option(inner) if **inner == Type::Unit => Ok(format!(
+                "typedef struct {{\n    int32_t tag;\n}} {};\n",
+                ty.c_name()
+            )),
             Type::Option(inner) => Ok(format!(
                 "typedef struct {{\n    int32_t tag;\n    union {{\n        {} {};\n    }} {};\n}} {};\n",
                 inner.c_name(),
@@ -431,15 +435,27 @@ impl<'a> TypeEmitter<'a> {
                 c_field("payload"),
                 ty.c_name()
             )),
-            Type::Result(ok, err) => Ok(format!(
-                "typedef struct {{\n    int32_t tag;\n    union {{\n        {} {};\n        {} {};\n    }} {};\n}} {};\n",
-                ok.c_name(),
-                c_field("Ok"),
-                err.c_name(),
-                c_field("Err"),
-                c_field("payload"),
-                ty.c_name()
-            )),
+            Type::Result(ok, err) => {
+                let mut fields = Vec::new();
+                if **ok != Type::Unit {
+                    fields.push(format!("        {} {};", ok.c_name(), c_field("Ok")));
+                }
+                if **err != Type::Unit {
+                    fields.push(format!("        {} {};", err.c_name(), c_field("Err")));
+                }
+                if fields.is_empty() {
+                    return Ok(format!(
+                        "typedef struct {{\n    int32_t tag;\n}} {};\n",
+                        ty.c_name()
+                    ));
+                }
+                Ok(format!(
+                    "typedef struct {{\n    int32_t tag;\n    union {{\n{}\n    }} {};\n}} {};\n",
+                    fields.join("\n"),
+                    c_field("payload"),
+                    ty.c_name()
+                ))
+            }
             _ => Err(CompileError::new("internal error: expected ADT type")),
         }
     }

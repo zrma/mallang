@@ -1,0 +1,13 @@
+import "std/io"
+import "std/os"
+
+func main() {
+    match io.readStdin() {
+        case Ok(_) {
+            os.exit(0)
+        }
+        case Err(_) {
+            os.exit(43)
+        }
+    }
+}

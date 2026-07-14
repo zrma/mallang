@@ -8,6 +8,7 @@ use crate::{
 
 use super::{
     names::{c_field, callable_thunk_name, TypeCName},
+    platform_runtime::emit_platform_runtime,
     CompileError,
 };
 
@@ -23,6 +24,12 @@ pub(super) fn intrinsic_helper_name(intrinsic: StandardIntrinsic) -> Option<&'st
         StandardIntrinsic::StringsParseInt => Some("mallang_std_strings_parse_int"),
         StandardIntrinsic::StringsFromBool => Some("mallang_std_strings_from_bool"),
         StandardIntrinsic::StringsParseBool => Some("mallang_std_strings_parse_bool"),
+        StandardIntrinsic::IoReadStdin => Some("mallang_std_io_read_stdin"),
+        StandardIntrinsic::IoWriteStdout => Some("mallang_std_io_write_stdout"),
+        StandardIntrinsic::IoWriteStderr => Some("mallang_std_io_write_stderr"),
+        StandardIntrinsic::OsArgs => Some("mallang_std_os_args"),
+        StandardIntrinsic::OsEnv => Some("mallang_std_os_env"),
+        StandardIntrinsic::OsExit => Some("mallang_std_os_exit"),
         _ => None,
     }
 }
@@ -155,10 +162,15 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
             ],
         ));
     }
+    output.push_str(&emit_platform_runtime(program, &used.intrinsics)?);
     for (intrinsic, function) in &used.function_values {
         output.push_str(&emit_callable_thunk(*intrinsic, function)?);
     }
     Ok(output)
+}
+
+pub(super) fn program_uses_intrinsic(program: &IrProgram, intrinsic: StandardIntrinsic) -> bool {
+    standard_uses(program).intrinsics.contains(&intrinsic)
 }
 
 fn emit_callable_thunk(

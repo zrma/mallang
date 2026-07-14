@@ -1,0 +1,14 @@
+import "std/io"
+import "std/os"
+
+func main() {
+    text := "write"
+    match io.writeStdout(con text) {
+        case Ok(_) {
+            os.exit(0)
+        }
+        case Err(_) {
+            os.exit(42)
+        }
+    }
+}

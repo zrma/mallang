@@ -1,0 +1,59 @@
+import "std/io"
+import "std/os"
+
+func main() {
+    mut write_stderr := false
+    match os.args() {
+        case Ok(args) {
+            print(len(args))
+            if len(args) > 1 {
+                print(args[1])
+                write_stderr = true
+            }
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+
+    environment_name := "MALLANG_P149_TEST"
+    match os.env(con environment_name) {
+        case Ok(Some(value)) {
+            print(value)
+        }
+        case Ok(None) {
+            missing := "missing"
+            print(missing)
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+
+    match io.readStdin() {
+        case Ok(text) {
+            match io.writeStdout(con text) {
+                case Ok(_) {
+                }
+                case Err(error) {
+                    print(error)
+                }
+            }
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+
+    if write_stderr {
+        stderr_text := "stderr"
+        match io.writeStderr(con stderr_text) {
+            case Ok(_) {
+            }
+            case Err(error) {
+                print(error)
+            }
+        }
+    }
+
+}

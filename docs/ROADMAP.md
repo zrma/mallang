@@ -1226,3 +1226,13 @@
 - [x] owned string/slice/error result를 allocation accounting와 cleanup에 연결
 - [x] invalid UTF-8, parse overflow와 empty separator semantics regression 추가
 - [x] strict C, sanitizer와 allocation failure injection acceptance 통과
+
+## P149: Process and Stream I/O
+
+- [x] generated C `main` process ABI와 demand-driven `std/os` runtime 연결
+- [x] UTF-8 검증과 owned cleanup을 적용한 `os.args`, `os.env`, `os.exit` 구현
+- [x] `mlg run --` argument forwarding과 numeric exit status parity 고정
+- [x] `io.readStdin`, `io.writeStdout`, `io.writeStderr` recoverable runtime 구현
+- [x] invalid UTF-8, embedded NUL, missing env와 closed stream failure 검증
+- [x] direct/runner invocation, strict C, allocation accounting/failure injection 검증
+- [x] normal/error process path ASan/UBSan acceptance 통과

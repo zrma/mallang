@@ -1,6 +1,6 @@
 # Spec: v0.6-standard-library
 
-상태: implementation in progress (P147-P148 complete; P149 next)
+상태: implementation in progress (P147-P149 complete; P150 next)
 
 ## 목표
 
@@ -26,7 +26,8 @@
   non-Copy access는 call-scoped callback.
 
 Exact signatures와 edge semantics는 `open-questions.md` Q1-Q8이 소유한다. 이 문서는
-승인된 implementation contract이고 아직 implemented API로 해석하지 않는다.
+승인된 implementation contract다. 각 P-section의 상태가 현재 implemented API 범위를
+정의한다.
 
 ## Compiler and runtime ownership boundary
 
@@ -109,6 +110,8 @@ intrinsic type은 source error가 아니라 compiler invariant failure다.
 - Invalid UTF-8, parse failure, empty split separator와 non-Copy result cleanup을 검증한다.
 
 ### P149: Process and Stream I/O
+
+상태: complete (2026-07-15)
 
 - Generated C main internal ABI에 arguments를 연결하고 `os.args`, `os.env`, `os.exit`를
   구현한다.

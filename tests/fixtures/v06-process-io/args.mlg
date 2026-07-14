@@ -1,0 +1,15 @@
+import "std/os"
+
+func main() {
+    read_args := os.args
+    match read_args() {
+        case Ok(args) {
+            print(len(args))
+            print(args[1])
+            print(args[2])
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+}

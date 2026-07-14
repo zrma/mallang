@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::{OsStr, OsString},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
     process::{self, Command},
@@ -12,58 +14,54 @@ use mallang::{
 };
 
 fn main() {
-    let mut args: Vec<String> = env::args().collect();
-    let program = args.first().cloned().unwrap_or_else(|| "mlg".to_string());
+    let args: Vec<OsString> = env::args_os().collect();
+    let program = args
+        .first()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "mlg".to_string());
     if args.len() < 2 {
         let mut stderr = io::stderr().lock();
         let _ = write_usage(&mut stderr, &program);
         process::exit(2);
     }
-    args.remove(0);
 
-    let result = match args[0].as_str() {
-        "lex" => {
-            args.remove(0);
-            run_lex(&program, &args)
-        }
-        "parse" => {
-            args.remove(0);
-            run_parse(&program, &args)
-        }
-        "check" => {
-            args.remove(0);
-            run_check(&program, &args)
-        }
-        "ir" => {
-            args.remove(0);
-            run_ir(&program, &args)
-        }
-        "build" => {
-            args.remove(0);
-            run_build(&program, &args)
-        }
-        "run" => {
-            args.remove(0);
-            run_run(&program, &args)
-        }
-        "-V" | "--version" => {
+    let result = match args[1].to_str() {
+        Some("lex") => utf8_cli_args(&args[2..]).and_then(|args| run_lex(&program, &args)),
+        Some("parse") => utf8_cli_args(&args[2..]).and_then(|args| run_parse(&program, &args)),
+        Some("check") => utf8_cli_args(&args[2..]).and_then(|args| run_check(&program, &args)),
+        Some("ir") => utf8_cli_args(&args[2..]).and_then(|args| run_ir(&program, &args)),
+        Some("build") => utf8_cli_args(&args[2..]).and_then(|args| run_build(&program, &args)),
+        Some("run") => run_run(&program, &args[2..]),
+        Some("-V" | "--version") => {
             println!("mlg {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        "-h" | "--help" => {
+        Some("-h" | "--help") => {
             let mut stdout = io::stdout().lock();
             write_usage(&mut stdout, &program)
                 .map_err(|error| format!("failed to write usage: {error}"))
         }
-        command => Err(format!(
+        Some(command) => Err(format!(
             "unknown subcommand `{command}`; run `{program} --help` for usage"
         )),
+        None => Err("subcommand is not valid UTF-8".to_string()),
     };
 
     if let Err(error) = result {
         eprintln!("{error}");
         process::exit(1);
     }
+}
+
+fn utf8_cli_args(args: &[OsString]) -> Result<Vec<String>, String> {
+    args.iter()
+        .cloned()
+        .map(|argument| {
+            argument
+                .into_string()
+                .map_err(|_| "command argument is not valid UTF-8".to_string())
+        })
+        .collect()
 }
 
 fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
@@ -73,7 +71,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} check <input>")?;
     writeln!(output, "  {program} ir <source-file>")?;
     writeln!(output, "  {program} build <input> [-o <output>]")?;
-    writeln!(output, "  {program} run <input>")?;
+    writeln!(output, "  {program} run <input> [-- <program-args>...]")?;
     writeln!(output, "  {program} --version")
 }
 
@@ -159,15 +157,36 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn run_run(program: &str, args: &[String]) -> Result<(), String> {
-    let source_path = single_input_arg(program, "run", args)?;
+fn run_run(program: &str, args: &[OsString]) -> Result<(), String> {
+    let Some(source_path) = args.first() else {
+        return Err(format!(
+            "usage: {program} run <input> [-- <program-args>...]"
+        ));
+    };
+    let source_path = source_path
+        .to_str()
+        .ok_or_else(|| "run input path is not valid UTF-8".to_string())?;
+    let program_args = match args.get(1) {
+        None => &args[1..],
+        Some(argument) if argument == OsStr::new("--") => &args[2..],
+        Some(argument) => {
+            return Err(format!(
+                "unknown run argument `{}`; program arguments must follow `--`",
+                argument.to_string_lossy()
+            ));
+        }
+    };
     let binary_path = compile_input(source_path, None, OutputKind::Run)?;
 
     let status = Command::new(&binary_path)
+        .args(program_args)
         .status()
         .map_err(|error| format!("failed to execute {}: {error}", binary_path.display()))?;
     if !status.success() {
-        return Err(format!("program exited with status {status}"));
+        if let Some(code) = status.code() {
+            process::exit(code);
+        }
+        return Err(format!("program terminated by signal: {status}"));
     }
 
     Ok(())

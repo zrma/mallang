@@ -350,13 +350,13 @@ mod tests {
         let mut runtime_sources = SourceMap::new();
         let runtime_main = runtime_sources.add_file(
             "runtime.mlg",
-            "import \"std/os\"\nfunc main() { result := os.args() }\n",
+            "import \"std/fs\"\nfunc main() { path := \"missing\"; result := fs.readText(con path) }\n",
         );
         let runtime_error = generate_c_sources(&runtime_sources, &[runtime_main]).unwrap_err();
         assert_eq!(runtime_error.stage, CompilerStage::Backend);
         assert_eq!(
             runtime_error.message,
-            "standard intrinsic `std/os.args` is not implemented in this compiler milestone"
+            "standard intrinsic `std/fs.readText` is not implemented in this compiler milestone"
         );
     }
 
@@ -513,6 +513,25 @@ mod tests {
 
         assert!(c.contains("printf(\"Error{\");"));
         assert!(!c.contains("printf(\"__mlg_pkg_"));
+    }
+
+    #[test]
+    fn generates_process_and_stream_standard_runtime() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "process.mlg",
+            "import \"std/io\"\nimport \"std/os\"\nfunc main() { read := os.args; result := read(); text := \"\"; written := io.writeStdout(con text); os.exit(0) }\n",
+        );
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+
+        assert!(c.contains("int main(int argc, char **argv)"));
+        assert!(c.contains("mallang_process_init(argc, argv);"));
+        assert!(c.contains("mallang_std_os_args"));
+        assert!(c.contains("mallang_std_io_write_stdout"));
+        assert!(c.contains("mallang_std_os_exit"));
+        assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
+        assert!(!c.contains("void mlg_Ok;"));
     }
 
     #[test]

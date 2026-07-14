@@ -191,7 +191,7 @@ v1로 간주한다.
 
 ## v0.6.0: Standard Library
 
-상태: implementation in progress (P147-P148 complete; P149 next)
+상태: implementation in progress (P147-P149 complete; P150 next)
 
 목표: compiler demo를 넘어 실제 native CLI 프로그램을 작성할 수 있는 최소
 library를 제공한다.
@@ -215,8 +215,12 @@ library를 제공한다.
   byte/scalar/search/split/join/int/bool conversion runtime
 - owned string/slice/error cleanup, allocation accounting/failure injection,
   strict C와 sanitizer native acceptance
-- process, stream, file과 map처럼 runtime body가 아직 없는 intrinsic call의
-  deterministic backend rejection
+- generated C process ABI, `std/os` arguments/environment/exit와 `std/io`
+  stdin/stdout/stderr recoverable runtime
+- `mlg run --` argument와 numeric exit status forwarding, UTF-8/process/stream
+  failure, allocation과 sanitizer acceptance
+- file과 map처럼 runtime body가 아직 없는 intrinsic call의 deterministic
+  backend rejection
 
 완료 조건:
 

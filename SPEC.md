@@ -32,10 +32,10 @@ remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these rules. They become
 normative with the v0.2 release.
 
-## Implemented v0.6 Standard Registry and Text Runtime
+## Implemented v0.6 Standard Registry, Text, Process, and Stream Runtime
 
 The approved v0.6 standard-library contract currently implements its compiler
-foundation and UTF-8 text slice:
+foundation, UTF-8 text, process, and standard-stream slices:
 
 - `import "std/..."` works in project and manifest-free standalone source for
   the six approved standard packages.
@@ -60,10 +60,19 @@ foundation and UTF-8 text slice:
   `errors.Kind.InvalidData`. `parseBool` accepts exactly `true` or `false`.
 - Owned string, slice, and error results use the compiler allocation accounting,
   cleanup, deterministic failure injection, and fatal malformed-runtime-string
-  boundary. Normal P148 acceptance programs finish with zero live allocations.
-- Process, stream, file, and map runtime bodies remain P149-P151 work. Calling
-  one of those unimplemented intrinsics during `mlg build` reports a
-  deterministic compiler-milestone error.
+  boundary.
+- `std/os.args` returns an owned UTF-8 argument slice including the invocation
+  name at index 0. `std/os.env` distinguishes a missing value from invalid input
+  or data, and `std/os.exit` accepts process codes from 0 through 255.
+- `std/io.readStdin` reads all stdin as valid UTF-8 while preserving embedded
+  NUL bytes. `writeStdout` and `writeStderr` perform length-based exact writes;
+  read, write, and flush failures return `errors.Error`.
+- `mlg run <input> -- <program-args>` forwards arguments unchanged and propagates
+  a generated program's numeric exit status. Direct and runner-based invocation
+  use the same generated process ABI.
+- Normal P148-P149 acceptance programs finish with zero live allocations. File
+  and map runtime bodies remain P150-P151 work; calling one during `mlg build`
+  reports a deterministic compiler-milestone error.
 
 ## Implemented v0.3 Function Values and Closures
 

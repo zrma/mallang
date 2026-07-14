@@ -71,7 +71,10 @@ expect_release_command_failure \
   "$RELEASE_BIN" build examples/first.mlg --wat
 
 help_output="$("$RELEASE_BIN" --help)"
-if [[ "$help_output" != *"usage:"* || "$help_output" != *"$RELEASE_BIN check <source-file>"* || "$help_output" != *"$RELEASE_BIN --version"* ]]; then
+if [[ "$help_output" != *"usage:"* || \
+  "$help_output" != *"$RELEASE_BIN check <input>"* || \
+  "$help_output" != *"$RELEASE_BIN run <input> [-- <program-args>...]"* || \
+  "$help_output" != *"$RELEASE_BIN --version"* ]]; then
   echo "release binary help smoke failed" >&2
   echo "$help_output" >&2
   exit 1
@@ -145,6 +148,28 @@ fi
 run_command_output="$("$RELEASE_BIN" run examples/first.mlg)"
 if [[ "$run_command_output" != "30" ]]; then
   echo "release binary run smoke failed: $run_command_output" >&2
+  exit 1
+fi
+
+process_args_output="$(
+  "$RELEASE_BIN" run tests/fixtures/v06-process-io/args.mlg -- alpha 한
+)"
+if [[ "$process_args_output" != $'3\nalpha\n한' ]]; then
+  echo "release binary process argument smoke failed: $process_args_output" >&2
+  exit 1
+fi
+
+if "$RELEASE_BIN" run tests/fixtures/v06-process-io/exit.mlg \
+  >"$NEGATIVE_DIR/process-exit.stdout" 2>"$NEGATIVE_DIR/process-exit.stderr"; then
+  echo "release binary process exit smoke unexpectedly succeeded" >&2
+  exit 1
+else
+  process_exit_status=$?
+fi
+if [[ "$process_exit_status" -ne 7 ]] || \
+  [[ -s "$NEGATIVE_DIR/process-exit.stdout" ]] || \
+  [[ -s "$NEGATIVE_DIR/process-exit.stderr" ]]; then
+  echo "release binary process exit smoke failed" >&2
   exit 1
 fi
 

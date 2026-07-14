@@ -228,6 +228,9 @@ if [[ "$standard_strings_edge_output" != $'0\n-1\n0\n1\n|a||b|\n9223372036854775
   exit 1
 fi
 expect_warning_clean_generated_c "v06-standard-strings-edge" "target/mallang/edge-cases.c"
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/process-io.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/process-io.mlg -o target/mallang/process-io >/dev/null
+scripts/check-process-io-runtime.sh
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null

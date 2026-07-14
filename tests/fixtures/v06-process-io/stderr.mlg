@@ -1,0 +1,12 @@
+import "std/io"
+
+func main() {
+    text := "stderr-text"
+    match io.writeStderr(con text) {
+        case Ok(_) {
+        }
+        case Err(error) {
+            print(error)
+        }
+    }
+}

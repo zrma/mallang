@@ -3,6 +3,7 @@ use std::fmt;
 mod expressions;
 mod names;
 mod patterns;
+mod platform_runtime;
 mod runtime;
 mod standard_runtime;
 mod statements;
@@ -14,7 +15,7 @@ use names::{
     closure_env_type_name, drop_fn_name, TypeCName,
 };
 use runtime::{emit_allocation_runtime, emit_string_runtime};
-use standard_runtime::emit_standard_runtime;
+use standard_runtime::{emit_standard_runtime, program_uses_intrinsic};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
 
@@ -22,6 +23,7 @@ use crate::{
     ast::Program,
     ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram},
     semantic::{check, FunctionParamType, FunctionType, Type},
+    standard::StandardIntrinsic,
 };
 
 pub fn generate_c(program: &Program) -> Result<String, CompileError> {
@@ -89,6 +91,7 @@ impl<'a> CGenerator<'a> {
 
     fn generate(self) -> Result<String, CompileError> {
         let mut output = String::new();
+        output.push_str("#include <errno.h>\n");
         output.push_str("#include <stdbool.h>\n");
         output.push_str("#include <stdint.h>\n");
         output.push_str("#include <stdio.h>\n");
@@ -181,7 +184,11 @@ impl<'a> CGenerator<'a> {
     }
 
     fn prototype(&self, function: &IrFunction) -> Result<String, CompileError> {
-        let params = if function.name == "main" || function.params.is_empty() {
+        let params = if function.name == "main"
+            && program_uses_intrinsic(self.program, StandardIntrinsic::OsArgs)
+        {
+            "int argc, char **argv".to_string()
+        } else if function.name == "main" || function.params.is_empty() {
             "void".to_string()
         } else {
             function
@@ -211,6 +218,12 @@ impl<'a> CGenerator<'a> {
         output.push_str(&self.prototype(function)?);
         output.push_str(" {\n");
         let env = param_env(function);
+
+        if function.name == "main"
+            && program_uses_intrinsic(self.program, StandardIntrinsic::OsArgs)
+        {
+            output.push_str("    mallang_process_init(argc, argv);\n");
+        }
 
         for param in &function.params {
             output.push_str(&format!("    (void){};\n", c_ident(&param.name)));

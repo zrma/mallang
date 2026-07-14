@@ -253,9 +253,9 @@
   still pending.
 - `v0.5.0: Ownership and Runtime` is implemented locally; release publication
   is still pending.
-- `v0.6.0: Standard Library` is in progress. P147 standard package registry and
-  P148 UTF-8 text/error runtime are complete; P149 process and stream I/O is
-  next.
+- `v0.6.0: Standard Library` is in progress. P147 standard package registry,
+  P148 UTF-8 text/error runtime, and P149 process/stream I/O are complete; P150
+  file I/O is next.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

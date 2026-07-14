@@ -166,6 +166,15 @@
   normal cleanup과 deterministic failure injection을 사용한다. `examples/standard-strings.mlg`,
   edge fixture, 523개 unit test, 64-program generated C warning-clean/deep ASan/UBSan gate와
   모든 standard-string allocation 지점 failure sweep이 P148 완료 조건을 검증한다.
+- v0.6 P149 완료: generated C `main`이 필요할 때만 `argc`/`argv` process ABI를 사용하고,
+  `std/os.args`, `env`, `exit`와 `std/io.readStdin`, `writeStdout`, `writeStderr`를
+  demand-driven runtime으로 연결한다. Arguments와 environment는 UTF-8을 검증하고 stdin은
+  embedded NUL을 보존하며, missing env와 platform read/write/flush failure는
+  `Result`/`errors.Error`로 반환한다. `mlg run --`은 argument와 numeric exit status를
+  direct binary와 동일하게 전달한다. `examples/process-io.mlg`, process edge fixture,
+  strict C, zero-allocation accounting, deterministic failure injection과 normal/error
+  ASan/UBSan harness, 전체 524개 unit test와 65-program generated C sweep이 P149 완료
+  조건을 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -191,6 +200,7 @@ cargo run --bin mlg -- run examples/string-runtime.mlg
 cargo run --bin mlg -- run examples/borrow-range-contract.mlg
 cargo run --bin mlg -- run examples/allocation-accounting.mlg
 cargo run --bin mlg -- run examples/standard-strings.mlg
+printf 'input' | MALLANG_P149_TEST=값 cargo run --bin mlg -- run examples/process-io.mlg -- alpha
 cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
@@ -306,7 +316,7 @@ target/mallang/match-statement
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P148 implementation evidence
+- `docs/todo-v06-standard-library/`: approved v0.6 contract and P147-P149 implementation evidence
 - `docs/releases/v0-rc.md`: v0.1.0 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -315,12 +325,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P149에서 generated C `main` internal ABI에 process arguments를 연결하고 `std/os.args`,
-   `std/os.env`, `std/os.exit`를 구현한다.
-2. `mlg run <input> -- <program-args>` forwarding과 direct binary invocation parity를
-   검증한다.
-3. `std/io.readStdin`, `writeStdout`, `writeStderr`를 recoverable `Result` API와 UTF-8,
-   short/failing stream behavior에 연결한다.
+1. P150에서 `std/fs.readText`와 `writeText`의 owned result/error runtime을 구현한다.
+2. Not found, permission, invalid UTF-8, short write와 close failure를 stable
+   `errors.Kind` contract에 연결한다.
+3. Successful/failing file operation을 strict C, allocation accounting/failure injection과
+   sanitizer native harness로 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
