@@ -9,8 +9,8 @@ use crate::{
         MatchBlockArm, MatchPattern, ParamMode, Stmt, StmtKind, UnaryOp,
     },
     semantic::{
-        CheckedClosure, CheckedProgram, FunctionParamType, FunctionSig, FunctionType, MethodKey,
-        MethodSig, ParamSig, StructSig, Type,
+        CheckedClosure, CheckedProgram, EnumSig, FunctionParamType, FunctionSig, FunctionType,
+        MethodKey, MethodSig, ParamSig, StructSig, Type,
     },
     token::Span,
 };
@@ -22,6 +22,7 @@ pub fn lower(checked: &CheckedProgram) -> Result<IrProgram, IrError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrProgram {
     pub structs: Vec<IrStruct>,
+    pub enums: Vec<IrEnum>,
     pub functions: Vec<IrFunction>,
     pub closures: Vec<IrClosure>,
 }
@@ -53,6 +54,18 @@ pub struct IrStruct {
 pub struct IrStructField {
     pub name: String,
     pub ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrEnum {
+    pub name: String,
+    pub variants: Vec<IrEnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrEnumVariant {
+    pub name: String,
+    pub payload: Option<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +193,11 @@ pub enum IrExprKind {
         constructor: IrAdtConstructor,
         payload: Option<Box<IrExpr>>,
     },
+    EnumConstructor {
+        enum_name: String,
+        variant: String,
+        payload: Option<Box<IrExpr>>,
+    },
     Match {
         scrutinee: Box<IrExpr>,
         arms: Vec<IrMatchArm>,
@@ -270,6 +288,20 @@ pub enum IrMatchPattern {
     None,
     Ok(String),
     Err(String),
+    Wildcard(Type),
+    Binding {
+        name: String,
+        ty: Type,
+    },
+    EnumVariant {
+        enum_name: String,
+        variant: String,
+        payload: Option<Box<IrMatchPattern>>,
+    },
+    NestedBuiltin {
+        variant: String,
+        payload: Option<Box<IrMatchPattern>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,6 +349,7 @@ impl<'a> Lowerer<'a> {
 
     fn lower_program(&self) -> Result<IrProgram, IrError> {
         let structs = self.lower_structs()?;
+        let enums = self.lower_enums()?;
         let mut functions = Vec::new();
         for function in &self.checked.program.functions {
             let (receiver, sig, ir_name) = self.callable_sig(function)?;
@@ -354,6 +387,7 @@ impl<'a> Lowerer<'a> {
 
         Ok(IrProgram {
             structs,
+            enums,
             functions,
             closures,
         })
@@ -420,6 +454,25 @@ impl<'a> Lowerer<'a> {
             });
         }
         Ok(structs)
+    }
+
+    fn lower_enums(&self) -> Result<Vec<IrEnum>, IrError> {
+        let mut enums = Vec::new();
+        for declaration in &self.checked.program.enums {
+            let sig = self.enum_sig(&declaration.name, declaration.span)?;
+            enums.push(IrEnum {
+                name: declaration.name.clone(),
+                variants: sig
+                    .variants
+                    .iter()
+                    .map(|variant| IrEnumVariant {
+                        name: variant.name.clone(),
+                        payload: variant.payload.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        Ok(enums)
     }
 
     fn lower_stmt(
@@ -824,12 +877,18 @@ impl<'a> Lowerer<'a> {
                     expr.span,
                 ));
             }
-            ExprKind::EnumConstructor { .. } => {
-                return Err(IrError::new(
-                    "user-defined enum constructors require v0.4 IR lowering",
-                    expr.span,
-                ));
-            }
+            ExprKind::EnumConstructor {
+                enum_name,
+                variant,
+                args,
+            } => self.lower_enum_constructor(
+                enum_name,
+                variant,
+                args.as_deref(),
+                locals,
+                expected,
+                expr.span,
+            )?,
             ExprKind::Call { callee, args } => {
                 self.lower_call(callee, args, locals, expected, expr.span)?
             }
@@ -1383,6 +1442,7 @@ impl<'a> Lowerer<'a> {
         match scrutinee_ty {
             Type::Option(inner) => self.prepare_option_match_arms(inner, arms, span),
             Type::Result(ok, err) => self.prepare_result_match_arms(ok, err, arms, span),
+            Type::Enum(name) => self.prepare_enum_match_arms(name, arms),
             _ => Err(IrError::new(
                 "semantic analysis accepted match on non-ADT value",
                 span,
@@ -1399,10 +1459,206 @@ impl<'a> Lowerer<'a> {
         match scrutinee_ty {
             Type::Option(inner) => self.prepare_option_match_block_arms(inner, arms, span),
             Type::Result(ok, err) => self.prepare_result_match_block_arms(ok, err, arms, span),
+            Type::Enum(name) => self.prepare_enum_match_block_arms(name, arms),
             _ => Err(IrError::new(
                 "semantic analysis accepted match on non-ADT value",
                 span,
             )),
+        }
+    }
+
+    fn prepare_enum_match_arms<'b>(
+        &self,
+        name: &str,
+        arms: &'b [MatchArm],
+    ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
+        let expected = Type::Enum(name.to_string());
+        arms.iter()
+            .map(|arm| {
+                let (pattern, binding) =
+                    self.lower_enum_match_pattern(&arm.pattern, &expected, arm.span)?;
+                Ok(PreparedMatchArm {
+                    pattern,
+                    expr: &arm.expr,
+                    binding,
+                })
+            })
+            .collect()
+    }
+
+    fn prepare_enum_match_block_arms<'b>(
+        &self,
+        name: &str,
+        arms: &'b [MatchBlockArm],
+    ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
+        let expected = Type::Enum(name.to_string());
+        arms.iter()
+            .map(|arm| {
+                let (pattern, binding) =
+                    self.lower_enum_match_pattern(&arm.pattern, &expected, arm.span)?;
+                Ok(PreparedMatchBlockArm {
+                    pattern,
+                    block: &arm.block,
+                    binding,
+                })
+            })
+            .collect()
+    }
+
+    fn lower_enum_match_pattern(
+        &self,
+        pattern: &MatchPattern,
+        expected: &Type,
+        span: Span,
+    ) -> Result<(IrMatchPattern, Option<(String, Type)>), IrError> {
+        match pattern {
+            MatchPattern::Wildcard if expected.needs_cleanup() => {
+                let name = match_discard_name(span);
+                Ok((
+                    IrMatchPattern::Binding {
+                        name: name.clone(),
+                        ty: expected.clone(),
+                    },
+                    Some((name, expected.clone())),
+                ))
+            }
+            MatchPattern::Wildcard => Ok((IrMatchPattern::Wildcard(expected.clone()), None)),
+            MatchPattern::Binding(name) => Ok((
+                IrMatchPattern::Binding {
+                    name: name.clone(),
+                    ty: expected.clone(),
+                },
+                Some((name.clone(), expected.clone())),
+            )),
+            MatchPattern::Variant {
+                type_name,
+                variant,
+                payload,
+            } => {
+                let Type::Enum(enum_name) = expected else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted enum pattern for non-enum payload",
+                        span,
+                    ));
+                };
+                let enum_sig = self.enum_sig(enum_name, span)?;
+                if type_name != &enum_sig.pattern_name {
+                    return Err(IrError::new(
+                        "semantic analysis accepted mismatched enum pattern type",
+                        span,
+                    ));
+                }
+                let variant_sig = enum_sig
+                    .variants
+                    .iter()
+                    .find(|candidate| candidate.name == *variant)
+                    .ok_or_else(|| {
+                        IrError::new(
+                            "semantic analysis accepted unknown enum pattern variant",
+                            span,
+                        )
+                    })?;
+                let (payload, binding) = match (&variant_sig.payload, payload.as_deref()) {
+                    (None, None) => (None, None),
+                    (Some(payload_ty), Some(pattern)) => {
+                        let (pattern, binding) =
+                            self.lower_enum_match_pattern(pattern, payload_ty, span)?;
+                        (Some(Box::new(pattern)), binding)
+                    }
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted invalid enum pattern arity",
+                            span,
+                        ));
+                    }
+                };
+                Ok((
+                    IrMatchPattern::EnumVariant {
+                        enum_name: enum_name.clone(),
+                        variant: variant.clone(),
+                        payload,
+                    },
+                    binding,
+                ))
+            }
+            MatchPattern::Some(binding) => {
+                let Type::Option(inner) = expected else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted Some pattern for non-Option payload",
+                        span,
+                    ));
+                };
+                Ok((
+                    IrMatchPattern::NestedBuiltin {
+                        variant: "Some".to_string(),
+                        payload: Some(Box::new(IrMatchPattern::Binding {
+                            name: binding.clone(),
+                            ty: inner.as_ref().clone(),
+                        })),
+                    },
+                    Some((binding.clone(), inner.as_ref().clone())),
+                ))
+            }
+            MatchPattern::None => {
+                if !matches!(expected, Type::Option(_)) {
+                    return Err(IrError::new(
+                        "semantic analysis accepted None pattern for non-Option payload",
+                        span,
+                    ));
+                }
+                Ok((
+                    IrMatchPattern::NestedBuiltin {
+                        variant: "None".to_string(),
+                        payload: None,
+                    },
+                    None,
+                ))
+            }
+            MatchPattern::Ok(binding) | MatchPattern::Err(binding) => {
+                let Type::Result(ok, err) = expected else {
+                    return Err(IrError::new(
+                        "semantic analysis accepted Result pattern for non-Result payload",
+                        span,
+                    ));
+                };
+                let (variant, payload_ty) = match pattern {
+                    MatchPattern::Ok(_) => ("Ok", ok.as_ref()),
+                    MatchPattern::Err(_) => ("Err", err.as_ref()),
+                    _ => unreachable!("matched Result payload pattern"),
+                };
+                Ok((
+                    IrMatchPattern::NestedBuiltin {
+                        variant: variant.to_string(),
+                        payload: Some(Box::new(IrMatchPattern::Binding {
+                            name: binding.clone(),
+                            ty: payload_ty.clone(),
+                        })),
+                    },
+                    Some((binding.clone(), payload_ty.clone())),
+                ))
+            }
+            MatchPattern::NestedBuiltin { variant, payload } => {
+                let payload_ty = match (variant.as_str(), expected) {
+                    ("Some", Type::Option(inner)) => inner.as_ref(),
+                    ("Ok", Type::Result(ok, _)) => ok.as_ref(),
+                    ("Err", Type::Result(_, err)) => err.as_ref(),
+                    _ => {
+                        return Err(IrError::new(
+                            "semantic analysis accepted invalid nested built-in pattern",
+                            span,
+                        ));
+                    }
+                };
+                let (payload, binding) =
+                    self.lower_enum_match_pattern(payload, payload_ty, span)?;
+                Ok((
+                    IrMatchPattern::NestedBuiltin {
+                        variant: variant.clone(),
+                        payload: Some(Box::new(payload)),
+                    },
+                    binding,
+                ))
+            }
         }
     }
 
@@ -1715,10 +1971,27 @@ impl<'a> Lowerer<'a> {
             arm_locals.insert(name.clone(), ty.clone());
         }
 
+        let mut expr = self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?;
+        let mut cleanup = Vec::new();
+        if let Some((name, ty)) = &arm.binding {
+            if ty.needs_cleanup() {
+                let active = [CleanupBinding {
+                    name: name.clone(),
+                    ty: ty.clone(),
+                    span: arm.expr.span,
+                }];
+                let insertion = insert_expr_cleanup_drops(expr, &active);
+                if !insertion.moved_roots.contains(name) {
+                    push_cleanup_drop(&mut cleanup, &active[0], arm.expr.span);
+                }
+                expr = insertion.expr;
+            }
+        }
+
         Ok(IrMatchArm {
             pattern: arm.pattern.clone(),
-            expr: self.lower_expr_with_expected(arm.expr, &arm_locals, expected)?,
-            cleanup: Vec::new(),
+            expr,
+            cleanup,
             span: arm.expr.span,
         })
     }
@@ -1745,9 +2018,24 @@ impl<'a> Lowerer<'a> {
             arm_locals.insert(name.clone(), ty.clone());
         }
 
+        let mut body = self.lower_block_statements(arm.block, &mut arm_locals, return_type)?;
+        if let Some((name, ty)) = &arm.binding {
+            if ty.needs_cleanup() {
+                body = insert_straight_line_cleanup_drops(
+                    body,
+                    &[IrParam {
+                        name: name.clone(),
+                        mode: ParamMode::Owned,
+                        ty: ty.clone(),
+                    }],
+                    arm.block.span,
+                );
+            }
+        }
+
         Ok(IrMatchBlockArm {
             pattern: arm.pattern.clone(),
-            body: self.lower_block_statements(arm.block, &mut arm_locals, return_type)?,
+            body,
             span: arm.block.span,
         })
     }
@@ -1770,6 +2058,60 @@ impl<'a> Lowerer<'a> {
                 payload: None,
             },
             expected.clone(),
+        ))
+    }
+
+    fn lower_enum_constructor(
+        &self,
+        enum_name: &str,
+        variant_name: &str,
+        args: Option<&[Arg]>,
+        locals: &HashMap<String, Type>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<(IrExprKind, Type), IrError> {
+        let ty = Type::Enum(enum_name.to_string());
+        if expected.is_some_and(|expected| expected != &ty) {
+            return Err(IrError::new(
+                "semantic analysis accepted mismatched enum constructor type",
+                span,
+            ));
+        }
+        let variant = self
+            .enum_sig(enum_name, span)?
+            .variants
+            .iter()
+            .find(|candidate| candidate.name == variant_name)
+            .ok_or_else(|| {
+                IrError::new(
+                    "semantic analysis accepted unknown enum constructor variant",
+                    span,
+                )
+            })?;
+        let payload = match (&variant.payload, args) {
+            (None, None) => None,
+            (Some(payload_ty), Some(args)) => {
+                let arg = expect_constructor_arg(variant_name, args, span)?;
+                Some(Box::new(self.lower_expr_with_expected(
+                    &arg.expr,
+                    locals,
+                    Some(payload_ty),
+                )?))
+            }
+            _ => {
+                return Err(IrError::new(
+                    "semantic analysis accepted invalid enum constructor arity",
+                    span,
+                ));
+            }
+        };
+        Ok((
+            IrExprKind::EnumConstructor {
+                enum_name: enum_name.to_string(),
+                variant: variant_name.to_string(),
+                payload,
+            },
+            ty,
         ))
     }
 
@@ -2206,6 +2548,9 @@ impl<'a> Lowerer<'a> {
             name if ty.args.is_empty() && self.checked.structs.contains_key(name) => {
                 Ok(Type::Struct(name.to_string()))
             }
+            name if ty.args.is_empty() && self.checked.enums.contains_key(name) => {
+                Ok(Type::Enum(name.to_string()))
+            }
             _ => Err(IrError::new(
                 "semantic analysis accepted unknown type reference",
                 ty.span,
@@ -2218,6 +2563,13 @@ impl<'a> Lowerer<'a> {
             .structs
             .get(name)
             .ok_or_else(|| IrError::new(format!("unknown struct `{name}`"), span))
+    }
+
+    fn enum_sig(&self, name: &str, span: Span) -> Result<&EnumSig, IrError> {
+        self.checked
+            .enums
+            .get(name)
+            .ok_or_else(|| IrError::new(format!("unknown enum `{name}`"), span))
     }
 
     fn closure(&self, span: Span) -> Result<&CheckedClosure, IrError> {
@@ -2835,6 +3187,22 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
                 payload,
             }
         }
+        IrExprKind::EnumConstructor {
+            enum_name,
+            variant,
+            payload,
+        } => {
+            let payload = payload.map(|payload| {
+                let insertion = insert_expr_cleanup_drops(*payload, active);
+                moved_roots.extend(insertion.moved_roots);
+                Box::new(insertion.expr)
+            });
+            IrExprKind::EnumConstructor {
+                enum_name,
+                variant,
+                payload,
+            }
+        }
         IrExprKind::Match { scrutinee, arms } => {
             let scrutinee = insert_expr_cleanup_drops(*scrutinee, active);
             let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee.moved_roots);
@@ -3398,6 +3766,11 @@ fn collect_cleanup_moved_roots(expr: &IrExpr, roots: &mut HashSet<String>) {
                 collect_cleanup_moved_roots(payload, roots);
             }
         }
+        IrExprKind::EnumConstructor { payload, .. } => {
+            if let Some(payload) = payload {
+                collect_cleanup_moved_roots(payload, roots);
+            }
+        }
         IrExprKind::StructLiteral { fields, .. } => {
             for field in fields {
                 collect_cleanup_moved_roots(&field.expr, roots);
@@ -3542,6 +3915,15 @@ fn method_ir_name(receiver: &Type, method: &str) -> String {
 fn closure_ir_name(span: Span) -> String {
     format!(
         "closure_{}_{}_{}",
+        span.source.index(),
+        span.start,
+        span.end
+    )
+}
+
+fn match_discard_name(span: Span) -> String {
+    format!(
+        "mallang_match_discard_{}_{}_{}",
         span.source.index(),
         span.start,
         span.end
@@ -6112,5 +6494,169 @@ func main() {
             &ir.closures[0].body[0].kind,
             IrStmtKind::Assign { name, .. } if name == "count"
         ));
+    }
+
+    #[test]
+    fn ir_lowers_specialized_enum_constructors_and_nested_patterns() {
+        let program = parse(
+            r#"
+type Maybe[T] enum { None Some(T) }
+
+func unwrap(value Maybe[Result[int, string]]) int {
+    return match value {
+        case Maybe.Some(Ok(item)) { item }
+        case Maybe.Some(Err(message)) { 0 }
+        case Maybe.None { 0 }
+    }
+}
+
+func main() {
+    value := Maybe[Result[int, string]].Some(Ok(7))
+    print(unwrap(value))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let maybe = ir
+            .enums
+            .iter()
+            .find(|definition| {
+                definition
+                    .variants
+                    .iter()
+                    .any(|variant| variant.name == "Some")
+            })
+            .expect("expected specialized Maybe enum metadata");
+        assert_eq!(maybe.variants.len(), 2);
+        assert!(matches!(
+            maybe
+                .variants
+                .iter()
+                .find(|variant| variant.name == "Some")
+                .and_then(|variant| variant.payload.as_ref()),
+            Some(Type::Result(ok, err))
+                if ok.as_ref() == &Type::Int && err.as_ref() == &Type::String
+        ));
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let constructor = main.body.iter().find_map(|stmt| match &stmt.kind {
+            IrStmtKind::Let { expr, .. } => Some(expr),
+            _ => None,
+        });
+        let Some(IrExpr {
+            kind: IrExprKind::EnumConstructor {
+                variant, payload, ..
+            },
+            ..
+        }) = constructor
+        else {
+            panic!("expected user enum constructor");
+        };
+        assert_eq!(variant, "Some");
+        assert!(matches!(
+            payload.as_deref().map(|payload| &payload.kind),
+            Some(IrExprKind::AdtConstructor {
+                constructor: IrAdtConstructor::Ok,
+                ..
+            })
+        ));
+
+        let unwrap = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "unwrap")
+            .unwrap();
+        let IrStmtKind::Return { expr } = &unwrap.body[0].kind else {
+            panic!("expected match return");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match expression");
+        };
+        let IrMatchPattern::EnumVariant { payload, .. } = &arms[0].pattern else {
+            panic!("expected user enum pattern");
+        };
+        let Some(IrMatchPattern::NestedBuiltin { variant, payload }) = payload.as_deref() else {
+            panic!("expected nested built-in pattern");
+        };
+        assert_eq!(variant, "Ok");
+        assert!(matches!(
+            payload.as_deref(),
+            Some(IrMatchPattern::Binding { name, ty })
+                if name == "item" && ty == &Type::Int
+        ));
+    }
+
+    #[test]
+    fn ir_drops_owned_enum_payloads_bound_by_match_patterns() {
+        let program = parse(
+            r#"
+type Maybe[T] enum { None Some(T) }
+
+func expression(value Maybe[[]int]) int {
+    return match value {
+        case Maybe.Some(_) { 1 }
+        case Maybe.None { 0 }
+    }
+}
+
+func statement(value Maybe[[]int]) {
+    match value {
+        case Maybe.Some(_) {}
+        case Maybe.None {}
+    }
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+
+        let expression = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "expression")
+            .unwrap();
+        let IrStmtKind::Return { expr } = &expression.body[0].kind else {
+            panic!("expected expression match return");
+        };
+        let IrExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected expression match");
+        };
+        let IrMatchPattern::EnumVariant { payload, .. } = &arms[0].pattern else {
+            panic!("expected Some pattern");
+        };
+        let Some(IrMatchPattern::Binding { name, ty }) = payload.as_deref() else {
+            panic!("expected cleanup binding for wildcard payload");
+        };
+        assert!(name.starts_with("mallang_match_discard_"));
+        assert!(matches!(ty, Type::Slice(inner) if inner.as_ref() == &Type::Int));
+        assert_eq!(arms[0].cleanup.len(), 1);
+        assert_drop_of(&arms[0].cleanup[0], name);
+
+        let statement = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "statement")
+            .unwrap();
+        let IrStmtKind::Match { arms, .. } = &statement.body[0].kind else {
+            panic!("expected statement match");
+        };
+        let IrMatchPattern::EnumVariant { payload, .. } = &arms[0].pattern else {
+            panic!("expected Some pattern");
+        };
+        let Some(IrMatchPattern::Binding { name, .. }) = payload.as_deref() else {
+            panic!("expected cleanup binding for wildcard payload");
+        };
+        assert_eq!(arms[0].body.len(), 1);
+        assert_drop_of(&arms[0].body[0], name);
     }
 }

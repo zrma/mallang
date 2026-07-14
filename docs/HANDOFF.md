@@ -73,7 +73,10 @@
   generic 표기로 복원한다. Specialized enum은 source/package pattern origin을 보존하고,
   expression/statement match에서 nested user enum과 `Option`/`Result` payload를 recursive
   coverage로 검사한다. Wildcard, duplicate/unreachable arm, payload mismatch와
-  non-exhaustive path는 source diagnostic으로 거부한다. Enum IR/backend는 아직 구현 전이다.
+  non-exhaustive path는 source diagnostic으로 거부한다. Typed IR은 concrete variant
+  metadata, constructor payload와 recursive pattern tree를 보존한다. Cleanup이 필요한
+  wildcard payload는 내부 owned binding으로 정규화하고 expression/statement arm의
+  cleanup에 연결한다. Enum C layout과 constructor/match codegen은 아직 구현 전이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -216,8 +219,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. Enum typed IR에 concrete variant metadata와 nested pattern tree를 보존한다.
-2. C tag/union layout, constructor/match lowering과 non-Copy payload cleanup을 완료한다.
+1. C tag/union layout과 recursive drop helper를 specialized enum마다 생성한다.
+2. User enum constructor와 expression/statement nested match를 C로 lowering한다.
 3. Built-in `Option`/`Result`를 공통 enum 경로로 이전한다.
 
 Publish helper note: the real publish path fetches `origin` before verification

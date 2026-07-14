@@ -90,6 +90,9 @@ impl<'a> CGenerator<'a> {
             } => {
                 self.emit_adt_constructor_stmt_expr(&expr.ty, *constructor, payload.as_deref(), env)
             }
+            IrExprKind::EnumConstructor { .. } => Err(CompileError::new(
+                "user-defined enum constructors require v0.4 C lowering",
+            )),
             IrExprKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt_expr(expr, scrutinee, arms, env)
             }

@@ -1054,3 +1054,13 @@
 - [x] wildcard, duplicate/unreachable arm, payload arity/type mismatch diagnostic 추가
 - [x] expression/statement match binding scope와 cross-package generic enum 회귀 검증
 - [x] full Rust test와 Clippy regression gate 통과; IR/C pattern lowering은 다음 단계로 유지
+
+## P132: User Enum Typed IR
+
+- [x] specialized enum의 concrete variant 이름과 payload type을 typed IR에 보존
+- [x] user enum constructor를 typed payload expression과 함께 IR로 lowering
+- [x] user enum과 nested built-in payload pattern을 recursive IR pattern tree로 lowering
+- [x] wildcard payload를 cleanup이 필요한 경우 내부 owned binding으로 정규화
+- [x] expression/statement match arm-local payload move와 cleanup insertion 연결
+- [x] typed IR 구조와 non-Copy wildcard payload cleanup 회귀 테스트 추가
+- [x] C backend가 새 enum IR을 지원하기 전 명시적 invariant error 경계 유지

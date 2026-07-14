@@ -59,6 +59,7 @@ print(values[0])
 fn generates_c_for_internal_owned_slice_type_shell() {
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -92,6 +93,7 @@ fn generates_c_for_internal_owned_slice_type_shell() {
 fn generates_c_drop_helpers_for_internal_cleanup_types() {
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
             fields: vec![
@@ -144,6 +146,7 @@ fn generates_c_for_explicit_internal_drop_statement() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -187,6 +190,7 @@ fn generates_c_for_explicit_internal_cleanup_field_drop_statement() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: vec![IrStruct {
             name: "Holder".to_string(),
             fields: vec![IrStructField {
@@ -237,6 +241,7 @@ fn generates_c_for_explicit_internal_cleanup_array_element_drop_statement() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "consume".to_string(),
@@ -281,6 +286,7 @@ fn generates_c_for_for_init_cleanup_trailer() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -333,6 +339,7 @@ fn rejects_explicit_internal_drop_for_non_cleanup_type() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -363,6 +370,7 @@ fn rejects_invalid_ir_print_arity() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -396,6 +404,7 @@ fn rejects_invalid_ir_range_source_type() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -431,6 +440,7 @@ fn rejects_invalid_ir_option_match_arm() {
     let option_int = Type::Option(Box::new(Type::Int));
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "main".to_string(),
@@ -469,6 +479,7 @@ fn rejects_invalid_ir_borrow_argument_expression() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -851,6 +862,7 @@ fn generates_c_for_if_expression_cleanup_trailer() {
     let span = crate::token::Span::default();
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![
             IrFunction {
@@ -2138,6 +2150,7 @@ fn generates_callable_value_type_and_drop_helper() {
     });
     let program = IrProgram {
         closures: Vec::new(),
+        enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
             name: "accept".to_string(),
