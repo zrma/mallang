@@ -249,7 +249,9 @@
   still pending.
 - `v0.3.0: Functions and Closures` is implemented locally; release publication
   is still pending.
-- The next implementation milestone is `v0.4.0: Generic Data Model`.
+- `v0.4.0: Generic Data Model` is implemented locally; release publication is
+  still pending.
+- The next implementation milestone is `v0.5.0: Ownership and Runtime`.
 - Generic ADTs, ownership/runtime completion, standard library, tooling,
   hardening, and language freeze must advance through the acceptance gates in
   that document.

@@ -1,6 +1,6 @@
 # Spec: v0.4-generic-data-model
 
-상태: approved, implementation in progress
+상태: approved, implementation complete
 
 ## 목표
 
@@ -187,3 +187,22 @@ operation만 허용하며 arbitrary arithmetic, equality, print는 거부한다.
   통과한다.
 - Multi-package generic API가 visibility와 deterministic specialization 규칙을
   지킨다.
+
+## 완료 검증
+
+2026-07-14 기준 v0.4 구현과 acceptance를 완료했다.
+
+| 완료 조건 | 검증 근거 | 판정 |
+| --- | --- | --- |
+| 둘 이상의 concrete generic type/ADT | `examples/generics.mlg`, `examples/generic-enums.mlg` native output | 완료 |
+| Generic function, function value, receiver | generic semantic/specialization regression과 `examples/generics.mlg` | 완료 |
+| User enum exhaustive nested match | `examples/generic-enums.mlg`, nested non-exhaustive CLI fixture | 완료 |
+| Built-in ADT common path와 호환성 | common ADT metadata/IR/backend regression, `examples/adt.mlg`, `examples/print-adt.mlg` | 완료 |
+| Invalid generic/constructor/pattern 진단 | semantic/specialization regression과 `tests/fixtures/invalid-generic-enums/` | 완료 |
+| Non-Copy generic ownership/cleanup | slice payload native output, strict generated C, ASan/UBSan | 완료 |
+| Multi-package generic API | `examples/projects/hello` visibility, native output, strict C, ASan/UBSan | 완료 |
+
+Canonical acceptance는 `scripts/check.sh` 하나로 위 unit, CLI diagnostic, native
+output, strict C와 sanitizer 검증을 재실행한다. 현재 승인된 generic use case는
+interface/trait constraint나 dynamic dispatch를 요구하지 않으므로 v0.4 제외 결정을
+유지하고, 이후 milestone에서 구체적인 필요가 생길 때 별도 decision gate로 평가한다.

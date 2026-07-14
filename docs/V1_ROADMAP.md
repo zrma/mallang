@@ -125,7 +125,7 @@ v1로 간주한다.
 
 ## v0.4.0: Generic Data Model
 
-상태: implementation in progress
+상태: implementation complete, release pending
 
 목표: built-in `Option`/`Result` 전용 모델을 일반적인 user-defined data model로
 확장한다.
