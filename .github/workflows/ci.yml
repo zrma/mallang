@@ -49,15 +49,20 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install Linux compiler prerequisite
+      - name: Install Linux release prerequisites
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang
+          sudo apt-get install --yes clang ripgrep
+          clang --version
+          rg --version
 
-      - name: Check macOS compiler prerequisite
+      - name: Install macOS release prerequisites
         if: runner.os == 'macOS'
-        run: clang --version
+        run: |
+          brew install ripgrep
+          clang --version
+          rg --version
 
       - name: Run v0.8 compiler hardening acceptance
         run: scripts/check-v08-acceptance.sh
