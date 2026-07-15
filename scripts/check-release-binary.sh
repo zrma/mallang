@@ -85,6 +85,7 @@ fi
 scripts/check-formatter.sh "$RELEASE_BIN"
 scripts/check-test-workflow.sh "$RELEASE_BIN"
 scripts/check-path-dependencies.sh "$RELEASE_BIN"
+scripts/check-diagnostics.sh "$RELEASE_BIN"
 
 lex_output="$("$RELEASE_BIN" lex examples/first.mlg)"
 if [[ "$lex_output" != *"Keyword(Func) @ 0..4"* || "$lex_output" != *'Ident("add")'* ]]; then

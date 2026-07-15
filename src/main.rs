@@ -10,9 +10,59 @@ use std::{
 use mallang::{
     check_project_sources, check_sources, discover_project, format_source,
     generate_c_project_sources, generate_c_sources, lex_with_source, load_source_files,
-    lower_sources, parse_sources, prepare_project_tests, CompilerError, FormatError, FrontendError,
-    PackageTest, Project, SourceId, SourceMap,
+    lower_sources, parse_sources, prepare_project_tests, CompilerError, Diagnostic,
+    DiagnosticStage, FormatError, FrontendError, PackageTest, Project, SourceId, SourceLoadError,
+    SourceMap,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiagnosticFormat {
+    Human,
+    Json,
+}
+
+#[derive(Debug)]
+struct CliError {
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl CliError {
+    fn one(diagnostic: Diagnostic) -> Self {
+        Self {
+            diagnostics: vec![diagnostic],
+        }
+    }
+
+    fn many(diagnostics: Vec<Diagnostic>) -> Self {
+        Self { diagnostics }
+    }
+
+    fn cli(message: impl Into<String>) -> Self {
+        Self::one(Diagnostic::error(DiagnosticStage::Cli, message))
+    }
+
+    fn input(message: impl Into<String>) -> Self {
+        Self::one(Diagnostic::error(DiagnosticStage::Input, message))
+    }
+
+    fn native(message: impl Into<String>) -> Self {
+        Self::one(Diagnostic::error(DiagnosticStage::Native, message))
+    }
+}
+
+impl From<String> for CliError {
+    fn from(message: String) -> Self {
+        Self::cli(message)
+    }
+}
+
+impl From<Diagnostic> for CliError {
+    fn from(diagnostic: Diagnostic) -> Self {
+        Self::one(diagnostic)
+    }
+}
+
+type CliResult<T> = Result<T, CliError>;
 
 fn main() {
     let args: Vec<OsString> = env::args_os().collect();
@@ -26,15 +76,34 @@ fn main() {
         process::exit(2);
     }
 
-    let result = match args[1].to_str() {
-        Some("lex") => utf8_cli_args(&args[2..]).and_then(|args| run_lex(&program, &args)),
-        Some("parse") => utf8_cli_args(&args[2..]).and_then(|args| run_parse(&program, &args)),
-        Some("check") => utf8_cli_args(&args[2..]).and_then(|args| run_check(&program, &args)),
-        Some("fmt") => utf8_cli_args(&args[2..]).and_then(|args| run_fmt(&program, &args)),
-        Some("ir") => utf8_cli_args(&args[2..]).and_then(|args| run_ir(&program, &args)),
-        Some("build") => utf8_cli_args(&args[2..]).and_then(|args| run_build(&program, &args)),
-        Some("run") => run_run(&program, &args[2..]),
-        Some("test") => utf8_cli_args(&args[2..]).and_then(|args| run_test(&program, &args)),
+    let (diagnostic_format, command_index) = match parse_diagnostic_format(&args) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            emit_diagnostics(error, DiagnosticFormat::Human);
+            process::exit(1);
+        }
+    };
+    let Some(command) = args.get(command_index) else {
+        emit_diagnostics(
+            CliError::cli(format!(
+                "missing subcommand; run `{program} --help` for usage"
+            )),
+            diagnostic_format,
+        );
+        process::exit(1);
+    };
+    let command_args = &args[command_index + 1..];
+
+    let result = match command.to_str() {
+        Some("lex") => utf8_cli_args(command_args).and_then(|args| run_lex(&program, &args)),
+        Some("parse") => utf8_cli_args(command_args).and_then(|args| run_parse(&program, &args)),
+        Some("check") => utf8_cli_args(command_args).and_then(|args| run_check(&program, &args)),
+        Some("fmt") => utf8_cli_args(command_args).and_then(|args| run_fmt(&program, &args)),
+        Some("ir") => utf8_cli_args(command_args).and_then(|args| run_ir(&program, &args)),
+        Some("build") => utf8_cli_args(command_args).and_then(|args| run_build(&program, &args)),
+        Some("run") => run_run(&program, command_args),
+        Some("test") => utf8_cli_args(command_args)
+            .and_then(|args| run_test(&program, &args, diagnostic_format)),
         Some("-V" | "--version") => {
             println!("mlg {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -42,33 +111,73 @@ fn main() {
         Some("-h" | "--help") => {
             let mut stdout = io::stdout().lock();
             write_usage(&mut stdout, &program)
-                .map_err(|error| format!("failed to write usage: {error}"))
+                .map_err(|error| CliError::cli(format!("failed to write usage: {error}")))
         }
-        Some(command) => Err(format!(
+        Some(command) => Err(CliError::cli(format!(
             "unknown subcommand `{command}`; run `{program} --help` for usage"
-        )),
-        None => Err("subcommand is not valid UTF-8".to_string()),
+        ))),
+        None => Err(CliError::cli("subcommand is not valid UTF-8")),
     };
 
     if let Err(error) = result {
-        eprintln!("{error}");
+        emit_diagnostics(error, diagnostic_format);
         process::exit(1);
     }
 }
 
-fn utf8_cli_args(args: &[OsString]) -> Result<Vec<String>, String> {
+fn parse_diagnostic_format(args: &[OsString]) -> CliResult<(DiagnosticFormat, usize)> {
+    let Some(argument) = args.get(1).and_then(|argument| argument.to_str()) else {
+        return Ok((DiagnosticFormat::Human, 1));
+    };
+    if argument == "--diagnostic-format" {
+        let value = args
+            .get(2)
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| CliError::cli("missing UTF-8 value for --diagnostic-format"))?;
+        return Ok((parse_diagnostic_format_value(value)?, 3));
+    }
+    if let Some(value) = argument.strip_prefix("--diagnostic-format=") {
+        return Ok((parse_diagnostic_format_value(value)?, 2));
+    }
+    Ok((DiagnosticFormat::Human, 1))
+}
+
+fn parse_diagnostic_format_value(value: &str) -> CliResult<DiagnosticFormat> {
+    match value {
+        "human" => Ok(DiagnosticFormat::Human),
+        "json" => Ok(DiagnosticFormat::Json),
+        _ => Err(CliError::cli(format!(
+            "unknown diagnostic format `{value}`; expected `human` or `json`"
+        ))),
+    }
+}
+
+fn emit_diagnostics(error: CliError, format: DiagnosticFormat) {
+    for diagnostic in error.diagnostics {
+        match format {
+            DiagnosticFormat::Human => eprintln!("{}", diagnostic.render_human()),
+            DiagnosticFormat::Json => eprintln!("{}", diagnostic.render_json()),
+        }
+    }
+}
+
+fn utf8_cli_args(args: &[OsString]) -> CliResult<Vec<String>> {
     args.iter()
         .cloned()
         .map(|argument| {
             argument
                 .into_string()
-                .map_err(|_| "command argument is not valid UTF-8".to_string())
+                .map_err(|_| CliError::cli("command argument is not valid UTF-8"))
         })
         .collect()
 }
 
 fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "usage:")?;
+    writeln!(
+        output,
+        "  {program} [--diagnostic-format <human|json>] <subcommand> ..."
+    )?;
     writeln!(output, "  {program} lex <source-file>")?;
     writeln!(output, "  {program} parse <source-file>")?;
     writeln!(output, "  {program} check <input>")?;
@@ -80,7 +189,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} --version")
 }
 
-fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
+fn run_lex(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_source_arg(program, "lex", args)?;
     let (sources, source_id) = load_source(path)?;
     let source = source_text(&sources, source_id);
@@ -95,11 +204,18 @@ fn run_lex(program: &str, args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        Err(error) => Err(sources.format_diagnostic(&error.message, error.span)),
+        Err(error) => Err(source_diagnostic(
+            DiagnosticStage::Frontend,
+            error.message,
+            &sources,
+            error.span,
+            None,
+        )
+        .into()),
     }
 }
 
-fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
+fn run_parse(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_source_arg(program, "parse", args)?;
     let (sources, source_id) = load_source(path)?;
     let program = parse_loaded_source(&sources, source_id)?;
@@ -107,12 +223,12 @@ fn run_parse(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn run_check(program: &str, args: &[String]) -> Result<(), String> {
+fn run_check(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_input_arg(program, "check", args)?;
     match load_compilation_input(path)? {
         CompilationInput::Standalone { sources, source_id } => {
             check_sources(&sources, &[source_id])
-                .map_err(|error| format_compiler_error(&sources, path, error))?;
+                .map_err(|error| compiler_diagnostic(&sources, None, path, error))?;
         }
         CompilationInput::Project {
             project,
@@ -120,21 +236,25 @@ fn run_check(program: &str, args: &[String]) -> Result<(), String> {
             source_ids,
         } => {
             check_project_sources(&project, &sources, &source_ids)
-                .map_err(|error| format_compiler_error(&sources, path, error))?;
+                .map_err(|error| compiler_diagnostic(&sources, Some(&project), path, error))?;
         }
     }
     println!("{path}: ok");
     Ok(())
 }
 
-fn run_fmt(program: &str, args: &[String]) -> Result<(), String> {
+fn run_fmt(program: &str, args: &[String]) -> CliResult<()> {
     let (check_only, input) = match args {
         [input] if input != "--check" => (false, input.as_str()),
         [flag, input] if flag == "--check" => (true, input.as_str()),
         [flag, ..] if flag.starts_with('-') && flag != "--check" => {
-            return Err(format!("unknown fmt argument `{flag}`"));
+            return Err(CliError::cli(format!("unknown fmt argument `{flag}`")));
         }
-        _ => return Err(format!("usage: {program} fmt [--check] <input>")),
+        _ => {
+            return Err(CliError::cli(format!(
+                "usage: {program} fmt [--check] <input>"
+            )))
+        }
     };
 
     let files = load_format_inputs(input)?;
@@ -152,16 +272,27 @@ fn run_fmt(program: &str, args: &[String]) -> Result<(), String> {
         if changes.is_empty() {
             return Ok(());
         }
-        return Err(changes
-            .iter()
-            .map(|(_, display_path, _)| format!("{}: not formatted", display_path.display()))
-            .collect::<Vec<_>>()
-            .join("\n"));
+        return Err(CliError::many(
+            changes
+                .iter()
+                .map(|(_, display_path, _)| {
+                    Diagnostic::error(DiagnosticStage::Input, "not formatted")
+                        .with_path(display_path)
+                })
+                .collect(),
+        ));
     }
 
     for (path, display_path, formatted) in changes {
-        fs::write(&path, formatted)
-            .map_err(|error| format!("failed to write {}: {error}", display_path.display()))?;
+        fs::write(&path, formatted).map_err(|error| {
+            CliError::one(
+                Diagnostic::error(
+                    DiagnosticStage::Input,
+                    format!("failed to write source: {error}"),
+                )
+                .with_path(&display_path),
+            )
+        })?;
         println!("{}: formatted", display_path.display());
     }
     Ok(())
@@ -173,7 +304,7 @@ struct FormatInput {
     source: String,
 }
 
-fn load_format_inputs(input: &str) -> Result<Vec<FormatInput>, String> {
+fn load_format_inputs(input: &str) -> CliResult<Vec<FormatInput>> {
     let input_path = Path::new(input);
     if input_path
         .extension()
@@ -185,10 +316,11 @@ fn load_format_inputs(input: &str) -> Result<Vec<FormatInput>, String> {
         )?]);
     }
 
-    let project = discover_project(input_path).map_err(|error| error.to_string())?;
+    let project =
+        discover_project(input_path).map_err(|error| CliError::input(error.to_string()))?;
     let test_files = project
         .discover_test_files()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| CliError::input(error.to_string()))?;
     project
         .source_files()
         .iter()
@@ -203,9 +335,16 @@ fn load_format_inputs(input: &str) -> Result<Vec<FormatInput>, String> {
         .collect()
 }
 
-fn load_format_input(path: PathBuf, display_path: PathBuf) -> Result<FormatInput, String> {
-    let source = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read {}: {error}", display_path.display()))?;
+fn load_format_input(path: PathBuf, display_path: PathBuf) -> CliResult<FormatInput> {
+    let source = fs::read_to_string(&path).map_err(|error| {
+        CliError::one(
+            Diagnostic::error(
+                DiagnosticStage::Input,
+                format!("failed to read source: {error}"),
+            )
+            .with_path(&display_path),
+        )
+    })?;
     Ok(FormatInput {
         path,
         display_path,
@@ -213,27 +352,32 @@ fn load_format_input(path: PathBuf, display_path: PathBuf) -> Result<FormatInput
     })
 }
 
-fn format_format_error(display_path: &Path, source: &str, error: FormatError) -> String {
+fn format_format_error(display_path: &Path, source: &str, error: FormatError) -> Diagnostic {
     let mut sources = SourceMap::new();
     let source_id = sources.add_file(display_path, source);
-    sources.format_diagnostic(
-        &error.message,
+    source_diagnostic(
+        DiagnosticStage::Frontend,
+        error.message,
+        &sources,
         mallang::Span::new(source_id, error.span.start, error.span.end),
+        Some(display_path),
     )
 }
 
-fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
+fn run_ir(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_source_arg(program, "ir", args)?;
     let (sources, source_id) = load_source(path)?;
     let ir = lower_sources(&sources, &[source_id])
-        .map_err(|error| format_compiler_error(&sources, path, error))?;
+        .map_err(|error| compiler_diagnostic(&sources, None, path, error))?;
     println!("{ir:#?}");
     Ok(())
 }
 
-fn run_build(program: &str, args: &[String]) -> Result<(), String> {
+fn run_build(program: &str, args: &[String]) -> CliResult<()> {
     if args.is_empty() {
-        return Err(format!("usage: {program} build <input> [-o <output>]"));
+        return Err(CliError::cli(format!(
+            "usage: {program} build <input> [-o <output>]"
+        )));
     }
 
     let source_path = &args[0];
@@ -243,12 +387,12 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
         match args[index].as_str() {
             "-o" | "--output" => {
                 let Some(path) = args.get(index + 1) else {
-                    return Err("missing value for -o/--output".to_string());
+                    return Err(CliError::cli("missing value for -o/--output"));
                 };
                 output_path = Some(PathBuf::from(path));
                 index += 2;
             }
-            arg => return Err(format!("unknown build argument `{arg}`")),
+            arg => return Err(CliError::cli(format!("unknown build argument `{arg}`"))),
         }
     }
 
@@ -257,23 +401,23 @@ fn run_build(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn run_run(program: &str, args: &[OsString]) -> Result<(), String> {
+fn run_run(program: &str, args: &[OsString]) -> CliResult<()> {
     let Some(source_path) = args.first() else {
-        return Err(format!(
+        return Err(CliError::cli(format!(
             "usage: {program} run <input> [-- <program-args>...]"
-        ));
+        )));
     };
     let source_path = source_path
         .to_str()
-        .ok_or_else(|| "run input path is not valid UTF-8".to_string())?;
+        .ok_or_else(|| CliError::cli("run input path is not valid UTF-8"))?;
     let program_args = match args.get(1) {
         None => &args[1..],
         Some(argument) if argument == OsStr::new("--") => &args[2..],
         Some(argument) => {
-            return Err(format!(
+            return Err(CliError::cli(format!(
                 "unknown run argument `{}`; program arguments must follow `--`",
                 argument.to_string_lossy()
-            ));
+            )));
         }
     };
     let binary_path = compile_input(source_path, None, OutputKind::Run)?;
@@ -281,26 +425,35 @@ fn run_run(program: &str, args: &[OsString]) -> Result<(), String> {
     let status = Command::new(&binary_path)
         .args(program_args)
         .status()
-        .map_err(|error| format!("failed to execute {}: {error}", binary_path.display()))?;
+        .map_err(|error| {
+            CliError::native(format!(
+                "failed to execute {}: {error}",
+                binary_path.display()
+            ))
+        })?;
     if !status.success() {
         if let Some(code) = status.code() {
             process::exit(code);
         }
-        return Err(format!("program terminated by signal: {status}"));
+        return Err(CliError::native(format!(
+            "program terminated by signal: {status}"
+        )));
     }
 
     Ok(())
 }
 
-fn run_test(program: &str, args: &[String]) -> Result<(), String> {
+fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat) -> CliResult<()> {
     let (input, exact) = match args {
         [input] => (input.as_str(), None),
         [input, flag, test_id] if flag == "--exact" => (input.as_str(), Some(test_id.as_str())),
         [_, flag, ..] if flag.starts_with('-') && flag != "--exact" => {
-            return Err(format!("unknown test argument `{flag}`"));
+            return Err(CliError::cli(format!("unknown test argument `{flag}`")));
         }
         _ => {
-            return Err(format!("usage: {program} test <input> [--exact <test-id>]"));
+            return Err(CliError::cli(format!(
+                "usage: {program} test <input> [--exact <test-id>]"
+            )));
         }
     };
 
@@ -308,17 +461,19 @@ fn run_test(program: &str, args: &[String]) -> Result<(), String> {
         .extension()
         .is_some_and(|extension| extension == "mlg")
     {
-        return Err("mlg test requires a project directory or `mallang.toml`".to_string());
+        return Err(CliError::cli(
+            "mlg test requires a project directory or `mallang.toml`",
+        ));
     }
-    let project = discover_project(input).map_err(|error| error.to_string())?;
+    let project = discover_project(input).map_err(|error| CliError::input(error.to_string()))?;
     let test_files = project
         .discover_test_files()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| CliError::input(error.to_string()))?;
     let project_sources = project.compilation_source_files();
     let loaded = load_source_files(project_sources.into_iter().chain(test_files.iter()))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| project_source_load_error(&project, error))?;
     let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids)
-        .map_err(|error| format_compiler_error(&loaded.sources, input, error))?;
+        .map_err(|error| compiler_diagnostic(&loaded.sources, Some(&project), input, error))?;
     let selected = select_tests(suite.tests(), exact)?;
     let artifacts = build_test_artifacts(&project, &loaded.sources, &suite, &selected, input)?;
 
@@ -328,7 +483,9 @@ fn run_test(program: &str, args: &[String]) -> Result<(), String> {
         let test = &suite.tests()[artifact.test_index];
         let output = Command::new(&artifact.binary_path)
             .output()
-            .map_err(|error| format!("failed to execute test `{}`: {error}", test.id))?;
+            .map_err(|error| {
+                CliError::native(format!("failed to execute test `{}`: {error}", test.id))
+            })?;
         if output.status.success() {
             println!("test {} ... ok", test.id);
             passed += 1;
@@ -339,15 +496,17 @@ fn run_test(program: &str, args: &[String]) -> Result<(), String> {
         io::stdout()
             .lock()
             .write_all(&output.stdout)
-            .map_err(|error| format!("failed to replay test stdout: {error}"))?;
-        let stderr = normalize_test_stderr(&project, &loaded.sources, test, &output.stderr);
-        io::stderr()
-            .lock()
-            .write_all(stderr.as_bytes())
-            .map_err(|error| format!("failed to replay test stderr: {error}"))?;
+            .map_err(|error| CliError::native(format!("failed to replay test stdout: {error}")))?;
+        replay_test_stderr(
+            &project,
+            &loaded.sources,
+            test,
+            &output.stderr,
+            diagnostic_format,
+        )?;
         if let Some(diagnostic) = child_signal_diagnostic(&test.id, &output.status, &output.stderr)
         {
-            eprintln!("{diagnostic}");
+            emit_diagnostics(CliError::one(diagnostic), diagnostic_format);
         }
         failed += 1;
     }
@@ -383,34 +542,44 @@ fn build_test_artifacts(
     suite: &mallang::ProjectTestSuite,
     selected: &[usize],
     fallback_path: &str,
-) -> Result<Vec<TestArtifact>, String> {
+) -> CliResult<Vec<TestArtifact>> {
     let build_dir = project.root().join("target/mallang/tests");
-    fs::create_dir_all(&build_dir)
-        .map_err(|error| format!("failed to create {}: {error}", build_dir.display()))?;
+    fs::create_dir_all(&build_dir).map_err(|error| {
+        CliError::native(format!("failed to create {}: {error}", build_dir.display()))
+    })?;
     let mut artifacts = Vec::with_capacity(selected.len());
 
     for test_index in selected.iter().copied() {
         let test = &suite.tests()[test_index];
         let c_source = suite
             .generate_c(test_index)
-            .map_err(|error| format_compiler_error(sources, fallback_path, error))?;
+            .map_err(|error| compiler_diagnostic(sources, Some(project), fallback_path, error))?;
         let stem = format!("test-{test_index:04}");
         let c_path = build_dir.join(format!("{stem}.c"));
         let binary_path = build_dir.join(stem);
-        fs::write(&c_path, c_source)
-            .map_err(|error| format!("failed to write test `{}` C source: {error}", test.id))?;
+        fs::write(&c_path, c_source).map_err(|error| {
+            CliError::native(format!(
+                "failed to write test `{}` C source: {error}",
+                test.id
+            ))
+        })?;
         let output = Command::new("clang")
             .arg(&c_path)
             .arg("-o")
             .arg(&binary_path)
             .output()
-            .map_err(|error| format!("failed to execute clang for test `{}`: {error}", test.id))?;
+            .map_err(|error| {
+                CliError::native(format!(
+                    "failed to execute clang for test `{}`: {error}",
+                    test.id
+                ))
+            })?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(CliError::native(format!(
                 "native compilation failed for test `{}`:\n{}",
                 test.id,
                 String::from_utf8_lossy(&output.stderr).trim_end()
-            ));
+            )));
         }
         artifacts.push(TestArtifact {
             test_index,
@@ -421,41 +590,48 @@ fn build_test_artifacts(
     Ok(artifacts)
 }
 
-fn normalize_test_stderr(
+fn replay_test_stderr(
     project: &Project,
     sources: &SourceMap,
     test: &PackageTest,
     stderr: &[u8],
-) -> String {
+    diagnostic_format: DiagnosticFormat,
+) -> CliResult<()> {
     let stderr = String::from_utf8_lossy(stderr);
-    let mut normalized = String::new();
     for line in stderr.split_inclusive('\n') {
         let content = line.strip_suffix('\n').unwrap_or(line);
         if let Some((source_id, offset)) = parse_assertion_marker(content) {
             let diagnostic = sources
                 .file(SourceId::new(source_id))
-                .and_then(|source| {
-                    let location = source.location(offset)?;
-                    let path = source
-                        .path()
-                        .strip_prefix(project.root())
-                        .unwrap_or(source.path());
-                    Some(format!(
-                        "{}:{}:{}: assertion failed in test `{}`",
-                        path.display(),
-                        location.line,
-                        location.column,
-                        test.id
-                    ))
+                .map(|source| {
+                    let path = project.diagnostic_path(source.path());
+                    Diagnostic::error(
+                        DiagnosticStage::Native,
+                        format!("assertion failed in test `{}`", test.id),
+                    )
+                    .with_span(
+                        sources,
+                        mallang::Span::new(SourceId::new(source_id), offset, offset),
+                        Some(&path),
+                    )
                 })
-                .unwrap_or_else(|| format!("assertion failed in test `{}`", test.id));
-            normalized.push_str(&diagnostic);
-            normalized.push('\n');
+                .unwrap_or_else(|| {
+                    Diagnostic::error(
+                        DiagnosticStage::Native,
+                        format!("assertion failed in test `{}`", test.id),
+                    )
+                });
+            emit_diagnostics(CliError::one(diagnostic), diagnostic_format);
         } else {
-            normalized.push_str(line);
+            io::stderr()
+                .lock()
+                .write_all(line.as_bytes())
+                .map_err(|error| {
+                    CliError::native(format!("failed to replay test stderr: {error}"))
+                })?;
         }
     }
-    normalized
+    Ok(())
 }
 
 fn parse_assertion_marker(line: &str) -> Option<(usize, usize)> {
@@ -468,9 +644,13 @@ fn child_signal_diagnostic(
     test_id: &str,
     status: &process::ExitStatus,
     stderr: &[u8],
-) -> Option<String> {
-    (status.code().is_none() && stderr.is_empty())
-        .then(|| format!("test {test_id} terminated by signal"))
+) -> Option<Diagnostic> {
+    (status.code().is_none() && stderr.is_empty()).then(|| {
+        Diagnostic::error(
+            DiagnosticStage::Native,
+            format!("test {test_id} terminated by signal"),
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -483,11 +663,11 @@ fn compile_input(
     input_path: &str,
     output_path: Option<PathBuf>,
     kind: OutputKind,
-) -> Result<PathBuf, String> {
+) -> CliResult<PathBuf> {
     let (c_source, artifact_name, build_dir) = match load_compilation_input(input_path)? {
         CompilationInput::Standalone { sources, source_id } => {
             let c_source = generate_c_sources(&sources, &[source_id])
-                .map_err(|error| format_compiler_error(&sources, input_path, error))?;
+                .map_err(|error| compiler_diagnostic(&sources, None, input_path, error))?;
             (
                 c_source,
                 source_stem(input_path).to_string(),
@@ -501,20 +681,24 @@ fn compile_input(
         } => {
             project
                 .require_entrypoint()
-                .map_err(|error| error.to_string())?;
-            let c_source = generate_c_project_sources(&project, &sources, &source_ids)
-                .map_err(|error| format_compiler_error(&sources, input_path, error))?;
+                .map_err(|error| CliError::input(error.to_string()))?;
+            let c_source =
+                generate_c_project_sources(&project, &sources, &source_ids).map_err(|error| {
+                    compiler_diagnostic(&sources, Some(&project), input_path, error)
+                })?;
             let artifact_name = project.name().to_string();
             let build_dir = project.root().join("target/mallang");
             (c_source, artifact_name, build_dir)
         }
     };
 
-    fs::create_dir_all(&build_dir)
-        .map_err(|error| format!("failed to create {}: {error}", build_dir.display()))?;
+    fs::create_dir_all(&build_dir).map_err(|error| {
+        CliError::native(format!("failed to create {}: {error}", build_dir.display()))
+    })?;
     let c_path = build_dir.join(format!("{artifact_name}.c"));
-    fs::write(&c_path, c_source)
-        .map_err(|error| format!("failed to write {}: {error}", c_path.display()))?;
+    fs::write(&c_path, c_source).map_err(|error| {
+        CliError::native(format!("failed to write {}: {error}", c_path.display()))
+    })?;
 
     let default_output_dir = match kind {
         OutputKind::Build => build_dir.clone(),
@@ -525,17 +709,21 @@ fn compile_input(
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            CliError::native(format!("failed to create {}: {error}", parent.display()))
+        })?;
     }
-    let status = Command::new("clang")
+    let output = Command::new("clang")
         .arg(&c_path)
         .arg("-o")
         .arg(&output_path)
-        .status()
-        .map_err(|error| format!("failed to execute clang: {error}"))?;
-    if !status.success() {
-        return Err(format!("clang failed with status {status}"));
+        .output()
+        .map_err(|error| CliError::native(format!("failed to execute clang: {error}")))?;
+    if !output.status.success() {
+        return Err(CliError::native(format!(
+            "native compilation failed:\n{}",
+            String::from_utf8_lossy(&output.stderr).trim_end()
+        )));
     }
 
     Ok(output_path)
@@ -552,20 +740,20 @@ fn single_source_arg<'a>(
     program: &str,
     subcommand: &str,
     args: &'a [String],
-) -> Result<&'a str, String> {
+) -> CliResult<&'a str> {
     if args.len() != 1 {
-        return Err(format!("usage: {program} {subcommand} <source-file>"));
+        return Err(CliError::cli(format!(
+            "usage: {program} {subcommand} <source-file>"
+        )));
     }
     Ok(&args[0])
 }
 
-fn single_input_arg<'a>(
-    program: &str,
-    subcommand: &str,
-    args: &'a [String],
-) -> Result<&'a str, String> {
+fn single_input_arg<'a>(program: &str, subcommand: &str, args: &'a [String]) -> CliResult<&'a str> {
     if args.len() != 1 {
-        return Err(format!("usage: {program} {subcommand} <input>"));
+        return Err(CliError::cli(format!(
+            "usage: {program} {subcommand} <input>"
+        )));
     }
     Ok(&args[0])
 }
@@ -582,7 +770,7 @@ enum CompilationInput {
     },
 }
 
-fn load_compilation_input(path: &str) -> Result<CompilationInput, String> {
+fn load_compilation_input(path: &str) -> CliResult<CompilationInput> {
     let input = Path::new(path);
     if input
         .extension()
@@ -592,9 +780,9 @@ fn load_compilation_input(path: &str) -> Result<CompilationInput, String> {
         return Ok(CompilationInput::Standalone { sources, source_id });
     }
 
-    let project = discover_project(input).map_err(|error| error.to_string())?;
-    let loaded =
-        load_source_files(project.compilation_source_files()).map_err(|error| error.to_string())?;
+    let project = discover_project(input).map_err(|error| CliError::input(error.to_string()))?;
+    let loaded = load_source_files(project.compilation_source_files())
+        .map_err(|error| project_source_load_error(&project, error))?;
     Ok(CompilationInput::Project {
         project: Box::new(project),
         sources: loaded.sources,
@@ -602,13 +790,13 @@ fn load_compilation_input(path: &str) -> Result<CompilationInput, String> {
     })
 }
 
-fn load_source(path: &str) -> Result<(SourceMap, SourceId), String> {
-    let loaded = load_source_files([path]).map_err(|error| error.to_string())?;
+fn load_source(path: &str) -> CliResult<(SourceMap, SourceId)> {
+    let loaded = load_source_files([path]).map_err(source_load_error)?;
     let source_id = loaded
         .source_ids
         .first()
         .copied()
-        .ok_or_else(|| "source loader returned no source IDs".to_string())?;
+        .ok_or_else(|| CliError::input("source loader returned no source IDs"))?;
     Ok((loaded.sources, source_id))
 }
 
@@ -622,22 +810,76 @@ fn source_text(sources: &SourceMap, source_id: SourceId) -> &str {
 fn parse_loaded_source(
     sources: &SourceMap,
     source_id: SourceId,
-) -> Result<mallang::ast::Program, String> {
-    parse_sources(sources, &[source_id]).map_err(|error| format_frontend_error(sources, error))
+) -> CliResult<mallang::ast::Program> {
+    parse_sources(sources, &[source_id]).map_err(|error| frontend_diagnostic(sources, error).into())
 }
 
-fn format_frontend_error(sources: &SourceMap, error: FrontendError) -> String {
+fn frontend_diagnostic(sources: &SourceMap, error: FrontendError) -> Diagnostic {
     match error.span {
-        Some(span) => sources.format_diagnostic(&error.message, span),
-        None => error.message,
+        Some(span) => source_diagnostic(
+            DiagnosticStage::Frontend,
+            error.message,
+            sources,
+            span,
+            None,
+        ),
+        None => Diagnostic::error(DiagnosticStage::Frontend, error.message),
     }
 }
 
-fn format_compiler_error(sources: &SourceMap, fallback_path: &str, error: CompilerError) -> String {
+fn compiler_diagnostic(
+    sources: &SourceMap,
+    project: Option<&Project>,
+    fallback_path: &str,
+    error: CompilerError,
+) -> Diagnostic {
     match error.span {
-        Some(span) => sources.format_diagnostic(&error.message, span),
-        None => format!("{fallback_path}: {}", error.message),
+        Some(span) => {
+            let display_path = sources.file(span.source).map(|source| {
+                project
+                    .map(|project| project.diagnostic_path(source.path()))
+                    .unwrap_or_else(|| source.path().to_path_buf())
+            });
+            source_diagnostic(
+                error.stage.into(),
+                error.message,
+                sources,
+                span,
+                display_path.as_deref(),
+            )
+        }
+        None => Diagnostic::error(error.stage.into(), error.message).with_path(fallback_path),
     }
+}
+
+fn source_diagnostic(
+    stage: DiagnosticStage,
+    message: impl Into<String>,
+    sources: &SourceMap,
+    span: mallang::Span,
+    display_path: Option<&Path>,
+) -> Diagnostic {
+    Diagnostic::error(stage, message).with_span(sources, span, display_path)
+}
+
+fn source_load_error(error: SourceLoadError) -> CliError {
+    CliError::one(
+        Diagnostic::error(
+            DiagnosticStage::Input,
+            format!("failed to read source: {}", error.io_error()),
+        )
+        .with_path(error.path()),
+    )
+}
+
+fn project_source_load_error(project: &Project, error: SourceLoadError) -> CliError {
+    CliError::one(
+        Diagnostic::error(
+            DiagnosticStage::Input,
+            format!("failed to read source: {}", error.io_error()),
+        )
+        .with_path(project.diagnostic_path(error.path())),
+    )
 }
 
 #[cfg(test)]
@@ -660,7 +902,8 @@ mod tests {
 
         let signal_status = ExitStatus::from_raw(9);
         assert_eq!(
-            child_signal_diagnostic("project::Test", &signal_status, b""),
+            child_signal_diagnostic("project::Test", &signal_status, b"")
+                .map(|diagnostic| diagnostic.render_human()),
             Some("test project::Test terminated by signal".to_string())
         );
         assert_eq!(

@@ -115,6 +115,10 @@ impl SourceLoadError {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    pub fn io_error(&self) -> &io::Error {
+        &self.source
+    }
 }
 
 impl std::fmt::Display for SourceLoadError {

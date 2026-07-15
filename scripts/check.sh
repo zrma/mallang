@@ -161,6 +161,7 @@ fi
 scripts/check-formatter.sh target/debug/mlg
 scripts/check-test-workflow.sh target/debug/mlg
 scripts/check-path-dependencies.sh target/debug/mlg
+scripts/check-diagnostics.sh target/debug/mlg
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then
@@ -452,7 +453,7 @@ if ! grep -Fq 'package import cycle: cycle -> cycle/a -> cycle' "$project_cycle_
   cat "$project_cycle_stderr" >&2
   exit 1
 fi
-if ! grep -Fq 'tests/fixtures/project-cycle/src/a/a.mlg:3:1:' "$project_cycle_stderr"; then
+if ! grep -Fq 'src/a/a.mlg:3:1:' "$project_cycle_stderr"; then
   echo "project cycle smoke failed: expected source location" >&2
   cat "$project_cycle_stderr" >&2
   exit 1

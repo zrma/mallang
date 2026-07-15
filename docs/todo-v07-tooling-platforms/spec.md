@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P157 complete; P158 next
+상태: P154-P158 complete; P159 next
 
 ## Goal
 
@@ -73,6 +73,14 @@ machine-readable integration과 supported platform delivery를 우선한다.
 
 - Versioned JSON diagnostic schema와 human output parity를 구현한다.
 - Editor consumer fixture를 추가하고 basic LSP 진행 여부를 재평가한다.
+
+진행:
+
+- [x] `mallang.diagnostic.v1` JSON Lines schema와 stable stage vocabulary
+- [x] shared human/JSON renderer와 global `--diagnostic-format`
+- [x] project/dependency source path 및 UTF-8 span normalization
+- [x] JSONL consumer fixture와 debug/release smoke
+- [x] full LSP를 v0.7 blocker에서 제외하고 P160 decision gate로 보류
 
 ### P159: Release Artifacts and Installation
 

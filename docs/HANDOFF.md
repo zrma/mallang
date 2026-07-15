@@ -226,6 +226,13 @@
   format/check/test를 지원하며 build/run은 stable missing-entry diagnostic을 낸다.
   Multi-project app/library test generated C가 zero-allocation, strict C, ASan/UBSan과
   debug/release smoke를 통과한다.
+- v0.7 P158 완료: compiler-owned error를 versioned `mallang.diagnostic.v1` 모델로
+  통합하고 global `--diagnostic-format <human|json>`을 추가했다. Human과 JSON은 같은
+  stage/message/source/span을 렌더링하며 UTF-8 byte offset, 1-based Unicode scalar
+  location과 root/dependency project path를 고정한다. CLI/input/frontend/package/link/
+  semantic/native binary matrix, formatter multi-record, failed test assertion와 JSONL
+  consumer가 debug/release smoke를 통과한다. Full LSP는 P160의 v0.8 decision gate까지
+  보류한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -243,6 +250,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- --diagnostic-format json check examples/first.mlg
 cargo run --bin mlg -- test examples/projects/hello
 cargo run --bin mlg -- run examples/projects/local-deps/app
 cargo run --bin mlg -- run examples/function-values.mlg

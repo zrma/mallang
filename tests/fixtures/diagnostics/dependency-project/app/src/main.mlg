@@ -1,0 +1,7 @@
+package main
+
+import "diagcore"
+
+func main() {
+    print(diagcore.Value())
+}

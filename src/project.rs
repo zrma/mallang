@@ -91,6 +91,18 @@ impl Project {
         self.dependencies.iter().map(ProjectUnit::name)
     }
 
+    pub fn diagnostic_path(&self, path: &Path) -> PathBuf {
+        for dependency in &self.dependencies {
+            if let Ok(relative) = path.strip_prefix(&dependency.root) {
+                return PathBuf::from(dependency.name()).join(relative);
+            }
+        }
+        if let Ok(relative) = path.strip_prefix(&self.root_project.root) {
+            return relative.to_path_buf();
+        }
+        path.to_path_buf()
+    }
+
     pub fn compilation_source_files(&self) -> Vec<&PathBuf> {
         let mut files = Vec::new();
         for dependency in &self.dependencies {
@@ -981,6 +993,14 @@ mod tests {
                 Path::new("deps/text/src/text.mlg"),
                 Path::new("src/main.mlg"),
             ]
+        );
+        assert_eq!(
+            discovered.diagnostic_path(&project.root.join("deps/text/src/text.mlg")),
+            Path::new("text/src/text.mlg")
+        );
+        assert_eq!(
+            discovered.diagnostic_path(&project.root.join("src/main.mlg")),
+            Path::new("src/main.mlg")
         );
     }
 

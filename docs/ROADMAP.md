@@ -1347,3 +1347,20 @@ P157 local path dependencies다.
 P157의 exact contract는
 `docs/todo-v07-tooling-platforms/p157-local-path-dependencies.md`가 소유한다.
 다음 milestone은 P158 machine-readable diagnostics다.
+
+## P158: Machine-readable Diagnostics
+
+상태: complete
+
+- [x] versioned `mallang.diagnostic.v1` model과 stable stage vocabulary
+- [x] shared human/JSON renderer와 existing human diagnostic parity
+- [x] global `--diagnostic-format <human|json>` CLI contract
+- [x] UTF-8 byte span, Unicode scalar location과 project/dependency path normalization
+- [x] CLI/input/frontend/package/link/semantic/native JSONL binary matrix
+- [x] formatter multi-record, failed test assertion와 successful stdout contract
+- [x] standard-library-only JSONL consumer와 debug/release smoke
+- [x] basic LSP를 v0.7 blocker에서 제외하고 P160 decision gate로 보류
+
+P158의 exact contract는
+`docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`가 소유한다.
+다음 milestone은 P159 release artifacts and installation이다.

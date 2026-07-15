@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod backend;
 pub mod compiler;
+pub mod diagnostic;
 pub mod formatter;
 pub mod frontend;
 pub mod ir;
@@ -20,6 +21,10 @@ pub use compiler::{
     check_project_sources, check_sources, generate_c_project_sources, generate_c_sources,
     lower_project_sources, lower_sources, prepare_project_tests, CompilerError, CompilerStage,
     ProjectTestSuite,
+};
+pub use diagnostic::{
+    Diagnostic, DiagnosticPosition, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan,
+    DiagnosticStage, DIAGNOSTIC_SCHEMA,
 };
 pub use formatter::{format_source, FormatError};
 pub use frontend::{parse_sources, FrontendError};

@@ -13,6 +13,7 @@ This repository is the Mallang language PoC workspace.
 - Run command shape: `mlg run`
 - Format command shape: `mlg fmt`
 - Test command shape: `mlg test`
+- Machine diagnostic shape: `mlg --diagnostic-format json check <input>`
 - Version command shape: `mlg --version`
 - Help command shape: `mlg --help`
 - Internal compiler crate or binary name, if needed later: `mlgc`
@@ -112,6 +113,10 @@ This repository is the Mallang language PoC workspace.
   statements. `mlg test <project> [--exact <test-id>]` preflights the whole suite,
   then runs selected tests as deterministic isolated native children without
   invoking the application `main`.
+- `mlg --diagnostic-format json <subcommand> ...` emits versioned
+  `mallang.diagnostic.v1` JSON Lines for compiler-owned errors on stderr. Human
+  diagnostics remain the default, and both forms share stage, message, source,
+  UTF-8 byte span, and 1-based Unicode scalar location data.
 - Compiler-owned `std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, and
   `std/collections` packages resolve in both project and standalone mode. Their
   exact signatures, ownership checks, explicit generic specialization, opaque
@@ -141,6 +146,7 @@ cargo run --bin mlg -- --help
 cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- fmt --check examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- --diagnostic-format json check examples/first.mlg
 cargo run --bin mlg -- ir examples/adt.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
 target/mallang/first
@@ -312,7 +318,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P157 evidence.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P158 evidence.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.

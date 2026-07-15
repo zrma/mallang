@@ -1,0 +1,5 @@
+[project]
+name = "diagapp"
+
+[dependencies]
+diagcore = { path = "../diagcore" }

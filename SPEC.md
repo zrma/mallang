@@ -108,6 +108,34 @@ text = { path = "../text" }
   workspaces, dependency test execution, and incremental dependency artifacts
   remain outside P157.
 
+## Implemented v0.7 Machine-readable Diagnostics
+
+`mlg [--diagnostic-format <human|json>] <subcommand> ...` selects diagnostic
+rendering before the subcommand. Human output remains the default. JSON mode emits
+one `mallang.diagnostic.v1` object per compiler-owned diagnostic line on stderr and
+does not change successful command stdout or exit status.
+
+- Every record contains `schema`, `severity`, `stage`, and `message`. Optional
+  `source.path` and `source.span` retain source identity without embedding the
+  human diagnostic in a JSON string.
+- Stable stages are `cli`, `input`, `frontend`, `package`, `link`, `semantic`,
+  `ir`, `backend`, and `native`. Severity is `error` in schema v1.
+- Span byte offsets are start-inclusive/end-exclusive UTF-8 byte positions.
+  Line and column positions are 1-based Unicode scalar counts.
+- Root project diagnostics use project-relative paths. Local dependency source
+  paths use `<dependency-project>/src/...`, independent of the dependency's
+  physical directory placement.
+- Formatter check may emit one record per unformatted file. Failed test
+  assertions use a source-bearing `native` diagnostic. User program and test
+  child output remains ordinary stdout/stderr rather than becoming diagnostics.
+- The standard-library-only JSONL consumer validates schema and reconstructs the
+  existing human form from the same record. Full LSP, parser recovery,
+  multi-error collection, warning/note severity, and editor packaging remain
+  outside P158.
+
+The exact schema, stream, path, and LSP deferral contract is specified in
+`docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`.
+
 ## Implemented v0.6 Standard Library
 
 The approved v0.6 standard-library contract implements its compiler foundation,
