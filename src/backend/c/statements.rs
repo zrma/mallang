@@ -120,6 +120,11 @@ impl<'a> CGenerator<'a> {
             IrStmtKind::Match { scrutinee, arms } => {
                 self.emit_match_stmt(scrutinee, arms, env, continue_label)
             }
+            IrStmtKind::Assert {
+                condition,
+                source_id,
+                offset,
+            } => self.emit_assert_stmt(condition, *source_id, *offset, env),
             IrStmtKind::Expr { expr } => {
                 if let IrExprKind::Call { callee, args } = &expr.kind {
                     if callee == "print" {
@@ -140,6 +145,42 @@ impl<'a> CGenerator<'a> {
                 Ok(finish_with_full_expr(prelude, body, postlude))
             }
         }
+    }
+
+    fn emit_assert_stmt(
+        &self,
+        condition: &IrExpr,
+        source_id: usize,
+        offset: usize,
+        env: &HashMap<String, String>,
+    ) -> Result<String, CompileError> {
+        let CExpr {
+            prelude,
+            mut code,
+            postlude,
+        } = self.emit_stmt_expr_with_env(condition, env)?;
+        let mut output = String::new();
+        for line in prelude {
+            output.push_str(&line);
+            output.push('\n');
+        }
+        if !postlude.is_empty() {
+            let temp = condition_temp_name(condition);
+            output.push_str(&format!("bool {temp} = {};\n", c_condition(&code)));
+            for line in postlude {
+                output.push_str(&line);
+                output.push('\n');
+            }
+            code = temp;
+        }
+        output.push_str(&format!("if (!({})) {{\n", c_condition(&code)));
+        push_indented_lines(
+            &mut output,
+            &format!("mallang_test_assertion_failed({source_id}, {offset});"),
+            1,
+        );
+        output.push('}');
+        Ok(output)
     }
 
     fn emit_if_stmt(
@@ -1027,6 +1068,7 @@ fn stmt_contains_outer_continue(stmt: &IrStmt) -> bool {
         | IrStmtKind::For { .. }
         | IrStmtKind::RangeFor { .. }
         | IrStmtKind::Drop { .. }
+        | IrStmtKind::Assert { .. }
         | IrStmtKind::Break
         | IrStmtKind::Expr { .. } => false,
     }

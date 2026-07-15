@@ -77,6 +77,7 @@ pub fn parse_sources(
         merged.structs.append(&mut program.structs);
         merged.enums.append(&mut program.enums);
         merged.functions.append(&mut program.functions);
+        merged.tests.append(&mut program.tests);
         merged.source_spans.append(&mut program.source_spans);
     }
 

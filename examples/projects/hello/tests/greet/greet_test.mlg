@@ -1,0 +1,6 @@
+package greet
+
+test ReadsPrivateProductionState() {
+    message := New("kim")
+    assert(privateMessageMatches(con message, con "kim"))
+}

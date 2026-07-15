@@ -7,7 +7,7 @@ use crate::{
     ast::{
         Arg, Block, EnumDecl, Expr, ExprKind, FieldDecl, ForInit, ForPost, Function,
         FunctionLiteral, MatchArm, MatchBlockArm, Param, Program, Stmt, StmtKind, StructDecl,
-        TypeRef,
+        TestDecl, TypeRef,
     },
     lex, parse,
     token::{Keyword, Span, Token, TokenKind},
@@ -70,6 +70,7 @@ struct LayoutHints {
     type_starts: HashSet<usize>,
     receiver_starts: HashSet<usize>,
     receiver_opens: HashSet<usize>,
+    contextual_block_opens: HashSet<usize>,
 }
 
 impl LayoutHints {
@@ -101,6 +102,10 @@ impl LayoutHints {
         for function in &program.functions {
             hints.visit_function(function);
             hints.break_after(function.span.end, LineBreak::BlankLine);
+        }
+        for test in &program.tests {
+            hints.visit_test(test);
+            hints.break_after(test.span.end, LineBreak::BlankLine);
         }
 
         hints
@@ -145,6 +150,11 @@ impl LayoutHints {
             self.visit_type(return_type);
         }
         self.visit_block(&function.body);
+    }
+
+    fn visit_test(&mut self, test: &TestDecl) {
+        self.contextual_block_opens.insert(test.body.span.start);
+        self.visit_block(&test.body);
     }
 
     fn visit_param(&mut self, param: &Param) {
@@ -227,6 +237,7 @@ impl LayoutHints {
                     self.visit_block_arm(arm);
                 }
             }
+            StmtKind::Assert { condition } => self.visit_expr(condition),
             StmtKind::Break | StmtKind::Continue => {}
         }
     }
@@ -390,7 +401,12 @@ impl<'a> Formatter<'a> {
                     .brace_stack
                     .last()
                     .is_some_and(|frame| !frame.block && frame.multiline);
-            let current_is_block_open = token.kind == TokenKind::LeftBrace && self.pending_block;
+            let current_is_block_open = token.kind == TokenKind::LeftBrace
+                && (self.pending_block
+                    || self
+                        .hints
+                        .contextual_block_opens
+                        .contains(&token.span.start));
             let empty_block = current_is_block_close
                 && previous.is_some_and(|previous| previous.kind == TokenKind::LeftBrace)
                 && gap.comments.is_empty();
@@ -790,6 +806,22 @@ func main() {
 "#;
 
         assert_eq!(format_source(source).unwrap(), expected);
+    }
+
+    #[test]
+    fn formats_contextual_test_declarations_and_assertions() {
+        let source = "test AddsValues(){assert(20+22==42);if true{assert(true)}}";
+        let expected = r#"test AddsValues() {
+    assert(20 + 22 == 42);
+    if true {
+        assert(true)
+    }
+}
+"#;
+
+        let formatted = format_source(source).unwrap();
+        assert_eq!(formatted, expected);
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
     }
 
     #[test]

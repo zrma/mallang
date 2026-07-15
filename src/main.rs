@@ -10,8 +10,8 @@ use std::{
 use mallang::{
     check_project_sources, check_sources, discover_project, format_source,
     generate_c_project_sources, generate_c_sources, lex_with_source, load_source_files,
-    lower_sources, parse_sources, CompilerError, FormatError, FrontendError, Project, SourceId,
-    SourceMap,
+    lower_sources, parse_sources, prepare_project_tests, CompilerError, FormatError, FrontendError,
+    PackageTest, Project, SourceId, SourceMap,
 };
 
 fn main() {
@@ -34,6 +34,7 @@ fn main() {
         Some("ir") => utf8_cli_args(&args[2..]).and_then(|args| run_ir(&program, &args)),
         Some("build") => utf8_cli_args(&args[2..]).and_then(|args| run_build(&program, &args)),
         Some("run") => run_run(&program, &args[2..]),
+        Some("test") => utf8_cli_args(&args[2..]).and_then(|args| run_test(&program, &args)),
         Some("-V" | "--version") => {
             println!("mlg {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -75,6 +76,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} ir <source-file>")?;
     writeln!(output, "  {program} build <input> [-o <output>]")?;
     writeln!(output, "  {program} run <input> [-- <program-args>...]")?;
+    writeln!(output, "  {program} test <input> [--exact <test-id>]")?;
     writeln!(output, "  {program} --version")
 }
 
@@ -184,9 +186,13 @@ fn load_format_inputs(input: &str) -> Result<Vec<FormatInput>, String> {
     }
 
     let project = discover_project(input_path).map_err(|error| error.to_string())?;
+    let test_files = project
+        .discover_test_files()
+        .map_err(|error| error.to_string())?;
     project
         .source_files()
         .iter()
+        .chain(test_files.iter())
         .map(|path| {
             let display_path = path
                 .strip_prefix(project.root())
@@ -284,6 +290,186 @@ fn run_run(program: &str, args: &[OsString]) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn run_test(program: &str, args: &[String]) -> Result<(), String> {
+    let (input, exact) = match args {
+        [input] => (input.as_str(), None),
+        [input, flag, test_id] if flag == "--exact" => (input.as_str(), Some(test_id.as_str())),
+        [_, flag, ..] if flag.starts_with('-') && flag != "--exact" => {
+            return Err(format!("unknown test argument `{flag}`"));
+        }
+        _ => {
+            return Err(format!("usage: {program} test <input> [--exact <test-id>]"));
+        }
+    };
+
+    if Path::new(input)
+        .extension()
+        .is_some_and(|extension| extension == "mlg")
+    {
+        return Err("mlg test requires a project directory or `mallang.toml`".to_string());
+    }
+    let project = discover_project(input).map_err(|error| error.to_string())?;
+    let test_files = project
+        .discover_test_files()
+        .map_err(|error| error.to_string())?;
+    let loaded = load_source_files(project.source_files().iter().chain(test_files.iter()))
+        .map_err(|error| error.to_string())?;
+    let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids)
+        .map_err(|error| format_compiler_error(&loaded.sources, input, error))?;
+    let selected = select_tests(suite.tests(), exact)?;
+    let artifacts = build_test_artifacts(&project, &loaded.sources, &suite, &selected, input)?;
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    for artifact in artifacts {
+        let test = &suite.tests()[artifact.test_index];
+        let output = Command::new(&artifact.binary_path)
+            .output()
+            .map_err(|error| format!("failed to execute test `{}`: {error}", test.id))?;
+        if output.status.success() {
+            println!("test {} ... ok", test.id);
+            passed += 1;
+            continue;
+        }
+
+        println!("test {} ... FAILED", test.id);
+        io::stdout()
+            .lock()
+            .write_all(&output.stdout)
+            .map_err(|error| format!("failed to replay test stdout: {error}"))?;
+        let stderr = normalize_test_stderr(&project, &loaded.sources, test, &output.stderr);
+        io::stderr()
+            .lock()
+            .write_all(stderr.as_bytes())
+            .map_err(|error| format!("failed to replay test stderr: {error}"))?;
+        if let Some(diagnostic) = child_signal_diagnostic(&test.id, &output.status, &output.stderr)
+        {
+            eprintln!("{diagnostic}");
+        }
+        failed += 1;
+    }
+
+    if failed == 0 {
+        println!("test result: ok. {passed} passed; 0 failed");
+        return Ok(());
+    }
+
+    println!("test result: FAILED. {passed} passed; {failed} failed");
+    process::exit(1);
+}
+
+struct TestArtifact {
+    test_index: usize,
+    binary_path: PathBuf,
+}
+
+fn select_tests(tests: &[PackageTest], exact: Option<&str>) -> Result<Vec<usize>, String> {
+    let Some(exact) = exact else {
+        return Ok((0..tests.len()).collect());
+    };
+    tests
+        .iter()
+        .position(|test| test.id == exact)
+        .map(|index| vec![index])
+        .ok_or_else(|| format!("unknown test id `{exact}`"))
+}
+
+fn build_test_artifacts(
+    project: &Project,
+    sources: &SourceMap,
+    suite: &mallang::ProjectTestSuite,
+    selected: &[usize],
+    fallback_path: &str,
+) -> Result<Vec<TestArtifact>, String> {
+    let build_dir = project.root().join("target/mallang/tests");
+    fs::create_dir_all(&build_dir)
+        .map_err(|error| format!("failed to create {}: {error}", build_dir.display()))?;
+    let mut artifacts = Vec::with_capacity(selected.len());
+
+    for test_index in selected.iter().copied() {
+        let test = &suite.tests()[test_index];
+        let c_source = suite
+            .generate_c(test_index)
+            .map_err(|error| format_compiler_error(sources, fallback_path, error))?;
+        let stem = format!("test-{test_index:04}");
+        let c_path = build_dir.join(format!("{stem}.c"));
+        let binary_path = build_dir.join(stem);
+        fs::write(&c_path, c_source)
+            .map_err(|error| format!("failed to write test `{}` C source: {error}", test.id))?;
+        let output = Command::new("clang")
+            .arg(&c_path)
+            .arg("-o")
+            .arg(&binary_path)
+            .output()
+            .map_err(|error| format!("failed to execute clang for test `{}`: {error}", test.id))?;
+        if !output.status.success() {
+            return Err(format!(
+                "native compilation failed for test `{}`:\n{}",
+                test.id,
+                String::from_utf8_lossy(&output.stderr).trim_end()
+            ));
+        }
+        artifacts.push(TestArtifact {
+            test_index,
+            binary_path,
+        });
+    }
+
+    Ok(artifacts)
+}
+
+fn normalize_test_stderr(
+    project: &Project,
+    sources: &SourceMap,
+    test: &PackageTest,
+    stderr: &[u8],
+) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let mut normalized = String::new();
+    for line in stderr.split_inclusive('\n') {
+        let content = line.strip_suffix('\n').unwrap_or(line);
+        if let Some((source_id, offset)) = parse_assertion_marker(content) {
+            let diagnostic = sources
+                .file(SourceId::new(source_id))
+                .and_then(|source| {
+                    let location = source.location(offset)?;
+                    let path = source
+                        .path()
+                        .strip_prefix(project.root())
+                        .unwrap_or(source.path());
+                    Some(format!(
+                        "{}:{}:{}: assertion failed in test `{}`",
+                        path.display(),
+                        location.line,
+                        location.column,
+                        test.id
+                    ))
+                })
+                .unwrap_or_else(|| format!("assertion failed in test `{}`", test.id));
+            normalized.push_str(&diagnostic);
+            normalized.push('\n');
+        } else {
+            normalized.push_str(line);
+        }
+    }
+    normalized
+}
+
+fn parse_assertion_marker(line: &str) -> Option<(usize, usize)> {
+    let marker = line.strip_prefix("__mlg_test_assert:")?;
+    let (source_id, offset) = marker.split_once(':')?;
+    Some((source_id.parse().ok()?, offset.parse().ok()?))
+}
+
+fn child_signal_diagnostic(
+    test_id: &str,
+    status: &process::ExitStatus,
+    stderr: &[u8],
+) -> Option<String> {
+    (status.code().is_none() && stderr.is_empty())
+        .then(|| format!("test {test_id} terminated by signal"))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -447,5 +633,35 @@ fn format_compiler_error(sources: &SourceMap, fallback_path: &str, error: Compil
     match error.span {
         Some(span) => sources.format_diagnostic(&error.message, span),
         None => format!("{fallback_path}: {}", error.message),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{child_signal_diagnostic, parse_assertion_marker};
+
+    #[test]
+    fn parses_test_assertion_marker() {
+        assert_eq!(
+            parse_assertion_marker("__mlg_test_assert:3:42"),
+            Some((3, 42))
+        );
+        assert_eq!(parse_assertion_marker("ordinary stderr"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_signal_only_when_the_child_has_no_stderr() {
+        use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
+
+        let signal_status = ExitStatus::from_raw(9);
+        assert_eq!(
+            child_signal_diagnostic("project::Test", &signal_status, b""),
+            Some("test project::Test terminated by signal".to_string())
+        );
+        assert_eq!(
+            child_signal_diagnostic("project::Test", &signal_status, b"runtime detail\n"),
+            None
+        );
     }
 }

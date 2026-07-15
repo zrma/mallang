@@ -75,6 +75,7 @@ if [[ "$help_output" != *"usage:"* || \
   "$help_output" != *"$RELEASE_BIN check <input>"* || \
   "$help_output" != *"$RELEASE_BIN fmt [--check] <input>"* || \
   "$help_output" != *"$RELEASE_BIN run <input> [-- <program-args>...]"* || \
+  "$help_output" != *"$RELEASE_BIN test <input> [--exact <test-id>]"* || \
   "$help_output" != *"$RELEASE_BIN --version"* ]]; then
   echo "release binary help smoke failed" >&2
   echo "$help_output" >&2
@@ -82,6 +83,7 @@ if [[ "$help_output" != *"usage:"* || \
 fi
 
 scripts/check-formatter.sh "$RELEASE_BIN"
+scripts/check-test-workflow.sh "$RELEASE_BIN"
 
 lex_output="$("$RELEASE_BIN" lex examples/first.mlg)"
 if [[ "$lex_output" != *"Keyword(Func) @ 0..4"* || "$lex_output" != *'Ident("add")'* ]]; then

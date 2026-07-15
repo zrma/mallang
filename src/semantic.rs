@@ -338,6 +338,9 @@ impl<'a> Checker<'a> {
         for function in &self.program.functions {
             self.check_function(function)?;
         }
+        for test in &self.program.tests {
+            self.check_test(test)?;
+        }
 
         Ok(CheckedProgram {
             program: Arc::new(self.program.clone()),
@@ -890,6 +893,12 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    fn check_test(&self, test: &crate::ast::TestDecl) -> Result<(), SemanticError> {
+        let mut locals = HashMap::new();
+        self.check_block_statements(&test.body, &mut locals, &Type::Unit, 0, 0)?;
+        Ok(())
+    }
+
     fn param_sig(&self, param: &crate::ast::Param) -> Result<ParamSig, SemanticError> {
         reject_builtin_value_name(&param.name, param.span)?;
 
@@ -1113,6 +1122,16 @@ impl<'a> Checker<'a> {
                 loop_depth,
                 scope_depth,
             ),
+            StmtKind::Assert { condition } => {
+                let condition_ty = self.check_expr(condition, locals, ValueUse::Owned)?;
+                if condition_ty != Type::Bool {
+                    return Err(SemanticError::new(
+                        "assertion condition must have type `bool`",
+                        condition.span,
+                    ));
+                }
+                Ok(false)
+            }
             StmtKind::Expr { expr } => {
                 self.check_stmt_expr(expr, locals)?;
                 Ok(false)
@@ -4670,7 +4689,9 @@ impl ClosureCaptureCollector<'_> {
                 self.visit_expr(index, bound)?;
                 self.visit_expr(expr, bound)?;
             }
-            StmtKind::Return { expr } | StmtKind::Expr { expr } => {
+            StmtKind::Return { expr }
+            | StmtKind::Assert { condition: expr }
+            | StmtKind::Expr { expr } => {
                 self.visit_expr(expr, bound)?;
             }
             StmtKind::If {

@@ -1316,16 +1316,19 @@ P155는 source meaning과 comment text를 보존하며 line-width wrapping과 bl
 
 ## P156: Project Test Workflow
 
-상태: decision gate; Q1-Q6 approval pending
+상태: complete
 
 - [x] parser/project/package/compiler/native execution gap inventory
 - [x] optional `tests/` recursive deterministic discovery API와 regressions
 - [x] contextual declaration/assertion, package mapping, process isolation 추천안 작성
 - [x] stable test ID/order/exact filter와 output/exit contract 추천안 작성
 - [x] ownership/native/sanitizer acceptance matrix 작성
-- [ ] P156 Q1-Q6 recommendation approval
-- [ ] parser, linker, semantic, IR/backend와 `mlg test` implementation
+- [x] P156 Q1-Q6 recommendation approval
+- [x] parser, linker, semantic, IR/backend와 `mlg test` implementation
+- [x] deterministic test ID/order, exact filter, output aggregation와 exit contract smoke
+- [x] zero-allocation, strict C, ASan/UBSan와 debug/release CLI acceptance
 
 P156의 exact contract는
-`docs/todo-v07-tooling-platforms/p156-test-workflow.md`가 소유한다. 승인 전에는 test/assert
-language surface와 public `mlg test` behavior를 구현하지 않는다.
+`docs/todo-v07-tooling-platforms/p156-test-workflow.md`가 소유한다. Contextual
+test/assert surface와 test별 synthetic native process contract를 완료했다. 다음 milestone은
+P157 local path dependencies다.

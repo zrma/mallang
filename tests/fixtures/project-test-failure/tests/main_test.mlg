@@ -1,0 +1,15 @@
+package main
+
+test FirstPasses() {
+    print("hidden passing output")
+    assert(true)
+}
+
+test SecondFails() {
+    print("visible failing output")
+    assert(false)
+}
+
+test ThirdPasses() {
+    assert(true)
+}

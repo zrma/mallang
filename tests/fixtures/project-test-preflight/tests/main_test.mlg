@@ -1,0 +1,10 @@
+package main
+
+test WouldRun() {
+    print("test body must not run")
+    assert(true)
+}
+
+test InvalidAssertion() {
+    assert(42)
+}

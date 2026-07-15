@@ -9,6 +9,7 @@ pub struct Program {
     pub structs: Vec<StructDecl>,
     pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
+    pub tests: Vec<TestDecl>,
     pub source_spans: Vec<Span>,
     pub span: Span,
 }
@@ -89,6 +90,13 @@ pub struct Function {
     pub receiver: Option<Param>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeRef>,
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestDecl {
+    pub name: String,
     pub body: Block,
     pub span: Span,
 }
@@ -191,6 +199,9 @@ pub enum StmtKind {
     Match {
         scrutinee: Expr,
         arms: Vec<MatchBlockArm>,
+    },
+    Assert {
+        condition: Expr,
     },
     Expr {
         expr: Expr,

@@ -18,6 +18,7 @@ pub struct PackageGraph {
     packages: BTreeMap<String, Package>,
     source_packages: BTreeMap<SourceId, String>,
     build_order: Vec<String>,
+    tests: Vec<PackageTest>,
 }
 
 impl PackageGraph {
@@ -38,6 +39,18 @@ impl PackageGraph {
     pub fn build_order(&self) -> &[String] {
         &self.build_order
     }
+
+    pub fn tests(&self) -> &[PackageTest] {
+        &self.tests
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageTest {
+    pub id: String,
+    pub package_path: String,
+    pub name: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,12 +188,15 @@ pub fn build_package_graph(
     connect_standard_packages(&mut packages, &pending_imports)?;
     connect_imports(&mut packages, pending_imports)?;
     collect_declarations(&mut packages, &source_packages, program, true)?;
+    reject_public_test_declarations(project, sources, program)?;
+    let tests = collect_project_tests(project, sources, &packages, &source_packages, program)?;
     let build_order = topological_order(&packages)?;
 
     Ok(PackageGraph {
         packages,
         source_packages,
         build_order,
+        tests,
     })
 }
 
@@ -230,12 +246,19 @@ pub fn build_standalone_package_graph(
     connect_standard_packages(&mut packages, &pending_imports)?;
     connect_imports(&mut packages, pending_imports)?;
     collect_declarations(&mut packages, &source_packages, program, false)?;
+    if let Some(test) = program.tests.first() {
+        return Err(PackageError::new(
+            "test declarations require a project `tests/` source",
+            Some(test.span),
+        ));
+    }
     let build_order = topological_order(&packages)?;
 
     Ok(PackageGraph {
         packages,
         source_packages,
         build_order,
+        tests: Vec::new(),
     })
 }
 
@@ -253,9 +276,10 @@ fn package_identity(project: &Project, source_path: &Path) -> Result<PackageIden
     })?;
     let relative = source_directory
         .strip_prefix(project.source_root())
+        .or_else(|_| source_directory.strip_prefix(project.test_root()))
         .map_err(|_| {
             format!(
-                "{}: source is outside the project source directory",
+                "{}: source is outside the project source and test directories",
                 source_path.display()
             )
         })?;
@@ -292,6 +316,97 @@ fn package_identity(project: &Project, source_path: &Path) -> Result<PackageIden
         path: format!("{}/{}", project.name(), segments.join("/")),
         name,
     })
+}
+
+fn reject_public_test_declarations(
+    project: &Project,
+    sources: &SourceMap,
+    program: &Program,
+) -> Result<(), PackageError> {
+    for (kind, name, visibility, span) in program
+        .structs
+        .iter()
+        .map(|decl| ("type", decl.name.as_str(), decl.visibility, decl.span))
+        .chain(
+            program
+                .enums
+                .iter()
+                .map(|decl| ("type", decl.name.as_str(), decl.visibility, decl.span)),
+        )
+        .chain(
+            program
+                .functions
+                .iter()
+                .map(|decl| ("function", decl.name.as_str(), decl.visibility, decl.span)),
+        )
+    {
+        if visibility != Visibility::Public || !is_test_source(project, sources, span)? {
+            continue;
+        }
+        return Err(PackageError::new(
+            format!("test {kind} `{name}` cannot be public"),
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn collect_project_tests(
+    project: &Project,
+    sources: &SourceMap,
+    packages: &BTreeMap<String, Package>,
+    source_packages: &BTreeMap<SourceId, String>,
+    program: &Program,
+) -> Result<Vec<PackageTest>, PackageError> {
+    let mut tests = Vec::with_capacity(program.tests.len());
+    let mut names = BTreeSet::new();
+
+    for test in &program.tests {
+        if !is_test_source(project, sources, test.span)? {
+            return Err(PackageError::new(
+                "test declarations must appear under the project `tests/` directory",
+                Some(test.span),
+            ));
+        }
+        let package_path = source_packages.get(&test.span.source).ok_or_else(|| {
+            PackageError::new(
+                "test source is not part of the package graph",
+                Some(test.span),
+            )
+        })?;
+        if !names.insert((package_path.clone(), test.name.clone())) {
+            return Err(PackageError::new(
+                format!("duplicate test `{}` in package `{package_path}`", test.name),
+                Some(test.span),
+            ));
+        }
+        let package = packages
+            .get(package_path)
+            .expect("every test source package is collected");
+        let id = format!("{}::{}", package.path, test.name);
+        tests.push(PackageTest {
+            id,
+            package_path: package.path.clone(),
+            name: test.name.clone(),
+            span: test.span,
+        });
+    }
+
+    Ok(tests)
+}
+
+fn is_test_source(
+    project: &Project,
+    sources: &SourceMap,
+    span: Span,
+) -> Result<bool, PackageError> {
+    let source = sources.file(span.source).ok_or_else(|| {
+        PackageError::new(
+            format!("source ID {} is not registered", span.source.index()),
+            Some(span),
+        )
+    })?;
+    Ok(source.path().starts_with(project.test_root()))
 }
 
 fn collect_file_imports(
@@ -645,7 +760,15 @@ mod tests {
 
         fn graph(&self) -> Result<PackageGraph, PackageError> {
             let project = discover_project(&self.root).unwrap();
-            let loaded = load_source_files(project.source_files().iter().cloned()).unwrap();
+            let test_files = project.discover_test_files().unwrap();
+            let loaded = load_source_files(
+                project
+                    .source_files()
+                    .iter()
+                    .chain(test_files.iter())
+                    .cloned(),
+            )
+            .unwrap();
             let program = parse_sources(&loaded.sources, &loaded.source_ids).unwrap();
             build_package_graph(&project, &loaded.sources, &program)
         }
@@ -872,6 +995,84 @@ mod tests {
         assert_eq!(
             graph.package_for_source(greet_source).unwrap().path,
             "hello/greet"
+        );
+    }
+
+    #[test]
+    fn maps_sorted_test_sources_to_stable_package_test_ids() {
+        let project = TempProject::new("test-inventory");
+        project.write("src/main.mlg", "package main\nfunc main() {}\n");
+        project.write(
+            "src/stats/stats.mlg",
+            "package stats\nfunc privateValue() int { return 42 }\n",
+        );
+        project.write(
+            "tests/main_test.mlg",
+            "package main\nfunc helper() bool { return true }\ntest RootPasses() { assert(helper()) }\n",
+        );
+        project.write(
+            "tests/stats/alpha.mlg",
+            "package stats\ntest ReadsPrivateValue() { assert(privateValue() == 42) }\n",
+        );
+        project.write(
+            "tests/stats/zeta.mlg",
+            "package stats\ntest ZetaPasses() { assert(true) }\n",
+        );
+
+        let graph = project.graph().unwrap();
+        let ids = graph
+            .tests()
+            .iter()
+            .map(|test| test.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ids,
+            [
+                "hello::RootPasses",
+                "hello/stats::ReadsPrivateValue",
+                "hello/stats::ZetaPasses",
+            ]
+        );
+        assert_eq!(graph.tests()[1].package_path, "hello/stats");
+    }
+
+    #[test]
+    fn rejects_invalid_test_declaration_boundaries() {
+        let duplicate = TempProject::new("duplicate-test");
+        duplicate.write("src/main.mlg", "package main\nfunc main() {}\n");
+        duplicate.write(
+            "tests/first.mlg",
+            "package main\ntest SameName() { assert(true) }\n",
+        );
+        duplicate.write(
+            "tests/second.mlg",
+            "package main\ntest SameName() { assert(true) }\n",
+        );
+        assert_eq!(
+            duplicate.graph().unwrap_err().message,
+            "duplicate test `SameName` in package `hello`"
+        );
+
+        let public = TempProject::new("public-test-helper");
+        public.write("src/main.mlg", "package main\nfunc main() {}\n");
+        public.write(
+            "tests/main_test.mlg",
+            "package main\npub func Helper() bool { return true }\ntest UsesHelper() { assert(Helper()) }\n",
+        );
+        assert_eq!(
+            public.graph().unwrap_err().message,
+            "test function `Helper` cannot be public"
+        );
+
+        let production = TempProject::new("production-test-declaration");
+        production.write(
+            "src/main.mlg",
+            "package main\nfunc main() {}\ntest NotInTestsRoot() { assert(true) }\n",
+        );
+        assert_eq!(
+            production.graph().unwrap_err().message,
+            "test declarations must appear under the project `tests/` directory"
         );
     }
 }

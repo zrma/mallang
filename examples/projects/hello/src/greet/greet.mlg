@@ -46,3 +46,7 @@ pub func MakeAdder(offset int) func(int) int {
         return value + offset
     }
 }
+
+func privateMessageMatches(con message Message, con expected string) bool {
+    return message.name == expected
+}

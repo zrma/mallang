@@ -21,7 +21,7 @@ use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error
 
 use crate::{
     ast::Program,
-    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram},
+    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram, IrStmt, IrStmtKind},
     semantic::{check, FunctionParamType, FunctionType, Type},
     standard::StandardIntrinsic,
 };
@@ -108,6 +108,16 @@ impl<'a> CGenerator<'a> {
         output.push_str("    fprintf(stderr, \"mallang runtime error: %s\\n\", message);\n");
         output.push_str("    exit(1);\n");
         output.push_str("}\n\n");
+        if program_uses_test_assertion(self.program) {
+            output.push_str(
+                "static _Noreturn void MLG_UNUSED mallang_test_assertion_failed(size_t source_id, size_t offset) {\n",
+            );
+            output.push_str(
+                "    fprintf(stderr, \"__mlg_test_assert:%zu:%zu\\n\", source_id, offset);\n",
+            );
+            output.push_str("    exit(1);\n");
+            output.push_str("}\n\n");
+        }
         output.push_str(&emit_allocation_runtime());
         output.push_str(
             "static int64_t MLG_UNUSED mallang_check_index(int64_t index, int64_t len) {\n",
@@ -429,6 +439,44 @@ impl<'a> CGenerator<'a> {
                 CompileError::new(format!("IR invariant violation: unknown enum `{name}`"))
             })
     }
+}
+
+fn program_uses_test_assertion(program: &IrProgram) -> bool {
+    program
+        .functions
+        .iter()
+        .any(|function| statements_use_test_assertion(&function.body))
+        || program
+            .closures
+            .iter()
+            .any(|closure| statements_use_test_assertion(&closure.body))
+}
+
+fn statements_use_test_assertion(statements: &[IrStmt]) -> bool {
+    statements.iter().any(|statement| match &statement.kind {
+        IrStmtKind::Assert { .. } => true,
+        IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } => statements_use_test_assertion(then_body) || statements_use_test_assertion(else_body),
+        IrStmtKind::For { body, cleanup, .. } | IrStmtKind::RangeFor { body, cleanup, .. } => {
+            statements_use_test_assertion(body) || statements_use_test_assertion(cleanup)
+        }
+        IrStmtKind::Match { arms, .. } => arms
+            .iter()
+            .any(|arm| statements_use_test_assertion(&arm.body)),
+        IrStmtKind::Let { .. }
+        | IrStmtKind::Assign { .. }
+        | IrStmtKind::FieldAssign { .. }
+        | IrStmtKind::IndexAssign { .. }
+        | IrStmtKind::Overwrite { .. }
+        | IrStmtKind::Return { .. }
+        | IrStmtKind::Drop { .. }
+        | IrStmtKind::Break
+        | IrStmtKind::Continue
+        | IrStmtKind::Expr { .. } => false,
+    })
 }
 
 #[cfg(test)]

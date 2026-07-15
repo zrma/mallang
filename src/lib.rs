@@ -18,16 +18,17 @@ pub mod token;
 pub use backend::{generate_c, generate_c_from_ir, CompileError};
 pub use compiler::{
     check_project_sources, check_sources, generate_c_project_sources, generate_c_sources,
-    lower_project_sources, lower_sources, CompilerError, CompilerStage,
+    lower_project_sources, lower_sources, prepare_project_tests, CompilerError, CompilerStage,
+    ProjectTestSuite,
 };
 pub use formatter::{format_source, FormatError};
 pub use frontend::{parse_sources, FrontendError};
-pub use ir::{lower, IrError, IrProgram};
+pub use ir::{lower, lower_test, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
 pub use linker::{display_linked_message, link_project, link_standalone, LinkError};
 pub use package::{
     build_package_graph, build_standalone_package_graph, Package, PackageDeclaration,
-    PackageDeclarationKind, PackageError, PackageGraph, PackageImport,
+    PackageDeclarationKind, PackageError, PackageGraph, PackageImport, PackageTest,
 };
 pub use parser::{parse, parse_with_source, ParseError, Parser};
 pub use project::{

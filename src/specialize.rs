@@ -345,6 +345,9 @@ impl Specializer {
             self.rewrite_function(&mut function, &HashMap::new())?;
             output.functions.push(function);
         }
+        for test in &mut output.tests {
+            self.rewrite_block(&mut test.body, &HashMap::new())?;
+        }
 
         if symbolic {
             self.add_symbolic_demands(&mut output)?;
@@ -504,6 +507,7 @@ impl Specializer {
             StmtKind::Let { expr, .. }
             | StmtKind::Assign { expr, .. }
             | StmtKind::Return { expr }
+            | StmtKind::Assert { condition: expr }
             | StmtKind::Expr { expr } => self.rewrite_expr(expr, substitutions),
             StmtKind::FieldAssign { base, expr, .. } => {
                 self.rewrite_expr(base, substitutions)?;

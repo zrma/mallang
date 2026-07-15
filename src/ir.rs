@@ -20,6 +20,39 @@ pub fn lower(checked: &CheckedProgram) -> Result<IrProgram, IrError> {
     Lowerer::new(checked).lower_program()
 }
 
+pub fn lower_test(checked: &CheckedProgram, test_index: usize) -> Result<IrProgram, IrError> {
+    let test = checked.program.tests.get(test_index).ok_or_else(|| {
+        IrError::new(
+            format!("unknown test index {test_index}"),
+            checked.program.span,
+        )
+    })?;
+    let lowerer = Lowerer::new(checked);
+    let mut program = lowerer.lower_program()?;
+    let mut locals = HashMap::new();
+    let body = lowerer.lower_block_statements(&test.body, &mut locals, &Type::Unit)?;
+    let body = insert_straight_line_cleanup_drops(body, &[], &[], test.body.span);
+    let main_count = program
+        .functions
+        .iter()
+        .filter(|function| function.name == "main")
+        .count();
+    if main_count != 1 {
+        return Err(IrError::new(
+            "checked test program must contain exactly one application `main`",
+            test.span,
+        ));
+    }
+    program.functions.retain(|function| function.name != "main");
+    program.functions.push(IrFunction {
+        name: "main".to_string(),
+        params: Vec::new(),
+        return_type: Type::Unit,
+        body,
+    });
+    Ok(program)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrProgram {
     pub structs: Vec<IrStruct>,
@@ -158,6 +191,11 @@ pub enum IrStmtKind {
     Match {
         scrutinee: IrExpr,
         arms: Vec<IrMatchBlockArm>,
+    },
+    Assert {
+        condition: IrExpr,
+        source_id: usize,
+        offset: usize,
     },
     Expr {
         expr: IrExpr,
@@ -685,6 +723,20 @@ impl<'a> Lowerer<'a> {
                     self.prepare_match_block_arms(&scrutinee.ty, arms, stmt.span)?;
                 let arms = self.lower_match_block_arms(&prepared_arms, locals, return_type)?;
                 IrStmtKind::Match { scrutinee, arms }
+            }
+            StmtKind::Assert { condition } => {
+                let condition = self.lower_expr(condition, locals)?;
+                if condition.ty != Type::Bool {
+                    return Err(IrError::new(
+                        "semantic analysis accepted a non-bool assertion condition",
+                        condition.span,
+                    ));
+                }
+                IrStmtKind::Assert {
+                    condition,
+                    source_id: stmt.span.source.index(),
+                    offset: stmt.span.start,
+                }
             }
             StmtKind::Expr { expr } => {
                 let expr = self.lower_expr(expr, locals)?;
@@ -2832,6 +2884,20 @@ fn insert_cleanup_drops_in_stmt_exprs(
             };
             moved_roots
         }
+        IrStmtKind::Assert {
+            condition,
+            source_id,
+            offset,
+        } => {
+            let insertion = insert_expr_cleanup_drops(condition, active);
+            let moved_roots = insertion.moved_roots;
+            stmt.kind = IrStmtKind::Assert {
+                condition: insertion.expr,
+                source_id,
+                offset,
+            };
+            moved_roots
+        }
         IrStmtKind::If { .. }
         | IrStmtKind::For { .. }
         | IrStmtKind::RangeFor { .. }
@@ -3839,6 +3905,9 @@ fn cleanup_moved_roots_in_stmt(stmt: &IrStmt) -> HashSet<String> {
         IrStmtKind::Let { expr, .. }
         | IrStmtKind::Assign { expr, .. }
         | IrStmtKind::Return { expr }
+        | IrStmtKind::Assert {
+            condition: expr, ..
+        }
         | IrStmtKind::Expr { expr }
         | IrStmtKind::Drop { expr } => cleanup_moved_roots_in_expr(expr),
         IrStmtKind::FieldAssign { expr, .. } | IrStmtKind::IndexAssign { expr, .. } => {

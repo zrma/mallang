@@ -387,6 +387,9 @@ fn collect_stmt_intrinsics(statement: &IrStmt, used: &mut StandardUses) {
         | IrStmtKind::Assign { expr, .. }
         | IrStmtKind::Return { expr }
         | IrStmtKind::Drop { expr }
+        | IrStmtKind::Assert {
+            condition: expr, ..
+        }
         | IrStmtKind::Expr { expr } => collect_expr_intrinsics(expr, used),
         IrStmtKind::FieldAssign { base, expr, .. } => {
             collect_expr_intrinsics(base, used);

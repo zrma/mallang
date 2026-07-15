@@ -17,7 +17,7 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 rm -rf "$WORK"
-mkdir -p "$PROJECT/src/pkg" "$ATOMIC_PROJECT/src/pkg"
+mkdir -p "$PROJECT/src/pkg" "$PROJECT/tests/pkg" "$ATOMIC_PROJECT/src/pkg"
 
 cat >"$DIRECT" <<'MLG'
 // formatter smoke
@@ -80,6 +80,10 @@ cat >"$PROJECT/src/pkg/helper.mlg" <<'MLG'
 package pkg
 pub func helper()int{return 1}
 MLG
+cat >"$PROJECT/tests/pkg/helper_test.mlg" <<'MLG'
+package pkg
+test HelperWorks(){assert(helper()==1)}
+MLG
 
 if "$BIN" fmt --check "$PROJECT" >"$WORK/project-check.stdout" 2>"$WORK/project-check.stderr"; then
   echo "formatter project check smoke failed: expected non-zero exit" >&2
@@ -88,6 +92,7 @@ fi
 cat >"$WORK/project-check.expected" <<'OUT'
 src/main.mlg: not formatted
 src/pkg/helper.mlg: not formatted
+tests/pkg/helper_test.mlg: not formatted
 OUT
 if [[ -s "$WORK/project-check.stdout" ]] || \
   ! cmp -s "$WORK/project-check.stderr" "$WORK/project-check.expected"; then
@@ -99,6 +104,7 @@ fi
 cat >"$WORK/project-write.expected" <<'OUT'
 src/main.mlg: formatted
 src/pkg/helper.mlg: formatted
+tests/pkg/helper_test.mlg: formatted
 OUT
 if [[ -s "$WORK/project-write.stderr" ]] || \
   ! cmp -s "$WORK/project-write.stdout" "$WORK/project-write.expected"; then

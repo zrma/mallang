@@ -1,6 +1,8 @@
-# Mallang v0.6 Specification
+# Mallang v0.7 Development Specification
 
-This is the Mallang language specification through the 0.6.0 source release.
+This specification tracks implemented `main` behavior after the 0.6.0 source
+release. The published stable source contract remains v0.6; implemented v0.7
+sections are unreleased development behavior.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 
@@ -29,6 +31,46 @@ without changing it:
 The v0.2 surface intentionally excludes import aliases, dot or wildcard imports,
 remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these normative rules.
+
+## Implemented v0.7 Project Test Workflow
+
+Executable projects may contain an optional `tests/` tree that mirrors package
+directories under `src/`. `tests/main_test.mlg` belongs to the root package and
+`tests/stats/*.mlg` belongs to the `stats` package. Test files can access private
+production declarations and can define private helpers, but cannot declare
+`pub` types or functions.
+
+Tests use contextual syntax:
+
+```go
+test AddsValues() {
+    assert(add(20, 22) == 42)
+}
+```
+
+- A test declaration has a name, empty parameter list, and unit body. It cannot
+  use `pub`, receivers, parameters, type parameters, or a return type.
+- `assert(expr)` is a standalone statement inside a test declaration and
+  requires one `bool` expression. Nested blocks and function literals retain
+  the test context.
+- `test` and `assert` are not reserved words. Ordinary functions and calls with
+  those names remain valid outside the contextual positions.
+- Test IDs are `<project>::<TestName>` for the root package and
+  `<project>/<package>::<TestName>` for nested packages. Discovery follows test
+  file path order and declaration order.
+- `mlg test <project> [--exact <test-id>]` parses, links, specializes, and checks
+  production plus all test sources before running any test. Unknown exact IDs
+  fail instead of selecting an empty suite.
+- Each selected test is compiled as a separate native child whose synthetic
+  entrypoint replaces, and therefore does not run, the application `main`.
+  Execution is deterministic and serial. A failed assertion terminates only its
+  child through the no-unwind runtime path, and the parent continues.
+- Passing child output is suppressed. Failing child output is replayed, with
+  assertion locations normalized to project-relative diagnostics. Status and
+  summary lines are written to stdout.
+- A project without tests succeeds with `0 passed; 0 failed`. Standalone `.mlg`
+  tests, external test packages, parallel tests, and non-exact filters remain
+  outside P156.
 
 ## Implemented v0.6 Standard Library
 
@@ -122,6 +164,7 @@ build command: mlg build
 run command: mlg run
 check command: mlg check
 format command: mlg fmt
+test command: mlg test
 version command: mlg --version
 help command: mlg --help
 ```
@@ -194,10 +237,11 @@ it as an ordinary identifier.
 
 ## Source Formatting
 
-`mlg fmt <input>` formats either one `.mlg` file or every source file discovered
-from a project directory or `mallang.toml`. Project files are processed in sorted
-repository-relative path order. Changed paths are reported on stdout; unchanged
-files produce no output.
+`mlg fmt <input>` formats either one `.mlg` file or every production and test
+source discovered from a project directory or `mallang.toml`. Production files
+are processed first in sorted path order, followed by optional test files in
+sorted path order. Changed paths are reported on stdout; unchanged files produce
+no output.
 
 `mlg fmt --check <input>` never writes files. It exits successfully without output
 when every source is canonical, or exits non-zero and reports each non-canonical

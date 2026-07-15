@@ -148,6 +148,7 @@ help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
 if [[ "$help_output" != *"usage:"* || \
   "$help_output" != *"target/debug/mlg check <input>"* || \
   "$help_output" != *"target/debug/mlg fmt [--check] <input>"* || \
+  "$help_output" != *"target/debug/mlg test <input> [--exact <test-id>]"* || \
   "$help_output" != *"target/debug/mlg --version"* ]]; then
   echo "help smoke failed: unexpected help output '$help_output'" >&2
   exit 1
@@ -158,6 +159,7 @@ if [[ -s "$help_stderr" ]]; then
   exit 1
 fi
 scripts/check-formatter.sh target/debug/mlg
+scripts/check-test-workflow.sh target/debug/mlg
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then

@@ -234,6 +234,18 @@ impl<'a> Linker<'a> {
             }
         }
 
+        for test in &mut linked.tests {
+            let context = self.context(test.span)?;
+            let mut scopes = vec![BTreeSet::new()];
+            self.link_block(
+                &mut test.body,
+                context,
+                &mut scopes,
+                &BTreeSet::new(),
+                false,
+            )?;
+        }
+
         Ok(linked)
     }
 
@@ -612,6 +624,9 @@ impl<'a> Linker<'a> {
                     }
                     self.link_block(&mut arm.block, context, &mut arm_scopes, type_params, false)?;
                 }
+            }
+            StmtKind::Assert { condition } => {
+                self.link_expr(condition, context, scopes, type_params)?;
             }
             StmtKind::Expr { expr } => self.link_expr(expr, context, scopes, type_params)?,
             StmtKind::Break | StmtKind::Continue => {}

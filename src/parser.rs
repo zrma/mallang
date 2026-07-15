@@ -5,7 +5,7 @@ use crate::{
         Arg, ArgMode, BinaryOp, Block, EnumDecl, EnumVariant, Expr, ExprKind, FieldDecl, FieldInit,
         ForInit, ForPost, Function, FunctionLiteral, FunctionTypeParam, FunctionTypeRef,
         ImportDecl, MatchArm, MatchBlockArm, MatchPattern, PackageDecl, Param, ParamMode, Program,
-        SourceUnit, Stmt, StmtKind, StructDecl, TypeParam, TypeRef, UnaryOp, Visibility,
+        SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp, Visibility,
     },
     lexer::{lex, lex_with_source, LexError},
     token::{Keyword, SourceId, Span, Token, TokenKind},
@@ -59,6 +59,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
     allow_struct_literals: bool,
+    in_test_declaration: bool,
 }
 
 enum ParsedTypeDecl {
@@ -72,6 +73,7 @@ impl Parser {
             tokens,
             cursor: 0,
             allow_struct_literals: true,
+            in_test_declaration: false,
         }
     }
 
@@ -90,6 +92,7 @@ impl Parser {
         let mut structs = Vec::new();
         let mut enums = Vec::new();
         let mut functions = Vec::new();
+        let mut tests = Vec::new();
 
         while !self.at(TokenTag::Eof) {
             let public_span = self.eat_keyword(Keyword::Pub);
@@ -106,6 +109,11 @@ impl Parser {
                 }
             } else if self.at_keyword(Keyword::Func) {
                 functions.push(self.parse_function(visibility, public_span)?);
+            } else if self.at_ident_named("test") {
+                if let Some(span) = public_span {
+                    return Err(ParseError::new("test declarations cannot be public", span));
+                }
+                tests.push(self.parse_test_declaration()?);
             } else if public_span.is_some() {
                 return Err(ParseError::new(
                     "expected `type` or `func` declaration after `pub`",
@@ -123,7 +131,7 @@ impl Parser {
                 ));
             } else {
                 return Err(ParseError::new(
-                    "expected `type`, `func`, or `pub` declaration",
+                    "expected `type`, `func`, `test`, or `pub` declaration",
                     self.peek().span,
                 ));
             }
@@ -140,6 +148,7 @@ impl Parser {
             structs,
             enums,
             functions,
+            tests,
             source_spans: vec![span],
             span,
         })
@@ -344,6 +353,25 @@ impl Parser {
         })
     }
 
+    fn parse_test_declaration(&mut self) -> Result<TestDecl, ParseError> {
+        let start = self.expect_ident_named("test", "expected `test` declaration")?;
+        let (name, _) = self.expect_ident("expected test name")?;
+        self.expect(TokenTag::LeftParen, "expected `(` after test name")?;
+        self.expect(
+            TokenTag::RightParen,
+            "test declarations cannot take parameters",
+        )?;
+
+        let previous_context = self.in_test_declaration;
+        self.in_test_declaration = true;
+        let body = self.parse_block();
+        self.in_test_declaration = previous_context;
+        let body = body?;
+        let span = start.join(body.span);
+
+        Ok(TestDecl { name, body, span })
+    }
+
     fn parse_receiver(&mut self) -> Result<Param, ParseError> {
         self.expect(TokenTag::LeftParen, "expected `(` before method receiver")?;
         let receiver = self.parse_param()?;
@@ -531,6 +559,13 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.in_test_declaration
+            && self.at_ident_named("assert")
+            && self.peek_next_is(TokenTag::LeftParen)
+        {
+            return self.parse_assert_statement();
+        }
+
         if self.at_keyword(Keyword::Return) {
             return self.parse_return_statement();
         }
@@ -569,6 +604,21 @@ impl Parser {
         Ok(Stmt {
             kind: StmtKind::Expr { expr },
             span,
+        })
+    }
+
+    fn parse_assert_statement(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.expect_ident_named("assert", "expected `assert`")?;
+        self.expect(TokenTag::LeftParen, "expected `(` after `assert`")?;
+        let condition = self.parse_expression()?;
+        let end = self.expect(
+            TokenTag::RightParen,
+            "expected `)` after assertion condition",
+        )?;
+
+        Ok(Stmt {
+            kind: StmtKind::Assert { condition },
+            span: start.join(end),
         })
     }
 
@@ -1535,6 +1585,18 @@ impl Parser {
         }
     }
 
+    fn expect_ident_named(
+        &mut self,
+        expected: &'static str,
+        message: &'static str,
+    ) -> Result<Span, ParseError> {
+        if self.at_ident_named(expected) {
+            Ok(self.advance().span)
+        } else {
+            Err(ParseError::new(message, self.peek().span))
+        }
+    }
+
     fn expect_string(&mut self, message: &'static str) -> Result<(String, Span), ParseError> {
         let token = self.advance().clone();
         match token.kind {
@@ -1545,6 +1607,10 @@ impl Parser {
 
     fn at(&self, tag: TokenTag) -> bool {
         tag.matches(&self.peek().kind)
+    }
+
+    fn at_ident_named(&self, expected: &str) -> bool {
+        matches!(&self.peek().kind, TokenKind::Ident(name) if name == expected)
     }
 
     fn peek_next_is(&self, tag: TokenTag) -> bool {
@@ -1713,6 +1779,77 @@ func add(a int, b int) int {
             program.functions[1].body.statements[0].kind,
             StmtKind::Return { .. }
         ));
+    }
+
+    #[test]
+    fn parses_contextual_test_declarations_and_assertions() {
+        let program = parse(
+            r#"
+func assert(value bool) {}
+func test() {}
+
+test AddsValues() {
+    assert(20 + 22 == 42)
+    if true {
+        run := func() {
+            assert(true)
+        }
+        run()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(program.functions.len(), 2);
+        assert_eq!(program.functions[0].name, "assert");
+        assert_eq!(program.functions[1].name, "test");
+        assert_eq!(program.tests.len(), 1);
+        assert_eq!(program.tests[0].name, "AddsValues");
+        assert!(matches!(
+            program.tests[0].body.statements[0].kind,
+            StmtKind::Assert { .. }
+        ));
+        let StmtKind::If { then_block, .. } = &program.tests[0].body.statements[1].kind else {
+            panic!("expected nested test block");
+        };
+        let StmtKind::Let { expr, .. } = &then_block.statements[0].kind else {
+            panic!("expected function literal binding");
+        };
+        let ExprKind::FunctionLiteral(function) = &expr.kind else {
+            panic!("expected function literal");
+        };
+        assert!(matches!(
+            function.body.statements[0].kind,
+            StmtKind::Assert { .. }
+        ));
+    }
+
+    #[test]
+    fn keeps_assert_calls_ordinary_outside_test_declarations() {
+        let program = parse("func assert(value bool) {}\nfunc main() { assert(true) }\n").unwrap();
+
+        assert!(matches!(
+            program.functions[1].body.statements[0].kind,
+            StmtKind::Expr {
+                expr: Expr {
+                    kind: ExprKind::Call { .. },
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_public_or_parameterized_test_declarations() {
+        let public = parse("pub test Visible() {}\n").unwrap_err();
+        assert_eq!(public.message, "test declarations cannot be public");
+
+        let parameterized = parse("test HasInput(value int) {}\n").unwrap_err();
+        assert_eq!(
+            parameterized.message,
+            "test declarations cannot take parameters"
+        );
     }
 
     #[test]

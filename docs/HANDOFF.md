@@ -212,6 +212,12 @@
   project source order를 지원한다. 4-space/LF/final-newline/max-one-blank-line style,
   token/comment parity, checked-in examples idempotence, project parse failure 전 파일
   no-write를 unit/debug/release smoke로 검증한다.
+- v0.7 P156 완료: optional `tests/`가 `src/` package layout을 mirror하고 contextual
+  `test Name()`/`assert(bool)`를 same-package private access, whole-suite preflight와
+  test별 synthetic native child로 연결한다. Stable ID/order, `--exact`, pass output 억제,
+  failure replay/계속 실행, empty suite와 signal fallback을 고정했다. Copy/non-Copy,
+  closure, recursive ADT, Map, standard I/O fixture가 zero-allocation accounting,
+  strict C, ASan/UBSan 및 debug/release CLI smoke를 통과한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -229,6 +235,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
+cargo run --bin mlg -- test examples/projects/hello
 cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- run examples/mutable-closures.mlg
@@ -351,13 +358,13 @@ target/mallang/match-statement
 ## 주요 문서
 
 - `docs/agent-harness.md`: 이 저장소의 canonical 하네스 구조와 Mallang overlay
-- `SPEC.md`: v0.6까지의 언어 스펙
+- `SPEC.md`: published v0.6 contract와 implemented v0.7 development behavior
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155 formatter evidence
+- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155-P156 evidence
 - `docs/releases/`: v0.1.0부터 v0.6.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -366,8 +373,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. `docs/todo-v07-tooling-platforms/p156-test-workflow.md`의 Q1-Q6 추천안 승인을 받는다.
-2. 승인 뒤 contextual test/assert syntax부터 per-test synthetic native execution까지 구현한다.
+1. P157에서 local path dependency manifest와 cross-project package identity를 결정한다.
+2. Central registry, network resolution과 lockfile 없이 deterministic graph/cycle contract를 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

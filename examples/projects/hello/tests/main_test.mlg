@@ -1,0 +1,72 @@
+package main
+
+import "hello/greet"
+import "std/collections"
+import "std/io"
+import "std/os"
+
+type TestList enum {
+    Nil
+    Cons(int, TestList)
+}
+
+func SumTestList(value TestList) int {
+    return match value {
+        case TestList.Nil {
+            0
+        }
+        case TestList.Cons(head, tail) {
+            head + SumTestList(tail)
+        }
+    }
+}
+
+test CopyAndOwnedValues() {
+    value := 21
+    assert(value * 2 == 42)
+    names := []string{"mal", "lang"}
+    assert(len(names) == 2)
+    assert(names[0]== "mal")
+}
+
+test GenericAndClosure() {
+    assert(greet.Identity[int](42) == 42)
+    add := greet.MakeAdder(2)
+    assert(add(40) == 42)
+}
+
+test MapAndStandardIo() {
+    newMap := collections.newMap[string, string]
+    insert := collections.insert[string, string]
+    count := collections.count[string, string]
+    mut values := newMap()
+    previous := insert(mut values, "language", "mallang")
+    match previous {
+        case None {}
+        case Some(_) {
+            assert(false)
+        }
+    }
+    assert(count(con values) == 1)
+
+    output := "hidden passing output\n"
+    match io.writeStdout(con output) {
+        case Ok(_) {}
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match os.args() {
+        case Ok(args) {
+            assert(len(args) == 1)
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RecursiveAdt() {
+    values := TestList.Cons(40, TestList.Cons(2, TestList.Nil))
+    assert(SumTestList(values) == 42)
+}

@@ -12,6 +12,7 @@ This repository is the Mallang language PoC workspace.
 - Compiler command shape: `mlg build`, not a separate long `mallangc` command
 - Run command shape: `mlg run`
 - Format command shape: `mlg fmt`
+- Test command shape: `mlg test`
 - Version command shape: `mlg --version`
 - Help command shape: `mlg --help`
 - Internal compiler crate or binary name, if needed later: `mlgc`
@@ -98,6 +99,11 @@ This repository is the Mallang language PoC workspace.
 - `mlg fmt` applies the comment-preserving canonical style. `mlg fmt --check`
   performs the same deterministic project traversal without writing files and
   exits non-zero when formatting changes are required.
+- Project tests live in an optional `tests/` tree mirroring `src/` packages.
+  Contextual `test Name() { ... }` declarations use standalone `assert(bool)`
+  statements. `mlg test <project> [--exact <test-id>]` preflights the whole suite,
+  then runs selected tests as deterministic isolated native children without
+  invoking the application `main`.
 - Compiler-owned `std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, and
   `std/collections` packages resolve in both project and standalone mode. Their
   exact signatures, ownership checks, explicit generic specialization, opaque
@@ -117,7 +123,8 @@ This repository is the Mallang language PoC workspace.
 
 ## Bootstrap
 
-The current executable can lex, parse, format, check, build, and run the first native subset.
+The current executable can lex, parse, format, check, build, run, and test the
+implemented native subset.
 
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
@@ -224,6 +231,8 @@ cargo run --bin mlg -- check examples/projects/hello
 cargo run --bin mlg -- build examples/projects/hello -o target/mallang/project-hello
 target/mallang/project-hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
+cargo run --bin mlg -- test examples/projects/hello
+cargo run --bin mlg -- test examples/projects/hello --exact hello::GenericAndClosure
 ```
 
 Run the full local gate:
@@ -287,13 +296,13 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 
 ## Layout
 
-- `SPEC.md`: language specification through v0.6.
+- `SPEC.md`: published v0.6 contract plus implemented v0.7 development behavior.
 - `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155 formatter evidence.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P156 evidence.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
@@ -317,9 +326,9 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
   stdout, stderr, standard errors, and process exit behavior.
 - `examples/file-io.mlg`: native smoke for function-valued UTF-8 file reads,
   create-or-overwrite writes, arguments, and recoverable file errors.
-- `examples/projects/hello`: two-package project smoke for imported functions,
+- `examples/projects/hello`: two-package project and native test smoke for imported functions,
   structs, generic APIs, receivers and enums, function values, higher-order APIs,
-  and closure returns.
+  closure returns, private package access, recursive ADTs, maps, and standard I/O.
 - `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
   function move/alias, and recursive closure behavior.
 - `tests/fixtures/invalid-generic-enums`: CLI rejection fixtures for generic enum

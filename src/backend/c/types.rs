@@ -244,6 +244,9 @@ impl<'a> TypeEmitter<'a> {
             }
             IrStmtKind::Assign { expr, .. }
             | IrStmtKind::Return { expr }
+            | IrStmtKind::Assert {
+                condition: expr, ..
+            }
             | IrStmtKind::Expr { expr } => self.collect_expr_types(expr, types),
             IrStmtKind::Break | IrStmtKind::Continue => {}
             IrStmtKind::FieldAssign { base, expr, .. } => {

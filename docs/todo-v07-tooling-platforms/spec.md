@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P155 complete; P156 next
+상태: P154-P156 complete; P157 next
 
 ## Goal
 
@@ -55,8 +55,8 @@ machine-readable integration과 supported platform delivery를 우선한다.
 - [x] current parser/project/compiler/native runner feasibility inventory
 - [x] optional `tests/` recursive deterministic discovery API
 - [x] `p156-test-workflow.md` Q1-Q6 recommendation and acceptance matrix
-- [ ] P156 Q1-Q6 사용자 승인
-- [ ] parser부터 native runner까지 end-to-end implementation
+- [x] P156 Q1-Q6 사용자 승인
+- [x] parser부터 native runner까지 end-to-end implementation
 
 ### P157: Local Path Dependencies
 

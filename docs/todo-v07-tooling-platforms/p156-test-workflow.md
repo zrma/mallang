@@ -1,6 +1,6 @@
 # P156 Project Test Workflow Decision
 
-상태: recommendation ready; P156 Q1-Q6 approval pending
+상태: complete
 
 ## Goal
 
@@ -149,16 +149,19 @@ canonical `scripts/check.sh`를 유지하고 마지막 slice에서 debug/release
 ## Acceptance Matrix
 
 - [x] optional `tests/` recursive deterministic discovery API
-- [ ] contextual test/assert parser and formatter regression
-- [ ] source/test package mapping, private access와 test-public rejection
-- [ ] duplicate test ID, invalid declaration shape와 assert type diagnostics
-- [ ] whole-suite preflight and per-test synthetic native build
-- [ ] deterministic default order and exact filter
-- [ ] pass/fail/output/exit aggregation and child signal handling
-- [ ] ownership cleanup, allocation accounting, strict C and sanitizer native tests
-- [ ] debug/release CLI smoke and README/SPEC/roadmap synchronization
+- [x] contextual test/assert parser and formatter regression
+- [x] source/test package mapping, private access와 test-public rejection
+- [x] duplicate test ID, invalid declaration shape와 assert type diagnostics
+- [x] whole-suite preflight and per-test synthetic native build
+- [x] deterministic default order and exact filter
+- [x] pass/fail/output/exit aggregation and child signal handling
+- [x] ownership cleanup, allocation accounting, strict C and sanitizer native tests
+- [x] debug/release CLI smoke and README/SPEC/roadmap synchronization
 
 ## Approval Boundary
 
-Q1-Q6은 새 source declaration과 public CLI/runtime behavior를 고정하므로 구현 전에 사용자
-승인이 필요하다. 전체 추천안을 채택할 경우 `P156 Q1-Q6 추천안 승인`으로 승인할 수 있다.
+Q1-Q6은 2026-07-15 사용자 승인으로 확정했다. 구현은 위 blueprint와 acceptance matrix를
+따라 완료했다. `scripts/check-test-workflow.sh`가 debug/release CLI의 stable output,
+whole-suite preflight, exact/standalone rejection, child isolation과 계속 실행을 검증하고,
+생성된 representative test C를 zero-allocation wrapper, strict C 및 ASan/UBSan으로 다시
+컴파일해 실행한다.

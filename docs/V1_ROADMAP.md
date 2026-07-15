@@ -249,6 +249,8 @@ library를 제공한다.
 
 ## v0.7.0: Tooling and Platforms
 
+상태: in progress; P154-P156 complete
+
 목표: 반복 개발과 배포에 필요한 기본 developer workflow를 제공한다.
 
 범위:

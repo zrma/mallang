@@ -4,11 +4,11 @@ use crate::{
     ast::Program,
     backend::generate_c_from_ir,
     frontend::parse_sources,
-    ir::{lower, IrProgram},
+    ir::{lower, lower_test, IrProgram},
     linker::{display_linked_message, link_project, link_standalone},
-    package::{build_package_graph, build_standalone_package_graph, PackageGraph},
+    package::{build_package_graph, build_standalone_package_graph, PackageGraph, PackageTest},
     project::Project,
-    semantic::check_project,
+    semantic::{check_project, CheckedProgram},
     source::SourceMap,
     standard::augment_program,
     token::{SourceId, Span},
@@ -29,6 +29,35 @@ pub struct CompilerError {
     pub stage: CompilerStage,
     pub message: String,
     pub span: Option<Span>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectTestSuite {
+    checked: CheckedProgram,
+    tests: Vec<PackageTest>,
+}
+
+impl ProjectTestSuite {
+    pub fn tests(&self) -> &[PackageTest] {
+        &self.tests
+    }
+
+    pub fn generate_c(&self, test_index: usize) -> Result<String, CompilerError> {
+        let ir = lower_test(&self.checked, test_index).map_err(|error| {
+            CompilerError::new(
+                CompilerStage::Ir,
+                display_linked_message(&error.message),
+                error.span,
+            )
+        })?;
+        generate_c_from_ir(&ir).map_err(|error| {
+            CompilerError::new(
+                CompilerStage::Backend,
+                display_linked_message(&error.message),
+                None,
+            )
+        })
+    }
 }
 
 impl CompilerError {
@@ -159,6 +188,32 @@ pub fn generate_c_project_sources(
     })
 }
 
+pub fn prepare_project_tests(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<ProjectTestSuite, CompilerError> {
+    let (program, graph) = link_project_sources(project, sources, source_ids)?;
+    let checked = check_project(&program, &graph).map_err(|error| {
+        CompilerError::new(
+            CompilerStage::Semantic,
+            display_linked_message(&error.message),
+            error.span,
+        )
+    })?;
+    if checked.program.tests.len() != graph.tests().len() {
+        return Err(CompilerError::new(
+            CompilerStage::Semantic,
+            "test inventory changed during semantic preparation",
+            None,
+        ));
+    }
+    Ok(ProjectTestSuite {
+        checked,
+        tests: graph.tests().to_vec(),
+    })
+}
+
 fn link_project_sources(
     project: &Project,
     sources: &SourceMap,
@@ -235,6 +290,14 @@ mod tests {
         fn load(&self) -> (Project, crate::SourceSet) {
             let project = discover_project(&self.root).unwrap();
             let sources = load_source_files(project.source_files().iter()).unwrap();
+            (project, sources)
+        }
+
+        fn load_with_tests(&self) -> (Project, crate::SourceSet) {
+            let project = discover_project(&self.root).unwrap();
+            let test_files = project.discover_test_files().unwrap();
+            let sources =
+                load_source_files(project.source_files().iter().chain(test_files.iter())).unwrap();
             (project, sources)
         }
     }
@@ -584,6 +647,56 @@ mod tests {
             generate_c_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
         assert!(c_source.contains("int main(void)"));
         assert!(c_source.contains("(21)"));
+    }
+
+    #[test]
+    fn prepares_all_tests_and_generates_a_synthetic_native_entrypoint() {
+        let temp = TempProject::new("test-pipeline");
+        temp.write("mallang.toml", "[project]\nname = \"hello\"\n");
+        temp.write(
+            "src/main.mlg",
+            "package main\nfunc main() { print(\"application-main\") }\n",
+        );
+        temp.write(
+            "src/stats/stats.mlg",
+            "package stats\nfunc identity[T](value T) T { return value }\nfunc privateValue() int { return 42 }\n",
+        );
+        temp.write(
+            "tests/stats/stats_test.mlg",
+            "package stats\ntest ReadsPrivateGenericValue() { assert(identity[int](privateValue()) == 42) }\n",
+        );
+        let (project, loaded) = temp.load_with_tests();
+
+        let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids).unwrap();
+        assert_eq!(suite.tests()[0].id, "hello/stats::ReadsPrivateGenericValue");
+
+        let c_source = suite.generate_c(0).unwrap();
+        assert_eq!(c_source.matches("int main(void) {").count(), 1);
+        assert!(!c_source.contains("application-main"));
+        assert!(c_source.contains("mallang_test_assertion_failed("));
+        assert!(c_source.contains("__mlg_test_assert:%zu:%zu"));
+    }
+
+    #[test]
+    fn rejects_non_bool_assertions_during_whole_suite_preflight() {
+        let temp = TempProject::new("invalid-assertion");
+        temp.write("mallang.toml", "[project]\nname = \"hello\"\n");
+        temp.write("src/main.mlg", "package main\nfunc main() {}\n");
+        temp.write(
+            "tests/main_test.mlg",
+            "package main\ntest Invalid() { assert(42) }\n",
+        );
+        let (project, loaded) = temp.load_with_tests();
+
+        let error =
+            prepare_project_tests(&project, &loaded.sources, &loaded.source_ids).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Semantic);
+        assert_eq!(error.message, "assertion condition must have type `bool`");
+        assert_eq!(
+            error.span.map(|span| span.source),
+            loaded.source_ids.last().copied()
+        );
     }
 
     #[test]
