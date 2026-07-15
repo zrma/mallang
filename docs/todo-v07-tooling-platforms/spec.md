@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: decision gate proposed; implementation not started
+상태: P154-P155 complete; P156 next
 
 ## Goal
 
@@ -25,10 +25,25 @@ machine-readable integration과 supported platform delivery를 우선한다.
   diagnostic schema와 release distribution feasibility를 inventory한다.
 - `open-questions.md`의 compatibility choices를 승인받는다.
 
+진행:
+
+- [x] current compiler/tooling feasibility inventory
+- [x] Q1-Q6 compatibility and implementation impact 기록
+- [x] Q1-Q6 사용자 승인
+
 ### P155: Canonical Formatter
 
 - Deterministic and idempotent source formatting과 `--check`를 구현한다.
 - Comments와 source meaning preservation을 golden/property test로 고정한다.
+
+진행:
+
+- [x] raw source span 기반 lossless token/trivia formatter
+- [x] 4-space/LF/final-newline/max-one-blank-line canonical style
+- [x] direct file/project write mode와 no-write `--check`
+- [x] project parse failure 전 파일 no-write와 deterministic relative path output
+- [x] token/comment parity, checked-in examples idempotence와 multiline comment regressions
+- [x] debug canonical gate와 optimized release binary formatter smoke
 
 ### P156: Project Test Workflow
 

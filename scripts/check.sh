@@ -145,7 +145,10 @@ fi
 mkdir -p target/mallang
 help_stderr="target/mallang/help.stderr"
 help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
-if [[ "$help_output" != *"usage:"* || "$help_output" != *"target/debug/mlg check <input>"* || "$help_output" != *"target/debug/mlg --version"* ]]; then
+if [[ "$help_output" != *"usage:"* || \
+  "$help_output" != *"target/debug/mlg check <input>"* || \
+  "$help_output" != *"target/debug/mlg fmt [--check] <input>"* || \
+  "$help_output" != *"target/debug/mlg --version"* ]]; then
   echo "help smoke failed: unexpected help output '$help_output'" >&2
   exit 1
 fi
@@ -154,6 +157,7 @@ if [[ -s "$help_stderr" ]]; then
   cat "$help_stderr" >&2
   exit 1
 fi
+scripts/check-formatter.sh target/debug/mlg
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then

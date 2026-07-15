@@ -1283,3 +1283,33 @@
 
 P153 complete: local macOS arm64와 published Ubuntu Linux x86_64 acceptance가 모두 통과했고,
 v0.6.0 GitHub source release가 2026-07-15에 공개됐다.
+
+## P154: v0.7 Tooling Decision Gate
+
+상태: complete
+
+- [x] formatter trivia/comment preservation gap inventory
+- [x] project test discovery/runner gap inventory
+- [x] local path dependency graph gap inventory
+- [x] structured JSON diagnostic schema feasibility
+- [x] macOS arm64/Linux x86_64 artifact/install feasibility
+- [x] basic LSP release-blocker assessment
+- [x] Q1-Q6 compatibility recommendation approval
+
+P154 inventory와 Q1-Q6 결정은 `docs/todo-v07-tooling-platforms/feasibility.md` 및
+`open-questions.md`가 소유한다. 추천안은 2026-07-15 승인됐다.
+
+## P155: Canonical Formatter
+
+상태: complete
+
+- [x] parser validation 뒤 raw token span과 `//` trivia를 보존하는 formatter 추가
+- [x] 4-space indent, LF, final newline, blank line 최대 1개 canonical style 고정
+- [x] direct `.mlg`와 deterministic project source formatting 구현
+- [x] `mlg fmt --check <input>` no-write/non-zero contract 구현
+- [x] project parse failure 시 어떤 source도 쓰지 않는 preflight contract 검증
+- [x] non-trivia token/comment parity와 checked-in example idempotence regression 추가
+- [x] debug canonical gate와 optimized release binary smoke 연결
+
+P155는 source meaning과 comment text를 보존하며 line-width wrapping과 block comment를
+의도적으로 제외한다. 다음 milestone은 P156 project test workflow다.

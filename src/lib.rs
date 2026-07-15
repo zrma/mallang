@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod backend;
 pub mod compiler;
+pub mod formatter;
 pub mod frontend;
 pub mod ir;
 pub mod lexer;
@@ -19,6 +20,7 @@ pub use compiler::{
     check_project_sources, check_sources, generate_c_project_sources, generate_c_sources,
     lower_project_sources, lower_sources, CompilerError, CompilerStage,
 };
+pub use formatter::{format_source, FormatError};
 pub use frontend::{parse_sources, FrontendError};
 pub use ir::{lower, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};

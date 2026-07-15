@@ -206,6 +206,12 @@
   x86_64 GitHub Actions run에서도 같은 `scripts/check.sh`가 통과해 native platform
   acceptance를 닫았다. Version bump와 서명 tag를 포함한 GitHub source release는
   2026-07-15에 공개했다.
+- v0.7 P154-P155 완료: tooling/platform Q1-Q6 추천안을 승인된 contract로 고정하고,
+  parser validation 뒤 raw token span과 `//` trivia를 보존하는 canonical formatter를
+  추가했다. `mlg fmt`와 no-write `mlg fmt --check`는 direct `.mlg` 및 deterministic
+  project source order를 지원한다. 4-space/LF/final-newline/max-one-blank-line style,
+  token/comment parity, checked-in examples idempotence, project parse failure 전 파일
+  no-write를 unit/debug/release smoke로 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -351,7 +357,7 @@ target/mallang/match-statement
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: proposed P154-P160 tooling/platform decision gate
+- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155 formatter evidence
 - `docs/releases/`: v0.1.0부터 v0.6.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -360,8 +366,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P154에서 v0.7 Q1-Q6 feasibility와 compatibility impact를 검토한다.
-2. Q1-Q6 승인 뒤 P155 canonical formatter implementation을 시작한다.
+1. P156에서 dedicated project test declaration/assertion syntax decision을 닫는다.
+2. 승인된 test model에 따라 deterministic discovery, filtering, failure/exit contract를 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

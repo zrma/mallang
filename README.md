@@ -11,6 +11,7 @@ This repository is the Mallang language PoC workspace.
 - User-facing CLI: `mlg`
 - Compiler command shape: `mlg build`, not a separate long `mallangc` command
 - Run command shape: `mlg run`
+- Format command shape: `mlg fmt`
 - Version command shape: `mlg --version`
 - Help command shape: `mlg --help`
 - Internal compiler crate or binary name, if needed later: `mlgc`
@@ -91,9 +92,12 @@ This repository is the Mallang language PoC workspace.
 - Integer arithmetic guards overflow before native execution can reach C signed
   overflow undefined behavior.
 - Multi-file projects use `mallang.toml`, `src/main.mlg`, directory packages,
-  explicit imports, and `pub` visibility. `mlg check`, `mlg build`, and
+  explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg build`, and
   `mlg run` accept either a standalone `.mlg` file or a project directory or
   manifest.
+- `mlg fmt` applies the comment-preserving canonical style. `mlg fmt --check`
+  performs the same deterministic project traversal without writing files and
+  exits non-zero when formatting changes are required.
 - Compiler-owned `std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, and
   `std/collections` packages resolve in both project and standalone mode. Their
   exact signatures, ownership checks, explicit generic specialization, opaque
@@ -113,13 +117,14 @@ This repository is the Mallang language PoC workspace.
 
 ## Bootstrap
 
-The current executable can lex, parse, check, build, and run the first native subset.
+The current executable can lex, parse, format, check, build, and run the first native subset.
 
 ```sh
 cargo run --bin mlg -- lex examples/hello.mlg
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- parse examples/first.mlg
+cargo run --bin mlg -- fmt --check examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- ir examples/adt.mlg
 cargo run --bin mlg -- build examples/first.mlg -o target/mallang/first
@@ -288,7 +293,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: proposed v0.7 tooling and platform decision gate.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155 formatter evidence.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.

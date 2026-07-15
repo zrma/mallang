@@ -121,6 +121,7 @@ user-facing command: mlg
 build command: mlg build
 run command: mlg run
 check command: mlg check
+format command: mlg fmt
 version command: mlg --version
 help command: mlg --help
 ```
@@ -190,6 +191,24 @@ package import pub func return if else for break continue range match case mut c
 
 `nil` is reserved so the compiler can produce a clear error instead of treating
 it as an ordinary identifier.
+
+## Source Formatting
+
+`mlg fmt <input>` formats either one `.mlg` file or every source file discovered
+from a project directory or `mallang.toml`. Project files are processed in sorted
+repository-relative path order. Changed paths are reported on stdout; unchanged
+files produce no output.
+
+`mlg fmt --check <input>` never writes files. It exits successfully without output
+when every source is canonical, or exits non-zero and reports each non-canonical
+path on stderr in the same deterministic order.
+
+The canonical P155 style uses four-space indentation, LF line endings, one final
+newline, and at most one consecutive blank line. It preserves every non-trivia
+token and the exact text/order of `//` comments. Line-width wrapping and block
+comments are not part of P155. All selected files must parse and format before
+write mode changes any file, so a project parse failure leaves every source
+unchanged.
 
 Reserved built-in value names:
 

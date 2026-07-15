@@ -8,9 +8,10 @@ use std::{
 };
 
 use mallang::{
-    check_project_sources, check_sources, discover_project, generate_c_project_sources,
-    generate_c_sources, lex_with_source, load_source_files, lower_sources, parse_sources,
-    CompilerError, FrontendError, Project, SourceId, SourceMap,
+    check_project_sources, check_sources, discover_project, format_source,
+    generate_c_project_sources, generate_c_sources, lex_with_source, load_source_files,
+    lower_sources, parse_sources, CompilerError, FormatError, FrontendError, Project, SourceId,
+    SourceMap,
 };
 
 fn main() {
@@ -29,6 +30,7 @@ fn main() {
         Some("lex") => utf8_cli_args(&args[2..]).and_then(|args| run_lex(&program, &args)),
         Some("parse") => utf8_cli_args(&args[2..]).and_then(|args| run_parse(&program, &args)),
         Some("check") => utf8_cli_args(&args[2..]).and_then(|args| run_check(&program, &args)),
+        Some("fmt") => utf8_cli_args(&args[2..]).and_then(|args| run_fmt(&program, &args)),
         Some("ir") => utf8_cli_args(&args[2..]).and_then(|args| run_ir(&program, &args)),
         Some("build") => utf8_cli_args(&args[2..]).and_then(|args| run_build(&program, &args)),
         Some("run") => run_run(&program, &args[2..]),
@@ -69,6 +71,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} lex <source-file>")?;
     writeln!(output, "  {program} parse <source-file>")?;
     writeln!(output, "  {program} check <input>")?;
+    writeln!(output, "  {program} fmt [--check] <input>")?;
     writeln!(output, "  {program} ir <source-file>")?;
     writeln!(output, "  {program} build <input> [-o <output>]")?;
     writeln!(output, "  {program} run <input> [-- <program-args>...]")?;
@@ -120,6 +123,97 @@ fn run_check(program: &str, args: &[String]) -> Result<(), String> {
     }
     println!("{path}: ok");
     Ok(())
+}
+
+fn run_fmt(program: &str, args: &[String]) -> Result<(), String> {
+    let (check_only, input) = match args {
+        [input] if input != "--check" => (false, input.as_str()),
+        [flag, input] if flag == "--check" => (true, input.as_str()),
+        [flag, ..] if flag.starts_with('-') && flag != "--check" => {
+            return Err(format!("unknown fmt argument `{flag}`"));
+        }
+        _ => return Err(format!("usage: {program} fmt [--check] <input>")),
+    };
+
+    let files = load_format_inputs(input)?;
+    let mut changes = Vec::new();
+
+    for file in files {
+        let formatted = format_source(&file.source)
+            .map_err(|error| format_format_error(&file.display_path, &file.source, error))?;
+        if formatted != file.source {
+            changes.push((file.path, file.display_path, formatted));
+        }
+    }
+
+    if check_only {
+        if changes.is_empty() {
+            return Ok(());
+        }
+        return Err(changes
+            .iter()
+            .map(|(_, display_path, _)| format!("{}: not formatted", display_path.display()))
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+
+    for (path, display_path, formatted) in changes {
+        fs::write(&path, formatted)
+            .map_err(|error| format!("failed to write {}: {error}", display_path.display()))?;
+        println!("{}: formatted", display_path.display());
+    }
+    Ok(())
+}
+
+struct FormatInput {
+    path: PathBuf,
+    display_path: PathBuf,
+    source: String,
+}
+
+fn load_format_inputs(input: &str) -> Result<Vec<FormatInput>, String> {
+    let input_path = Path::new(input);
+    if input_path
+        .extension()
+        .is_some_and(|extension| extension == "mlg")
+    {
+        return Ok(vec![load_format_input(
+            input_path.to_path_buf(),
+            input_path.to_path_buf(),
+        )?]);
+    }
+
+    let project = discover_project(input_path).map_err(|error| error.to_string())?;
+    project
+        .source_files()
+        .iter()
+        .map(|path| {
+            let display_path = path
+                .strip_prefix(project.root())
+                .unwrap_or(path)
+                .to_path_buf();
+            load_format_input(path.clone(), display_path)
+        })
+        .collect()
+}
+
+fn load_format_input(path: PathBuf, display_path: PathBuf) -> Result<FormatInput, String> {
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", display_path.display()))?;
+    Ok(FormatInput {
+        path,
+        display_path,
+        source,
+    })
+}
+
+fn format_format_error(display_path: &Path, source: &str, error: FormatError) -> String {
+    let mut sources = SourceMap::new();
+    let source_id = sources.add_file(display_path, source);
+    sources.format_diagnostic(
+        &error.message,
+        mallang::Span::new(source_id, error.span.start, error.span.end),
+    )
 }
 
 fn run_ir(program: &str, args: &[String]) -> Result<(), String> {
