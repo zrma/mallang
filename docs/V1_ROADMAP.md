@@ -249,8 +249,7 @@ library를 제공한다.
 
 ## v0.7.0: Tooling and Platforms
 
-상태: in progress; P154-P159 complete, P160 technical acceptance complete,
-v0.8 decision approval pending
+상태: released after P160 acceptance (2026-07-16)
 
 목표: 반복 개발과 배포에 필요한 기본 developer workflow를 제공한다.
 
@@ -279,6 +278,8 @@ v0.8 decision approval pending
 - 모든 OS와 architecture 지원
 
 ## v0.8.0: Compiler Hardening
+
+상태: decision gate approved (2026-07-16); P161 next
 
 목표: 언어 기능 추가보다 compiler 품질, 진단, 성능을 우선하는 안정화 구간을
 완료한다.
@@ -370,6 +371,7 @@ contract를 검증하고 배포하는 마일스톤이다.
 | `v0.5` 시작 전 | transparent recursive ADT, partial move와 first-class reference 필요성 |
 | `v0.6` 시작 전 | standard package/API, text/index, I/O error와 propagation surface |
 | `v0.7` 시작 전 | supported target matrix와 installation contract |
+| `v0.8` 시작 전 | parser recovery, panic/invariant, property, performance와 reproducibility contract |
 | `v0.9` 시작 전 | v1 compatibility, deprecation, edition policy |
 
 각 decision은 독립된 `docs/todo-*/spec.md`와 `open-questions.md`에서 닫은 뒤

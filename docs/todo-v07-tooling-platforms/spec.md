@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P159 complete; P160 technical acceptance complete, v0.8 approval pending
+상태: released as v0.7.0 (2026-07-16; P154-P160 complete)
 
 ## Goal
 
@@ -111,7 +111,7 @@ machine-readable integration과 supported platform delivery를 우선한다.
 - [x] v0.8 hardening recommendation draft
 - [x] local full gate와 publication boundary
 - [x] published platform evidence
-- [ ] v0.8 Q1-Q6 사용자 승인
+- [x] v0.8 Q1-Q6 사용자 승인
 
 ## Excluded
 

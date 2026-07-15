@@ -372,15 +372,14 @@ is the cross-platform release acceptance used by CI.
 
 ## v0.7 Binary Distribution
 
-P159 implements the distribution contract, but no v0.7 binary assets are
-published until the v0.7 release is created. A release bundle contains:
+The v0.7 GitHub Release contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
 - `SHA256SUMS`
 - `install.sh`
 
-After those assets are published, install or update an explicit version with:
+Install or update the explicit version with:
 
 ```sh
 curl -fsSLO https://github.com/zrma/mallang/releases/download/v0.7.0/install.sh
@@ -408,15 +407,15 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 
 ## Layout
 
-- `SPEC.md`: published v0.6 contract plus implemented v0.7 development behavior.
+- `SPEC.md`: published language and tooling contract through v0.7.
 - `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
 - `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
-- `docs/todo-v08-compiler-hardening/`: proposed v0.8 compiler-hardening decision gate.
-- `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
+- `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
+- `docs/releases/`: v0.1.0 through v0.7.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

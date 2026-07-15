@@ -1,6 +1,6 @@
 # Open Questions: v0.8 Compiler Hardening
 
-상태: recommendations awaiting approval
+상태: Q1-Q6 recommendations approved on 2026-07-16
 
 ## Q1. Parser recovery boundary
 
@@ -58,5 +58,6 @@ overlay/cancellation 필요성이 구체화될 때 별도 milestone로 연다.
 
 ## Approval Decision
 
-Q1-Q6는 아직 제안 상태다. 승인 뒤 `spec.md`의 P161-P166을 순서대로 구현하며, Q4의 실제
-regression threshold는 baseline 측정 결과를 제시한 뒤 두 번째 decision gate에서 확정한다.
+Q1-Q6 추천안은 2026-07-16에 전체 승인됐다. `spec.md`의 P161-P166을 순서대로 구현하며,
+Q4의 실제 regression threshold는 baseline 측정 결과를 제시한 뒤 두 번째 decision gate에서
+확정한다.

@@ -1,6 +1,6 @@
 # Completion Evidence: v0.7 Tooling and Platforms
 
-상태: technical acceptance complete; v0.8 decision approval pending
+상태: complete; released as v0.7.0 (2026-07-16)
 
 ## Implemented surface
 
@@ -32,14 +32,13 @@ GitHub Actions `CI` run `29433381232` passed on published commit
 | combined release bundle | passed | two archives, `SHA256SUMS` and `install.sh` |
 
 The downloaded workflow bundle contained exactly the installer, checksum file and both supported
-target archives. Both entries passed local SHA-256 verification. The workflow bundle still uses
-the current development package version `0.6.0`; the separate v0.7.0 release step owns the version
-bump, tag and public binary assets.
+target archives. Both entries passed local SHA-256 verification. The v0.7.0 release commit bumps
+the package and compiler version together; its GitHub Release publishes the corresponding bundle.
 
 ## Completion result
 
 The v0.7 implementation and technical acceptance conditions are satisfied locally and on both
-supported native CI platforms. P160 remains open only for approval of the proposed v0.8 Q1-Q6
-decision gate.
+supported native CI platforms. The v0.8 Q1-Q6 decision gate was approved on 2026-07-16, closing
+P160.
 
-No version bump, tag, GitHub Release or package publication was part of this evidence change.
+The v0.7.0 GitHub Release publishes native binaries; crates.io publication remains disabled.

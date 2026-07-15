@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: proposed; Q1-Q6 approval required
+상태: Q1-Q6 approved on 2026-07-16; P161 next
 
 ## Goal
 
@@ -16,7 +16,7 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 - generated C/release archive reproducibility contract
 - full LSP와 parser-library migration의 evidence-based deferral
 
-## Proposed implementation order
+## Implementation order
 
 ### P161: Hardening Decision and Baseline Inventory
 

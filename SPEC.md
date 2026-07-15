@@ -1,8 +1,7 @@
-# Mallang v0.7 Development Specification
+# Mallang v0.7 Specification
 
-This specification tracks implemented `main` behavior after the 0.6.0 source
-release. The published stable source contract remains v0.6; implemented v0.7
-sections are unreleased development behavior.
+This is the Mallang language and tooling specification through the 0.7.0
+release.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 
@@ -32,7 +31,7 @@ The v0.2 surface intentionally excludes import aliases, dot or wildcard imports,
 remote dependencies, a package registry, lockfiles, and package initialization
 hooks. The compiler and native acceptance path implement these normative rules.
 
-## Implemented v0.7 Project Test Workflow
+## Published v0.7 Project Test Workflow
 
 Executable projects may contain an optional `tests/` tree that mirrors package
 directories under `src/`. `tests/main_test.mlg` belongs to the root package and
@@ -72,7 +71,7 @@ test AddsValues() {
   tests, external test packages, parallel tests, and non-exact filters remain
   outside P156.
 
-## Implemented v0.7 Local Path Dependencies
+## Published v0.7 Local Path Dependencies
 
 Projects may declare local dependencies relative to their manifest:
 
@@ -108,7 +107,7 @@ text = { path = "../text" }
   workspaces, dependency test execution, and incremental dependency artifacts
   remain outside P157.
 
-## Implemented v0.7 Machine-readable Diagnostics
+## Published v0.7 Machine-readable Diagnostics
 
 `mlg [--diagnostic-format <human|json>] <subcommand> ...` selects diagnostic
 rendering before the subcommand. Human output remains the default. JSON mode emits
@@ -136,7 +135,7 @@ does not change successful command stdout or exit status.
 The exact schema, stream, path, and LSP deferral contract is specified in
 `docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`.
 
-## Implemented v0.7 Release Artifacts and Installation
+## Published v0.7 Release Artifacts and Installation
 
 P159 defines two native binary targets: macOS arm64
 `aarch64-apple-darwin` and Linux x86_64 glibc
@@ -164,11 +163,11 @@ P159 defines two native binary targets: macOS arm64
   repository job, downloaded bundle contents, and both archive checksums passed
   on published `main`.
 
-P159 tooling is implemented in the development tree, but v0.7 binary assets are
-not published until the release milestone. The exact contract is specified in
+The v0.7 GitHub Release publishes both supported native archives,
+`SHA256SUMS`, and `install.sh`. The exact contract is specified in
 `docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`.
 
-## Implemented v0.7 Canonical Project Acceptance
+## Published v0.7 Canonical Project Acceptance
 
 P160 connects the formatter, project graph, tests, diagnostics, native backend,
 and release installer as one clean-project workflow.
@@ -299,7 +298,7 @@ day-to-day command is intentionally short.
 - Compile to native binaries.
 - Start with a C backend before committing to LLVM or Cranelift.
 
-## Non-goals for Published v0.6
+## Non-goals for Published v0.7
 
 - No goroutines.
 - No interfaces.

@@ -252,8 +252,10 @@
 - `v0.6.0: Standard Library` completed P147-P153 implementation and native
   acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
   2026-07-15.
-- Generic ADTs, ownership/runtime completion, standard library, tooling,
-  hardening, and language freeze must advance through the acceptance gates in
-  that document.
+- `v0.7.0: Tooling and Platforms` completed P154-P160 implementation and native
+  acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
+  2026-07-16.
+- Compiler hardening, language freeze, and the stable release must advance
+  through the acceptance gates in that document.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

@@ -1387,7 +1387,7 @@ acceptance다.
 
 ## P160: v0.7 Acceptance
 
-상태: technical acceptance complete; v0.8 decision approval pending
+상태: complete; released as v0.7.0 (2026-07-16)
 
 - [x] 빈 work directory에 library와 dependent executable project 생성
 - [x] installed release compiler의 formatter no-write/idempotence 검증
@@ -1396,8 +1396,9 @@ acceptance다.
 - [x] README, `SPEC.md`, handoff와 v0.8 decision draft 동기화
 - [x] local canonical/publication gate 통과
 - [x] published platform matrix와 combined bundle evidence
-- [ ] v0.8 Q1-Q6 사용자 승인
+- [x] v0.8 Q1-Q6 사용자 승인
 
 P160의 exact workflow는
-`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`가 소유한다. Release version bump,
-tag와 GitHub Release는 P160 implementation과 별도의 publication approval boundary다.
+`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`가 소유한다. v0.7.0은 두 supported
+native archive, checksum과 installer를 포함한 GitHub Release로 공개됐다. 다음 milestone은
+approved v0.8 hardening의 P161 baseline inventory다.
