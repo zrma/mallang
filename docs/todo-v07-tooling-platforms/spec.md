@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P158 complete; P159 next
+상태: P154-P158 complete; P159 implementation complete, published CI pending
 
 ## Goal
 
@@ -86,6 +86,16 @@ machine-readable integration과 supported platform delivery를 우선한다.
 
 - macOS arm64/Linux x86_64 artifacts, checksums, install/update contract와 clean-host
   smoke를 구현한다.
+
+진행:
+
+- [x] `MIT OR Apache-2.0` metadata와 exact archive payload
+- [x] supported-host detection, package version과 artifact naming contract
+- [x] deterministic tar/gzip writer와 one/two-target `SHA256SUMS`
+- [x] HTTPS/offline installer, checksum/archive/version 검증과 atomic replacement
+- [x] clean default/explicit prefix 및 installed project check/build/run/test smoke
+- [x] macOS arm64/Linux x86_64 GitHub Actions matrix와 combined workflow bundle 정의
+- [ ] published native matrix와 combined bundle success 확인
 
 ### P160: v0.7 Acceptance
 

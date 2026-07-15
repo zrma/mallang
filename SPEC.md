@@ -136,6 +136,37 @@ does not change successful command stdout or exit status.
 The exact schema, stream, path, and LSP deferral contract is specified in
 `docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`.
 
+## Implemented v0.7 Release Artifacts and Installation
+
+P159 defines two native binary targets: macOS arm64
+`aarch64-apple-darwin` and Linux x86_64 glibc
+`x86_64-unknown-linux-gnu`. Each artifact is named
+`mallang-v<version>-<target>.tar.gz` and contains an exact root directory with
+`bin/mlg`, `LICENSE-MIT`, `LICENSE-APACHE`, and a minimal `README.md`.
+
+- Package version, archive version, and `mlg --version` must agree. Other hosts,
+  cross compilation, target override, Windows, and musl are rejected or excluded.
+- Tar entry order, mode, uid/gid, owner/group, mtime, and gzip timestamp are
+  normalized. Repeated builds from the same native binary are byte-identical.
+- `SHA256SUMS` uses lowercase SHA-256, two spaces, and a sorted artifact filename.
+  Release bundle assembly requires exactly both supported target names at one
+  version.
+- `install.sh --version <major.minor.patch>` detects the host and installs to
+  `$HOME/.local/bin` by default. `--bin-dir` changes the destination;
+  `--archive` and `--checksums` provide a paired offline verification path.
+- The installer requires `clang`, verifies checksum and exact archive entries,
+  verifies the staged binary version, and atomically replaces `mlg`. Passing a
+  different explicit version to the same installer is the update model.
+- The canonical local smoke covers deterministic rebuild, malformed/tampered
+  rejection, default and explicit prefixes, and installed-binary project
+  check/build/run/test. GitHub Actions defines macOS arm64 and Linux x86_64
+  native jobs plus a combined workflow bundle; published CI evidence is required
+  before P159 is closed.
+
+P159 tooling is implemented in the development tree, but v0.7 binary assets are
+not published until the release milestone. The exact contract is specified in
+`docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`.
+
 ## Implemented v0.6 Standard Library
 
 The approved v0.6 standard-library contract implements its compiler foundation,

@@ -233,6 +233,13 @@
   semantic/native binary matrix, formatter multi-record, failed test assertion와 JSONL
   consumer가 debug/release smoke를 통과한다. Full LSP는 P160의 v0.8 decision gate까지
   보류한다.
+- v0.7 P159 local implementation 완료: macOS arm64/Linux x86_64 target-named archive,
+  normalized tar/gzip metadata, exact `SHA256SUMS`와 `MIT OR Apache-2.0` payload를 추가했다.
+  Explicit-version installer는 HTTPS 또는 paired offline input을 사용하고 checksum, archive
+  entry set와 staged binary version을 검증한 뒤 default/explicit prefix의 `mlg`를 atomic
+  replace한다. Canonical local gate는 deterministic rebuild, tamper/malformed rejection,
+  reinstall과 installed project check/build/run/test를 검증한다. Pinned GitHub Actions native
+  matrix와 combined bundle은 정의됐으며 published run evidence가 남아 있다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -240,6 +247,7 @@
 ```sh
 scripts/check-agent-harness-interface.sh
 scripts/check.sh
+scripts/check-release-artifacts.sh
 scripts/check-release-binary.sh
 scripts/check-release-helpers.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
@@ -381,7 +389,7 @@ target/mallang/match-statement
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155-P157 evidence
+- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P159 implementation evidence
 - `docs/releases/`: v0.1.0부터 v0.6.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -390,8 +398,10 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P158에서 human/JSON이 공유할 structured diagnostic model과 CLI option placement를 고정한다.
-2. `mallang.diagnostic.v1` JSON Lines consumer fixture와 human output parity를 구현한다.
+1. P159 change를 public branch에 반영한 뒤 macOS arm64/Linux x86_64 artifact jobs와 combined
+   checksum bundle success를 확인해 P159을 닫는다.
+2. P160에서 new project format/test/release build/install workflow와 v0.8 hardening decision
+   gate를 닫는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -117,6 +117,10 @@ This repository is the Mallang language PoC workspace.
   `mallang.diagnostic.v1` JSON Lines for compiler-owned errors on stderr. Human
   diagnostics remain the default, and both forms share stage, message, source,
   UTF-8 byte span, and 1-based Unicode scalar location data.
+- v0.7 release tooling builds deterministic native archives for macOS arm64 and
+  Linux x86_64, writes `SHA256SUMS`, and installs or replaces `mlg` only after
+  checksum, archive shape, and binary version verification. `clang` remains a
+  runtime prerequisite for `mlg build`, `mlg run`, and `mlg test`.
 - Compiler-owned `std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, and
   `std/collections` packages resolve in both project and standalone mode. Their
   exact signatures, ownership checks, explicit generic specialization, opaque
@@ -281,6 +285,12 @@ Run the release binary smoke:
 scripts/check-release-binary.sh
 ```
 
+Run the release archive and clean-prefix installation smoke:
+
+```sh
+scripts/check-release-artifacts.sh
+```
+
 For a future approved source release, run the finalizer with the release
 message:
 
@@ -310,6 +320,42 @@ VERSION=0.7.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
+## v0.7 Binary Distribution
+
+P159 implements the distribution contract, but no v0.7 binary assets are
+published until the v0.7 release is created. A release bundle contains:
+
+- `mallang-v<version>-aarch64-apple-darwin.tar.gz`
+- `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
+- `SHA256SUMS`
+- `install.sh`
+
+After those assets are published, install or update an explicit version with:
+
+```sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v0.7.0/install.sh
+chmod +x install.sh
+./install.sh --version 0.7.0
+```
+
+The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
+for another prefix. The installer requires `clang`, downloads only the detected
+host archive over HTTPS, verifies its entry in `SHA256SUMS`, and atomically
+replaces the destination binary. Re-running it with another explicit version is
+the v0.7 update workflow.
+
+Build and inspect the current native development artifact with:
+
+```sh
+scripts/build-release-artifact.sh --output-dir target/mallang/release-artifacts
+python3 scripts/write-release-checksums.py \
+  --output target/mallang/release-artifacts/SHA256SUMS \
+  target/mallang/release-artifacts/*.tar.gz
+```
+
+Mallang is available under your choice of the MIT License or the Apache License,
+Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
+
 ## Layout
 
 - `SPEC.md`: published v0.6 contract plus implemented v0.7 development behavior.
@@ -318,7 +364,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P158 evidence.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P159 implementation evidence.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.

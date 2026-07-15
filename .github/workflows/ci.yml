@@ -24,7 +24,87 @@ jobs:
       - name: Install repository check tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ripgrep
+          sudo apt-get install --yes clang ripgrep
 
       - name: Run repository checks
         run: scripts/check.sh
+
+  release-artifact:
+    name: Release artifact (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20
+
+      - name: Install Linux compiler prerequisite
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang
+
+      - name: Check macOS compiler prerequisite
+        if: runner.os == 'macOS'
+        run: clang --version
+
+      - name: Build, install, and smoke release artifact
+        run: scripts/check-release-artifacts.sh
+
+      - name: Upload platform archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.target }}
+          path: target/mallang/release-artifact-smoke/first/mallang-v*-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  release-bundle:
+    name: Release checksum bundle
+    needs: release-artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download platform archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: target/mallang/release-input
+          merge-multiple: true
+
+      - name: Read package version
+        id: package
+        run: |
+          version="$(sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble checksum bundle
+        run: |
+          mkdir -p target/mallang/release-bundle
+          cp target/mallang/release-input/*.tar.gz target/mallang/release-bundle/
+          cp install.sh target/mallang/release-bundle/
+          python3 scripts/write-release-checksums.py \
+            --require-all-targets \
+            --output target/mallang/release-bundle/SHA256SUMS \
+            target/mallang/release-bundle/*.tar.gz
+
+      - name: Upload checksum bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mallang-v${{ steps.package.outputs.version }}-release
+          path: target/mallang/release-bundle/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

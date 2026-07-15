@@ -1364,3 +1364,23 @@ P157의 exact contract는
 P158의 exact contract는
 `docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`가 소유한다.
 다음 milestone은 P159 release artifacts and installation이다.
+
+## P159: Release Artifacts and Installation
+
+상태: implementation complete; published native CI pending
+
+- [x] `MIT OR Apache-2.0` package metadata와 archive license payload
+- [x] macOS arm64/Linux x86_64 host detection과 exact archive naming
+- [x] normalized tar/gzip metadata와 repeated-build byte identity
+- [x] one-target local 및 exact two-target release `SHA256SUMS` writer
+- [x] explicit-version HTTPS/offline installer와 default/explicit prefix
+- [x] checksum, archive entry set와 staged `mlg --version` verification
+- [x] atomic install/reinstall 및 installed project check/build/run/test smoke
+- [x] pinned GitHub Actions native matrix와 combined archive/checksum/installer bundle
+- [x] canonical local gate와 public docs synchronization
+- [ ] published macOS arm64/Linux x86_64 jobs와 combined bundle success 확인
+
+P159의 exact contract는
+`docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`가 소유한다. Local
+implementation은 완료됐고, public change에서 native matrix evidence를 확인한 뒤 P160 v0.7
+acceptance로 넘어간다.
