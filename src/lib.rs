@@ -18,8 +18,12 @@ pub mod token;
 
 pub use backend::{generate_c, generate_c_from_ir, CompileError};
 pub use compiler::{
-    check_project_sources, check_sources, generate_c_project_sources, generate_c_sources,
-    lower_project_sources, lower_sources, prepare_project_tests, CompilerError, CompilerStage,
+    check_project_sources, check_project_sources_with_diagnostics, check_sources,
+    check_sources_with_diagnostics, generate_c_project_sources,
+    generate_c_project_sources_with_diagnostics, generate_c_sources,
+    generate_c_sources_with_diagnostics, lower_project_sources,
+    lower_project_sources_with_diagnostics, lower_sources, lower_sources_with_diagnostics,
+    prepare_project_tests, prepare_project_tests_with_diagnostics, CompilerError, CompilerStage,
     ProjectTestSuite,
 };
 pub use diagnostic::{
@@ -27,7 +31,7 @@ pub use diagnostic::{
     DiagnosticStage, DIAGNOSTIC_SCHEMA,
 };
 pub use formatter::{format_source, FormatError};
-pub use frontend::{parse_sources, FrontendError};
+pub use frontend::{parse_sources, parse_sources_with_diagnostics, FrontendError};
 pub use ir::{lower, lower_test, IrError, IrProgram};
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
 pub use linker::{display_linked_message, link_project, link_standalone, LinkError};
@@ -35,7 +39,10 @@ pub use package::{
     build_package_graph, build_standalone_package_graph, Package, PackageDeclaration,
     PackageDeclarationKind, PackageError, PackageGraph, PackageImport, PackageTest,
 };
-pub use parser::{parse, parse_with_source, ParseError, Parser};
+pub use parser::{
+    parse, parse_with_diagnostics, parse_with_source, parse_with_source_diagnostics, ParseError,
+    Parser, MAX_PARSE_ERRORS_PER_SOURCE,
+};
 pub use project::{
     discover_project, PathDependency, Project, ProjectError, ProjectManifest, ProjectMetadata,
     MANIFEST_FILE,

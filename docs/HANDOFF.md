@@ -258,6 +258,12 @@
   byte gate는 아직 없고, P165 representative baseline은 minimal standalone,
   cleanup-heavy standalone, local-dependency app와 standard-library reference CLI로 고정했다.
   P162는 top-level recovery/aggregation, block recovery, cap/compatibility acceptance 순서다.
+- v0.8 P162 Slice A 완료: 기존 single-error API를 유지하면서 parser, frontend와 compiler에
+  ordered multi-diagnostic API를 추가했고 CLI `parse/check/ir/build/run/test`가 이를 사용한다.
+  Top-level recovery는 mandatory progress와 delimiter depth를 적용하고 source별 32개로
+  제한한다. 두 source human/JSON parity, stable source order와 frontend error 뒤 semantic
+  미진입을 unit/CLI regression으로 검증했다. Block statement recovery, receiver-method
+  recovery target, duplicate suppression과 cap compatibility acceptance는 Slice B/C에 남아 있다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -418,8 +424,10 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P162 Slice A에서 top-level parser recovery와 multi-source diagnostic aggregation을 구현한다.
-2. Slice B에서 delimiter-aware block statement recovery를 추가한다.
+1. P162 Slice B에서 delimiter-aware block statement recovery를 추가한다.
+2. Nested block/function literal과 receiver method가 top-level recovery target으로 오인되지
+   않도록 regression을 고정한다.
+3. Slice C에서 duplicate suppression과 32-error truncation compatibility acceptance를 닫는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

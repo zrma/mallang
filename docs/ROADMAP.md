@@ -1416,6 +1416,20 @@ approved v0.8 hardening의 P161 baseline inventory다.
 - [x] P162 top-level recovery, block recovery와 cap acceptance slice 분리
 
 P161의 current-source evidence와 P162 exact slice order는
-`docs/todo-v08-compiler-hardening/p161-baseline-inventory.md`가 소유한다. 다음 구현은 기존
-single-error API를 보존하면서 top-level parse report와 multi-source diagnostic aggregation을
-추가하는 P162 Slice A다.
+`docs/todo-v08-compiler-hardening/p161-baseline-inventory.md`가 소유한다.
+
+## P162: Parser Recovery and Multiple Diagnostics
+
+상태: in progress; Slice A complete (2026-07-16), Slice B next
+
+- [x] 기존 single-error convenience API 보존
+- [x] top-level recovery와 source별 최대 32개 parse diagnostic
+- [x] deterministic multi-source frontend/compiler aggregation
+- [x] CLI `parse/check/ir/build/run/test` multi-record 연결
+- [x] human/JSON parity와 semantic-stage 차단 회귀
+- [ ] delimiter-aware block statement recovery
+- [ ] duplicate suppression, cap truncation과 compatibility acceptance
+
+Slice A의 API, recovery boundary와 검증 증거는
+`docs/todo-v08-compiler-hardening/p162-parser-recovery.md`가 소유한다. 다음 구현은 nested
+block/function literal 오분류를 막으면서 statement boundary를 복구하는 Slice B다.

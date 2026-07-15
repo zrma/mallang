@@ -16,10 +16,26 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     Parser::new(tokens).parse_program()
 }
 
+pub fn parse_with_diagnostics(source: &str) -> Result<Program, Vec<ParseError>> {
+    let tokens = lex(source).map_err(|error| vec![ParseError::from_lex(error)])?;
+    Parser::new(tokens).parse_program_with_diagnostics()
+}
+
 pub fn parse_with_source(source: &str, source_id: SourceId) -> Result<Program, ParseError> {
     let tokens = lex_with_source(source, source_id).map_err(ParseError::from_lex)?;
     Parser::new(tokens).parse_program()
 }
+
+pub fn parse_with_source_diagnostics(
+    source: &str,
+    source_id: SourceId,
+) -> Result<Program, Vec<ParseError>> {
+    let tokens =
+        lex_with_source(source, source_id).map_err(|error| vec![ParseError::from_lex(error)])?;
+    Parser::new(tokens).parse_program_with_diagnostics()
+}
+
+pub const MAX_PARSE_ERRORS_PER_SOURCE: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -67,6 +83,12 @@ enum ParsedTypeDecl {
     Enum(EnumDecl),
 }
 
+enum ParsedTopLevelDecl {
+    Type(ParsedTypeDecl),
+    Function(Box<Function>),
+    Test(TestDecl),
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -78,15 +100,40 @@ impl Parser {
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
+        match self.parse_program_with_diagnostics() {
+            Ok(program) => Ok(program),
+            Err(errors) => Err(errors.into_iter().next().unwrap_or_else(|| {
+                ParseError::new("parser failed without a diagnostic", self.peek().span)
+            })),
+        }
+    }
+
+    pub fn parse_program_with_diagnostics(&mut self) -> Result<Program, Vec<ParseError>> {
         let start = self.peek().span;
+        let mut errors = Vec::new();
         let package = if self.at_keyword(Keyword::Package) {
-            Some(self.parse_package_decl()?)
+            let declaration_start = self.cursor;
+            match self.parse_package_decl() {
+                Ok(package) => Some(package),
+                Err(error) => {
+                    errors.push(error);
+                    self.recover_top_level(declaration_start);
+                    None
+                }
+            }
         } else {
             None
         };
         let mut imports = Vec::new();
-        while self.at_keyword(Keyword::Import) {
-            imports.push(self.parse_import_decl()?);
+        while self.at_keyword(Keyword::Import) && errors.len() < MAX_PARSE_ERRORS_PER_SOURCE {
+            let declaration_start = self.cursor;
+            match self.parse_import_decl() {
+                Ok(import) => imports.push(import),
+                Err(error) => {
+                    errors.push(error);
+                    self.recover_top_level(declaration_start);
+                }
+            }
         }
 
         let mut structs = Vec::new();
@@ -94,52 +141,27 @@ impl Parser {
         let mut functions = Vec::new();
         let mut tests = Vec::new();
 
-        while !self.at(TokenTag::Eof) {
-            let public_span = self.eat_keyword(Keyword::Pub);
-            let visibility = if public_span.is_some() {
-                Visibility::Public
-            } else {
-                Visibility::Package
-            };
-
-            if self.at_keyword(Keyword::Type) {
-                match self.parse_type_decl(visibility, public_span)? {
-                    ParsedTypeDecl::Struct(declaration) => structs.push(declaration),
-                    ParsedTypeDecl::Enum(declaration) => enums.push(declaration),
+        while !self.at(TokenTag::Eof) && errors.len() < MAX_PARSE_ERRORS_PER_SOURCE {
+            let declaration_start = self.cursor;
+            match self.parse_top_level_decl() {
+                Ok(ParsedTopLevelDecl::Type(ParsedTypeDecl::Struct(declaration))) => {
+                    structs.push(declaration);
                 }
-            } else if self.at_keyword(Keyword::Func) {
-                functions.push(self.parse_function(visibility, public_span)?);
-            } else if self.at_ident_named("test") {
-                if let Some(span) = public_span {
-                    return Err(ParseError::new("test declarations cannot be public", span));
+                Ok(ParsedTopLevelDecl::Type(ParsedTypeDecl::Enum(declaration))) => {
+                    enums.push(declaration);
                 }
-                tests.push(self.parse_test_declaration()?);
-            } else if public_span.is_some() {
-                return Err(ParseError::new(
-                    "expected `type` or `func` declaration after `pub`",
-                    self.peek().span,
-                ));
-            } else if self.at_keyword(Keyword::Package) {
-                return Err(ParseError::new(
-                    "package declaration must appear first",
-                    self.peek().span,
-                ));
-            } else if self.at_keyword(Keyword::Import) {
-                return Err(ParseError::new(
-                    "import declarations must appear before top-level declarations",
-                    self.peek().span,
-                ));
-            } else {
-                return Err(ParseError::new(
-                    "expected `type`, `func`, `test`, or `pub` declaration",
-                    self.peek().span,
-                ));
+                Ok(ParsedTopLevelDecl::Function(function)) => functions.push(*function),
+                Ok(ParsedTopLevelDecl::Test(test)) => tests.push(test),
+                Err(error) => {
+                    errors.push(error);
+                    self.recover_top_level(declaration_start);
+                }
             }
         }
 
         let end = self.peek().span;
         let span = start.join(end);
-        Ok(Program {
+        let program = Program {
             source_units: vec![SourceUnit {
                 package,
                 imports,
@@ -151,7 +173,114 @@ impl Parser {
             tests,
             source_spans: vec![span],
             span,
-        })
+        };
+
+        if errors.is_empty() {
+            Ok(program)
+        } else {
+            Err(errors)
+        }
+    }
+
+    fn parse_top_level_decl(&mut self) -> Result<ParsedTopLevelDecl, ParseError> {
+        let public_span = self.eat_keyword(Keyword::Pub);
+        let visibility = if public_span.is_some() {
+            Visibility::Public
+        } else {
+            Visibility::Package
+        };
+
+        if self.at_keyword(Keyword::Type) {
+            return self
+                .parse_type_decl(visibility, public_span)
+                .map(ParsedTopLevelDecl::Type);
+        }
+        if self.at_keyword(Keyword::Func) {
+            return self
+                .parse_function(visibility, public_span)
+                .map(Box::new)
+                .map(ParsedTopLevelDecl::Function);
+        }
+        if self.at_ident_named("test") {
+            if let Some(span) = public_span {
+                return Err(ParseError::new("test declarations cannot be public", span));
+            }
+            return self.parse_test_declaration().map(ParsedTopLevelDecl::Test);
+        }
+        if public_span.is_some() {
+            return Err(ParseError::new(
+                "expected `type` or `func` declaration after `pub`",
+                self.peek().span,
+            ));
+        }
+        if self.at_keyword(Keyword::Package) {
+            return Err(ParseError::new(
+                "package declaration must appear first",
+                self.peek().span,
+            ));
+        }
+        if self.at_keyword(Keyword::Import) {
+            return Err(ParseError::new(
+                "import declarations must appear before top-level declarations",
+                self.peek().span,
+            ));
+        }
+        Err(ParseError::new(
+            "expected `type`, `func`, `test`, or `pub` declaration",
+            self.peek().span,
+        ))
+    }
+
+    fn recover_top_level(&mut self, declaration_start: usize) {
+        self.cursor = declaration_start;
+        self.allow_struct_literals = true;
+        self.in_test_declaration = false;
+
+        let started_with_pub = self.at_keyword(Keyword::Pub);
+        self.advance();
+        if started_with_pub && (self.at_keyword(Keyword::Type) || self.at_keyword(Keyword::Func)) {
+            self.advance();
+        }
+
+        let mut paren_depth = 0usize;
+        let mut brace_depth = 0usize;
+        let mut bracket_depth = 0usize;
+
+        while !self.at(TokenTag::Eof) {
+            if paren_depth == 0
+                && brace_depth == 0
+                && bracket_depth == 0
+                && self.at_top_level_recovery_boundary()
+            {
+                return;
+            }
+
+            match &self.peek().kind {
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => paren_depth = paren_depth.saturating_sub(1),
+                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::RightBrace => {
+                    brace_depth = brace_depth.saturating_sub(1);
+                    if brace_depth == 0 {
+                        paren_depth = 0;
+                        bracket_depth = 0;
+                    }
+                }
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+            self.advance();
+        }
+    }
+
+    fn at_top_level_recovery_boundary(&self) -> bool {
+        self.at_keyword(Keyword::Pub)
+            || self.at_keyword(Keyword::Type)
+            || self.at_keyword(Keyword::Package)
+            || self.at_keyword(Keyword::Import)
+            || (self.at_keyword(Keyword::Func) && self.peek_next_is(TokenTag::Ident))
+            || (self.at_ident_named("test") && self.peek_next_is(TokenTag::Ident))
     }
 
     fn parse_package_decl(&mut self) -> Result<PackageDecl, ParseError> {
@@ -1779,6 +1908,46 @@ func add(a int, b int) int {
             program.functions[1].body.statements[0].kind,
             StmtKind::Return { .. }
         ));
+    }
+
+    #[test]
+    fn recovers_multiple_top_level_errors_in_source_order() {
+        let source = r#"
+func brokenOne(value int {}
+func good() {}
+func brokenTwo(value bool {}
+func main() {}
+"#;
+
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors
+                .iter()
+                .map(|error| error.message.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "expected `)` after function parameters",
+                "expected `)` after function parameters"
+            ]
+        );
+        assert!(errors[0].span.start < errors[1].span.start);
+        assert_eq!(parse(source).unwrap_err(), errors[0]);
+    }
+
+    #[test]
+    fn caps_top_level_errors_per_source() {
+        let source = (0..(MAX_PARSE_ERRORS_PER_SOURCE + 8))
+            .map(|index| format!("func broken{index}(value int {{}}\n"))
+            .collect::<String>();
+
+        let errors = parse_with_diagnostics(&source).unwrap_err();
+
+        assert_eq!(errors.len(), MAX_PARSE_ERRORS_PER_SOURCE);
+        assert!(errors
+            .windows(2)
+            .all(|pair| pair[0].span.start < pair[1].span.start));
     }
 
     #[test]

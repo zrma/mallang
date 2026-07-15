@@ -1,6 +1,6 @@
 # P161: Hardening Baseline Inventory
 
-상태: complete (2026-07-16); P162 next
+상태: complete (2026-07-16); P162 Slice A complete, Slice B next
 
 ## Frontend recovery baseline
 

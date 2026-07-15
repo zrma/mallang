@@ -83,6 +83,33 @@ if ! cmp -s "$OUT_DIR/semantic-human.stderr" "$OUT_DIR/semantic-rendered-human.s
   exit 1
 fi
 
+set +e
+"$MLG" --diagnostic-format=json check tests/fixtures/diagnostics/multiple-project \
+  >"$OUT_DIR/frontend-multiple.stdout" 2>"$OUT_DIR/frontend-multiple.stderr"
+multiple_json_status=$?
+"$MLG" check tests/fixtures/diagnostics/multiple-project \
+  >"$OUT_DIR/frontend-multiple-human.stdout" \
+  2>"$OUT_DIR/frontend-multiple-human.stderr"
+multiple_human_status=$?
+set -e
+if [[ "$multiple_json_status" -eq 0 ]] || [[ "$multiple_human_status" -eq 0 ]] || \
+  [[ -s "$OUT_DIR/frontend-multiple.stdout" ]] || \
+  [[ -s "$OUT_DIR/frontend-multiple-human.stdout" ]]; then
+  echo "multiple frontend diagnostic setup failed" >&2
+  exit 1
+fi
+python3 "$CONSUMER" --expect-stage frontend --expect-count 2 \
+  <"$OUT_DIR/frontend-multiple.stderr"
+python3 "$CONSUMER" --expect-stage frontend --expect-count 2 --render-human \
+  <"$OUT_DIR/frontend-multiple.stderr" \
+  >"$OUT_DIR/frontend-multiple-rendered-human.stderr"
+if ! cmp -s \
+  "$OUT_DIR/frontend-multiple-human.stderr" \
+  "$OUT_DIR/frontend-multiple-rendered-human.stderr"; then
+  echo "multiple human and JSON diagnostic rendering diverged" >&2
+  exit 1
+fi
+
 FMT_PROJECT="$OUT_DIR/fmt-project"
 rm -rf "$FMT_PROJECT"
 mkdir -p "$FMT_PROJECT/src/util"

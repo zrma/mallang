@@ -3,7 +3,7 @@ use std::fmt;
 use crate::{
     ast::Program,
     backend::generate_c_from_ir,
-    frontend::parse_sources,
+    frontend::parse_sources_with_diagnostics,
     ir::{lower, lower_test, IrProgram},
     linker::{display_linked_message, link_project, link_standalone},
     package::{build_package_graph, build_standalone_package_graph, PackageGraph, PackageTest},
@@ -94,13 +94,20 @@ pub fn check_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<Program, CompilerError> {
-    let (program, graph) = link_standalone_sources(sources, source_ids)?;
+    first_compiler_result(check_sources_with_diagnostics(sources, source_ids))
+}
+
+pub fn check_sources_with_diagnostics(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<Program, Vec<CompilerError>> {
+    let (program, graph) = link_standalone_sources_with_diagnostics(sources, source_ids)?;
     check_project(&program, &graph).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })?;
     Ok(program)
 }
@@ -109,20 +116,27 @@ pub fn lower_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<IrProgram, CompilerError> {
-    let (program, graph) = link_standalone_sources(sources, source_ids)?;
+    first_compiler_result(lower_sources_with_diagnostics(sources, source_ids))
+}
+
+pub fn lower_sources_with_diagnostics(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<IrProgram, Vec<CompilerError>> {
+    let (program, graph) = link_standalone_sources_with_diagnostics(sources, source_ids)?;
     let checked = check_project(&program, &graph).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })?;
     lower(&checked).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Ir,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })
 }
 
@@ -130,9 +144,21 @@ pub fn generate_c_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<String, CompilerError> {
-    let ir = lower_sources(sources, source_ids)?;
-    generate_c_from_ir(&ir)
-        .map_err(|error| CompilerError::new(CompilerStage::Backend, error.message, None))
+    first_compiler_result(generate_c_sources_with_diagnostics(sources, source_ids))
+}
+
+pub fn generate_c_sources_with_diagnostics(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<String, Vec<CompilerError>> {
+    let ir = lower_sources_with_diagnostics(sources, source_ids)?;
+    generate_c_from_ir(&ir).map_err(|error| {
+        vec![CompilerError::new(
+            CompilerStage::Backend,
+            error.message,
+            None,
+        )]
+    })
 }
 
 pub fn check_project_sources(
@@ -140,13 +166,23 @@ pub fn check_project_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<Program, CompilerError> {
-    let (program, graph) = link_project_sources(project, sources, source_ids)?;
+    first_compiler_result(check_project_sources_with_diagnostics(
+        project, sources, source_ids,
+    ))
+}
+
+pub fn check_project_sources_with_diagnostics(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<Program, Vec<CompilerError>> {
+    let (program, graph) = link_project_sources_with_diagnostics(project, sources, source_ids)?;
     check_project_library(&program, &graph).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })?;
     Ok(program)
 }
@@ -156,20 +192,30 @@ pub fn lower_project_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<IrProgram, CompilerError> {
-    let (program, graph) = link_project_sources(project, sources, source_ids)?;
+    first_compiler_result(lower_project_sources_with_diagnostics(
+        project, sources, source_ids,
+    ))
+}
+
+pub fn lower_project_sources_with_diagnostics(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<IrProgram, Vec<CompilerError>> {
+    let (program, graph) = link_project_sources_with_diagnostics(project, sources, source_ids)?;
     let checked = check_project(&program, &graph).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })?;
     lower(&checked).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Ir,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })
 }
 
@@ -178,13 +224,23 @@ pub fn generate_c_project_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<String, CompilerError> {
-    let ir = lower_project_sources(project, sources, source_ids)?;
+    first_compiler_result(generate_c_project_sources_with_diagnostics(
+        project, sources, source_ids,
+    ))
+}
+
+pub fn generate_c_project_sources_with_diagnostics(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<String, Vec<CompilerError>> {
+    let ir = lower_project_sources_with_diagnostics(project, sources, source_ids)?;
     generate_c_from_ir(&ir).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Backend,
             display_linked_message(&error.message),
             None,
-        )
+        )]
     })
 }
 
@@ -193,20 +249,30 @@ pub fn prepare_project_tests(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<ProjectTestSuite, CompilerError> {
-    let (program, graph) = link_project_sources(project, sources, source_ids)?;
+    first_compiler_result(prepare_project_tests_with_diagnostics(
+        project, sources, source_ids,
+    ))
+}
+
+pub fn prepare_project_tests_with_diagnostics(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<ProjectTestSuite, Vec<CompilerError>> {
+    let (program, graph) = link_project_sources_with_diagnostics(project, sources, source_ids)?;
     let checked = check_project_library(&program, &graph).map_err(|error| {
-        CompilerError::new(
+        vec![CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
             error.span,
-        )
+        )]
     })?;
     if checked.program.tests.len() != graph.tests().len() {
-        return Err(CompilerError::new(
+        return Err(vec![CompilerError::new(
             CompilerStage::Semantic,
             "test inventory changed during semantic preparation",
             None,
-        ));
+        )]);
     }
     Ok(ProjectTestSuite {
         checked,
@@ -214,36 +280,75 @@ pub fn prepare_project_tests(
     })
 }
 
-fn link_project_sources(
+fn link_project_sources_with_diagnostics(
     project: &Project,
     sources: &SourceMap,
     source_ids: &[SourceId],
-) -> Result<(Program, PackageGraph), CompilerError> {
-    let program = parse_program(sources, source_ids)?;
-    let graph = build_package_graph(project, sources, &program)
-        .map_err(|error| CompilerError::new(CompilerStage::Package, error.message, error.span))?;
-    let mut program = link_project(project, &graph, &program)
-        .map_err(|error| CompilerError::new(CompilerStage::Link, error.message, error.span))?;
+) -> Result<(Program, PackageGraph), Vec<CompilerError>> {
+    let program = parse_program_with_diagnostics(sources, source_ids)?;
+    let graph = build_package_graph(project, sources, &program).map_err(|error| {
+        vec![CompilerError::new(
+            CompilerStage::Package,
+            error.message,
+            error.span,
+        )]
+    })?;
+    let mut program = link_project(project, &graph, &program).map_err(|error| {
+        vec![CompilerError::new(
+            CompilerStage::Link,
+            error.message,
+            error.span,
+        )]
+    })?;
     augment_program(&mut program, &graph);
     Ok((program, graph))
 }
 
-fn link_standalone_sources(
+fn link_standalone_sources_with_diagnostics(
     sources: &SourceMap,
     source_ids: &[SourceId],
-) -> Result<(Program, PackageGraph), CompilerError> {
-    let program = parse_program(sources, source_ids)?;
-    let graph = build_standalone_package_graph(sources, &program)
-        .map_err(|error| CompilerError::new(CompilerStage::Package, error.message, error.span))?;
-    let mut program = link_standalone(&graph, &program)
-        .map_err(|error| CompilerError::new(CompilerStage::Link, error.message, error.span))?;
+) -> Result<(Program, PackageGraph), Vec<CompilerError>> {
+    let program = parse_program_with_diagnostics(sources, source_ids)?;
+    let graph = build_standalone_package_graph(sources, &program).map_err(|error| {
+        vec![CompilerError::new(
+            CompilerStage::Package,
+            error.message,
+            error.span,
+        )]
+    })?;
+    let mut program = link_standalone(&graph, &program).map_err(|error| {
+        vec![CompilerError::new(
+            CompilerStage::Link,
+            error.message,
+            error.span,
+        )]
+    })?;
     augment_program(&mut program, &graph);
     Ok((program, graph))
 }
 
-fn parse_program(sources: &SourceMap, source_ids: &[SourceId]) -> Result<Program, CompilerError> {
-    parse_sources(sources, source_ids)
-        .map_err(|error| CompilerError::new(CompilerStage::Frontend, error.message, error.span))
+fn parse_program_with_diagnostics(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<Program, Vec<CompilerError>> {
+    parse_sources_with_diagnostics(sources, source_ids).map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| CompilerError::new(CompilerStage::Frontend, error.message, error.span))
+            .collect()
+    })
+}
+
+fn first_compiler_result<T>(result: Result<T, Vec<CompilerError>>) -> Result<T, CompilerError> {
+    result.map_err(|errors| {
+        errors.into_iter().next().unwrap_or_else(|| {
+            CompilerError::new(
+                CompilerStage::Frontend,
+                "compiler failed without a diagnostic",
+                None,
+            )
+        })
+    })
 }
 
 #[cfg(test)]
@@ -348,6 +453,34 @@ mod tests {
 
         assert_eq!(error.stage, CompilerStage::Frontend);
         assert_eq!(error.span.map(|span| span.source), Some(broken));
+    }
+
+    #[test]
+    fn reports_all_frontend_errors_before_semantic_analysis() {
+        let mut sources = SourceMap::new();
+        let first = sources.add_file("src/a.mlg", "func brokenA(value int {}\nfunc helper() {}\n");
+        let second = sources.add_file(
+            "src/b.mlg",
+            "func brokenB(value bool {}\nfunc main() { print(missing) }\n",
+        );
+
+        let errors = check_sources_with_diagnostics(&sources, &[first, second]).unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors
+            .iter()
+            .all(|error| error.stage == CompilerStage::Frontend));
+        assert_eq!(
+            errors
+                .iter()
+                .map(|error| error.span.map(|span| span.source))
+                .collect::<Vec<_>>(),
+            vec![Some(first), Some(second)]
+        );
+        assert_eq!(
+            check_sources(&sources, &[first, second]).unwrap_err(),
+            errors[0]
+        );
     }
 
     #[test]

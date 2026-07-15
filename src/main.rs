@@ -8,11 +8,12 @@ use std::{
 };
 
 use mallang::{
-    check_project_sources, check_sources, discover_project, format_source,
-    generate_c_project_sources, generate_c_sources, lex_with_source, load_source_files,
-    lower_sources, parse_sources, prepare_project_tests, CompilerError, Diagnostic,
-    DiagnosticStage, FormatError, FrontendError, PackageTest, Project, SourceId, SourceLoadError,
-    SourceMap,
+    check_project_sources_with_diagnostics, check_sources_with_diagnostics, discover_project,
+    format_source, generate_c_project_sources_with_diagnostics,
+    generate_c_sources_with_diagnostics, lex_with_source, load_source_files,
+    lower_sources_with_diagnostics, parse_sources_with_diagnostics,
+    prepare_project_tests_with_diagnostics, CompilerError, Diagnostic, DiagnosticStage,
+    FormatError, FrontendError, PackageTest, Project, SourceId, SourceLoadError, SourceMap,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,16 +228,16 @@ fn run_check(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_input_arg(program, "check", args)?;
     match load_compilation_input(path)? {
         CompilationInput::Standalone { sources, source_id } => {
-            check_sources(&sources, &[source_id])
-                .map_err(|error| compiler_diagnostic(&sources, None, path, error))?;
+            check_sources_with_diagnostics(&sources, &[source_id])
+                .map_err(|errors| compiler_diagnostics(&sources, None, path, errors))?;
         }
         CompilationInput::Project {
             project,
             sources,
             source_ids,
         } => {
-            check_project_sources(&project, &sources, &source_ids)
-                .map_err(|error| compiler_diagnostic(&sources, Some(&project), path, error))?;
+            check_project_sources_with_diagnostics(&project, &sources, &source_ids)
+                .map_err(|errors| compiler_diagnostics(&sources, Some(&project), path, errors))?;
         }
     }
     println!("{path}: ok");
@@ -367,8 +368,8 @@ fn format_format_error(display_path: &Path, source: &str, error: FormatError) ->
 fn run_ir(program: &str, args: &[String]) -> CliResult<()> {
     let path = single_source_arg(program, "ir", args)?;
     let (sources, source_id) = load_source(path)?;
-    let ir = lower_sources(&sources, &[source_id])
-        .map_err(|error| compiler_diagnostic(&sources, None, path, error))?;
+    let ir = lower_sources_with_diagnostics(&sources, &[source_id])
+        .map_err(|errors| compiler_diagnostics(&sources, None, path, errors))?;
     println!("{ir:#?}");
     Ok(())
 }
@@ -472,8 +473,11 @@ fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat)
     let project_sources = project.compilation_source_files();
     let loaded = load_source_files(project_sources.into_iter().chain(test_files.iter()))
         .map_err(|error| project_source_load_error(&project, error))?;
-    let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids)
-        .map_err(|error| compiler_diagnostic(&loaded.sources, Some(&project), input, error))?;
+    let suite =
+        prepare_project_tests_with_diagnostics(&project, &loaded.sources, &loaded.source_ids)
+            .map_err(|errors| {
+                compiler_diagnostics(&loaded.sources, Some(&project), input, errors)
+            })?;
     let selected = select_tests(suite.tests(), exact)?;
     let artifacts = build_test_artifacts(&project, &loaded.sources, &suite, &selected, input)?;
 
@@ -666,8 +670,8 @@ fn compile_input(
 ) -> CliResult<PathBuf> {
     let (c_source, artifact_name, build_dir) = match load_compilation_input(input_path)? {
         CompilationInput::Standalone { sources, source_id } => {
-            let c_source = generate_c_sources(&sources, &[source_id])
-                .map_err(|error| compiler_diagnostic(&sources, None, input_path, error))?;
+            let c_source = generate_c_sources_with_diagnostics(&sources, &[source_id])
+                .map_err(|errors| compiler_diagnostics(&sources, None, input_path, errors))?;
             (
                 c_source,
                 source_stem(input_path).to_string(),
@@ -683,9 +687,10 @@ fn compile_input(
                 .require_entrypoint()
                 .map_err(|error| CliError::input(error.to_string()))?;
             let c_source =
-                generate_c_project_sources(&project, &sources, &source_ids).map_err(|error| {
-                    compiler_diagnostic(&sources, Some(&project), input_path, error)
-                })?;
+                generate_c_project_sources_with_diagnostics(&project, &sources, &source_ids)
+                    .map_err(|errors| {
+                        compiler_diagnostics(&sources, Some(&project), input_path, errors)
+                    })?;
             let artifact_name = project.name().to_string();
             let build_dir = project.root().join("target/mallang");
             (c_source, artifact_name, build_dir)
@@ -811,7 +816,17 @@ fn parse_loaded_source(
     sources: &SourceMap,
     source_id: SourceId,
 ) -> CliResult<mallang::ast::Program> {
-    parse_sources(sources, &[source_id]).map_err(|error| frontend_diagnostic(sources, error).into())
+    parse_sources_with_diagnostics(sources, &[source_id])
+        .map_err(|errors| frontend_diagnostics(sources, errors))
+}
+
+fn frontend_diagnostics(sources: &SourceMap, errors: Vec<FrontendError>) -> CliError {
+    CliError::many(
+        errors
+            .into_iter()
+            .map(|error| frontend_diagnostic(sources, error))
+            .collect(),
+    )
 }
 
 fn frontend_diagnostic(sources: &SourceMap, error: FrontendError) -> Diagnostic {
@@ -850,6 +865,20 @@ fn compiler_diagnostic(
         }
         None => Diagnostic::error(error.stage.into(), error.message).with_path(fallback_path),
     }
+}
+
+fn compiler_diagnostics(
+    sources: &SourceMap,
+    project: Option<&Project>,
+    fallback_path: &str,
+    errors: Vec<CompilerError>,
+) -> CliError {
+    CliError::many(
+        errors
+            .into_iter()
+            .map(|error| compiler_diagnostic(sources, project, fallback_path, error))
+            .collect(),
+    )
 }
 
 fn source_diagnostic(

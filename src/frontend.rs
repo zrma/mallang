@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     ast::Program,
-    parser::parse_with_source,
+    parser::parse_with_source_diagnostics,
     source::SourceMap,
     token::{SourceId, Span},
 };
@@ -49,29 +49,56 @@ pub fn parse_sources(
     sources: &SourceMap,
     source_ids: &[SourceId],
 ) -> Result<Program, FrontendError> {
+    match parse_sources_with_diagnostics(sources, source_ids) {
+        Ok(program) => Ok(program),
+        Err(errors) => Err(errors.into_iter().next().unwrap_or_else(|| {
+            FrontendError::without_span("frontend failed without a diagnostic")
+        })),
+    }
+}
+
+pub fn parse_sources_with_diagnostics(
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+) -> Result<Program, Vec<FrontendError>> {
     if source_ids.is_empty() {
-        return Err(FrontendError::without_span(
+        return Err(vec![FrontendError::without_span(
             "cannot parse a program without source files",
-        ));
+        )]);
     }
 
     let mut programs = Vec::with_capacity(source_ids.len());
+    let mut errors = Vec::new();
     for source_id in source_ids {
-        let source = sources.file(*source_id).ok_or_else(|| {
-            FrontendError::without_span(format!(
+        let Some(source) = sources.file(*source_id) else {
+            errors.push(FrontendError::without_span(format!(
                 "source ID {} is not registered",
                 source_id.index()
-            ))
-        })?;
-        let program = parse_with_source(source.text(), *source_id)
-            .map_err(|error| FrontendError::with_span(error.message, error.span))?;
-        programs.push(program);
+            )));
+            continue;
+        };
+        match parse_with_source_diagnostics(source.text(), *source_id) {
+            Ok(program) => programs.push(program),
+            Err(parse_errors) => {
+                errors.extend(
+                    parse_errors
+                        .into_iter()
+                        .map(|error| FrontendError::with_span(error.message, error.span)),
+                );
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
     }
 
     let mut programs = programs.into_iter();
-    let mut merged = programs
-        .next()
-        .expect("non-empty source list must produce one parsed program");
+    let Some(mut merged) = programs.next() else {
+        return Err(vec![FrontendError::without_span(
+            "frontend produced no program for a non-empty source set",
+        )]);
+    };
     for mut program in programs {
         merged.source_units.append(&mut program.source_units);
         merged.structs.append(&mut program.structs);
@@ -171,6 +198,34 @@ mod tests {
         let error = parse_sources(&sources, &[first, second]).unwrap_err();
 
         assert_eq!(error.span.map(|span| span.source), Some(second));
+    }
+
+    #[test]
+    fn aggregates_parse_errors_across_sources_in_input_order() {
+        let mut sources = SourceMap::new();
+        let first = sources.add_file(
+            "src/a.mlg",
+            "func brokenA(value int {}\nfunc brokenB(value bool {}\n",
+        );
+        let second = sources.add_file(
+            "src/b.mlg",
+            "func brokenC(value string {}\nfunc main() {}\n",
+        );
+
+        let errors = parse_sources_with_diagnostics(&sources, &[first, second]).unwrap_err();
+
+        assert_eq!(errors.len(), 3);
+        assert_eq!(
+            errors
+                .iter()
+                .map(|error| error.span.map(|span| span.source))
+                .collect::<Vec<_>>(),
+            vec![Some(first), Some(first), Some(second)]
+        );
+        assert_eq!(
+            parse_sources(&sources, &[first, second]).unwrap_err(),
+            errors[0]
+        );
     }
 
     #[test]
