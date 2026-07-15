@@ -1,6 +1,6 @@
 # P162: Parser Recovery and Multiple Diagnostics
 
-상태: in progress; Slice A complete (2026-07-16), Slice B next
+상태: in progress; Slice A-B complete (2026-07-16), Slice C next
 
 ## Slice A contract
 
@@ -27,10 +27,23 @@ contextual `test`, `package`, `import` boundary로 이동한다. Malformed funct
 closing brace를 만나면 해당 declaration에서 닫히지 않은 parenthesis/bracket depth를
 폐기해 다음 top-level declaration을 찾는다.
 
-Recovery target에서 receiver method의 `func (` 형태는 의도적으로 제외했다. Slice A는
-inner function literal을 top-level method로 오인하지 않는 보수적인 named-function
-boundary만 소유한다. Block 내부 statement recovery와 receiver-method 재개는 Slice B에서
-nested delimiter regression과 함께 다룬다.
+Recovery target에서 receiver method의 `func (` 형태는 의도적으로 제외했다. Inner
+function literal과 receiver method를 구분할 newline token이 없으므로 보수적인 named-function
+boundary만 사용한다.
+
+## Slice B contract
+
+Block parser는 source 전체 diagnostic accumulator를 공유하고 다음 경계만 사용한다.
+
+- depth 0의 explicit `;`를 소비한 뒤 다음 statement로 이동
+- brace depth 0의 `}`를 unmatched parenthesis/bracket보다 우선해 현재 block 종료로 처리
+- `return`, `for`, `break`, `continue`, `mut` keyword에서만 statement parsing 재개
+- named `func` 등 unambiguous top-level declaration이 block 안에서 보이면 missing `}`를
+  보고하고 top-level recovery에 위임
+- EOF 또는 identifier-led ambiguity에 안전한 경계가 없으면 나머지 block을 폐기
+
+`if`와 `match`는 expression 위치에도 올 수 있고 identifier-led expression은 newline 없이
+다음 statement와 구분할 수 없으므로 recovery starter로 사용하지 않는다.
 
 ## Evidence
 
@@ -38,19 +51,17 @@ nested delimiter regression과 함께 다룬다.
 - parser cap test: source 하나의 40개 malformed declaration에서 정확히 32개 diagnostic
 - frontend unit test: 두 source의 오류가 caller-provided source order로 집계됨
 - compiler unit test: frontend 오류만 반환되고 뒤의 unknown symbol semantic 오류는 없음
-- CLI fixture: 두 project source의 human/JSON frontend diagnostic이 같은 두 record를 같은
-  순서로 렌더링하고 non-zero로 종료함
-- `cargo test --all-targets`: 563 tests passed
+- block unit tests: 한 block의 복수 오류, source-wide 32-error cap, unmatched parenthesis에서
+  현재 block `}` 우선 처리
+- nested regression: inner function literal 유지, unclosed block의 named-function handoff,
+  receiver method의 ambiguous target 제외
+- CLI fixture: 두 project source의 top-level/block human/JSON frontend diagnostic 4개가 같은
+  순서로 렌더링되고 non-zero로 종료함
+- `cargo test --all-targets`: 569 tests passed
 - `cargo clippy --all-targets -- -D warnings`: passed
 - `scripts/check-diagnostics.sh target/debug/mlg`: passed
 
 ## Remaining P162 work
-
-### Slice B: block statement recovery
-
-- `;`, current block `}`, unambiguous statement keyword를 사용한 delimiter-aware recovery
-- identifier-led ambiguity에서는 block을 포기하고 top-level recovery로 위임
-- nested block/function literal이 top-level declaration으로 오인되지 않는 regression
 
 ### Slice C: cap and compatibility acceptance
 

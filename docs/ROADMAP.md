@@ -1420,16 +1420,17 @@ P161의 current-source evidence와 P162 exact slice order는
 
 ## P162: Parser Recovery and Multiple Diagnostics
 
-상태: in progress; Slice A complete (2026-07-16), Slice B next
+상태: in progress; Slice A-B complete (2026-07-16), Slice C next
 
 - [x] 기존 single-error convenience API 보존
 - [x] top-level recovery와 source별 최대 32개 parse diagnostic
 - [x] deterministic multi-source frontend/compiler aggregation
 - [x] CLI `parse/check/ir/build/run/test` multi-record 연결
 - [x] human/JSON parity와 semantic-stage 차단 회귀
-- [ ] delimiter-aware block statement recovery
+- [x] delimiter-aware block statement recovery
+- [x] nested function literal, unclosed block와 receiver method ambiguity 회귀
 - [ ] duplicate suppression, cap truncation과 compatibility acceptance
 
 Slice A의 API, recovery boundary와 검증 증거는
-`docs/todo-v08-compiler-hardening/p162-parser-recovery.md`가 소유한다. 다음 구현은 nested
-block/function literal 오분류를 막으면서 statement boundary를 복구하는 Slice B다.
+`docs/todo-v08-compiler-hardening/p162-parser-recovery.md`가 소유한다. 다음 구현은 duplicate
+suppression, truncation record와 full command compatibility를 고정하는 Slice C다.

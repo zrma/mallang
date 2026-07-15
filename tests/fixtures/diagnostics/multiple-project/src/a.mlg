@@ -2,4 +2,7 @@ package main
 
 func brokenA(value int {}
 
-func helper() {}
+func helper() {
+    first := ;
+    second := ;
+}

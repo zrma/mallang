@@ -76,6 +76,7 @@ pub struct Parser {
     cursor: usize,
     allow_struct_literals: bool,
     in_test_declaration: bool,
+    diagnostics: Vec<ParseError>,
 }
 
 enum ParsedTypeDecl {
@@ -89,6 +90,13 @@ enum ParsedTopLevelDecl {
     Test(TestDecl),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockRecovery {
+    Continue,
+    EndBlock,
+    AbandonToTopLevel,
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -96,6 +104,7 @@ impl Parser {
             cursor: 0,
             allow_struct_literals: true,
             in_test_declaration: false,
+            diagnostics: Vec::new(),
         }
     }
 
@@ -110,13 +119,13 @@ impl Parser {
 
     pub fn parse_program_with_diagnostics(&mut self) -> Result<Program, Vec<ParseError>> {
         let start = self.peek().span;
-        let mut errors = Vec::new();
+        self.diagnostics.clear();
         let package = if self.at_keyword(Keyword::Package) {
             let declaration_start = self.cursor;
             match self.parse_package_decl() {
                 Ok(package) => Some(package),
                 Err(error) => {
-                    errors.push(error);
+                    self.push_diagnostic(error);
                     self.recover_top_level(declaration_start);
                     None
                 }
@@ -125,12 +134,12 @@ impl Parser {
             None
         };
         let mut imports = Vec::new();
-        while self.at_keyword(Keyword::Import) && errors.len() < MAX_PARSE_ERRORS_PER_SOURCE {
+        while self.at_keyword(Keyword::Import) && !self.diagnostic_cap_reached() {
             let declaration_start = self.cursor;
             match self.parse_import_decl() {
                 Ok(import) => imports.push(import),
                 Err(error) => {
-                    errors.push(error);
+                    self.push_diagnostic(error);
                     self.recover_top_level(declaration_start);
                 }
             }
@@ -141,7 +150,7 @@ impl Parser {
         let mut functions = Vec::new();
         let mut tests = Vec::new();
 
-        while !self.at(TokenTag::Eof) && errors.len() < MAX_PARSE_ERRORS_PER_SOURCE {
+        while !self.at(TokenTag::Eof) && !self.diagnostic_cap_reached() {
             let declaration_start = self.cursor;
             match self.parse_top_level_decl() {
                 Ok(ParsedTopLevelDecl::Type(ParsedTypeDecl::Struct(declaration))) => {
@@ -153,7 +162,7 @@ impl Parser {
                 Ok(ParsedTopLevelDecl::Function(function)) => functions.push(*function),
                 Ok(ParsedTopLevelDecl::Test(test)) => tests.push(test),
                 Err(error) => {
-                    errors.push(error);
+                    self.push_diagnostic(error);
                     self.recover_top_level(declaration_start);
                 }
             }
@@ -175,11 +184,22 @@ impl Parser {
             span,
         };
 
-        if errors.is_empty() {
+        let diagnostics = std::mem::take(&mut self.diagnostics);
+        if diagnostics.is_empty() {
             Ok(program)
         } else {
-            Err(errors)
+            Err(diagnostics)
         }
+    }
+
+    fn push_diagnostic(&mut self, error: ParseError) {
+        if !self.diagnostic_cap_reached() {
+            self.diagnostics.push(error);
+        }
+    }
+
+    fn diagnostic_cap_reached(&self) -> bool {
+        self.diagnostics.len() >= MAX_PARSE_ERRORS_PER_SOURCE
     }
 
     fn parse_top_level_decl(&mut self) -> Result<ParsedTopLevelDecl, ParseError> {
@@ -248,8 +268,8 @@ impl Parser {
 
         while !self.at(TokenTag::Eof) {
             if paren_depth == 0
-                && brace_depth == 0
                 && bracket_depth == 0
+                && brace_depth <= 1
                 && self.at_top_level_recovery_boundary()
             {
                 return;
@@ -675,9 +695,45 @@ impl Parser {
         let start = self.expect(TokenTag::LeftBrace, "expected `{`")?;
         let mut statements = Vec::new();
 
-        while !self.at(TokenTag::RightBrace) && !self.at(TokenTag::Eof) {
-            statements.push(self.parse_statement()?);
-            while self.eat(TokenTag::Semicolon).is_some() {}
+        while !self.at(TokenTag::RightBrace)
+            && !self.at(TokenTag::Eof)
+            && !self.diagnostic_cap_reached()
+        {
+            if self.at_top_level_recovery_boundary() {
+                return Err(ParseError::new(
+                    "expected `}` after block",
+                    self.peek().span,
+                ));
+            }
+            let statement_start = self.cursor;
+            match self.parse_statement() {
+                Ok(statement) => {
+                    statements.push(statement);
+                    while self.eat(TokenTag::Semicolon).is_some() {}
+                }
+                Err(error) => match self.recover_block_statement(statement_start) {
+                    BlockRecovery::Continue | BlockRecovery::EndBlock => {
+                        self.push_diagnostic(error);
+                    }
+                    BlockRecovery::AbandonToTopLevel => {
+                        self.push_diagnostic(error);
+                        return Err(ParseError::new(
+                            "expected `}` after block",
+                            self.peek().span,
+                        ));
+                    }
+                },
+            }
+        }
+
+        if self.diagnostic_cap_reached() {
+            while !self.at(TokenTag::Eof) {
+                self.advance();
+            }
+            return Ok(Block {
+                statements,
+                span: start.join(self.peek().span),
+            });
         }
 
         let end = self.expect(TokenTag::RightBrace, "expected `}` after block")?;
@@ -685,6 +741,59 @@ impl Parser {
             statements,
             span: start.join(end),
         })
+    }
+
+    fn recover_block_statement(&mut self, statement_start: usize) -> BlockRecovery {
+        self.cursor = statement_start;
+        self.allow_struct_literals = true;
+
+        if self.at_top_level_recovery_boundary() {
+            return BlockRecovery::AbandonToTopLevel;
+        }
+
+        self.advance();
+        let mut paren_depth = 0usize;
+        let mut brace_depth = 0usize;
+        let mut bracket_depth = 0usize;
+
+        while !self.at(TokenTag::Eof) {
+            if brace_depth == 0 && self.at(TokenTag::RightBrace) {
+                return BlockRecovery::EndBlock;
+            }
+            if paren_depth == 0 && brace_depth == 0 && bracket_depth == 0 {
+                if self.at(TokenTag::Semicolon) {
+                    self.advance();
+                    return BlockRecovery::Continue;
+                }
+                if self.at_unambiguous_statement_start() {
+                    return BlockRecovery::Continue;
+                }
+                if self.at_top_level_recovery_boundary() {
+                    return BlockRecovery::AbandonToTopLevel;
+                }
+            }
+
+            match &self.peek().kind {
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => paren_depth = paren_depth.saturating_sub(1),
+                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::RightBrace => brace_depth = brace_depth.saturating_sub(1),
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+            self.advance();
+        }
+
+        BlockRecovery::AbandonToTopLevel
+    }
+
+    fn at_unambiguous_statement_start(&self) -> bool {
+        self.at_keyword(Keyword::Return)
+            || self.at_keyword(Keyword::For)
+            || self.at_keyword(Keyword::Break)
+            || self.at_keyword(Keyword::Continue)
+            || self.at_keyword(Keyword::Mut)
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -1948,6 +2057,119 @@ func main() {}
         assert!(errors
             .windows(2)
             .all(|pair| pair[0].span.start < pair[1].span.start));
+    }
+
+    #[test]
+    fn recovers_multiple_statement_errors_inside_one_block() {
+        let source = r#"
+func main() {
+    first := ;
+    second := ;
+    print("unreached")
+}
+"#;
+
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors
+            .iter()
+            .all(|error| error.message == "expected expression"));
+        assert!(errors[0].span.start < errors[1].span.start);
+    }
+
+    #[test]
+    fn treats_the_current_block_end_as_a_recovery_boundary() {
+        let errors = parse_with_diagnostics("func main() {\n    print(1\n}\n").unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "expected `)` after call arguments");
+    }
+
+    #[test]
+    fn caps_combined_statement_errors_per_source() {
+        let statements = (0..(MAX_PARSE_ERRORS_PER_SOURCE + 8))
+            .map(|index| format!("    broken{index} := ;\n"))
+            .collect::<String>();
+        let source = format!("func main() {{\n{statements}}}\n");
+
+        let errors = parse_with_diagnostics(&source).unwrap_err();
+
+        assert_eq!(errors.len(), MAX_PARSE_ERRORS_PER_SOURCE);
+        assert!(errors
+            .windows(2)
+            .all(|pair| pair[0].span.start < pair[1].span.start));
+    }
+
+    #[test]
+    fn keeps_nested_function_literals_inside_block_recovery() {
+        let source = r#"
+func main() {
+    run := func() {
+        inner := ;
+        print("inner")
+    }
+    outer := ;
+}
+
+func next() {}
+"#;
+
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors
+            .iter()
+            .all(|error| error.message == "expected expression"));
+        assert!(errors[0].span.start < errors[1].span.start);
+    }
+
+    #[test]
+    fn abandons_an_unclosed_block_at_the_next_named_function() {
+        let source = r#"
+func first() {
+    broken := ;
+func second(value int {}
+func main() {}
+"#;
+
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(
+            errors
+                .iter()
+                .map(|error| error.message.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "expected expression",
+                "expected `}` after block",
+                "expected `)` after function parameters"
+            ]
+        );
+        assert!(errors
+            .windows(2)
+            .all(|pair| pair[0].span.start < pair[1].span.start));
+    }
+
+    #[test]
+    fn does_not_use_receiver_methods_as_ambiguous_recovery_targets() {
+        let source = r#"
+type Counter struct {}
+
+func brokenOne(value int {}
+func (con self Counter) Value() int {
+    return 1
+}
+func brokenTwo(value int {}
+func main() {}
+"#;
+
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert!(errors
+            .iter()
+            .all(|error| error.message == "expected `)` after function parameters"));
     }
 
     #[test]

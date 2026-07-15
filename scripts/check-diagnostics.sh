@@ -98,9 +98,9 @@ if [[ "$multiple_json_status" -eq 0 ]] || [[ "$multiple_human_status" -eq 0 ]] |
   echo "multiple frontend diagnostic setup failed" >&2
   exit 1
 fi
-python3 "$CONSUMER" --expect-stage frontend --expect-count 2 \
+python3 "$CONSUMER" --expect-stage frontend --expect-count 4 \
   <"$OUT_DIR/frontend-multiple.stderr"
-python3 "$CONSUMER" --expect-stage frontend --expect-count 2 --render-human \
+python3 "$CONSUMER" --expect-stage frontend --expect-count 4 --render-human \
   <"$OUT_DIR/frontend-multiple.stderr" \
   >"$OUT_DIR/frontend-multiple-rendered-human.stderr"
 if ! cmp -s \
