@@ -1,6 +1,6 @@
 # P163: Compiler and IR Invariant Defense
 
-상태: complete (2026-07-16); P164 complete, P165 next
+상태: complete (2026-07-16); P164-P166 complete, released as v0.8.0
 
 ## Audit result
 

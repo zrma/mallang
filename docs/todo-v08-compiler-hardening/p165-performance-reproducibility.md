@@ -1,6 +1,6 @@
 # P165: Performance and Reproducibility Baseline
 
-상태: complete (2026-07-16)
+상태: complete (2026-07-16); P166 complete, released as v0.8.0
 
 ## Measurement contract
 
@@ -46,8 +46,8 @@ Native executable byte identity는 host C compiler, linker와 toolchain metadata
 ## Initial observation
 
 2026-07-16 macOS/aarch64 관찰에서 check median은 약 4-6 ms, native build median은
-약 69-85 ms였다. Generated C는 약 3.4-61.4 KB, native executable은 약 33.6-55.1 KB
-범위였다. Cleanup-heavy와 textstats fixture runtime median은 약 3.5-4.0 ms였다.
+약 69-86 ms였다. Generated C는 약 3.4-61.4 KB, native executable은 약 33.6-55.1 KB
+범위였다. Cleanup-heavy와 textstats fixture runtime median은 약 3.5-3.6 ms였다.
 
 이 값은 hardware-independent 성능 약속이 아니다. P166 acceptance에서는 수치 자체가 아니라
 schema 유효성, output stability와 byte-identity gate 통과를 증거로 사용한다.

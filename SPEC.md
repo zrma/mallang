@@ -1,9 +1,33 @@
-# Mallang v0.7 Specification
+# Mallang v0.8 Specification
 
-This is the Mallang language and tooling specification through the 0.7.0
+This is the Mallang language and tooling specification through the 0.8.0
 release.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
+
+## Published v0.8 Compiler Hardening
+
+v0.8 adds no new source-language feature. It hardens the existing language and
+toolchain contract:
+
+- parser recovery can report up to 32 deterministic frontend diagnostics per
+  source while preserving the existing first-error library APIs;
+- any frontend error rejects the partial program and prevents package, semantic,
+  IR, backend, or native execution;
+- user-reachable malformed input returns stage-owned diagnostics instead of
+  relying on unchecked compiler invariants;
+- deterministic lexer, parser, type, ownership, malformed IR, and checked-in
+  crash-corpus tests run on the stable Rust toolchain;
+- the release compiler runs the same crash corpus and parser recovery contract;
+- generated C and release archives are byte-identical for the same compiler,
+  input, options, and documented host scope.
+
+`docs/baselines/v0.8-performance.json` records one release-profile observational
+baseline for four repository-owned cases. Wall-time and size values are not
+portable performance promises and have no numerical CI threshold until repeated
+supported-platform variance evidence exists. Native executable byte identity is
+outside the reproducibility contract because the host C compiler and linker own
+that output.
 
 ## Published v0.2 Project Model
 
@@ -163,14 +187,15 @@ P159 defines two native binary targets: macOS arm64
   repository job, downloaded bundle contents, and both archive checksums passed
   on published `main`.
 
-The v0.7 GitHub Release publishes both supported native archives,
+The v0.8 GitHub Release publishes both supported native archives,
 `SHA256SUMS`, and `install.sh`. The exact contract is specified in
 `docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`.
 
-## Published v0.7 Canonical Project Acceptance
+## Published v0.8 Canonical Project Acceptance
 
-P160 connects the formatter, project graph, tests, diagnostics, native backend,
-and release installer as one clean-project workflow.
+P166 connects parser recovery, crash-corpus diagnostics, the formatter, project
+graph, tests, native backend, release installer, release binary, deep generated C
+sanitizer sweep, and supported-platform matrix as one workflow.
 
 - The acceptance creates an entrypoint-free library and an executable project
   with a manifest-relative path dependency in a new ignored directory. It does
@@ -181,13 +206,15 @@ and release installer as one clean-project workflow.
 - The compiler used for project check, JSON-mode check, test, build, and run is
   installed from the deterministic target-named release archive. It is not the
   workspace debug binary.
-- `mlg build <project> -o <path>` is the native project release path in v0.7.
+- `mlg build <project> -o <path>` is the native project release path in v0.8.
   Mallang does not define a source-level build profile or `--release` flag yet.
 - The same repository-owned script runs on the supported macOS arm64 and Linux
   x86_64 release matrix before its archive enters the combined checksum bundle.
 
-The exact workflow and evidence boundary are specified in
-`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`.
+The clean-project workflow is specified in
+`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`; the v0.8 hardening
+composition and platform evidence are specified in
+`docs/todo-v08-compiler-hardening/p166-v08-acceptance.md`.
 
 ## Implemented v0.6 Standard Library
 
@@ -298,7 +325,7 @@ day-to-day command is intentionally short.
 - Compile to native binaries.
 - Start with a C backend before committing to LLVM or Cranelift.
 
-## Non-goals for Published v0.7
+## Non-goals for Published v0.8
 
 - No goroutines.
 - No interfaces.

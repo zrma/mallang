@@ -279,7 +279,7 @@ library를 제공한다.
 
 ## v0.8.0: Compiler Hardening
 
-상태: decision gate approved; P161-P165 complete, P166 next
+상태: released as v0.8.0 after P166 acceptance (2026-07-16)
 
 목표: 언어 기능 추가보다 compiler 품질, 진단, 성능을 우선하는 안정화 구간을
 완료한다.
@@ -297,11 +297,13 @@ library를 제공한다.
 완료 조건:
 
 - known compiler crash corpus가 모두 non-zero diagnostic으로 처리된다.
-- representative project의 compile/runtime baseline과 regression threshold가 있다.
+- representative project의 compile/runtime baseline과 explicit regression policy가 있다.
 - v1 candidate example 전체가 warning, sanitizer, release smoke gate를 통과한다.
 - unsupported feature가 compiler panic 대신 명확한 diagnostic을 낸다.
 
 ## v0.9.0: Language Freeze
+
+상태: Q1-Q6 approved; P167 next
 
 목표: 새로운 핵심 기능을 멈추고 v1 compatibility contract를 검증한다.
 
@@ -313,7 +315,7 @@ library를 제공한다.
 - breaking change, deprecation, edition 또는 major-version 정책을 확정한다.
 - conformance test suite와 0.x migration guide를 작성한다.
 - 실제 multi-module CLI project로 dogfooding한다.
-- `v1.0.0-rc` release와 install/upgrade rollback rehearsal를 수행한다.
+- `v1.0.0-rc.1` release와 install/upgrade rollback rehearsal를 수행한다.
 
 완료 조건:
 

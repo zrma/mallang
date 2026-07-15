@@ -1484,3 +1484,21 @@ representative 성능 측정과 same-input output identity를 고정하는 P165�
 측정 schema, initial observation과 reproducibility 범위는
 `docs/todo-v08-compiler-hardening/p165-performance-reproducibility.md`가 소유한다. 다음
 milestone은 full hardening evidence와 v0.9 freeze decision gate를 닫는 P166이다.
+
+## P166: v0.8 Compiler Hardening Acceptance
+
+상태: complete; released as v0.8.0 (2026-07-16)
+
+- [x] debug/release CLI crash-corpus stage/message parity
+- [x] parser recovery, full examples, warning-clean C와 focused sanitizer gate
+- [x] complete generated C ASan/UBSan native-output identity
+- [x] generated C와 deterministic release archive byte identity
+- [x] installed optimized compiler clean-project workflow
+- [x] macOS arm64/Linux x86_64 CI release artifact와 checksum bundle
+- [x] package version, published spec와 v0.8 release notes
+- [x] observational performance threshold second decision
+- [x] v0.9 language-freeze Q1-Q6와 P167-P172 implementation order
+
+Exact command composition과 platform evidence boundary는
+`docs/todo-v08-compiler-hardening/p166-v08-acceptance.md`가 소유한다. 다음 milestone은
+frozen v1 candidate의 normative rule inventory를 만드는 P167이다.

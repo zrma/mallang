@@ -57,8 +57,8 @@ jobs:
         if: runner.os == 'macOS'
         run: clang --version
 
-      - name: Run clean-project release acceptance
-        run: scripts/check-v07-acceptance.sh
+      - name: Run v0.8 compiler hardening acceptance
+        run: scripts/check-v08-acceptance.sh
 
       - name: Upload platform archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

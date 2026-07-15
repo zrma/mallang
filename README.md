@@ -117,7 +117,15 @@ This repository is the Mallang language PoC workspace.
   `mallang.diagnostic.v1` JSON Lines for compiler-owned errors on stderr. Human
   diagnostics remain the default, and both forms share stage, message, source,
   UTF-8 byte span, and 1-based Unicode scalar location data.
-- v0.7 release tooling builds deterministic native archives for macOS arm64 and
+- v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
+  source without entering later compiler stages. Deterministic lexer/parser/type/
+  ownership properties, a checked-in crash corpus, typed IR preflight validation,
+  and release-binary corpus smoke defend user-reachable compiler invariants.
+- v0.8 observational performance data records representative check/build/runtime
+  medians and generated C/native sizes without imposing noisy CI thresholds.
+  Repeated generated C and release archive builds are byte-identical within the
+  documented scope; native executable identity remains excluded.
+- v0.8 release tooling builds deterministic native archives for macOS arm64 and
   Linux x86_64, writes `SHA256SUMS`, and installs or replaces `mlg` only after
   checksum, archive shape, and binary version verification. `clang` remains a
   runtime prerequisite for `mlg build`, `mlg run`, and `mlg test`.
@@ -261,6 +269,13 @@ Run the full local gate:
 scripts/check.sh
 ```
 
+Run the complete v0.8 hardening acceptance, including release binary and deep
+generated C sanitizer coverage:
+
+```sh
+scripts/check-v08-acceptance.sh
+```
+
 Run the heavier generated C sanitizer sweep before publication:
 
 ```sh
@@ -295,7 +310,7 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-VERSION=0.7.0
+VERSION=0.8.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
@@ -316,11 +331,11 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-VERSION=0.7.0
+VERSION=0.8.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
-## v0.7 Canonical Project Workflow
+## Canonical Project Workflow
 
 Mallang does not yet provide a project generator. Create a minimal project with
 the manifest and source tree below after installing `mlg`:
@@ -366,13 +381,14 @@ mlg build hello -o hello-app
 ./hello-app
 ```
 
-`scripts/check-v07-acceptance.sh` recreates this workflow from an empty work
-directory with a local library dependency and an installed release artifact. It
-is the cross-platform release acceptance used by CI.
+`scripts/check-v08-acceptance.sh` recreates this workflow from an empty work
+directory with a local library dependency and an installed release artifact,
+then runs the compiler hardening and sanitizer gates. It is the cross-platform
+release acceptance used by CI.
 
-## v0.7 Binary Distribution
+## v0.8 Binary Distribution
 
-The v0.7 GitHub Release contains:
+The v0.8 GitHub Release contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -382,16 +398,16 @@ The v0.7 GitHub Release contains:
 Install or update the explicit version with:
 
 ```sh
-curl -fsSLO https://github.com/zrma/mallang/releases/download/v0.7.0/install.sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v0.8.0/install.sh
 chmod +x install.sh
-./install.sh --version 0.7.0
+./install.sh --version 0.8.0
 ```
 
 The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
 for another prefix. The installer requires `clang`, downloads only the detected
 host archive over HTTPS, verifies its entry in `SHA256SUMS`, and atomically
 replaces the destination binary. Re-running it with another explicit version is
-the v0.7 update workflow.
+the explicit update workflow.
 
 Build and inspect the current native development artifact with:
 
@@ -407,7 +423,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 
 ## Layout
 
-- `SPEC.md`: published language and tooling contract through v0.7.
+- `SPEC.md`: published language and tooling contract through v0.8.
 - `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
@@ -415,7 +431,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
 - `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
-- `docs/releases/`: v0.1.0 through v0.7.0 release notes and verification records.
+- `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
+- `docs/releases/`: v0.1.0 through v0.8.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

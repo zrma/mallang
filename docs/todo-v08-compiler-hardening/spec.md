@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved; P161-P165 complete, P166 next
+상태: released as v0.8.0 (2026-07-16; P161-P166 complete)
 
 ## Goal
 
@@ -92,6 +92,16 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 - crash corpus, full examples, strict C, sanitizer, release binary와 supported-platform CI를
   하나의 hardening evidence로 닫는다.
 - documentation과 v0.9 language-freeze decision gate를 동기화한다.
+
+진행:
+
+- [x] debug/release crash-corpus CLI diagnostic parity
+- [x] canonical full examples, warning-clean C와 sanitizer evidence
+- [x] release binary parser recovery와 hardening smoke
+- [x] generated C/release archive reproducibility composition
+- [x] one-command v0.8 acceptance와 supported-platform CI matrix
+- [x] package/spec/release notes v0.8.0 synchronization
+- [x] v0.9 language-freeze Q1-Q6 approval and implementation order
 
 ## Excluded
 

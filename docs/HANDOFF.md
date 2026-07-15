@@ -5,7 +5,7 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 공개 릴리스: `v0.1.0`부터 `v0.7.0`까지; v0.7.0은 macOS arm64/Linux x86_64 binary 포함
+- 공개 릴리스: `v0.1.0`부터 `v0.8.0`까지; v0.8.0은 macOS arm64/Linux x86_64 binary 포함
 - 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, entrypoint `func main()` signature checks, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, built-in value name collision checks, top-level type/function declaration name conflict checks, nested-block and arm-local shadowing with same-block redeclaration rejection, string equality without moves, guarded integer division/remainder, checked integer arithmetic, semantic printability checks, statement-only `print` semantic checks, `bool` operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, array/slice `for i, value := range values { ... }`, blank identifiers and one-variable forms in range loops, explicitly deferred mutable/by-reference range value syntax, legacy borrow alias rejection regressions, fixed-size array `values[i]` indexing for `Copy` elements with compile-time literal and native runtime bounds checks, borrowed indexing expressions for read-only non-Copy element inspection, fixed-size array `values[i] = expr` assignment for mutable `Copy` and non-copy element arrays including `for` clause post targets, fixed-size array `len(values)`, source-level owned slice type syntax `[]T`, slice literals `[]T{...}` with allocation-size/runtime allocation failure guards, `len(slice)`, Copy-only `slice[i]` value access, consuming built-in `append(slice, item) -> []T` with native realloc growth, same-field append reassignment for direct and stable indexed owned slice field paths, indexed field append-take source lowering, field-take append sources and general owned value position takes for owned slice fields, slice range with Copy value iteration and index-only non-Copy iteration, local-rooted slice field/index len/index/range/borrow reads, slice element borrow arguments for local-rooted owned slices, slice element assignment for local-rooted mutable owned slices, indexed field assignment for array/slice elements, struct cleanup for owned slice fields, internal owned slice `Type::Slice` / C `{data,len,cap}` shell and cleanup classification, internal cleanup type `mlg_drop_*` helper emission shell, explicit internal `IrStmtKind::Drop` backend lowering, straight-line cleanup param/local drop insertion before tail/return/reassignment, branch-local cleanup drop insertion for `if`/`match` statement bodies, outer cleanup root branch move normalization for `if`/`match` statements, expression-form `if`/`match` branch cleanup normalization, loop body-local cleanup drop insertion for `for`/`range` tail and `break`/`continue` paths, `for` init cleanup trailer lowering, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, recursive struct value-type rejection, nested field access, nested mutable field assignment, nested field-level borrow arguments, fixed-size array element borrow arguments, fixed-size array element method receivers, con/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, fixed-size array typed IR/C struct-wrapper layout, `for`/`range` body C block lowering for shadowed locals, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, `for` clause condition/post prelude codegen with post-preserving `continue`, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, backend public API boundary with C implementation, name helper, type emitter, statement emitter, expression emitter, shared utility, unit test modules, centralized runtime error helper, native runtime failure stderr smoke coverage, and C backend IR invariant regression coverage, first native subset C backend, hidden-reference C ABI for `con`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `mlg run`, `mlg --version`, `mlg --help`, CLI error stream smoke, checked-in example smoke coverage guard, generated C sanitizer smoke for cleanup-heavy examples, full generated C warning-clean gate, deep generated C sanitizer sweep command, v0 release-candidate audit, `Option`/`Result` surface spec
 - v0.2 기반: `SourceId`를 token/AST/IR span에 전파하고 여러 파일을 구분하는
   `SourceMap`과 file/line/column CLI diagnostic을 추가했다. `parse_sources`는 여러
@@ -295,6 +295,12 @@
   baseline을 남겼다. `scripts/check-v08-reproducibility.sh`는 baseline schema와 네 generated C
   반복 빌드 및 기존 release archive의 byte identity를 검증한다. Native executable identity는
   host C toolchain 영향 때문에 명시적으로 제외한다.
+- v0.8 P166 완료, v0.8.0 released: debug/release `mlg`가 checked-in crash corpus와 parser
+  recovery를 동일한 stage-owned diagnostic으로 처리한다. `scripts/check-v08-acceptance.sh`는
+  canonical check, optimized release binary와 complete generated C ASan/UBSan sweep을 구성하며
+  macOS arm64/Linux x86_64 matrix와 checksum bundle이 같은 boundary를 검증한다. Performance
+  threshold는 supported-platform 반복 표본 전까지 observational로 유지한다. v0.9 Q1-Q6는
+  승인됐고 현재 v0.8 language surface를 v1 candidate로 동결한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -302,6 +308,7 @@
 ```sh
 scripts/check-agent-harness-interface.sh
 scripts/check.sh
+scripts/check-v08-acceptance.sh
 scripts/check-parser-recovery.sh target/debug/mlg
 scripts/check-v07-acceptance.sh
 scripts/check-release-artifacts.sh
@@ -310,7 +317,7 @@ scripts/check-release-helpers.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
 scripts/verify-v0-rc.sh
 scripts/finalize-and-push.sh --verify-only
-VERSION=0.7.0
+VERSION=0.8.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
@@ -440,15 +447,16 @@ target/mallang/match-statement
 ## 주요 문서
 
 - `docs/agent-harness.md`: 이 저장소의 canonical 하네스 구조와 Mallang overlay
-- `SPEC.md`: published language/tooling contract through v0.7
+- `SPEC.md`: published language/tooling contract through v0.8
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
 - `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
 - `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P160 implementation evidence
-- `docs/todo-v08-compiler-hardening/`: approved v0.8 hardening decision gate
-- `docs/releases/`: v0.1.0부터 v0.7.0까지의 release notes와 verification record
+- `docs/todo-v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
+- `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
+- `docs/releases/`: v0.1.0부터 v0.8.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
 - `docs/REPO_MANIFEST.yaml`: 검증 명령과 entrypoint 선언
@@ -456,10 +464,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P166에서 crash corpus, full examples, strict C, sanitizer와 release binary를 하나의
-   v0.8 acceptance command로 묶는다.
-2. Supported macOS arm64/Linux x86_64 CI 결과와 publication boundary를 확인한다.
-3. v0.9 language-freeze decision gate를 동기화하고 v0.8.0 release를 준비한다.
+1. P167에서 current published contract를 stable normative rule ID inventory로 분해한다.
+2. `SPEC.md`, standard library, CLI와 tests 사이 evidence가 없는 v1 candidate rule을 찾는다.
+3. Feature freeze를 유지하고 source-visible 변경은 safety/spec contradiction gate로 보낸다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

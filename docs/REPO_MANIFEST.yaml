@@ -15,7 +15,9 @@ commands:
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg
   check_parser_recovery: scripts/check-parser-recovery.sh target/debug/mlg
   check_hardening_properties: cargo test --test hardening_properties
+  check_hardening_corpus: scripts/check-hardening-corpus.sh target/debug/mlg
   check_v08_reproducibility: scripts/check-v08-reproducibility.sh target/debug/mlg
+  check_v08_acceptance: scripts/check-v08-acceptance.sh
   measure_v08_baseline: cargo build --release --bin mlg && scripts/measure-v08-baseline.py --compiler target/release/mlg --output docs/baselines/v0.8-performance.json
   check_release_artifacts: scripts/check-release-artifacts.sh
   check_v07_acceptance: scripts/check-v07-acceptance.sh

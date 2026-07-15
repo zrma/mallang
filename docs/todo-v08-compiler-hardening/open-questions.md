@@ -1,6 +1,6 @@
 # Open Questions: v0.8 Compiler Hardening
 
-상태: Q1-Q6 recommendations approved on 2026-07-16
+상태: Q1-Q6 recommendations and Q4 second gate approved on 2026-07-16
 
 ## Q1. Parser recovery boundary
 
@@ -61,3 +61,14 @@ overlay/cancellation 필요성이 구체화될 때 별도 milestone로 연다.
 Q1-Q6 추천안은 2026-07-16에 전체 승인됐다. `spec.md`의 P161-P166을 순서대로 구현하며,
 Q4의 실제 regression threshold는 baseline 측정 결과를 제시한 뒤 두 번째 decision gate에서
 확정한다.
+
+## Q4 Second Decision
+
+P165에는 macOS/aarch64 local observation 한 건과 deterministic output evidence만 있다.
+Supported CI가 같은 측정 JSON을 반복 수집하지 않으므로 platform variance를 수치로 판단할
+근거가 아직 없다. 따라서 v0.8은 numerical regression threshold를 설정하지 않고
+`observational` policy를 유지한다.
+
+v0.9에서 supported target별 최소 3개 독립 표본을 확보하기 전까지 wall-time/size는 CI를
+차단하지 않는다. Generated C와 release archive byte identity, runtime output stability는 계속
+blocking gate다. 이 보수적 threshold 보류안은 2026-07-16 승인됐다.

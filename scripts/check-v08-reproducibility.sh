@@ -4,12 +4,28 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ $# -gt 1 ]]; then
-  echo "usage: scripts/check-v08-reproducibility.sh [compiler]" >&2
-  exit 2
-fi
-
-compiler="${1:-target/debug/mlg}"
+compiler="target/debug/mlg"
+compiler_set=0
+check_release_archive=1
+for argument in "$@"; do
+  case "$argument" in
+    --skip-release-archive)
+      check_release_archive=0
+      ;;
+    -*)
+      echo "usage: scripts/check-v08-reproducibility.sh [--skip-release-archive] [compiler]" >&2
+      exit 2
+      ;;
+    *)
+      if [[ "$compiler_set" -eq 1 ]]; then
+        echo "usage: scripts/check-v08-reproducibility.sh [--skip-release-archive] [compiler]" >&2
+        exit 2
+      fi
+      compiler="$argument"
+      compiler_set=1
+      ;;
+  esac
+done
 if [[ ! -x "$compiler" ]]; then
   echo "compiler is not executable: $compiler" >&2
   exit 1
@@ -53,6 +69,12 @@ check_generated_c \
   examples/projects/textstats \
   examples/projects/textstats/target/mallang/textstats.c
 
-scripts/check-release-artifacts.sh
+if [[ "$check_release_archive" -eq 1 ]]; then
+  scripts/check-release-artifacts.sh
+fi
 
-echo "v0.8 generated C and release archive reproducibility passed"
+if [[ "$check_release_archive" -eq 1 ]]; then
+  echo "v0.8 generated C and release archive reproducibility passed"
+else
+  echo "v0.8 generated C reproducibility passed; release archive covered by canonical acceptance"
+fi

@@ -1,6 +1,6 @@
 # P164: Property and Crash-corpus Testing
 
-상태: complete (2026-07-16); P165 next
+상태: complete (2026-07-16); P165-P166 complete, released as v0.8.0
 
 ## Deterministic property contract
 
@@ -38,4 +38,4 @@ This command is part of `docs/REPO_MANIFEST.yaml` and therefore runs inside the 
 UTF-8, parser token mutation, type/ownership invalid transformation and checked-in crash corpus.
 
 Nightly `cargo-fuzz` remains deferred. P165 owns representative compile/runtime measurements and
-same-input generated-output reproducibility.
+same-input generated-output reproducibility; P166 connects the corpus to release-binary acceptance.

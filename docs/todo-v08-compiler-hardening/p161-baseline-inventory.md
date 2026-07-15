@@ -1,6 +1,6 @@
 # P161: Hardening Baseline Inventory
 
-상태: complete (2026-07-16); P162-P165 complete, P166 next
+상태: complete (2026-07-16); P162-P166 complete, released as v0.8.0
 
 ## Frontend recovery baseline
 
