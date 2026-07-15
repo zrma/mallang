@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved; P161-P163 complete, P164 next
+상태: Q1-Q6 approved; P161-P164 complete, P165 next
 
 ## Goal
 
@@ -63,6 +63,15 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 
 - deterministic lexer/parser mutation properties와 type/ownership negative corpus를 추가한다.
 - discovered regression은 최소 source로 축소해 checked-in corpus에 보존한다.
+
+진행:
+
+- [x] stable Rust deterministic UTF-8 lexer generator
+- [x] parser token delete/duplicate/replace mutation property
+- [x] type/ownership known-invalid transformation property
+- [x] stage/message-class checked-in crash corpus
+- [x] corpus registration completeness guard
+- [x] canonical Cargo integration-test gate
 
 ### P165: Performance and Reproducibility Baseline
 

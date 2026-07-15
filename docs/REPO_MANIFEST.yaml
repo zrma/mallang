@@ -14,6 +14,7 @@ commands:
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg
   check_parser_recovery: scripts/check-parser-recovery.sh target/debug/mlg
+  check_hardening_properties: cargo test --test hardening_properties
   check_release_artifacts: scripts/check-release-artifacts.sh
   check_v07_acceptance: scripts/check-v07-acceptance.sh
   check_release_binary: scripts/check-release-binary.sh

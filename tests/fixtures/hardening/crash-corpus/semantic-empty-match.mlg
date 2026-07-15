@@ -1,0 +1,5 @@
+func use(value Option[int]) int {
+    return match value {}
+}
+
+func main() {}

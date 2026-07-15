@@ -1453,3 +1453,18 @@ user-reachable panic/invariant와 malformed typed IR 방어를 분류하고 제�
 분류와 validator 경계는
 `docs/todo-v08-compiler-hardening/p163-invariant-defense.md`가 소유한다. 다음 milestone은
 deterministic mutation property와 minimized crash corpus를 추가하는 P164다.
+
+## P164: Property and Crash-corpus Testing
+
+상태: complete (2026-07-16)
+
+- [x] 256-seed deterministic arbitrary UTF-8 lexer property
+- [x] token delete/duplicate/five-kind replacement parser mutation property
+- [x] type/ownership five-case known-invalid transformation property
+- [x] frontend/package/link/semantic/ownership six-file minimized corpus
+- [x] corpus file registration completeness guard
+- [x] stable toolchain Cargo integration gate
+
+Generator, corpus promotion과 canonical gate는
+`docs/todo-v08-compiler-hardening/p164-property-crash-corpus.md`가 소유한다. 다음 milestone은
+representative 성능 측정과 same-input output identity를 고정하는 P165다.

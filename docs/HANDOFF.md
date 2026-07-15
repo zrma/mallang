@@ -283,6 +283,13 @@
   variant/function/parameter/capture와 invalid `main` signature를 검사하며 기존 fragment
   program과 local expression/statement invariant validator를 유지한다. Malformed source의
   frontend/package/semantic stage와 malformed IR negative matrix를 회귀로 고정했다.
+- v0.8 P164 완료: stable Rust만 사용하는 deterministic hardening integration test를 추가했다.
+  256개 seed의 syntax-heavy arbitrary UTF-8 lexer input은 token/error span bound와 UTF-8
+  boundary를 검사한다. 네 valid token stream의 모든 token에 delete/duplicate/five-kind replace를
+  적용해 parser가 bounded ordered diagnostic 또는 program을 반환하는지 검증한다. 다섯 valid
+  program의 type/ownership marker를 하나씩 invalid하게 바꾸고 semantic message class를 고정했다.
+  `tests/fixtures/hardening/crash-corpus/`의 최소 source 6개는 frontend/package/link/semantic/
+  ownership stage diagnostic과 corpus registration completeness를 검증한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -444,9 +451,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P164에서 deterministic lexer/parser source mutation generator를 추가한다.
-2. Type/ownership invalid-program corpus를 stage/message-class contract로 고정한다.
-3. 발견된 crash 또는 diagnostic regression을 최소 `.mlg` fixture로 보존한다.
+1. P165에서 네 representative case의 compile/runtime/generated C/native size를 측정한다.
+2. Machine-readable observational baseline과 측정 환경 schema를 고정한다.
+3. Generated C와 release archive의 same-input byte identity gate를 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
