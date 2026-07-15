@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P158 complete; P159 implementation complete, published CI pending
+상태: P154-P159 complete; P160 next
 
 ## Goal
 
@@ -95,7 +95,7 @@ machine-readable integration과 supported platform delivery를 우선한다.
 - [x] HTTPS/offline installer, checksum/archive/version 검증과 atomic replacement
 - [x] clean default/explicit prefix 및 installed project check/build/run/test smoke
 - [x] macOS arm64/Linux x86_64 GitHub Actions matrix와 combined workflow bundle 정의
-- [ ] published native matrix와 combined bundle success 확인
+- [x] published native matrix와 combined bundle download/checksum 확인
 
 ### P160: v0.7 Acceptance
 

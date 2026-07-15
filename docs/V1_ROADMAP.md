@@ -249,7 +249,7 @@ library를 제공한다.
 
 ## v0.7.0: Tooling and Platforms
 
-상태: in progress; P154-P158 complete, P159 implementation complete with published CI pending
+상태: in progress; P154-P159 complete, P160 next
 
 목표: 반복 개발과 배포에 필요한 기본 developer workflow를 제공한다.
 

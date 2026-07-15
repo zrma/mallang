@@ -1367,7 +1367,7 @@ P158의 exact contract는
 
 ## P159: Release Artifacts and Installation
 
-상태: implementation complete; published native CI pending
+상태: complete
 
 - [x] `MIT OR Apache-2.0` package metadata와 archive license payload
 - [x] macOS arm64/Linux x86_64 host detection과 exact archive naming
@@ -1378,9 +1378,9 @@ P158의 exact contract는
 - [x] atomic install/reinstall 및 installed project check/build/run/test smoke
 - [x] pinned GitHub Actions native matrix와 combined archive/checksum/installer bundle
 - [x] canonical local gate와 public docs synchronization
-- [ ] published macOS arm64/Linux x86_64 jobs와 combined bundle success 확인
+- [x] published macOS arm64/Linux x86_64 jobs와 combined bundle download/checksum 확인
 
 P159의 exact contract는
 `docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`가 소유한다. Local
-implementation은 완료됐고, public change에서 native matrix evidence를 확인한 뒤 P160 v0.7
-acceptance로 넘어간다.
+implementation과 published native matrix evidence를 모두 확인했다. 다음 milestone은 P160 v0.7
+acceptance다.

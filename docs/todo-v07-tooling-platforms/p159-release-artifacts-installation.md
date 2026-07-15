@@ -1,6 +1,6 @@
 # P159 Release Artifacts and Installation
 
-상태: implementation complete; published native CI pending
+상태: complete
 
 ## Goal
 
@@ -103,7 +103,7 @@ Public installer interface는 다음과 같다.
 - [x] installed binary version/help 및 project check/build/run/test smoke
 - [x] macOS arm64/Linux x86_64 native CI artifact matrix와 combined bundle 정의
 - [x] local canonical verification 및 public documentation synchronization
-- [ ] published native CI matrix와 combined bundle success 확인
+- [x] published native CI matrix와 combined bundle download/checksum 확인
 
 ## Excluded
 

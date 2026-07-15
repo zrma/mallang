@@ -160,8 +160,9 @@ P159 defines two native binary targets: macOS arm64
 - The canonical local smoke covers deterministic rebuild, malformed/tampered
   rejection, default and explicit prefixes, and installed-binary project
   check/build/run/test. GitHub Actions defines macOS arm64 and Linux x86_64
-  native jobs plus a combined workflow bundle; published CI evidence is required
-  before P159 is closed.
+  native jobs plus a combined workflow bundle. Both native jobs, the canonical
+  repository job, downloaded bundle contents, and both archive checksums passed
+  on published `main`.
 
 P159 tooling is implemented in the development tree, but v0.7 binary assets are
 not published until the release milestone. The exact contract is specified in
