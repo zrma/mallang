@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: Q1-Q6 approved on 2026-07-16; P167 next
+상태: P167 complete on 2026-07-16; P168 next
 
 ## Goal
 
@@ -12,8 +12,8 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P167: Normative Contract Inventory
 
-- 현재 `SPEC.md`, standard library와 CLI contract를 rule ID가 있는 v1 candidate 문서로 통합한다.
-- 구현됐지만 normative wording 또는 evidence가 없는 항목을 inventory한다.
+- [x] 현재 `SPEC.md`, standard library와 CLI contract를 rule ID가 있는 v1 candidate 문서로 통합한다.
+- [x] 구현됐지만 normative wording 또는 evidence가 없는 항목을 inventory한다.
 
 ### P168: Version and Compatibility Policy
 

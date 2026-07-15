@@ -4,6 +4,8 @@ This is the Mallang language and tooling specification through the 0.8.0
 release.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
+The rule-indexed v1 freeze candidate is tracked in
+`docs/V1_LANGUAGE_CONTRACT.md`; it remains candidate material until v0.9.0.
 
 ## Published v0.8 Compiler Hardening
 
@@ -444,17 +446,21 @@ string
 unit
 ```
 
-Copy types:
+Always-Copy types:
 
 ```text
-int bool
+int bool unit
 ```
 
-Move types:
+Conditionally Copy types:
 
 ```text
-string struct
+Option[T]       // Copy when T is Copy
+Result[T, E]    // Copy when T and E are Copy
 ```
+
+Move-only types are `string`, fixed-size arrays, owned slices, structs, user
+enums other than the compiler-owned `errors.Kind`, and function/closure values.
 
 Fixed-size arrays use Go-like `[N]T` type syntax. v0 supports compile-time
 integer lengths and element types that already work in the native backend.
@@ -1032,8 +1038,9 @@ func readConfig(path string) Result[Config, Error] {
 ```
 
 `Option` and `Result` are built-in algebraic data types in the v0 language
-model. The implementation may specialize them internally, but user code treats
-them as ordinary value types.
+model. They use the same constructor, nested pattern, exhaustiveness, ownership,
+typed IR, and backend model as user-defined enums while preserving their
+unqualified source constructor spelling.
 
 Type syntax:
 
@@ -1071,8 +1078,27 @@ Rules:
   `Err(value)` when the payload type itself is printable. ADTs containing
   fixed-size arrays are rejected by `mlg check` until an array display format is
   designed.
-- v0 does not include `unwrap`, `?`, nested patterns, or user-defined enum
-  declarations.
+- v0 does not include `unwrap`, `?`, pattern guards, or borrowed patterns.
+
+User-defined enums use zero or more positional payloads and may be generic:
+
+```go
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+type Event enum {
+    Missing
+    Changed(Status, int)
+}
+```
+
+Constructors and patterns are qualified by enum type, such as
+`Maybe[int].Some(1)` and `case Event.Changed(Status.Idle, code)`. Productive
+recursive user enums use compiler-owned indirection without adding pointer or
+reference syntax. Direct by-value struct cycles and non-productive recursive
+cycles remain invalid.
 
 Implementation staging:
 
@@ -1105,11 +1131,16 @@ match user {
 
 Rules:
 
-- v0 `match` must be exhaustive for `Option` and `Result`.
-- Pattern guards are deferred.
-- Nested patterns are deferred.
-- Matching `Option[T]` requires exactly `Some(name)` and `None` arms.
-- Matching `Result[T, E]` requires exactly `Ok(name)` and `Err(name)` arms.
+- v0 `match` must be exhaustive for built-in and user-defined algebraic data
+  types.
+- Built-in patterns retain unqualified `Some`, `None`, `Ok`, and `Err`
+  spelling. User-defined variants use qualified patterns such as
+  `Status.Busy(code)`.
+- Nested ADT patterns, `_` wildcard payloads, and zero or more positional
+  payload bindings are supported.
+- Duplicate or unreachable arms, wrong variant qualification, payload arity or
+  type mismatch, and non-exhaustive paths are rejected.
+- Pattern guards and borrowed patterns are deferred.
 - All arms of a `match` expression must produce the same non-`unit` type.
 - Statement-form `match` arms are blocks and may contain multiple statements.
 - A statement-form `match` is return-complete when every arm block is

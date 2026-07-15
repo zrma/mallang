@@ -1502,3 +1502,19 @@ milestone은 full hardening evidence와 v0.9 freeze decision gate를 닫는 P166
 Exact command composition과 platform evidence boundary는
 `docs/todo-v08-compiler-hardening/p166-v08-acceptance.md`가 소유한다. 다음 milestone은
 frozen v1 candidate의 normative rule inventory를 만드는 P167이다.
+
+## P167: v1 Candidate Normative Contract Inventory
+
+상태: complete (2026-07-16)
+
+- [x] source, lexical, project, type, function, control-flow와 ownership rule ID
+- [x] standard library exact API의 normative detail-owner 연결
+- [x] stable CLI와 inspection command output stability 경계
+- [x] diagnostic, supported target, artifact와 runtime rule ID
+- [x] stale Copy/move, user enum, nested match wording 교정
+- [x] P168 compatibility, P169 conformance/migration, P170 dogfood blocker inventory
+
+Candidate contract와 current-source drift audit은
+`docs/V1_LANGUAGE_CONTRACT.md`와
+`docs/todo-v09-language-freeze/p167-normative-inventory.md`가 소유한다. 다음 milestone은
+compiler/language version과 v1 compatibility 약속을 고정하는 P168이다.
