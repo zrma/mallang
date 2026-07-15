@@ -1313,3 +1313,19 @@ P154 inventory와 Q1-Q6 결정은 `docs/todo-v07-tooling-platforms/feasibility.m
 
 P155는 source meaning과 comment text를 보존하며 line-width wrapping과 block comment를
 의도적으로 제외한다. 다음 milestone은 P156 project test workflow다.
+
+## P156: Project Test Workflow
+
+상태: decision gate; Q1-Q6 approval pending
+
+- [x] parser/project/package/compiler/native execution gap inventory
+- [x] optional `tests/` recursive deterministic discovery API와 regressions
+- [x] contextual declaration/assertion, package mapping, process isolation 추천안 작성
+- [x] stable test ID/order/exact filter와 output/exit contract 추천안 작성
+- [x] ownership/native/sanitizer acceptance matrix 작성
+- [ ] P156 Q1-Q6 recommendation approval
+- [ ] parser, linker, semantic, IR/backend와 `mlg test` implementation
+
+P156의 exact contract는
+`docs/todo-v07-tooling-platforms/p156-test-workflow.md`가 소유한다. 승인 전에는 test/assert
+language surface와 public `mlg test` behavior를 구현하지 않는다.

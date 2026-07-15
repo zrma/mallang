@@ -50,6 +50,14 @@ machine-readable integration과 supported platform delivery를 우선한다.
 - Test discovery, assertion/failure contract, filtering과 exit status를 구현한다.
 - Multi-package test fixtures와 deterministic output을 연결한다.
 
+진행:
+
+- [x] current parser/project/compiler/native runner feasibility inventory
+- [x] optional `tests/` recursive deterministic discovery API
+- [x] `p156-test-workflow.md` Q1-Q6 recommendation and acceptance matrix
+- [ ] P156 Q1-Q6 사용자 승인
+- [ ] parser부터 native runner까지 end-to-end implementation
+
 ### P157: Local Path Dependencies
 
 - Manifest path dependency, cross-project package identity와 cycle diagnostics를 구현한다.

@@ -26,6 +26,7 @@ pub struct Project {
     manifest: ProjectManifest,
     source_root: PathBuf,
     source_files: Vec<PathBuf>,
+    test_root: PathBuf,
 }
 
 impl Project {
@@ -51,6 +52,34 @@ impl Project {
 
     pub fn source_files(&self) -> &[PathBuf] {
         &self.source_files
+    }
+
+    pub fn test_root(&self) -> &Path {
+        &self.test_root
+    }
+
+    pub fn discover_test_files(&self) -> Result<Vec<PathBuf>, ProjectError> {
+        let mut test_files = Vec::new();
+        match fs::metadata(&self.test_root) {
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(ProjectError::InvalidTestRoot {
+                    path: self.test_root.clone(),
+                });
+            }
+            Ok(_) => {
+                collect_source_files(&self.test_root, &mut test_files)?;
+                sort_project_files(&self.root, &mut test_files);
+            }
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(ProjectError::ReadSourceDirectory {
+                    path: self.test_root.clone(),
+                    source,
+                });
+            }
+        }
+
+        Ok(test_files)
     }
 }
 
@@ -86,6 +115,9 @@ pub enum ProjectError {
         path: PathBuf,
     },
     MissingEntrypoint {
+        path: PathBuf,
+    },
+    InvalidTestRoot {
         path: PathBuf,
     },
     ReadSourceDirectory {
@@ -148,6 +180,11 @@ impl std::fmt::Display for ProjectError {
                     path.display()
                 )
             }
+            Self::InvalidTestRoot { path } => write!(
+                formatter,
+                "{}: project test root must be a directory when present",
+                path.display()
+            ),
             Self::ReadSourceDirectory { path, source } => write!(
                 formatter,
                 "{}: failed to read project source directory: {source}",
@@ -169,7 +206,8 @@ impl std::error::Error for ProjectError {
             | Self::InvalidProjectName { .. }
             | Self::ReservedProjectName { .. }
             | Self::MissingSourceRoot { .. }
-            | Self::MissingEntrypoint { .. } => None,
+            | Self::MissingEntrypoint { .. }
+            | Self::InvalidTestRoot { .. } => None,
         }
     }
 }
@@ -250,23 +288,29 @@ fn load_project(manifest_path: PathBuf) -> Result<Project, ProjectError> {
 
     let mut source_files = Vec::new();
     collect_source_files(&source_root, &mut source_files)?;
-    source_files.sort_by(|left, right| {
-        left.strip_prefix(&root)
-            .expect("discovered source is inside the project root")
-            .cmp(
-                right
-                    .strip_prefix(&root)
-                    .expect("discovered source is inside the project root"),
-            )
-    });
+    sort_project_files(&root, &mut source_files);
 
+    let test_root = root.join("tests");
     Ok(Project {
         root,
         manifest_path,
         manifest,
         source_root,
         source_files,
+        test_root,
     })
+}
+
+fn sort_project_files(root: &Path, files: &mut [PathBuf]) {
+    files.sort_by(|left, right| {
+        left.strip_prefix(root)
+            .expect("discovered source is inside the project root")
+            .cmp(
+                right
+                    .strip_prefix(root)
+                    .expect("discovered source is inside the project root"),
+            )
+    });
 }
 
 fn collect_source_files(directory: &Path, sources: &mut Vec<PathBuf>) -> Result<(), ProjectError> {
@@ -372,6 +416,54 @@ mod tests {
                 Path::new("src/main.mlg"),
             ]
         );
+    }
+
+    #[test]
+    fn discovers_optional_sorted_test_files() {
+        let project = valid_project("sorted-tests");
+        project.write("tests/stats/zeta.mlg", "package stats\n");
+        project.write("tests/main_test.mlg", "package main\n");
+        project.write("tests/stats/alpha.mlg", "package stats\n");
+        project.write("tests/README.txt", "not a source\n");
+
+        let discovered = discover_project(&project.root).unwrap();
+        let test_files = discovered.discover_test_files().unwrap();
+        let relative_tests = test_files
+            .iter()
+            .map(|path| path.strip_prefix(discovered.root()).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(discovered.test_root(), project.root.join("tests"));
+        assert_eq!(
+            relative_tests,
+            vec![
+                Path::new("tests/main_test.mlg"),
+                Path::new("tests/stats/alpha.mlg"),
+                Path::new("tests/stats/zeta.mlg"),
+            ]
+        );
+    }
+
+    #[test]
+    fn treats_a_missing_test_root_as_an_empty_test_set() {
+        let project = valid_project("missing-tests");
+
+        let discovered = discover_project(&project.root).unwrap();
+
+        assert!(discovered.discover_test_files().unwrap().is_empty());
+        assert_eq!(discovered.test_root(), project.root.join("tests"));
+    }
+
+    #[test]
+    fn rejects_a_non_directory_test_root_when_tests_are_discovered() {
+        let project = valid_project("invalid-tests");
+        project.write("tests", "not a directory\n");
+
+        let discovered = discover_project(&project.root).unwrap();
+        let error = discovered.discover_test_files().unwrap_err();
+
+        assert!(matches!(error, ProjectError::InvalidTestRoot { .. }));
+        assert!(error.to_string().contains("test root must be a directory"));
     }
 
     #[test]

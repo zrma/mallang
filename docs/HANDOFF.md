@@ -366,8 +366,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P156에서 dedicated project test declaration/assertion syntax decision을 닫는다.
-2. 승인된 test model에 따라 deterministic discovery, filtering, failure/exit contract를 구현한다.
+1. `docs/todo-v07-tooling-platforms/p156-test-workflow.md`의 Q1-Q6 추천안 승인을 받는다.
+2. 승인 뒤 contextual test/assert syntax부터 per-test synthetic native execution까지 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
