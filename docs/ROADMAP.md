@@ -1434,5 +1434,22 @@ P161의 current-source evidence와 P162 exact slice order는
 - [x] `parse/check/ir/build/run/test` human/JSON/non-zero compatibility
 
 Slice A의 API, recovery boundary와 검증 증거는
-`docs/todo-v08-compiler-hardening/p162-parser-recovery.md`가 소유한다. 다음 milestone은
-user-reachable panic/invariant와 malformed typed IR 방어를 분류하고 제거하는 P163이다.
+`docs/todo-v08-compiler-hardening/p162-parser-recovery.md`가 소유한다. 이어지는 P163에서
+user-reachable panic/invariant와 malformed typed IR 방어를 분류하고 제거했다.
+
+## P163: Compiler and IR Invariant Defense
+
+상태: complete (2026-07-16)
+
+- [x] production panic/expect/unchecked-index site를 세 범주로 재분류
+- [x] direct parser token input의 EOF sentinel 자체 보장
+- [x] match pattern/receiver span의 user-adjacent `expect`/`unwrap` 제거
+- [x] empty match arm을 semantic/IR diagnostic으로 전환
+- [x] frontend/package/semantic malformed-source stage regression
+- [x] backend declaration preflight validator
+- [x] duplicate declaration/field와 invalid `main` typed IR negative tests
+- [x] 기존 backend local invariant negative matrix 보존
+
+분류와 validator 경계는
+`docs/todo-v08-compiler-hardening/p163-invariant-defense.md`가 소유한다. 다음 milestone은
+deterministic mutation property와 minimized crash corpus를 추가하는 P164다.

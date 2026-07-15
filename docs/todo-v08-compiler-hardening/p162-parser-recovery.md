@@ -1,6 +1,6 @@
 # P162: Parser Recovery and Multiple Diagnostics
 
-상태: complete (2026-07-16); P163 next
+상태: complete (2026-07-16); P163 complete, P164 next
 
 ## Slice A contract
 

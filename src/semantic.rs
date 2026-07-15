@@ -771,12 +771,12 @@ impl<'a> Checker<'a> {
                 return_type,
                 params,
             };
-            if let Some(receiver) = &function.receiver {
-                let receiver = self.param_sig(receiver)?;
+            if let Some(receiver_param) = &function.receiver {
+                let receiver = self.param_sig(receiver_param)?;
                 if !matches!(receiver.ty, Type::Struct(_)) {
                     return Err(SemanticError::new(
                         "method receiver must be a struct type in v0",
-                        function.receiver.as_ref().unwrap().span,
+                        receiver_param.span,
                     ));
                 }
                 let key = MethodKey {
@@ -2565,6 +2565,9 @@ impl<'a> Checker<'a> {
         arms: &'b [MatchArm],
         span: Span,
     ) -> Result<Vec<PreparedMatchArm<'b>>, SemanticError> {
+        if arms.is_empty() {
+            return Err(SemanticError::new("match requires at least one arm", span));
+        }
         let all = self.coverage_leaves(scrutinee_ty, span)?;
         let mut seen = CoverageSet::new();
         let mut prepared = Vec::new();
@@ -2594,6 +2597,9 @@ impl<'a> Checker<'a> {
         arms: &'b [MatchBlockArm],
         span: Span,
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, SemanticError> {
+        if arms.is_empty() {
+            return Err(SemanticError::new("match requires at least one arm", span));
+        }
         let all = self.coverage_leaves(scrutinee_ty, span)?;
         let mut seen = CoverageSet::new();
         let mut prepared = Vec::new();

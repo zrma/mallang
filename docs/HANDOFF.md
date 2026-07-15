@@ -276,6 +276,13 @@
   `parse/check/ir/build/run/test` human/JSON parity, non-zero, empty stdout와 single/multi API
   compatibility를 canonical acceptance로 검증한다. P162 전체가 완료됐고 P163 invariant
   defense가 다음이다.
+- v0.8 P163 완료: production panic-like site를 user-reachable diagnostic, malformed internal
+  IR, locally proven invariant로 재분류했다. Direct `Parser::new`가 EOF sentinel을 자체
+  보장하고 pattern extraction과 receiver diagnostic의 `expect`/`unwrap`을 제거했다. Empty
+  match는 semantic/IR diagnostic으로 거부한다. C backend는 출력 전 duplicate type/field/
+  variant/function/parameter/capture와 invalid `main` signature를 검사하며 기존 fragment
+  program과 local expression/statement invariant validator를 유지한다. Malformed source의
+  frontend/package/semantic stage와 malformed IR negative matrix를 회귀로 고정했다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -437,11 +444,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P163에서 production panic/expect/index site를 user-reachable, malformed IR, proven invariant로
-   다시 분류한다.
-2. User source로 도달 가능한 site를 stage-owned diagnostic으로 전환하고 negative regression을
-   추가한다.
-3. Typed IR/backend entrypoint에 explicit invariant validation을 추가한다.
+1. P164에서 deterministic lexer/parser source mutation generator를 추가한다.
+2. Type/ownership invalid-program corpus를 stage/message-class contract로 고정한다.
+3. 발견된 crash 또는 diagnostic regression을 최소 `.mlg` fixture로 보존한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

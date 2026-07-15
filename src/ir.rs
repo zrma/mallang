@@ -1536,7 +1536,7 @@ impl<'a> Lowerer<'a> {
     ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
         match scrutinee_ty {
             Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => {
-                self.prepare_adt_match_arms(scrutinee_ty, arms)
+                self.prepare_adt_match_arms(scrutinee_ty, arms, span)
             }
             _ => Err(IrError::new(
                 "semantic analysis accepted match on non-ADT value",
@@ -1553,7 +1553,7 @@ impl<'a> Lowerer<'a> {
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
         match scrutinee_ty {
             Type::Option(_) | Type::Result(_, _) | Type::Enum(_) => {
-                self.prepare_adt_match_block_arms(scrutinee_ty, arms)
+                self.prepare_adt_match_block_arms(scrutinee_ty, arms, span)
             }
             _ => Err(IrError::new(
                 "semantic analysis accepted match on non-ADT value",
@@ -1566,7 +1566,14 @@ impl<'a> Lowerer<'a> {
         &self,
         expected: &Type,
         arms: &'b [MatchArm],
+        span: Span,
     ) -> Result<Vec<PreparedMatchArm<'b>>, IrError> {
+        if arms.is_empty() {
+            return Err(IrError::new(
+                "semantic analysis accepted match without arms",
+                span,
+            ));
+        }
         arms.iter()
             .map(|arm| {
                 let (pattern, bindings) =
@@ -1584,7 +1591,14 @@ impl<'a> Lowerer<'a> {
         &self,
         expected: &Type,
         arms: &'b [MatchBlockArm],
+        span: Span,
     ) -> Result<Vec<PreparedMatchBlockArm<'b>>, IrError> {
+        if arms.is_empty() {
+            return Err(IrError::new(
+                "semantic analysis accepted match without arms",
+                span,
+            ));
+        }
         arms.iter()
             .map(|arm| {
                 let (pattern, bindings) =

@@ -98,7 +98,19 @@ enum BlockRecovery {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(mut tokens: Vec<Token>) -> Self {
+        if !tokens
+            .last()
+            .is_some_and(|token| matches!(token.kind, TokenKind::Eof))
+        {
+            let span = tokens.last().map_or_else(Span::default, |token| {
+                Span::new(token.span.source, token.span.end, token.span.end)
+            });
+            tokens.push(Token {
+                kind: TokenKind::Eof,
+                span,
+            });
+        }
         Self {
             tokens,
             cursor: 0,
@@ -1505,7 +1517,9 @@ impl Parser {
         }
 
         if segments.len() > 1 {
-            let variant = segments.pop().expect("qualified pattern has a variant");
+            let Some(variant) = segments.pop() else {
+                return Err(ParseError::new("expected qualified enum variant", span));
+            };
             let type_name = segments.join(".");
             let payloads = self.parse_optional_pattern_payloads()?;
             return Ok(MatchPattern::Variant {
@@ -1515,7 +1529,9 @@ impl Parser {
             });
         }
 
-        let name = segments.pop().expect("pattern has one segment");
+        let Some(name) = segments.pop() else {
+            return Err(ParseError::new("expected match pattern", span));
+        };
         match name.as_str() {
             "None" => Ok(MatchPattern::None),
             "Some" | "Ok" | "Err" => {
@@ -1988,6 +2004,21 @@ impl TokenTag {
 mod tests {
     use super::*;
     use crate::ast::StmtKind;
+
+    #[test]
+    fn direct_parser_clients_do_not_need_to_supply_an_eof_token() {
+        let mut tokens = lex("func main() {}").unwrap();
+        assert!(matches!(
+            tokens.pop().map(|token| token.kind),
+            Some(TokenKind::Eof)
+        ));
+
+        let program = Parser::new(tokens).parse_program().unwrap();
+        assert_eq!(program.functions.len(), 1);
+
+        let empty = Parser::new(Vec::new()).parse_program().unwrap();
+        assert!(empty.functions.is_empty());
+    }
 
     #[test]
     fn parses_first_target_program() {

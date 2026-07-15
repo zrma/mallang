@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved; P161-P162 complete, P163 next
+상태: Q1-Q6 approved; P161-P163 complete, P164 next
 
 ## Goal
 
@@ -49,6 +49,15 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 
 - malformed source로 도달 가능한 panic/unchecked indexing을 stage diagnostic으로 바꾼다.
 - typed IR/backend invariant validator와 negative tests를 확장한다.
+
+진행:
+
+- [x] production panic/expect/unchecked-index site 재분류
+- [x] direct parser EOF invariant 자체 보장
+- [x] empty match와 receiver/pattern user-adjacent panic path 제거
+- [x] frontend/package/semantic stage diagnostic regression
+- [x] backend declaration preflight validator
+- [x] malformed typed IR negative matrix 확장
 
 ### P164: Property and Crash-corpus Testing
 

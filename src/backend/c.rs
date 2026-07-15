@@ -9,6 +9,7 @@ mod standard_runtime;
 mod statements;
 mod types;
 mod utils;
+mod validate;
 
 use names::{
     c_field, c_ident, c_param_decl, callable_thunk_name, closure_call_name, closure_drop_name,
@@ -18,6 +19,7 @@ use runtime::{emit_allocation_runtime, emit_string_runtime};
 use standard_runtime::{emit_standard_runtime, program_uses_intrinsic};
 use types::{collect_defined_types, emit_drop_helpers, emit_type_definitions};
 use utils::{param_env, param_env_from_params, push_indented_lines, runtime_error_call};
+use validate::validate_program;
 
 use crate::{
     ast::Program,
@@ -90,6 +92,7 @@ impl<'a> CGenerator<'a> {
     }
 
     fn generate(self) -> Result<String, CompileError> {
+        validate_program(self.program)?;
         let mut output = String::new();
         output.push_str("#include <errno.h>\n");
         output.push_str("#include <stdbool.h>\n");

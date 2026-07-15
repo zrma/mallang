@@ -429,6 +429,49 @@ mod tests {
     }
 
     #[test]
+    fn malformed_sources_return_stage_diagnostics() {
+        let cases = [
+            (
+                "frontend",
+                "func main( {}\n",
+                CompilerStage::Frontend,
+                "expected parameter name",
+            ),
+            (
+                "package",
+                "import \"missing/package\"\nfunc main() {}\n",
+                CompilerStage::Package,
+                "unresolved import",
+            ),
+            (
+                "semantic",
+                "func main(value int) {}\n",
+                CompilerStage::Semantic,
+                "`main` must not take parameters",
+            ),
+            (
+                "empty-match",
+                "func use(value Option[int]) int { return match value {} }\nfunc main() {}\n",
+                CompilerStage::Semantic,
+                "match requires at least one arm",
+            ),
+        ];
+
+        for (label, source, stage, message) in cases {
+            let mut sources = SourceMap::new();
+            let source_id = sources.add_file(format!("{label}.mlg"), source);
+            let errors = generate_c_sources_with_diagnostics(&sources, &[source_id]).unwrap_err();
+
+            assert_eq!(errors[0].stage, stage, "{label}");
+            assert!(
+                errors[0].message.contains(message),
+                "{label}: {}",
+                errors[0].message
+            );
+        }
+    }
+
+    #[test]
     fn runs_multi_source_program_through_semantic_ir_and_backend() {
         let (sources, source_ids) = two_source_program();
 

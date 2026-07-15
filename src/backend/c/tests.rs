@@ -3,8 +3,9 @@ use crate::{
     ast::{ArgMode, ParamMode},
     check,
     ir::{
-        lower, IrArg, IrEnumStorage, IrExpr, IrExprKind, IrForInit, IrFunction, IrMatchBlockArm,
-        IrMatchPattern, IrParam, IrProgram, IrStmt, IrStmtKind, IrStruct, IrStructField,
+        lower, IrArg, IrClosure, IrClosureCapture, IrEnum, IrEnumStorage, IrEnumVariant, IrExpr,
+        IrExprKind, IrForInit, IrFunction, IrMatchBlockArm, IrMatchPattern, IrParam, IrProgram,
+        IrStmt, IrStmtKind, IrStruct, IrStructField,
     },
     parse,
     semantic::{FunctionParamType, FunctionType, Type},
@@ -313,7 +314,7 @@ fn generates_c_for_for_init_cleanup_trailer() {
         enums: Vec::new(),
         structs: Vec::new(),
         functions: vec![IrFunction {
-            name: "main".to_string(),
+            name: "consume".to_string(),
             params: vec![crate::ir::IrParam {
                 name: "seed".to_string(),
                 mode: ParamMode::Owned,
@@ -387,6 +388,155 @@ fn rejects_explicit_internal_drop_for_non_cleanup_type() {
     assert!(error
         .message
         .contains("drop requested for non-cleanup type `int`"));
+}
+
+#[test]
+fn rejects_duplicate_ir_functions_before_emission() {
+    let main = IrFunction {
+        name: "main".to_string(),
+        params: Vec::new(),
+        return_type: Type::Unit,
+        body: Vec::new(),
+    };
+    let program = IrProgram {
+        closures: Vec::new(),
+        enums: Vec::new(),
+        structs: Vec::new(),
+        functions: vec![main.clone(), main],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "IR invariant violation: duplicate function `main`"
+    );
+}
+
+#[test]
+fn rejects_invalid_ir_main_signature_before_emission() {
+    let program = IrProgram {
+        closures: Vec::new(),
+        enums: Vec::new(),
+        structs: Vec::new(),
+        functions: vec![IrFunction {
+            name: "main".to_string(),
+            params: vec![IrParam {
+                name: "value".to_string(),
+                mode: ParamMode::Owned,
+                ty: Type::Int,
+            }],
+            return_type: Type::Unit,
+            body: Vec::new(),
+        }],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "IR invariant violation: `main` must have no parameters and return `unit`"
+    );
+}
+
+#[test]
+fn rejects_duplicate_ir_struct_fields_before_emission() {
+    let program = IrProgram {
+        closures: Vec::new(),
+        enums: Vec::new(),
+        structs: vec![IrStruct {
+            name: "Pair".to_string(),
+            intrinsic: None,
+            intrinsic_args: Vec::new(),
+            fields: vec![
+                IrStructField {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                },
+                IrStructField {
+                    name: "value".to_string(),
+                    ty: Type::Bool,
+                },
+            ],
+        }],
+        functions: vec![IrFunction {
+            name: "main".to_string(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: Vec::new(),
+        }],
+    };
+
+    let error = generate_c_from_ir(&program).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "IR invariant violation: duplicate struct field `value` in `Pair`"
+    );
+}
+
+#[test]
+fn rejects_duplicate_ir_enum_variants_and_closure_captures() {
+    let main = IrFunction {
+        name: "main".to_string(),
+        params: Vec::new(),
+        return_type: Type::Unit,
+        body: Vec::new(),
+    };
+    let duplicate_variants = IrProgram {
+        closures: Vec::new(),
+        enums: vec![IrEnum {
+            name: "State".to_string(),
+            intrinsic: None,
+            source_name: "State".to_string(),
+            storage: IrEnumStorage::Inline,
+            variants: vec![
+                IrEnumVariant {
+                    name: "Ready".to_string(),
+                    payloads: Vec::new(),
+                },
+                IrEnumVariant {
+                    name: "Ready".to_string(),
+                    payloads: Vec::new(),
+                },
+            ],
+        }],
+        structs: Vec::new(),
+        functions: vec![main.clone()],
+    };
+    let duplicate_captures = IrProgram {
+        closures: vec![IrClosure {
+            name: "capture_twice".to_string(),
+            mutable: false,
+            captures: vec![
+                IrClosureCapture {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    mutable: false,
+                },
+                IrClosureCapture {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    mutable: false,
+                },
+            ],
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body: Vec::new(),
+        }],
+        enums: Vec::new(),
+        structs: Vec::new(),
+        functions: vec![main],
+    };
+
+    assert_eq!(
+        generate_c_from_ir(&duplicate_variants).unwrap_err().message,
+        "IR invariant violation: duplicate enum variant `Ready` in `State`"
+    );
+    assert_eq!(
+        generate_c_from_ir(&duplicate_captures).unwrap_err().message,
+        "IR invariant violation: duplicate closure capture `value` in `capture_twice`"
+    );
 }
 
 #[test]
