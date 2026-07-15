@@ -92,10 +92,18 @@ This repository is the Mallang language PoC workspace.
   reach C undefined behavior.
 - Integer arithmetic guards overflow before native execution can reach C signed
   overflow undefined behavior.
-- Multi-file projects use `mallang.toml`, `src/main.mlg`, directory packages,
+- Multi-file projects use `mallang.toml`, an `src/` tree, directory packages,
   explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg build`, and
   `mlg run` accept either a standalone `.mlg` file or a project directory or
   manifest.
+- Optional `[dependencies]` entries map an exact project name to a
+  manifest-relative local directory path. Dependencies load in deterministic
+  dependency-first order and expose only ordinary `pub` package APIs. Project
+  cycles, name/path collisions, undeclared transitive imports, dependency
+  entrypoints, and dependency tests are excluded or rejected by the project
+  graph.
+- Projects without `src/main.mlg` are libraries: they support format, check, and
+  test, while build and run require an executable root entry source.
 - `mlg fmt` applies the comment-preserving canonical style. `mlg fmt --check`
   performs the same deterministic project traversal without writing files and
   exits non-zero when formatting changes are required.
@@ -233,6 +241,8 @@ target/mallang/project-hello
 cargo run --bin mlg -- run examples/projects/hello/mallang.toml
 cargo run --bin mlg -- test examples/projects/hello
 cargo run --bin mlg -- test examples/projects/hello --exact hello::GenericAndClosure
+cargo run --bin mlg -- run examples/projects/local-deps/app
+cargo run --bin mlg -- test examples/projects/local-deps/model
 ```
 
 Run the full local gate:
@@ -302,7 +312,7 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P156 evidence.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and completed P155-P157 evidence.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
@@ -329,6 +339,9 @@ scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-
 - `examples/projects/hello`: two-package project and native test smoke for imported functions,
   structs, generic APIs, receivers and enums, function values, higher-order APIs,
   closure returns, private package access, recursive ADTs, maps, and standard I/O.
+- `examples/projects/local-deps`: local dependency workspace smoke for deterministic
+  diamond discovery, library projects, public generic/recursive APIs, dependency
+  entrypoint/test exclusion, and cross-project native tests.
 - `tests/fixtures/invalid-closures`: CLI rejection fixtures for invalid capture,
   function move/alias, and recursive closure behavior.
 - `tests/fixtures/invalid-generic-enums`: CLI rejection fixtures for generic enum

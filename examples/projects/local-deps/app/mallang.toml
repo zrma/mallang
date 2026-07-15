@@ -1,0 +1,6 @@
+[project]
+name = "pathapp"
+
+[dependencies]
+model = { path = "../model" }
+text = { path = "../text" }

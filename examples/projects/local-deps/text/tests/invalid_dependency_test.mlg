@@ -1,0 +1,5 @@
+package main
+
+test ConsumerMustNotLoadThis() {
+    assert(42)
+}

@@ -72,6 +72,42 @@ test AddsValues() {
   tests, external test packages, parallel tests, and non-exact filters remain
   outside P156.
 
+## Implemented v0.7 Local Path Dependencies
+
+Projects may declare local dependencies relative to their manifest:
+
+```toml
+[project]
+name = "app"
+
+[dependencies]
+text = { path = "../text" }
+```
+
+- A dependency entry has exactly one `path` field. The path is a non-empty
+  relative directory path resolved from the declaring manifest. The dependency
+  key must equal the target project name; aliases are not supported.
+- Canonical project paths define identity. Dependency discovery follows sorted
+  dependency keys and produces deterministic dependency-first order. Diamond
+  dependencies are loaded once; project cycles, same-name/different-path
+  projects, and dependency roots nested under another member's `src/` or
+  `tests/` are rejected before package compilation.
+- Source package identities retain `<project>` and `<project>/<directory>`.
+  Source can import packages from its own project, compiler-owned `std/...`, or
+  a directly declared dependency. Importing an undeclared transitive dependency
+  is rejected.
+- A dependency's `src/main.mlg` and `tests/` are excluded from the consumer
+  compilation. Other root-package source and nested packages participate through
+  ordinary `pub` visibility, ownership, generic specialization, and native
+  lowering.
+- `src/` remains required, but `src/main.mlg` is optional for library projects.
+  Library projects support `mlg check`, root-only `mlg fmt`, and `mlg test` with
+  a synthetic native test entrypoint. `mlg build` and `mlg run` require the root
+  project entry source.
+- Registry, network/git dependencies, versions, lockfiles, dependency aliases,
+  workspaces, dependency test execution, and incremental dependency artifacts
+  remain outside P157.
+
 ## Implemented v0.6 Standard Library
 
 The approved v0.6 standard-library contract implements its compiler foundation,

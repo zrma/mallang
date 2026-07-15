@@ -314,7 +314,8 @@ fn run_test(program: &str, args: &[String]) -> Result<(), String> {
     let test_files = project
         .discover_test_files()
         .map_err(|error| error.to_string())?;
-    let loaded = load_source_files(project.source_files().iter().chain(test_files.iter()))
+    let project_sources = project.compilation_source_files();
+    let loaded = load_source_files(project_sources.into_iter().chain(test_files.iter()))
         .map_err(|error| error.to_string())?;
     let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids)
         .map_err(|error| format_compiler_error(&loaded.sources, input, error))?;
@@ -498,6 +499,9 @@ fn compile_input(
             sources,
             source_ids,
         } => {
+            project
+                .require_entrypoint()
+                .map_err(|error| error.to_string())?;
             let c_source = generate_c_project_sources(&project, &sources, &source_ids)
                 .map_err(|error| format_compiler_error(&sources, input_path, error))?;
             let artifact_name = project.name().to_string();
@@ -572,7 +576,7 @@ enum CompilationInput {
         source_id: SourceId,
     },
     Project {
-        project: Project,
+        project: Box<Project>,
         sources: SourceMap,
         source_ids: Vec<SourceId>,
     },
@@ -590,9 +594,9 @@ fn load_compilation_input(path: &str) -> Result<CompilationInput, String> {
 
     let project = discover_project(input).map_err(|error| error.to_string())?;
     let loaded =
-        load_source_files(project.source_files().iter()).map_err(|error| error.to_string())?;
+        load_source_files(project.compilation_source_files()).map_err(|error| error.to_string())?;
     Ok(CompilationInput::Project {
-        project,
+        project: Box::new(project),
         sources: loaded.sources,
         source_ids: loaded.source_ids,
     })

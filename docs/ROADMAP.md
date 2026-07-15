@@ -1332,3 +1332,18 @@ P156의 exact contract는
 `docs/todo-v07-tooling-platforms/p156-test-workflow.md`가 소유한다. Contextual
 test/assert surface와 test별 synthetic native process contract를 완료했다. 다음 milestone은
 P157 local path dependencies다.
+
+## P157: Local Path Dependencies
+
+상태: complete
+
+- [x] current manifest/project/package loading gap inventory
+- [x] exact relative path, graph/import와 library command contract
+- [x] recursive dependency-first project discovery와 canonical deduplication
+- [x] cross-project package identity, direct dependency import와 visibility linking
+- [x] library check/test 및 executable build/run entrypoint boundary
+- [x] multi-project native, strict C, allocation, sanitizer와 debug/release CLI acceptance
+
+P157의 exact contract는
+`docs/todo-v07-tooling-platforms/p157-local-path-dependencies.md`가 소유한다.
+다음 milestone은 P158 machine-readable diagnostics다.

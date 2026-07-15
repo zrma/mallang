@@ -1,0 +1,11 @@
+package main
+
+import "model"
+import "text"
+
+func main() {
+    tail := model.NumberList.Nil
+    values := model.NumberList.Cons(40, model.NumberList.Cons(2, tail))
+    print(model.Sum(values))
+    print(text.Answer())
+}

@@ -11,6 +11,7 @@ commands:
   check_agent_harness: scripts/check-agent-harness-interface.sh
   check: scripts/check.sh
   check_test_workflow: scripts/check-test-workflow.sh target/debug/mlg
+  check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_release_binary: scripts/check-release-binary.sh
   check_release_helpers: scripts/check-release-helpers.sh
   deep_generated_c_sanitizers: scripts/check-generated-c-sanitizers.sh

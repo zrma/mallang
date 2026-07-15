@@ -1,0 +1,8 @@
+package main
+
+import "model"
+
+pub func Answer() int {
+    box := model.Identity[model.Box[int]](model.Box[int]{value: 42})
+    return box.value
+}

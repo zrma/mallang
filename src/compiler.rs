@@ -8,7 +8,7 @@ use crate::{
     linker::{display_linked_message, link_project, link_standalone},
     package::{build_package_graph, build_standalone_package_graph, PackageGraph, PackageTest},
     project::Project,
-    semantic::{check_project, CheckedProgram},
+    semantic::{check_project, check_project_library, CheckedProgram},
     source::SourceMap,
     standard::augment_program,
     token::{SourceId, Span},
@@ -141,7 +141,7 @@ pub fn check_project_sources(
     source_ids: &[SourceId],
 ) -> Result<Program, CompilerError> {
     let (program, graph) = link_project_sources(project, sources, source_ids)?;
-    check_project(&program, &graph).map_err(|error| {
+    check_project_library(&program, &graph).map_err(|error| {
         CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
@@ -194,7 +194,7 @@ pub fn prepare_project_tests(
     source_ids: &[SourceId],
 ) -> Result<ProjectTestSuite, CompilerError> {
     let (program, graph) = link_project_sources(project, sources, source_ids)?;
-    let checked = check_project(&program, &graph).map_err(|error| {
+    let checked = check_project_library(&program, &graph).map_err(|error| {
         CompilerError::new(
             CompilerStage::Semantic,
             display_linked_message(&error.message),
@@ -289,15 +289,20 @@ mod tests {
 
         fn load(&self) -> (Project, crate::SourceSet) {
             let project = discover_project(&self.root).unwrap();
-            let sources = load_source_files(project.source_files().iter()).unwrap();
+            let sources = load_source_files(project.compilation_source_files()).unwrap();
             (project, sources)
         }
 
         fn load_with_tests(&self) -> (Project, crate::SourceSet) {
             let project = discover_project(&self.root).unwrap();
             let test_files = project.discover_test_files().unwrap();
-            let sources =
-                load_source_files(project.source_files().iter().chain(test_files.iter())).unwrap();
+            let sources = load_source_files(
+                project
+                    .compilation_source_files()
+                    .into_iter()
+                    .chain(test_files.iter()),
+            )
+            .unwrap();
             (project, sources)
         }
     }
@@ -647,6 +652,82 @@ mod tests {
             generate_c_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
         assert!(c_source.contains("int main(void)"));
         assert!(c_source.contains("(21)"));
+    }
+
+    #[test]
+    fn links_and_specializes_public_local_dependency_apis() {
+        let temp = TempProject::new("path-dependency");
+        temp.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nmodel = { path = \"deps/model\" }\n",
+        );
+        temp.write(
+            "src/main.mlg",
+            "package main\nimport \"model\"\nfunc main() { value := model.Identity[model.Box[int]](model.Box[int]{value: 42}) print(value.value) }\n",
+        );
+        temp.write("deps/model/mallang.toml", "[project]\nname = \"model\"\n");
+        temp.write(
+            "deps/model/src/library.mlg",
+            "package main\npub type Box[T] struct { value T }\npub func Identity[T](value T) T { return value }\n",
+        );
+        let (project, loaded) = temp.load();
+
+        let c_source =
+            generate_c_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
+
+        assert!(c_source.contains("int main(void)"));
+    }
+
+    #[test]
+    fn rejects_private_local_dependency_apis() {
+        let temp = TempProject::new("private-path-dependency");
+        temp.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nmodel = { path = \"deps/model\" }\n",
+        );
+        temp.write(
+            "src/main.mlg",
+            "package main\nimport \"model\"\nfunc main() { model.Secret() }\n",
+        );
+        temp.write("deps/model/mallang.toml", "[project]\nname = \"model\"\n");
+        temp.write(
+            "deps/model/src/library.mlg",
+            "package main\nfunc Secret() {}\n",
+        );
+        let (project, loaded) = temp.load();
+
+        let error =
+            check_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap_err();
+
+        assert_eq!(error.stage, CompilerStage::Link);
+        assert_eq!(
+            error.message,
+            "`model.Secret` is private to package `model`"
+        );
+    }
+
+    #[test]
+    fn checks_and_tests_library_projects_without_an_application_main() {
+        let temp = TempProject::new("library-project");
+        temp.write("mallang.toml", "[project]\nname = \"library\"\n");
+        temp.write(
+            "src/library.mlg",
+            "package main\nfunc privateValue() int { return 42 }\n",
+        );
+        temp.write(
+            "tests/library_test.mlg",
+            "package main\ntest ReadsPrivateValue() { assert(privateValue() == 42) }\n",
+        );
+        let (project, loaded) = temp.load_with_tests();
+
+        check_project_sources(&project, &loaded.sources, &loaded.source_ids).unwrap();
+        let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids).unwrap();
+        let c_source = suite.generate_c(0).unwrap();
+
+        assert!(!project.has_entrypoint());
+        assert_eq!(suite.tests()[0].id, "library::ReadsPrivateValue");
+        assert_eq!(c_source.matches("int main(void) {").count(), 1);
+        assert!(c_source.contains("mallang_test_assertion_failed"));
     }
 
     #[test]

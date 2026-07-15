@@ -19,7 +19,7 @@ use crate::{
 
 pub fn check(program: &Program) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
-        validate_generic_bodies(program, None)?;
+        validate_generic_bodies(program, None, true)?;
         let concrete = specialize_for_checking(program)
             .map_err(|error| SemanticError::new(error.message, error.span))?;
         return Checker::new(&concrete.program).check().map_err(|error| {
@@ -33,27 +33,43 @@ pub fn check_project(
     program: &Program,
     package_graph: &PackageGraph,
 ) -> Result<CheckedProgram, SemanticError> {
+    check_project_mode(program, package_graph, true)
+}
+
+pub fn check_project_library(
+    program: &Program,
+    package_graph: &PackageGraph,
+) -> Result<CheckedProgram, SemanticError> {
+    check_project_mode(program, package_graph, false)
+}
+
+fn check_project_mode(
+    program: &Program,
+    package_graph: &PackageGraph,
+    require_entrypoint: bool,
+) -> Result<CheckedProgram, SemanticError> {
     if needs_specialization(program) {
-        validate_generic_bodies(program, Some(package_graph))?;
+        validate_generic_bodies(program, Some(package_graph), require_entrypoint)?;
         let concrete = specialize_for_checking(program)
             .map_err(|error| SemanticError::new(error.message, error.span))?;
-        return Checker::new_project(&concrete.program, package_graph)
+        return Checker::new_project_mode(&concrete.program, package_graph, require_entrypoint)
             .check()
             .map_err(|error| {
                 SemanticError::new(concrete.display_message(&error.message), error.span)
             });
     }
-    Checker::new_project(program, package_graph).check()
+    Checker::new_project_mode(program, package_graph, require_entrypoint).check()
 }
 
 fn validate_generic_bodies(
     program: &Program,
     package_graph: Option<&PackageGraph>,
+    require_entrypoint: bool,
 ) -> Result<(), SemanticError> {
     let symbolic = specialize_for_validation(program)
         .map_err(|error| SemanticError::new(error.message, error.span))?;
     let result = if let Some(package_graph) = package_graph {
-        Checker::new_project(&symbolic.program, package_graph).check()
+        Checker::new_project_mode(&symbolic.program, package_graph, require_entrypoint).check()
     } else {
         Checker::new(&symbolic.program).check()
     };
@@ -292,6 +308,7 @@ impl std::error::Error for SemanticError {}
 struct Checker<'a> {
     program: &'a Program,
     package_graph: Option<&'a PackageGraph>,
+    require_entrypoint: bool,
     signatures: HashMap<String, FunctionSig>,
     intrinsics: HashMap<String, StandardIntrinsic>,
     methods: HashMap<MethodKey, MethodSig>,
@@ -311,6 +328,7 @@ impl<'a> Checker<'a> {
         Self {
             program,
             package_graph: None,
+            require_entrypoint: true,
             signatures: HashMap::new(),
             intrinsics: HashMap::new(),
             methods: HashMap::new(),
@@ -321,9 +339,14 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn new_project(program: &'a Program, package_graph: &'a PackageGraph) -> Self {
+    fn new_project_mode(
+        program: &'a Program,
+        package_graph: &'a PackageGraph,
+        require_entrypoint: bool,
+    ) -> Self {
         Self {
             package_graph: Some(package_graph),
+            require_entrypoint,
             ..Self::new(program)
         }
     }
@@ -825,7 +848,7 @@ impl<'a> Checker<'a> {
             }
         }
 
-        if !self.signatures.contains_key("main") {
+        if self.require_entrypoint && !self.signatures.contains_key("main") {
             return Err(SemanticError::new(
                 "program must declare `func main()`",
                 self.program.span,

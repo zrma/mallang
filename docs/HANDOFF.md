@@ -218,6 +218,14 @@
   failure replay/계속 실행, empty suite와 signal fallback을 고정했다. Copy/non-Copy,
   closure, recursive ADT, Map, standard I/O fixture가 zero-allocation accounting,
   strict C, ASan/UBSan 및 debug/release CLI smoke를 통과한다.
+- v0.7 P157 완료: `mallang.toml`의 exact-name relative `[dependencies]`를 canonical
+  dependency-first graph로 load한다. Diamond deduplication, cycle/name/source-boundary
+  rejection, direct dependency import와 transitive rejection을 package stage에 연결했다.
+  Dependency `src/main.mlg`/tests는 consumer에서 제외되고 public generic/recursive API는
+  기존 ownership/specialization/backend를 재사용한다. Entrypoint 없는 library는
+  format/check/test를 지원하며 build/run은 stable missing-entry diagnostic을 낸다.
+  Multi-project app/library test generated C가 zero-allocation, strict C, ASan/UBSan과
+  debug/release smoke를 통과한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -236,6 +244,7 @@ cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 cargo run --bin mlg -- check examples/first.mlg
 cargo run --bin mlg -- test examples/projects/hello
+cargo run --bin mlg -- run examples/projects/local-deps/app
 cargo run --bin mlg -- run examples/function-values.mlg
 cargo run --bin mlg -- run examples/closures.mlg
 cargo run --bin mlg -- run examples/mutable-closures.mlg
@@ -364,7 +373,7 @@ target/mallang/match-statement
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155-P156 evidence
+- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and completed P155-P157 evidence
 - `docs/releases/`: v0.1.0부터 v0.6.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -373,8 +382,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P157에서 local path dependency manifest와 cross-project package identity를 결정한다.
-2. Central registry, network resolution과 lockfile 없이 deterministic graph/cycle contract를 구현한다.
+1. P158에서 human/JSON이 공유할 structured diagnostic model과 CLI option placement를 고정한다.
+2. `mallang.diagnostic.v1` JSON Lines consumer fixture와 human output parity를 구현한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

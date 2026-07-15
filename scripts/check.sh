@@ -160,6 +160,7 @@ if [[ -s "$help_stderr" ]]; then
 fi
 scripts/check-formatter.sh target/debug/mlg
 scripts/check-test-workflow.sh target/debug/mlg
+scripts/check-path-dependencies.sh target/debug/mlg
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then

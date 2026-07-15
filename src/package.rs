@@ -186,7 +186,7 @@ pub fn build_package_graph(
     }
 
     connect_standard_packages(&mut packages, &pending_imports)?;
-    connect_imports(&mut packages, pending_imports)?;
+    connect_imports(&mut packages, pending_imports, Some(project))?;
     collect_declarations(&mut packages, &source_packages, program, true)?;
     reject_public_test_declarations(project, sources, program)?;
     let tests = collect_project_tests(project, sources, &packages, &source_packages, program)?;
@@ -244,7 +244,7 @@ pub fn build_standalone_package_graph(
     }
 
     connect_standard_packages(&mut packages, &pending_imports)?;
-    connect_imports(&mut packages, pending_imports)?;
+    connect_imports(&mut packages, pending_imports, None)?;
     collect_declarations(&mut packages, &source_packages, program, false)?;
     if let Some(test) = program.tests.first() {
         return Err(PackageError::new(
@@ -274,19 +274,18 @@ fn package_identity(project: &Project, source_path: &Path) -> Result<PackageIden
             source_path.display()
         )
     })?;
-    let relative = source_directory
-        .strip_prefix(project.source_root())
-        .or_else(|_| source_directory.strip_prefix(project.test_root()))
-        .map_err(|_| {
+    let (project_name, relative) = project
+        .source_directory_identity(source_directory)
+        .ok_or_else(|| {
             format!(
-                "{}: source is outside the project source and test directories",
+                "{}: source is outside the project graph source and root test directories",
                 source_path.display()
             )
         })?;
 
     if relative.as_os_str().is_empty() {
         return Ok(PackageIdentity {
-            path: project.name().to_string(),
+            path: project_name.to_string(),
             name: "main".to_string(),
         });
     }
@@ -313,7 +312,7 @@ fn package_identity(project: &Project, source_path: &Path) -> Result<PackageIden
         .expect("a non-root package has at least one path segment")
         .clone();
     Ok(PackageIdentity {
-        path: format!("{}/{}", project.name(), segments.join("/")),
+        path: format!("{project_name}/{}", segments.join("/")),
         name,
     })
 }
@@ -406,7 +405,7 @@ fn is_test_source(
             Some(span),
         )
     })?;
-    Ok(source.path().starts_with(project.test_root()))
+    Ok(project.is_test_source_path(source.path()))
 }
 
 fn collect_file_imports(
@@ -465,6 +464,7 @@ fn collect_file_imports(
 fn connect_imports(
     packages: &mut BTreeMap<String, Package>,
     pending: Vec<PendingImport>,
+    project: Option<&Project>,
 ) -> Result<(), PackageError> {
     for pending_import in pending {
         if !packages.contains_key(&pending_import.import.path) {
@@ -474,6 +474,30 @@ fn connect_imports(
                 format!("unresolved import `{}`", pending_import.import.path)
             };
             return Err(PackageError::new(message, Some(pending_import.import.span)));
+        }
+
+        if let Some(project) = project {
+            let from_project = pending_import
+                .from
+                .split('/')
+                .next()
+                .expect("a package path has a project segment");
+            let target_project = pending_import
+                .import
+                .path
+                .split('/')
+                .next()
+                .expect("an import path has a project segment");
+            if target_project != "std"
+                && !project.allows_project_import(from_project, target_project)
+            {
+                return Err(PackageError::new(
+                    format!(
+                        "project `{from_project}` does not declare dependency `{target_project}`"
+                    ),
+                    Some(pending_import.import.span),
+                ));
+            }
         }
 
         let package = packages
@@ -763,10 +787,9 @@ mod tests {
             let test_files = project.discover_test_files().unwrap();
             let loaded = load_source_files(
                 project
-                    .source_files()
-                    .iter()
-                    .chain(test_files.iter())
-                    .cloned(),
+                    .compilation_source_files()
+                    .into_iter()
+                    .chain(test_files.iter()),
             )
             .unwrap();
             let program = parse_sources(&loaded.sources, &loaded.source_ids).unwrap();
@@ -819,6 +842,65 @@ mod tests {
         let main = graph.package("hello").unwrap();
         assert_eq!(main.name, "main");
         assert_eq!(main.imports[0].qualifier, "greet");
+    }
+
+    #[test]
+    fn builds_declared_cross_project_packages_in_dependency_order() {
+        let project = TempProject::new("local-dependency");
+        project.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"deps/text\" }\n",
+        );
+        project.write(
+            "src/main.mlg",
+            "package main\nimport \"text\"\nfunc main() { print(text.Value()) }\n",
+        );
+        project.write("deps/text/mallang.toml", "[project]\nname = \"text\"\n");
+        project.write(
+            "deps/text/src/library.mlg",
+            "package main\npub func Value() int { return 42 }\n",
+        );
+
+        let graph = project.graph().unwrap();
+
+        assert_eq!(graph.build_order(), &["text", "app"]);
+        assert_eq!(
+            graph.package("text").unwrap().declarations["Value"].visibility,
+            Visibility::Public
+        );
+    }
+
+    #[test]
+    fn rejects_imports_from_undeclared_transitive_projects() {
+        let project = TempProject::new("transitive-boundary");
+        project.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nmid = { path = \"deps/mid\" }\n",
+        );
+        project.write(
+            "src/main.mlg",
+            "package main\nimport \"leaf\"\nfunc main() { leaf.Value() }\n",
+        );
+        project.write(
+            "deps/mid/mallang.toml",
+            "[project]\nname = \"mid\"\n\n[dependencies]\nleaf = { path = \"../leaf\" }\n",
+        );
+        project.write(
+            "deps/mid/src/library.mlg",
+            "package main\nimport \"leaf\"\npub func Value() int { return leaf.Value() }\n",
+        );
+        project.write("deps/leaf/mallang.toml", "[project]\nname = \"leaf\"\n");
+        project.write(
+            "deps/leaf/src/library.mlg",
+            "package main\npub func Value() int { return 42 }\n",
+        );
+
+        let error = project.graph().unwrap_err();
+
+        assert_eq!(
+            error.message,
+            "project `app` does not declare dependency `leaf`"
+        );
     }
 
     #[test]

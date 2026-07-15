@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P156 complete; P157 next
+상태: P154-P157 complete; P158 next
 
 ## Goal
 
@@ -62,6 +62,12 @@ machine-readable integration과 supported platform delivery를 우선한다.
 
 - Manifest path dependency, cross-project package identity와 cycle diagnostics를 구현한다.
 - Central registry, network resolution과 lockfile은 범위 밖으로 유지한다.
+
+진행:
+
+- [x] P154 Q3 local dependency recommendation approval
+- [x] exact manifest, graph, import와 library command contract
+- [x] recursive project graph부터 native CLI까지 end-to-end implementation
 
 ### P158: Machine-readable Diagnostics
 

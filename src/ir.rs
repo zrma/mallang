@@ -37,9 +37,9 @@ pub fn lower_test(checked: &CheckedProgram, test_index: usize) -> Result<IrProgr
         .iter()
         .filter(|function| function.name == "main")
         .count();
-    if main_count != 1 {
+    if main_count > 1 {
         return Err(IrError::new(
-            "checked test program must contain exactly one application `main`",
+            "checked test program must contain at most one application `main`",
             test.span,
         ));
     }

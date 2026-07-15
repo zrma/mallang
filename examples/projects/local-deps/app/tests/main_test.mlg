@@ -1,0 +1,10 @@
+package main
+
+import "model"
+import "text"
+
+test DependenciesWork() {
+    values := model.NumberList.Cons(42, model.NumberList.Nil)
+    assert(model.Sum(values) == 42)
+    assert(text.Answer() == 42)
+}

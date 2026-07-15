@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
 };
@@ -11,6 +12,8 @@ pub const MANIFEST_FILE: &str = "mallang.toml";
 #[serde(deny_unknown_fields)]
 pub struct ProjectManifest {
     pub project: ProjectMetadata,
+    #[serde(default)]
+    pub dependencies: BTreeMap<String, PathDependency>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -19,67 +22,161 @@ pub struct ProjectMetadata {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PathDependency {
+    pub path: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
+    root_project: ProjectUnit,
+    dependencies: Vec<ProjectUnit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectUnit {
     root: PathBuf,
     manifest_path: PathBuf,
     manifest: ProjectManifest,
     source_root: PathBuf,
     source_files: Vec<PathBuf>,
     test_root: PathBuf,
+    direct_dependencies: BTreeSet<String>,
 }
 
 impl Project {
     pub fn name(&self) -> &str {
-        &self.manifest.project.name
+        self.root_project.name()
     }
 
     pub fn root(&self) -> &Path {
-        &self.root
+        &self.root_project.root
     }
 
     pub fn manifest_path(&self) -> &Path {
-        &self.manifest_path
+        &self.root_project.manifest_path
     }
 
     pub fn manifest(&self) -> &ProjectManifest {
-        &self.manifest
+        &self.root_project.manifest
     }
 
     pub fn source_root(&self) -> &Path {
-        &self.source_root
+        &self.root_project.source_root
     }
 
     pub fn source_files(&self) -> &[PathBuf] {
-        &self.source_files
+        &self.root_project.source_files
     }
 
     pub fn test_root(&self) -> &Path {
-        &self.test_root
+        &self.root_project.test_root
+    }
+
+    pub fn has_entrypoint(&self) -> bool {
+        self.root_project.entrypoint().is_file()
+    }
+
+    pub fn require_entrypoint(&self) -> Result<(), ProjectError> {
+        if self.has_entrypoint() {
+            return Ok(());
+        }
+        Err(ProjectError::MissingEntrypoint {
+            path: self.root_project.entrypoint(),
+        })
+    }
+
+    pub fn dependency_names(&self) -> impl Iterator<Item = &str> {
+        self.dependencies.iter().map(ProjectUnit::name)
+    }
+
+    pub fn compilation_source_files(&self) -> Vec<&PathBuf> {
+        let mut files = Vec::new();
+        for dependency in &self.dependencies {
+            let entrypoint = dependency.entrypoint();
+            files.extend(
+                dependency
+                    .source_files
+                    .iter()
+                    .filter(|path| path.as_path() != entrypoint),
+            );
+        }
+        files.extend(self.root_project.source_files.iter());
+        files
     }
 
     pub fn discover_test_files(&self) -> Result<Vec<PathBuf>, ProjectError> {
         let mut test_files = Vec::new();
-        match fs::metadata(&self.test_root) {
+        match fs::metadata(&self.root_project.test_root) {
             Ok(metadata) if !metadata.is_dir() => {
                 return Err(ProjectError::InvalidTestRoot {
-                    path: self.test_root.clone(),
+                    path: self.root_project.test_root.clone(),
                 });
             }
             Ok(_) => {
-                collect_source_files(&self.test_root, &mut test_files)?;
-                sort_project_files(&self.root, &mut test_files);
+                collect_source_files(&self.root_project.test_root, &mut test_files)?;
+                sort_project_files(&self.root_project.root, &mut test_files);
             }
             Err(source) if source.kind() == io::ErrorKind::NotFound => {}
             Err(source) => {
                 return Err(ProjectError::ReadSourceDirectory {
-                    path: self.test_root.clone(),
+                    path: self.root_project.test_root.clone(),
                     source,
                 });
             }
         }
 
         Ok(test_files)
+    }
+
+    pub(crate) fn source_directory_identity<'a, 'b>(
+        &'a self,
+        directory: &'b Path,
+    ) -> Option<(&'a str, &'b Path)> {
+        if let Ok(relative) = directory.strip_prefix(&self.root_project.test_root) {
+            return Some((self.root_project.name(), relative));
+        }
+        if let Ok(relative) = directory.strip_prefix(&self.root_project.source_root) {
+            return Some((self.root_project.name(), relative));
+        }
+        for dependency in &self.dependencies {
+            if let Ok(relative) = directory.strip_prefix(&dependency.source_root) {
+                return Some((dependency.name(), relative));
+            }
+        }
+        None
+    }
+
+    pub(crate) fn is_test_source_path(&self, path: &Path) -> bool {
+        path.starts_with(&self.root_project.test_root)
+    }
+
+    pub(crate) fn allows_project_import(&self, from: &str, target: &str) -> bool {
+        if from == target {
+            return true;
+        }
+        self.unit(from)
+            .is_some_and(|unit| unit.direct_dependencies.contains(target))
+    }
+
+    fn unit(&self, name: &str) -> Option<&ProjectUnit> {
+        if self.root_project.name() == name {
+            return Some(&self.root_project);
+        }
+        self.dependencies
+            .iter()
+            .find(|project| project.name() == name)
+    }
+}
+
+impl ProjectUnit {
+    fn name(&self) -> &str {
+        &self.manifest.project.name
+    }
+
+    fn entrypoint(&self) -> PathBuf {
+        self.source_root.join("main.mlg")
     }
 }
 
@@ -119,6 +216,41 @@ pub enum ProjectError {
     },
     InvalidTestRoot {
         path: PathBuf,
+    },
+    InvalidDependencyPath {
+        manifest: PathBuf,
+        dependency: String,
+        path: String,
+    },
+    ResolveDependency {
+        manifest: PathBuf,
+        dependency: String,
+        path: PathBuf,
+        source: io::Error,
+    },
+    DependencyNotDirectory {
+        manifest: PathBuf,
+        dependency: String,
+        path: PathBuf,
+    },
+    DependencyNameMismatch {
+        manifest: PathBuf,
+        dependency: String,
+        actual: String,
+    },
+    ProjectNameCollision {
+        name: String,
+        first: PathBuf,
+        second: PathBuf,
+    },
+    DependencyCycle {
+        projects: Vec<String>,
+    },
+    OverlappingProjectRoot {
+        project: String,
+        root: PathBuf,
+        owner: String,
+        boundary: PathBuf,
     },
     ReadSourceDirectory {
         path: PathBuf,
@@ -185,6 +317,69 @@ impl std::fmt::Display for ProjectError {
                 "{}: project test root must be a directory when present",
                 path.display()
             ),
+            Self::InvalidDependencyPath {
+                manifest,
+                dependency,
+                path,
+            } => write!(
+                formatter,
+                "{}: dependency `{dependency}` path `{path}` must be a non-empty relative directory path",
+                manifest.display()
+            ),
+            Self::ResolveDependency {
+                manifest,
+                dependency,
+                path,
+                source,
+            } => write!(
+                formatter,
+                "{}: failed to resolve dependency `{dependency}` at {}: {source}",
+                manifest.display(),
+                path.display()
+            ),
+            Self::DependencyNotDirectory {
+                manifest,
+                dependency,
+                path,
+            } => write!(
+                formatter,
+                "{}: dependency `{dependency}` path {} must resolve to a project directory",
+                manifest.display(),
+                path.display()
+            ),
+            Self::DependencyNameMismatch {
+                manifest,
+                dependency,
+                actual,
+            } => write!(
+                formatter,
+                "{}: dependency key `{dependency}` does not match target project name `{actual}`",
+                manifest.display()
+            ),
+            Self::ProjectNameCollision {
+                name,
+                first,
+                second,
+            } => write!(
+                formatter,
+                "project name `{name}` resolves to multiple manifests: {} and {}",
+                first.display(),
+                second.display()
+            ),
+            Self::DependencyCycle { projects } => {
+                write!(formatter, "project dependency cycle: {}", projects.join(" -> "))
+            }
+            Self::OverlappingProjectRoot {
+                project,
+                root,
+                owner,
+                boundary,
+            } => write!(
+                formatter,
+                "project `{project}` root {} overlaps project `{owner}` source boundary {}",
+                root.display(),
+                boundary.display()
+            ),
             Self::ReadSourceDirectory { path, source } => write!(
                 formatter,
                 "{}: failed to read project source directory: {source}",
@@ -199,6 +394,7 @@ impl std::error::Error for ProjectError {
         match self {
             Self::InspectInput { source, .. }
             | Self::ReadManifest { source, .. }
+            | Self::ResolveDependency { source, .. }
             | Self::ReadSourceDirectory { source, .. } => Some(source),
             Self::ParseManifest { source, .. } => Some(source),
             Self::UnsupportedInput { .. }
@@ -207,7 +403,13 @@ impl std::error::Error for ProjectError {
             | Self::ReservedProjectName { .. }
             | Self::MissingSourceRoot { .. }
             | Self::MissingEntrypoint { .. }
-            | Self::InvalidTestRoot { .. } => None,
+            | Self::InvalidTestRoot { .. }
+            | Self::InvalidDependencyPath { .. }
+            | Self::DependencyNotDirectory { .. }
+            | Self::DependencyNameMismatch { .. }
+            | Self::ProjectNameCollision { .. }
+            | Self::DependencyCycle { .. }
+            | Self::OverlappingProjectRoot { .. } => None,
         }
     }
 }
@@ -237,7 +439,12 @@ pub fn discover_project(input: impl AsRef<Path>) -> Result<Project, ProjectError
         });
     };
 
-    load_project(manifest_path)
+    let manifest_path =
+        fs::canonicalize(&manifest_path).map_err(|source| ProjectError::InspectInput {
+            path: manifest_path,
+            source,
+        })?;
+    ProjectLoader::new().load(manifest_path)
 }
 
 fn find_nearest_manifest(start: &Path) -> Option<PathBuf> {
@@ -247,7 +454,151 @@ fn find_nearest_manifest(start: &Path) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-fn load_project(manifest_path: PathBuf) -> Result<Project, ProjectError> {
+struct ProjectLoader {
+    completed: BTreeMap<PathBuf, ProjectUnit>,
+    order: Vec<PathBuf>,
+    visiting: Vec<(PathBuf, String)>,
+    names: BTreeMap<String, PathBuf>,
+}
+
+impl ProjectLoader {
+    fn new() -> Self {
+        Self {
+            completed: BTreeMap::new(),
+            order: Vec::new(),
+            visiting: Vec::new(),
+            names: BTreeMap::new(),
+        }
+    }
+
+    fn load(mut self, root_manifest: PathBuf) -> Result<Project, ProjectError> {
+        self.visit(root_manifest.clone())?;
+        let root_project = self
+            .completed
+            .remove(&root_manifest)
+            .expect("the root project is loaded by dependency traversal");
+        let mut dependencies = Vec::new();
+        for manifest in self.order {
+            if manifest == root_manifest {
+                continue;
+            }
+            dependencies.push(
+                self.completed
+                    .remove(&manifest)
+                    .expect("dependency order only contains loaded projects"),
+            );
+        }
+        let project = Project {
+            root_project,
+            dependencies,
+        };
+        validate_project_boundaries(&project)?;
+        Ok(project)
+    }
+
+    fn visit(&mut self, manifest_path: PathBuf) -> Result<String, ProjectError> {
+        if let Some(project) = self.completed.get(&manifest_path) {
+            return Ok(project.name().to_string());
+        }
+        if let Some(cycle_start) = self
+            .visiting
+            .iter()
+            .position(|(path, _)| path == &manifest_path)
+        {
+            let mut projects = self.visiting[cycle_start..]
+                .iter()
+                .map(|(_, name)| name.clone())
+                .collect::<Vec<_>>();
+            projects.push(self.visiting[cycle_start].1.clone());
+            return Err(ProjectError::DependencyCycle { projects });
+        }
+
+        let mut project = load_project_unit(manifest_path.clone())?;
+        if let Some(existing) = self.names.get(project.name()) {
+            if existing != &manifest_path {
+                return Err(ProjectError::ProjectNameCollision {
+                    name: project.name().to_string(),
+                    first: existing.clone(),
+                    second: manifest_path,
+                });
+            }
+        } else {
+            self.names
+                .insert(project.name().to_string(), manifest_path.clone());
+        }
+
+        self.visiting
+            .push((manifest_path.clone(), project.name().to_string()));
+        let dependencies = project.manifest.dependencies.clone();
+        for (dependency, specification) in dependencies {
+            let dependency_manifest = resolve_dependency_manifest(
+                &project.manifest_path,
+                &dependency,
+                &specification.path,
+            )?;
+            let actual = self.visit(dependency_manifest)?;
+            if actual != dependency {
+                return Err(ProjectError::DependencyNameMismatch {
+                    manifest: project.manifest_path.clone(),
+                    dependency,
+                    actual,
+                });
+            }
+            project.direct_dependencies.insert(actual);
+        }
+        let popped = self
+            .visiting
+            .pop()
+            .expect("visiting stack contains the current project");
+        debug_assert_eq!(popped.0, manifest_path);
+
+        let name = project.name().to_string();
+        self.completed.insert(manifest_path.clone(), project);
+        self.order.push(manifest_path);
+        Ok(name)
+    }
+}
+
+fn resolve_dependency_manifest(
+    manifest: &Path,
+    dependency: &str,
+    path: &str,
+) -> Result<PathBuf, ProjectError> {
+    let relative = Path::new(path);
+    if path.is_empty() || !relative.is_relative() {
+        return Err(ProjectError::InvalidDependencyPath {
+            manifest: manifest.to_path_buf(),
+            dependency: dependency.to_string(),
+            path: path.to_string(),
+        });
+    }
+    let candidate = manifest
+        .parent()
+        .expect("a manifest path has a parent")
+        .join(relative);
+    let root = fs::canonicalize(&candidate).map_err(|source| ProjectError::ResolveDependency {
+        manifest: manifest.to_path_buf(),
+        dependency: dependency.to_string(),
+        path: candidate.clone(),
+        source,
+    })?;
+    if !root.is_dir() {
+        return Err(ProjectError::DependencyNotDirectory {
+            manifest: manifest.to_path_buf(),
+            dependency: dependency.to_string(),
+            path: root,
+        });
+    }
+    let dependency_manifest = root.join(MANIFEST_FILE);
+    fs::canonicalize(&dependency_manifest).map_err(|source| ProjectError::ResolveDependency {
+        manifest: manifest.to_path_buf(),
+        dependency: dependency.to_string(),
+        path: dependency_manifest,
+        source,
+    })
+}
+
+fn load_project_unit(manifest_path: PathBuf) -> Result<ProjectUnit, ProjectError> {
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|source| ProjectError::ReadManifest {
             path: manifest_path.clone(),
@@ -281,24 +632,44 @@ fn load_project(manifest_path: PathBuf) -> Result<Project, ProjectError> {
         return Err(ProjectError::MissingSourceRoot { path: source_root });
     }
 
-    let entrypoint = source_root.join("main.mlg");
-    if !entrypoint.is_file() {
-        return Err(ProjectError::MissingEntrypoint { path: entrypoint });
-    }
-
     let mut source_files = Vec::new();
     collect_source_files(&source_root, &mut source_files)?;
     sort_project_files(&root, &mut source_files);
 
     let test_root = root.join("tests");
-    Ok(Project {
+    Ok(ProjectUnit {
         root,
         manifest_path,
         manifest,
         source_root,
         source_files,
         test_root,
+        direct_dependencies: BTreeSet::new(),
     })
+}
+
+fn validate_project_boundaries(project: &Project) -> Result<(), ProjectError> {
+    let projects = std::iter::once(&project.root_project)
+        .chain(project.dependencies.iter())
+        .collect::<Vec<_>>();
+    for owner in &projects {
+        for candidate in &projects {
+            if owner.manifest_path == candidate.manifest_path {
+                continue;
+            }
+            for boundary in [&owner.source_root, &owner.test_root] {
+                if candidate.root.starts_with(boundary) {
+                    return Err(ProjectError::OverlappingProjectRoot {
+                        project: candidate.name().to_string(),
+                        root: candidate.root.clone(),
+                        owner: owner.name().to_string(),
+                        boundary: boundary.clone(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn sort_project_files(root: &Path, files: &mut [PathBuf]) {
@@ -546,7 +917,7 @@ mod tests {
     }
 
     #[test]
-    fn requires_the_source_root_and_entry_file() {
+    fn requires_the_source_root_and_allows_library_projects() {
         let missing_source = TempProject::new("missing-source");
         missing_source.write("mallang.toml", "[project]\nname = \"hello\"\n");
         let source_error = discover_project(&missing_source.root).unwrap_err();
@@ -559,11 +930,166 @@ mod tests {
         let missing_entry = TempProject::new("missing-entry");
         missing_entry.write("mallang.toml", "[project]\nname = \"hello\"\n");
         fs::create_dir_all(missing_entry.root.join("src")).unwrap();
-        let entry_error = discover_project(&missing_entry.root).unwrap_err();
+        let library = discover_project(&missing_entry.root).unwrap();
+        let entry_error = library.require_entrypoint().unwrap_err();
 
+        assert!(!library.has_entrypoint());
         assert!(matches!(
             entry_error,
             ProjectError::MissingEntrypoint { .. }
+        ));
+    }
+
+    #[test]
+    fn discovers_dependency_first_transitive_diamond_sources() {
+        let project = valid_project("dependency-order");
+        project.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nshared = { path = \"deps/shared\" }\ntext = { path = \"deps/text\" }\n",
+        );
+        project.write("deps/shared/mallang.toml", "[project]\nname = \"shared\"\n");
+        project.write(
+            "deps/shared/src/shared.mlg",
+            "package main\npub func Value() int { return 42 }\n",
+        );
+        project.write(
+            "deps/text/mallang.toml",
+            "[project]\nname = \"text\"\n\n[dependencies]\nshared = { path = \"../shared\" }\n",
+        );
+        project.write(
+            "deps/text/src/text.mlg",
+            "package main\nimport \"shared\"\npub func Read() int { return shared.Value() }\n",
+        );
+        project.write(
+            "deps/text/src/main.mlg",
+            "package main\nfunc main() { print(Read()) }\n",
+        );
+
+        let discovered = discover_project(&project.root).unwrap();
+        let dependencies = discovered.dependency_names().collect::<Vec<_>>();
+        let sources = discovered
+            .compilation_source_files()
+            .into_iter()
+            .map(|path| path.strip_prefix(discovered.root()).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(dependencies, ["shared", "text"]);
+        assert_eq!(
+            sources,
+            [
+                Path::new("deps/shared/src/shared.mlg"),
+                Path::new("deps/text/src/text.mlg"),
+                Path::new("src/main.mlg"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_dependency_paths_and_name_mismatches() {
+        let absolute = valid_project("absolute-dependency");
+        absolute.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"/tmp/text\" }\n",
+        );
+        assert!(matches!(
+            discover_project(&absolute.root).unwrap_err(),
+            ProjectError::InvalidDependencyPath { .. }
+        ));
+
+        let empty = valid_project("empty-dependency");
+        empty.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"\" }\n",
+        );
+        assert!(matches!(
+            discover_project(&empty.root).unwrap_err(),
+            ProjectError::InvalidDependencyPath { .. }
+        ));
+
+        let unknown = valid_project("unknown-dependency-field");
+        unknown.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"deps/text\", version = \"1\" }\n",
+        );
+        assert!(matches!(
+            discover_project(&unknown.root).unwrap_err(),
+            ProjectError::ParseManifest { .. }
+        ));
+
+        let mismatch = valid_project("dependency-name-mismatch");
+        mismatch.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nwrong = { path = \"deps/text\" }\n",
+        );
+        mismatch.write("deps/text/mallang.toml", "[project]\nname = \"text\"\n");
+        mismatch.write("deps/text/src/text.mlg", "package main\n");
+        assert!(matches!(
+            discover_project(&mismatch.root).unwrap_err(),
+            ProjectError::DependencyNameMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_dependency_cycles_and_project_name_collisions() {
+        let cycle = valid_project("dependency-cycle");
+        cycle.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"deps/text\" }\n",
+        );
+        cycle.write(
+            "deps/text/mallang.toml",
+            "[project]\nname = \"text\"\n\n[dependencies]\napp = { path = \"../..\" }\n",
+        );
+        cycle.write("deps/text/src/text.mlg", "package main\n");
+        let error = discover_project(&cycle.root).unwrap_err();
+        assert!(matches!(error, ProjectError::DependencyCycle { .. }));
+        assert_eq!(
+            error.to_string(),
+            "project dependency cycle: app -> text -> app"
+        );
+
+        let collision = valid_project("dependency-name-collision");
+        collision.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\nleft = { path = \"deps/left\" }\nright = { path = \"deps/right\" }\n",
+        );
+        for directory in ["left", "right"] {
+            collision.write(
+                &format!("deps/{directory}/mallang.toml"),
+                &format!("[project]\nname = \"{directory}\"\n\n[dependencies]\nshared = {{ path = \"../{directory}-shared\" }}\n"),
+            );
+            collision.write(
+                &format!("deps/{directory}/src/{directory}.mlg"),
+                "package main\n",
+            );
+            collision.write(
+                &format!("deps/{directory}-shared/mallang.toml"),
+                "[project]\nname = \"shared\"\n",
+            );
+            collision.write(
+                &format!("deps/{directory}-shared/src/shared.mlg"),
+                "package main\n",
+            );
+        }
+        assert!(matches!(
+            discover_project(&collision.root).unwrap_err(),
+            ProjectError::ProjectNameCollision { .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_dependency_projects_inside_source_boundaries() {
+        let project = valid_project("overlapping-dependency");
+        project.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ninside = { path = \"src/inside\" }\n",
+        );
+        project.write("src/inside/mallang.toml", "[project]\nname = \"inside\"\n");
+        project.write("src/inside/src/library.mlg", "package main\n");
+
+        assert!(matches!(
+            discover_project(&project.root).unwrap_err(),
+            ProjectError::OverlappingProjectRoot { .. }
         ));
     }
 }

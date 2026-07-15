@@ -32,9 +32,10 @@ pub use package::{
 };
 pub use parser::{parse, parse_with_source, ParseError, Parser};
 pub use project::{
-    discover_project, Project, ProjectError, ProjectManifest, ProjectMetadata, MANIFEST_FILE,
+    discover_project, PathDependency, Project, ProjectError, ProjectManifest, ProjectMetadata,
+    MANIFEST_FILE,
 };
-pub use semantic::{check, check_project, CheckedProgram, SemanticError};
+pub use semantic::{check, check_project, check_project_library, CheckedProgram, SemanticError};
 pub use source::{
     load_source_files, SourceFile, SourceLoadError, SourceLocation, SourceMap, SourceSet,
 };

@@ -1,0 +1,29 @@
+package main
+
+pub type Box[T]struct {
+    value T
+}
+
+pub type NumberList enum {
+    Nil
+    Cons(int, NumberList)
+}
+
+pub func Identity[T](value T) T {
+    return value
+}
+
+pub func Sum(value NumberList) int {
+    return match value {
+        case NumberList.Nil {
+            0
+        }
+        case NumberList.Cons(head, tail) {
+            head + Sum(tail)
+        }
+    }
+}
+
+func privateAnswer() int {
+    return 42
+}

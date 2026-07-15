@@ -1,0 +1,5 @@
+package main
+
+test ReadsPrivateState() {
+    assert(privateAnswer() == 42)
+}
