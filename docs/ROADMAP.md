@@ -1402,3 +1402,20 @@ P160의 exact workflow는
 `docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`가 소유한다. v0.7.0은 두 supported
 native archive, checksum과 installer를 포함한 GitHub Release로 공개됐다. 다음 milestone은
 approved v0.8 hardening의 P161 baseline inventory다.
+
+## P161: v0.8 Hardening Baseline Inventory
+
+상태: complete (2026-07-16)
+
+- [x] fail-fast lexer/parser/multi-source/compiler diagnostic flow inventory
+- [x] CLI multi-record rendering reuse boundary 확인
+- [x] production panic/invariant audit classification 정의
+- [x] deterministic property와 crash-corpus gap 기록
+- [x] standalone/dependency/reference CLI performance baseline set 고정
+- [x] generated C/release archive reproducibility gap 기록
+- [x] P162 top-level recovery, block recovery와 cap acceptance slice 분리
+
+P161의 current-source evidence와 P162 exact slice order는
+`docs/todo-v08-compiler-hardening/p161-baseline-inventory.md`가 소유한다. 다음 구현은 기존
+single-error API를 보존하면서 top-level parse report와 multi-source diagnostic aggregation을
+추가하는 P162 Slice A다.

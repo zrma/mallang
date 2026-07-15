@@ -279,7 +279,7 @@ library를 제공한다.
 
 ## v0.8.0: Compiler Hardening
 
-상태: decision gate approved (2026-07-16); P161 next
+상태: decision gate approved; P161 complete, P162 next
 
 목표: 언어 기능 추가보다 compiler 품질, 진단, 성능을 우선하는 안정화 구간을
 완료한다.

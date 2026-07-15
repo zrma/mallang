@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved on 2026-07-16; P161 next
+상태: Q1-Q6 approved; P161 complete, P162 next
 
 ## Goal
 
@@ -22,6 +22,15 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 
 - Q1-Q6 approval, current panic/recovery/performance inventory와 representative corpus를
   고정한다.
+
+진행:
+
+- [x] Q1-Q6 approval record
+- [x] fail-fast lexer/parser/frontend/compiler flow inventory
+- [x] production invariant site classification boundary
+- [x] property/crash-corpus gap inventory
+- [x] representative performance/reproducibility baseline set
+- [x] P162 top-level/block/cap slice order
 
 ### P162: Parser Recovery and Multiple Diagnostics
 

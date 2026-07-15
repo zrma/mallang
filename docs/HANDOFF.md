@@ -251,6 +251,13 @@
   checksum bundle이 모두 통과했고 downloaded 두 archive checksum도 일치했다. README와
   `SPEC.md`에 manual new project 경로를 문서화했다. v0.8 hardening Q1-Q6는 2026-07-16
   승인됐고 v0.7.0 GitHub Release는 installer, checksum과 두 native archive를 제공한다.
+- v0.8 P161 완료: lexer, parser, multi-source frontend와 compiler가 모두 first-error
+  `Result`로 중단하지만 CLI는 이미 `Vec<Diagnostic>` human/JSON rendering을 지원함을
+  확인했다. Production invariant site는 user-reachable diagnostic, malformed IR validator,
+  locally proven assertion의 세 범주로 audit한다. Property/crash corpus와 generated C repeated
+  byte gate는 아직 없고, P165 representative baseline은 minimal standalone,
+  cleanup-heavy standalone, local-dependency app와 standard-library reference CLI로 고정했다.
+  P162는 top-level recovery/aggregation, block recovery, cap/compatibility acceptance 순서다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -411,8 +418,8 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P161에서 parser recovery, user-reachable panic/invariant와 baseline corpus를 inventory한다.
-2. P162 bounded parser recovery와 multiple diagnostics implementation으로 전환한다.
+1. P162 Slice A에서 top-level parser recovery와 multi-source diagnostic aggregation을 구현한다.
+2. Slice B에서 delimiter-aware block statement recovery를 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
