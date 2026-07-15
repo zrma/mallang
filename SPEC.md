@@ -168,6 +168,28 @@ P159 tooling is implemented in the development tree, but v0.7 binary assets are
 not published until the release milestone. The exact contract is specified in
 `docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`.
 
+## Implemented v0.7 Canonical Project Acceptance
+
+P160 connects the formatter, project graph, tests, diagnostics, native backend,
+and release installer as one clean-project workflow.
+
+- The acceptance creates an entrypoint-free library and an executable project
+  with a manifest-relative path dependency in a new ignored directory. It does
+  not reuse a checked-in project fixture.
+- Unformatted production and test sources first fail `fmt --check` without
+  writes, then pass canonical formatting, clean checks, and repeated byte
+  identity.
+- The compiler used for project check, JSON-mode check, test, build, and run is
+  installed from the deterministic target-named release archive. It is not the
+  workspace debug binary.
+- `mlg build <project> -o <path>` is the native project release path in v0.7.
+  Mallang does not define a source-level build profile or `--release` flag yet.
+- The same repository-owned script runs on the supported macOS arm64 and Linux
+  x86_64 release matrix before its archive enters the combined checksum bundle.
+
+The exact workflow and evidence boundary are specified in
+`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`.
+
 ## Implemented v0.6 Standard Library
 
 The approved v0.6 standard-library contract implements its compiler foundation,

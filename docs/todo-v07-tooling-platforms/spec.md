@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P159 complete; P160 next
+상태: P154-P159 complete; P160 implementation in progress
 
 ## Goal
 
@@ -101,6 +101,17 @@ machine-readable integration과 supported platform delivery를 우선한다.
 
 - New project에서 format, test, release build, install까지 canonical workflow를 닫는다.
 - Documentation, CI matrix와 v0.8 hardening decision gate를 동기화한다.
+
+진행:
+
+- [x] empty work directory의 library/application project synthesis
+- [x] installed release compiler format/check/test/build/run acceptance
+- [x] canonical local gate와 supported-platform release matrix 연결
+- [x] user-facing canonical workflow 문서화
+- [x] v0.8 hardening recommendation draft
+- [x] local full gate와 publication boundary
+- [ ] published platform evidence
+- [ ] v0.8 Q1-Q6 사용자 승인
 
 ## Excluded
 

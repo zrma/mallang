@@ -54,13 +54,17 @@ check_shell_syntax() {
 }
 
 check_shell_syntax \
+  scripts/build-release-artifact.sh \
   scripts/check-generated-c-sanitizers.sh \
+  scripts/check-release-artifacts.sh \
   scripts/check-release-binary.sh \
   scripts/check-release-helpers.sh \
+  scripts/check-v07-acceptance.sh \
   scripts/check.sh \
   scripts/finalize-and-push.sh \
   scripts/start-work.sh \
   scripts/verify-v0-rc.sh
+sh -n install.sh
 
 expect_status finalize_help 0 scripts/finalize-and-push.sh --help
 expect_log_contains finalize_help "scripts/finalize-and-push.sh --verify-only"

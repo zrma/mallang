@@ -241,6 +241,12 @@
   reinstall과 installed project check/build/run/test를 검증한다. Published GitHub Actions에서
   두 native job과 canonical job이 통과했고 downloaded combined bundle의 두 checksum도
   일치했다.
+- v0.7 P160 구현 중: `scripts/check-v07-acceptance.sh`가 빈 work directory에 local
+  library와 dependent executable project를 만들고 deterministic archive에서 clean prefix로
+  설치한 `mlg`만 사용한다. Formatter no-write/idempotence, human/JSON check, isolated test,
+  native build/direct run과 compiler run을 하나의 workflow로 검증하며 canonical check와 두
+  supported-platform release job이 같은 script를 호출한다. README와 `SPEC.md`에 manual new
+  project 경로를 문서화했고 v0.8 hardening Q1-Q6 초안은 사용자 승인을 기다린다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -248,6 +254,7 @@
 ```sh
 scripts/check-agent-harness-interface.sh
 scripts/check.sh
+scripts/check-v07-acceptance.sh
 scripts/check-release-artifacts.sh
 scripts/check-release-binary.sh
 scripts/check-release-helpers.sh
@@ -390,7 +397,8 @@ target/mallang/match-statement
 - `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
 - `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P159 implementation evidence
+- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P160 implementation evidence
+- `docs/todo-v08-compiler-hardening/`: proposed v0.8 hardening decision gate
 - `docs/releases/`: v0.1.0부터 v0.6.0까지의 release notes와 verification record
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -399,9 +407,9 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P160에서 new project format/test/release build/install workflow를 하나의 acceptance로
-   닫는다.
-2. v0.8 hardening 범위와 compatibility decision gate를 확정한다.
+1. P160 local/public platform acceptance evidence를 닫는다.
+2. `docs/todo-v08-compiler-hardening/open-questions.md` Q1-Q6를 승인받는다.
+3. 별도 승인 뒤 v0.7.0 version bump, tag와 binary GitHub Release를 진행한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

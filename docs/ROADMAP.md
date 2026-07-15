@@ -1384,3 +1384,20 @@ P159의 exact contract는
 `docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`가 소유한다. Local
 implementation과 published native matrix evidence를 모두 확인했다. 다음 milestone은 P160 v0.7
 acceptance다.
+
+## P160: v0.7 Acceptance
+
+상태: implementation in progress
+
+- [x] 빈 work directory에 library와 dependent executable project 생성
+- [x] installed release compiler의 formatter no-write/idempotence 검증
+- [x] human/JSON check, project test, native build/run canonical workflow
+- [x] canonical local gate와 macOS arm64/Linux x86_64 release matrix 연결
+- [x] README, `SPEC.md`, handoff와 v0.8 decision draft 동기화
+- [x] local canonical/publication gate 통과
+- [ ] published platform matrix와 combined bundle evidence
+- [ ] v0.8 Q1-Q6 사용자 승인
+
+P160의 exact workflow는
+`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`가 소유한다. Release version bump,
+tag와 GitHub Release는 P160 implementation과 별도의 publication approval boundary다.

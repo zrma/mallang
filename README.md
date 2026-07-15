@@ -320,6 +320,56 @@ VERSION=0.7.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
+## v0.7 Canonical Project Workflow
+
+Mallang does not yet provide a project generator. Create a minimal project with
+the manifest and source tree below after installing `mlg`:
+
+```text
+hello/
+|-- mallang.toml
+|-- src/
+|   `-- main.mlg
+`-- tests/
+    `-- main_test.mlg
+```
+
+```toml
+[project]
+name = "hello"
+```
+
+```mlg
+package main
+
+func main() {
+    print(42)
+}
+```
+
+```mlg
+package main
+
+test PrintsAnswer() {
+    assert(40 + 2 == 42)
+}
+```
+
+The canonical development-to-native path is:
+
+```sh
+mlg fmt hello
+mlg fmt --check hello
+mlg check hello
+mlg test hello
+mlg build hello -o hello-app
+./hello-app
+```
+
+`scripts/check-v07-acceptance.sh` recreates this workflow from an empty work
+directory with a local library dependency and an installed release artifact. It
+is the cross-platform release acceptance used by CI.
+
 ## v0.7 Binary Distribution
 
 P159 implements the distribution contract, but no v0.7 binary assets are
@@ -364,7 +414,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
 - `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P159 implementation evidence.
+- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
+- `docs/todo-v08-compiler-hardening/`: proposed v0.8 compiler-hardening decision gate.
 - `docs/releases/`: v0.1.0 through v0.6.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
