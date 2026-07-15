@@ -1,6 +1,6 @@
 # Spec: v0.7 Tooling and Platforms
 
-상태: P154-P159 complete; P160 implementation in progress
+상태: P154-P159 complete; P160 technical acceptance complete, v0.8 approval pending
 
 ## Goal
 
@@ -110,7 +110,7 @@ machine-readable integration과 supported platform delivery를 우선한다.
 - [x] user-facing canonical workflow 문서화
 - [x] v0.8 hardening recommendation draft
 - [x] local full gate와 publication boundary
-- [ ] published platform evidence
+- [x] published platform evidence
 - [ ] v0.8 Q1-Q6 사용자 승인
 
 ## Excluded

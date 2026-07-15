@@ -1,6 +1,6 @@
 # P160: v0.7 Acceptance
 
-상태: implementation in progress
+상태: technical acceptance complete; v0.8 decision approval pending
 
 ## Canonical workflow
 
@@ -39,5 +39,6 @@ public CLI contract가 아니므로 별도의 `--release` option을 암시하지
 - [x] local path dependency and library command boundary
 - [x] successful machine-readable diagnostic mode compatibility
 - [x] local canonical and publication boundary gates
-- [ ] published macOS arm64/Linux x86_64 CI evidence
-- [ ] user-facing documentation and v0.8 decision gate synchronization
+- [x] published macOS arm64/Linux x86_64 CI evidence
+- [x] user-facing documentation and v0.8 decision gate draft synchronization
+- [ ] v0.8 Q1-Q6 user approval

@@ -1387,7 +1387,7 @@ acceptance다.
 
 ## P160: v0.7 Acceptance
 
-상태: implementation in progress
+상태: technical acceptance complete; v0.8 decision approval pending
 
 - [x] 빈 work directory에 library와 dependent executable project 생성
 - [x] installed release compiler의 formatter no-write/idempotence 검증
@@ -1395,7 +1395,7 @@ acceptance다.
 - [x] canonical local gate와 macOS arm64/Linux x86_64 release matrix 연결
 - [x] README, `SPEC.md`, handoff와 v0.8 decision draft 동기화
 - [x] local canonical/publication gate 통과
-- [ ] published platform matrix와 combined bundle evidence
+- [x] published platform matrix와 combined bundle evidence
 - [ ] v0.8 Q1-Q6 사용자 승인
 
 P160의 exact workflow는
