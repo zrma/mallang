@@ -1468,3 +1468,19 @@ deterministic mutation property와 minimized crash corpus를 추가하는 P164�
 Generator, corpus promotion과 canonical gate는
 `docs/todo-v08-compiler-hardening/p164-property-crash-corpus.md`가 소유한다. 다음 milestone은
 representative 성능 측정과 same-input output identity를 고정하는 P165다.
+
+## P165: v0.8 Performance and Reproducibility Baseline
+
+상태: complete (2026-07-16)
+
+- [x] 네 representative case의 release-profile repeated measurement harness
+- [x] check/build/runtime median과 generated C/native size machine-readable record
+- [x] observational policy와 unset regression threshold schema
+- [x] runtime output 및 generated C SHA-256 기록
+- [x] generated C same-input byte identity gate
+- [x] existing release archive byte identity gate composition
+- [x] native executable byte identity 제외 범위 고정
+
+측정 schema, initial observation과 reproducibility 범위는
+`docs/todo-v08-compiler-hardening/p165-performance-reproducibility.md`가 소유한다. 다음
+milestone은 full hardening evidence와 v0.9 freeze decision gate를 닫는 P166이다.

@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved; P161-P164 complete, P165 next
+상태: Q1-Q6 approved; P161-P165 complete, P166 next
 
 ## Goal
 
@@ -77,6 +77,15 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 
 - representative projects의 compiler/runtime metrics를 machine-readable record로 남긴다.
 - generated C와 release archive의 same-input byte identity 범위를 고정한다.
+
+진행:
+
+- [x] release-profile four-case repeated measurement harness
+- [x] machine-readable observational baseline과 schema validation
+- [x] check/build/runtime median, generated C/native size와 output hash
+- [x] generated C repeated-build byte identity gate
+- [x] existing release archive byte identity gate composition
+- [x] native executable identity 제외 범위
 
 ### P166: v0.8 Acceptance
 

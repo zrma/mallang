@@ -1,0 +1,86 @@
+{
+  "schema": "mallang.v08.performance-baseline.v1",
+  "policy": {
+    "mode": "observational",
+    "regression_thresholds": null,
+    "decision_gate": "set thresholds only after supported-platform variance review"
+  },
+  "measurement": {
+    "date": "2026-07-16",
+    "compiler": "mlg 0.7.0",
+    "compiler_profile": "release",
+    "clock": "perf_counter_ns",
+    "iterations": 7,
+    "warmups": 1,
+    "host": {
+      "os": "macos",
+      "architecture": "aarch64"
+    }
+  },
+  "cases": [
+    {
+      "id": "minimal-standalone",
+      "input": "examples/first.mlg",
+      "metrics": {
+        "check_wall_ms_median": 4.336,
+        "build_wall_ms_median": 69.357,
+        "generated_c_bytes": 3387,
+        "generated_c_sha256": "e3a54be1b8227d3900812c2b74003b8baec54e3c188562698b79fb05ff9e5fca",
+        "native_binary_bytes": 33648
+      }
+    },
+    {
+      "id": "cleanup-heavy-standalone",
+      "input": "examples/full-expression-cleanup.mlg",
+      "metrics": {
+        "check_wall_ms_median": 4.4,
+        "build_wall_ms_median": 74.683,
+        "generated_c_bytes": 27593,
+        "generated_c_sha256": "119006d725f39ee9430397591b8ff354844dc3ddc701032b782530c0eb8b3fff",
+        "native_binary_bytes": 34408,
+        "runtime_wall_ms_median": 3.543,
+        "stdout_sha256": "373a4f0762ed98b65902707f74b6aa0b82e32166835b85ae19e73697242d3c35",
+        "stdout_utf8": "42\n3\n5\n10\n0\n1\n3\n1\n2\n3\n17\n2\n1\n5\n4\n0\n1\n7\n20\n"
+      }
+    },
+    {
+      "id": "local-dependency-project",
+      "input": "examples/projects/local-deps/app",
+      "metrics": {
+        "check_wall_ms_median": 5.164,
+        "build_wall_ms_median": 72.74,
+        "generated_c_bytes": 10874,
+        "generated_c_sha256": "909d05df93b51a7479be32541b9af5080b85872709201a66eece5cda4040676c",
+        "native_binary_bytes": 34744
+      }
+    },
+    {
+      "id": "standard-library-cli",
+      "input": "examples/projects/textstats",
+      "metrics": {
+        "check_wall_ms_median": 5.498,
+        "build_wall_ms_median": 84.468,
+        "generated_c_bytes": 61364,
+        "generated_c_sha256": "64559f4d2cca3c2b18145ec058ff6936fe6f6d2f6d5326bb1050e271a60186d8",
+        "native_binary_bytes": 55096,
+        "runtime_wall_ms_median": 3.948,
+        "stdout_sha256": "73bb7de9abfebb6f90fa0ff5754c698c99f057c51ca222a02c5fd03260292858",
+        "stdout_utf8": "bytes=12\nscalars=10\nlines=4\ndistinct_line_lengths=3\n"
+      }
+    }
+  ],
+  "reproducibility": {
+    "generated_c": {
+      "status": "pass",
+      "scope": "same compiler, input, options, and host"
+    },
+    "release_archive": {
+      "status": "covered-by-gate",
+      "command": "scripts/check-release-artifacts.sh"
+    },
+    "native_executable": {
+      "status": "excluded",
+      "reason": "host C compiler and toolchain output is outside the byte-identity contract"
+    }
+  }
+}

@@ -290,6 +290,11 @@
   program의 type/ownership marker를 하나씩 invalid하게 바꾸고 semantic message class를 고정했다.
   `tests/fixtures/hardening/crash-corpus/`의 최소 source 6개는 frontend/package/link/semantic/
   ownership stage diagnostic과 corpus registration completeness를 검증한다.
+- v0.8 P165 완료: release-profile `mlg`로 minimal, cleanup-heavy, local dependency와
+  standard-library CLI를 반복 측정해 `docs/baselines/v0.8-performance.json`에 observational
+  baseline을 남겼다. `scripts/check-v08-reproducibility.sh`는 baseline schema와 네 generated C
+  반복 빌드 및 기존 release archive의 byte identity를 검증한다. Native executable identity는
+  host C toolchain 영향 때문에 명시적으로 제외한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -451,9 +456,10 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P165에서 네 representative case의 compile/runtime/generated C/native size를 측정한다.
-2. Machine-readable observational baseline과 측정 환경 schema를 고정한다.
-3. Generated C와 release archive의 same-input byte identity gate를 추가한다.
+1. P166에서 crash corpus, full examples, strict C, sanitizer와 release binary를 하나의
+   v0.8 acceptance command로 묶는다.
+2. Supported macOS arm64/Linux x86_64 CI 결과와 publication boundary를 확인한다.
+3. v0.9 language-freeze decision gate를 동기화하고 v0.8.0 release를 준비한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,
