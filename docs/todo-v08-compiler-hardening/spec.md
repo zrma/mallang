@@ -1,6 +1,6 @@
 # Spec: v0.8 Compiler Hardening
 
-상태: Q1-Q6 approved; P161 complete, P162 in progress (Slice A-B complete, Slice C next)
+상태: Q1-Q6 approved; P161-P162 complete, P163 next
 
 ## Goal
 
@@ -43,7 +43,7 @@ deterministic property evidence와 측정 가능한 성능/재현성 baseline을
 - [x] 기존 single-error API와 partial-program rejection 보존
 - [x] source별 32-error cap과 human/JSON multi-record parity 회귀
 - [x] Slice B: delimiter-aware block statement recovery와 nested ambiguity 회귀
-- [ ] Slice C: duplicate suppression, truncation과 compatibility acceptance
+- [x] Slice C: duplicate suppression, truncation과 compatibility acceptance
 
 ### P163: Compiler and IR Invariant Defense
 

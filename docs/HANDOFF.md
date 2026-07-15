@@ -270,6 +270,12 @@
   유지하고 `func (` receiver method는 모호한 recovery target에서 제외한다. Source 전체
   32-error cap, unmatched parenthesis cascade 방지와 top-level/block 4-record CLI parity를
   회귀로 고정했다. Slice C의 duplicate suppression과 compatibility acceptance가 다음이다.
+- v0.8 P162 Slice C 완료: parser는 exact `(message, span)` duplicate만 제거하고 source 내부
+  span stable order를 고정한다. 40-error input은 concrete error 첫 32개만 반환하며 lexical
+  error는 first-error를 유지한다. `scripts/check-parser-recovery.sh`가
+  `parse/check/ir/build/run/test` human/JSON parity, non-zero, empty stdout와 single/multi API
+  compatibility를 canonical acceptance로 검증한다. P162 전체가 완료됐고 P163 invariant
+  defense가 다음이다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -277,6 +283,7 @@
 ```sh
 scripts/check-agent-harness-interface.sh
 scripts/check.sh
+scripts/check-parser-recovery.sh target/debug/mlg
 scripts/check-v07-acceptance.sh
 scripts/check-release-artifacts.sh
 scripts/check-release-binary.sh
@@ -430,10 +437,11 @@ target/mallang/match-statement
 
 ## 다음 구현 후보
 
-1. P162 Slice C에서 duplicate suppression과 32-error truncation record를 고정한다.
-2. `parse/check/ir/build/run/test`의 human/JSON order와 non-zero compatibility를 acceptance로
-   닫는다.
-3. P162 완료 뒤 P163 compiler/IR invariant defense로 이동한다.
+1. P163에서 production panic/expect/index site를 user-reachable, malformed IR, proven invariant로
+   다시 분류한다.
+2. User source로 도달 가능한 site를 stage-owned diagnostic으로 전환하고 negative regression을
+   추가한다.
+3. Typed IR/backend entrypoint에 explicit invariant validation을 추가한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

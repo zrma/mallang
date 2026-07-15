@@ -1,0 +1,4 @@
+src/a.mlg:3:24: expected `)` after function parameters
+src/a.mlg:6:14: expected expression
+src/a.mlg:7:15: expected expression
+src/main.mlg:3:25: expected `)` after function parameters

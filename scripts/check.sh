@@ -162,6 +162,7 @@ scripts/check-formatter.sh target/debug/mlg
 scripts/check-test-workflow.sh target/debug/mlg
 scripts/check-path-dependencies.sh target/debug/mlg
 scripts/check-diagnostics.sh target/debug/mlg
+scripts/check-parser-recovery.sh target/debug/mlg
 scripts/check-v07-acceptance.sh
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"

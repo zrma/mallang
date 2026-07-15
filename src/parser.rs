@@ -184,6 +184,8 @@ impl Parser {
             span,
         };
 
+        self.diagnostics
+            .sort_by_key(|error| (error.span.start, error.span.end));
         let diagnostics = std::mem::take(&mut self.diagnostics);
         if diagnostics.is_empty() {
             Ok(program)
@@ -193,7 +195,7 @@ impl Parser {
     }
 
     fn push_diagnostic(&mut self, error: ParseError) {
-        if !self.diagnostic_cap_reached() {
+        if !self.diagnostic_cap_reached() && !self.diagnostics.contains(&error) {
             self.diagnostics.push(error);
         }
     }
@@ -2099,6 +2101,29 @@ func main() {
         assert!(errors
             .windows(2)
             .all(|pair| pair[0].span.start < pair[1].span.start));
+    }
+
+    #[test]
+    fn suppresses_only_exact_duplicate_diagnostics() {
+        let tokens = lex("func main() {}\n").unwrap();
+        let span = tokens[0].span;
+        let mut parser = Parser::new(tokens);
+        let duplicate = ParseError::new("duplicate", span);
+
+        parser.push_diagnostic(duplicate.clone());
+        parser.push_diagnostic(duplicate);
+        parser.push_diagnostic(ParseError::new("different message", span));
+
+        assert_eq!(parser.diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn keeps_lexical_diagnostics_fail_fast() {
+        let source = "func main() { @ @ }\n";
+        let errors = parse_with_diagnostics(source).unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(parse(source).unwrap_err(), errors[0]);
     }
 
     #[test]

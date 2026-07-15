@@ -83,6 +83,8 @@ def main():
     parser.add_argument("--expect-stage", choices=sorted(STAGES))
     parser.add_argument("--expect-count", type=int, default=1)
     parser.add_argument("--expect-path")
+    parser.add_argument("--expect-line-range")
+    parser.add_argument("--expect-unique", action="store_true")
     parser.add_argument("--render-human", action="store_true")
     args = parser.parse_args()
 
@@ -107,6 +109,21 @@ def main():
         record.get("source", {}).get("path") != args.expect_path for record in records
     ):
         fail(f"expected every record to use path {args.expect_path!r}")
+    if args.expect_unique:
+        encoded = [json.dumps(record, sort_keys=True) for record in records]
+        if len(encoded) != len(set(encoded)):
+            fail("expected every record to be unique")
+    if args.expect_line_range:
+        try:
+            first, last = (int(value) for value in args.expect_line_range.split(":", 1))
+        except ValueError:
+            fail("line range must use FIRST:LAST integer syntax")
+        lines = [
+            record.get("source", {}).get("span", {}).get("start", {}).get("line")
+            for record in records
+        ]
+        if lines != list(range(first, last + 1)):
+            fail(f"expected source lines {first} through {last}, got {lines}")
     if args.render_human:
         for record in records:
             print(render_human(record))
