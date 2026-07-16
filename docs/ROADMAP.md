@@ -1542,7 +1542,7 @@ compiler/language version과 v1 compatibility 약속을 고정하는 P168이다.
 상태: complete (2026-07-17)
 
 - [x] 98개 contract rule의 exact-set evidence manifest
-- [x] 23개 evidence profile과 63개 script/fixture/Rust-test/command item
+- [x] 23개 evidence profile과 64개 script/fixture/Rust-test/command item
 - [x] duplicate, unmapped, unknown rule과 stale evidence fail-closed checker
 - [x] canonical `scripts/check.sh` conformance integration
 - [x] bootstrap borrow syntax와 0.x project/ownership/standard/tooling migration guide
@@ -1554,3 +1554,22 @@ Conformance schema, checker, migration guide와 executable acceptance는
 `docs/MIGRATION_V1.md`, `scripts/check-v1-migration.sh`, 그리고
 `docs/todo-v09-language-freeze/p169-conformance-migration.md`가 소유한다. 다음 milestone은
 representative `textstats`를 clean workflow로 반복 검증하는 P170이다.
+
+## P170: Representative Dogfood
+
+상태: complete (2026-07-17)
+
+- [x] deterministic release archive의 clean-prefix installed compiler
+- [x] ignored output을 제외한 clean `textstats` project copy
+- [x] formatter no-write/idempotence와 canonical source normalization
+- [x] UTF-8 summary package test와 deterministic test discovery/output
+- [x] representative project와 dedicated empty-suite test fixture 분리
+- [x] format/check/test/build/run 두 번 반복
+- [x] stdout, output-file, usage exit와 generated C identity
+- [x] strict C, ASan/UBSan와 allocation-accounting reference CLI gate
+- [x] compiler, diagnostic, documentation, test-gap 분류와 frozen-surface no-change 판정
+
+Standalone clean-install gate와 issue inventory는
+`scripts/check-v09-dogfood.sh`와
+`docs/todo-v09-language-freeze/p170-representative-dogfood.md`가 소유한다. 다음 milestone은
+freeze audit, supported-platform artifacts와 `v0.9.0` release를 닫는 P171이다.

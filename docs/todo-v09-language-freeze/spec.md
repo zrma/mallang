@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P169 complete on 2026-07-17; P170 next
+상태: P170 complete on 2026-07-17; P171 next
 
 ## Goal
 
@@ -28,8 +28,9 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P170: Representative Dogfood
 
-- `examples/projects/textstats`를 clean install부터 format/check/test/build/run까지 반복 실행한다.
-- 발견된 문제는 frozen surface를 바꾸기보다 bug, diagnostic, documentation으로 분류한다.
+- [x] `examples/projects/textstats`를 clean install부터 format/check/test/build/run까지 반복 실행한다.
+- [x] 발견된 문제를 frozen surface 변경 없이 bug, diagnostic, documentation과 test gap으로
+  분류한다.
 
 ### P171: v0.9 Acceptance and Release
 

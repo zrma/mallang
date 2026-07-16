@@ -168,6 +168,8 @@ scripts/check-v1-migration.sh target/debug/mlg
 scripts/check-hardening-corpus.sh target/debug/mlg
 scripts/check-v08-reproducibility.sh --skip-release-archive target/debug/mlg
 scripts/check-v07-acceptance.sh
+scripts/check-v09-dogfood.sh \
+  --compiler target/mallang/release-artifact-smoke/home/.local/bin/mlg
 no_args_stdout="target/mallang/no-args.stdout"
 no_args_stderr="target/mallang/no-args.stderr"
 if "${CARGO[@]}" run --quiet --bin mlg -- >"$no_args_stdout" 2>"$no_args_stderr"; then

@@ -144,7 +144,9 @@ This repository is the Mallang language PoC workspace.
   callbacks, allocation-safe growth, and recursive cleanup.
 - `examples/projects/textstats` is a multi-package native CLI that reads UTF-8
   input, summarizes it with `std/strings` and `Map[int,int]`, and writes to a
-  file or stdout with explicit `Result`-to-stderr/exit handling.
+  file or stdout with explicit `Result`-to-stderr/exit handling. Its package
+  test and `scripts/check-v09-dogfood.sh` exercise the clean installed workflow
+  twice without changing the frozen language surface.
 
 ## Bootstrap
 

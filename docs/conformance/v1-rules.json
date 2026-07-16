@@ -191,6 +191,7 @@
       "rules": ["V1-CLI-005"],
       "evidence": [
         {"kind": "script", "path": "scripts/check-v07-acceptance.sh"},
+        {"kind": "script", "path": "scripts/check-v09-dogfood.sh"},
         {"kind": "script", "path": "scripts/check-release-binary.sh"}
       ]
     },

@@ -9,13 +9,27 @@ import "textstats/stats"
 
 func ErrorKindName(kind errors.Kind) string {
     return match kind {
-        case errors.Kind.NotFound { "NotFound" }
-        case errors.Kind.PermissionDenied { "PermissionDenied" }
-        case errors.Kind.AlreadyExists { "AlreadyExists" }
-        case errors.Kind.InvalidInput { "InvalidInput" }
-        case errors.Kind.InvalidData { "InvalidData" }
-        case errors.Kind.Interrupted { "Interrupted" }
-        case errors.Kind.Other { "Other" }
+        case errors.Kind.NotFound {
+            "NotFound"
+        }
+        case errors.Kind.PermissionDenied {
+            "PermissionDenied"
+        }
+        case errors.Kind.AlreadyExists {
+            "AlreadyExists"
+        }
+        case errors.Kind.InvalidInput {
+            "InvalidInput"
+        }
+        case errors.Kind.InvalidData {
+            "InvalidData"
+        }
+        case errors.Kind.Interrupted {
+            "Interrupted"
+        }
+        case errors.Kind.Other {
+            "Other"
+        }
     }
 }
 

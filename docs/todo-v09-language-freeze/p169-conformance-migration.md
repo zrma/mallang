@@ -5,7 +5,8 @@
 ## Conformance result
 
 `docs/conformance/v1-rules.json`은 candidate contract의 98개 rule을 23개 evidence
-profile에 정확히 한 번씩 배치한다. 63개 evidence item은 다음 네 종류만 허용한다.
+profile에 정확히 한 번씩 배치한다. P170 dogfood evidence를 포함한 64개 evidence item은
+다음 네 종류만 허용한다.
 
 - executable repository script
 - checked-in `.mlg` fixture

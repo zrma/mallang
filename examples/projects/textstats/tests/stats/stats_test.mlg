@@ -1,0 +1,7 @@
+package stats
+
+test SummarizesUnicodeText() {
+    text := "가a\nx"
+    summary := Summarize(con text)
+    assert(summary == "bytes=6\nscalars=4\nlines=2\ndistinct_line_lengths=2\n")
+}

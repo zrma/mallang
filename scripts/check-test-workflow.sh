@@ -15,7 +15,7 @@ OUT_DIR="target/mallang/test-workflow"
 SUCCESS_PROJECT="examples/projects/hello"
 FAILURE_PROJECT="tests/fixtures/project-test-failure"
 PREFLIGHT_PROJECT="tests/fixtures/project-test-preflight"
-EMPTY_PROJECT="examples/projects/textstats"
+EMPTY_PROJECT="tests/fixtures/project-test-empty"
 mkdir -p "$OUT_DIR"
 
 run_success() {
