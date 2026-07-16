@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P168 complete on 2026-07-17; P169 next
+상태: P169 complete on 2026-07-17; P170 next
 
 ## Goal
 
@@ -23,8 +23,8 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P169: Conformance and Migration Map
 
-- 각 normative rule을 test, fixture 또는 explicit verification command에 연결한다.
-- v0.1-v0.8에서 제거되거나 정규화된 syntax/API migration을 한 문서로 통합한다.
+- [x] 각 normative rule을 test, fixture 또는 explicit verification command에 연결한다.
+- [x] v0.1-v0.8에서 제거되거나 정규화된 syntax/API migration을 한 문서로 통합한다.
 
 ### P170: Representative Dogfood
 

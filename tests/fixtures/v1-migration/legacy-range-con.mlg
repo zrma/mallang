@@ -1,0 +1,7 @@
+func main() {
+    values := []string{"a", "b"}
+    for i, con value := range values {
+        print(i)
+        print(value)
+    }
+}

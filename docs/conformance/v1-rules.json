@@ -1,0 +1,258 @@
+{
+  "schema": "mallang.v1.conformance.v1",
+  "profiles": [
+    {
+      "id": "source-cli",
+      "summary": "Source identity, entrypoint, excluded unsafe surface, and public compiler command behavior.",
+      "rules": [
+        "V1-SRC-001", "V1-SRC-002", "V1-SRC-003", "V1-CLI-001",
+        "V1-CLI-002", "V1-CLI-006", "V1-CLI-008"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-release-binary.sh"},
+        {"kind": "rust-test", "symbol": "rejects_main_with_parameters"},
+        {"kind": "rust-test", "symbol": "rejects_nil"}
+      ]
+    },
+    {
+      "id": "lexical-and-operators",
+      "summary": "Lexer bounds, reserved spelling, arithmetic guards, and short-circuit operators.",
+      "rules": [
+        "V1-LEX-001", "V1-LEX-002", "V1-LEX-003", "V1-LEX-004", "V1-LEX-005"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check.sh"},
+        {"kind": "rust-test", "symbol": "deterministic_utf8_lexer_inputs_have_bounded_spans"},
+        {"kind": "rust-test", "symbol": "rejects_literal_division_by_zero"},
+        {"kind": "fixture", "path": "examples/logical-operators.mlg"}
+      ]
+    },
+    {
+      "id": "projects-and-packages",
+      "summary": "Standalone compatibility, project manifests, packages, visibility, and local dependency graphs.",
+      "rules": [
+        "V1-SRC-004", "V1-PRJ-001", "V1-PRJ-002", "V1-PRJ-003",
+        "V1-PRJ-004", "V1-PRJ-005", "V1-PRJ-006", "V1-PRJ-007"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-path-dependencies.sh"},
+        {"kind": "fixture", "path": "examples/projects/local-deps/app/src/main.mlg"},
+        {"kind": "rust-test", "symbol": "rejects_imports_from_undeclared_transitive_projects"}
+      ]
+    },
+    {
+      "id": "core-types",
+      "summary": "Primitive, array, slice, struct, Option, and Result value classification and behavior.",
+      "rules": [
+        "V1-TYP-001", "V1-TYP-002", "V1-TYP-003", "V1-TYP-004", "V1-TYP-006"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check.sh"},
+        {"kind": "fixture", "path": "examples/arrays.mlg"},
+        {"kind": "fixture", "path": "examples/slices.mlg"},
+        {"kind": "fixture", "path": "examples/structs.mlg"},
+        {"kind": "fixture", "path": "examples/adt.mlg"}
+      ]
+    },
+    {
+      "id": "generic-and-recursive-adts",
+      "summary": "Generic specialization, user enums, recursive indirection, and exhaustive nested matching.",
+      "rules": [
+        "V1-TYP-005", "V1-TYP-007", "V1-TYP-009", "V1-CTL-005",
+        "V1-CTL-006", "V1-CTL-007"
+      ],
+      "evidence": [
+        {"kind": "fixture", "path": "examples/generic-enums.mlg"},
+        {"kind": "fixture", "path": "examples/recursive-enums.mlg"},
+        {"kind": "fixture", "path": "tests/fixtures/invalid-generic-enums/non-exhaustive.mlg"},
+        {"kind": "rust-test", "symbol": "rejects_non_productive_recursive_enum_components"}
+      ]
+    },
+    {
+      "id": "functions-and-closures",
+      "summary": "Bindings, returns, receivers, function values, and owned plain or mutable closures.",
+      "rules": [
+        "V1-TYP-008", "V1-FUN-001", "V1-FUN-004", "V1-FUN-005",
+        "V1-FUN-006", "V1-FUN-007", "V1-FUN-008", "V1-FUN-009"
+      ],
+      "evidence": [
+        {"kind": "fixture", "path": "examples/function-values.mlg"},
+        {"kind": "fixture", "path": "examples/closures.mlg"},
+        {"kind": "fixture", "path": "examples/mutable-closures.mlg"},
+        {"kind": "fixture", "path": "tests/fixtures/invalid-closures/borrowed-capture.mlg"}
+      ]
+    },
+    {
+      "id": "borrow-syntax-migration",
+      "summary": "Canonical con/mut call-scoped modes and rejection of suffix, in, and by-reference range experiments.",
+      "rules": ["V1-FUN-002", "V1-FUN-003", "V1-CTL-004"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-v1-migration.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/v1-migration/canonical-borrow-and-range.mlg"},
+        {"kind": "fixture", "path": "tests/fixtures/v1-migration/legacy-suffix-read.mlg"}
+      ]
+    },
+    {
+      "id": "expressions-and-loops",
+      "summary": "Operators, if, pipeline, print, full-expression temporaries, loops, and range values.",
+      "rules": [
+        "V1-EXP-001", "V1-EXP-002", "V1-EXP-003", "V1-EXP-004",
+        "V1-EXP-005", "V1-EXP-006", "V1-CTL-001", "V1-CTL-002", "V1-CTL-003"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check.sh"},
+        {"kind": "fixture", "path": "examples/full-expression-cleanup.mlg"},
+        {"kind": "fixture", "path": "examples/for-clause.mlg"},
+        {"kind": "fixture", "path": "examples/pipeline.mlg"}
+      ]
+    },
+    {
+      "id": "ownership-and-cleanup",
+      "summary": "Move state, call borrows, overwrite ordering, control-flow merges, returns, and normal cleanup.",
+      "rules": [
+        "V1-OWN-001", "V1-OWN-002", "V1-OWN-003", "V1-OWN-004",
+        "V1-OWN-005", "V1-OWN-006", "V1-OWN-007", "V1-OWN-008",
+        "V1-OWN-009", "V1-OWN-010", "V1-OWN-011"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-generated-c-sanitizers.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/invalid-v05-ownership/use-after-move.mlg"},
+        {"kind": "fixture", "path": "tests/fixtures/invalid-v05-ownership/overlapping-borrows.mlg"},
+        {"kind": "fixture", "path": "examples/allocation-accounting.mlg"}
+      ]
+    },
+    {
+      "id": "standard-foundation",
+      "summary": "Compiler-owned packages, exact signatures, recoverable errors, and excluded implicit error mechanisms.",
+      "rules": ["V1-STD-001", "V1-STD-002", "V1-STD-008"],
+      "evidence": [
+        {"kind": "fixture", "path": "tests/fixtures/v06-standard-registry/standard-intrinsics.mlg"},
+        {"kind": "rust-test", "symbol": "registry_covers_every_intrinsic_exactly_once"},
+        {"kind": "script", "path": "scripts/check.sh"}
+      ]
+    },
+    {
+      "id": "standard-strings",
+      "summary": "UTF-8 strings, byte/scalar behavior, conversion, and text edge cases.",
+      "rules": ["V1-STD-003"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-standard-strings-runtime.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/v06-standard-strings/edge-cases.mlg"}
+      ]
+    },
+    {
+      "id": "standard-process",
+      "summary": "Arguments, environment, process exit, UTF-8, and invalid process inputs.",
+      "rules": ["V1-STD-004"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-process-io-runtime.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/v06-process-io/args.mlg"}
+      ]
+    },
+    {
+      "id": "standard-io-and-fs",
+      "summary": "Length-based stream and file I/O with recoverable failures.",
+      "rules": ["V1-STD-005"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-file-io-runtime.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/v06-file-io/read.mlg"}
+      ]
+    },
+    {
+      "id": "standard-map",
+      "summary": "Opaque Map key restrictions, callbacks, ownership transfer, growth, and drop.",
+      "rules": ["V1-STD-006", "V1-STD-007"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-collections-map-runtime.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/v06-collections-map/growth-and-ownership.mlg"}
+      ]
+    },
+    {
+      "id": "formatter-workflow",
+      "summary": "Deterministic comment-preserving formatter, check mode, and project atomicity.",
+      "rules": ["V1-CLI-003"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-formatter.sh"},
+        {"kind": "rust-test", "symbol": "formats_all_examples_idempotently"}
+      ]
+    },
+    {
+      "id": "test-workflow",
+      "summary": "Deterministic project test discovery, preflight, isolation, continuation, and status.",
+      "rules": ["V1-CLI-004"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-test-workflow.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/project-test-failure/tests/main_test.mlg"}
+      ]
+    },
+    {
+      "id": "build-run-workflow",
+      "summary": "Native build and run, argument forwarding, exit propagation, and installed workflow.",
+      "rules": ["V1-CLI-005"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-v07-acceptance.sh"},
+        {"kind": "script", "path": "scripts/check-release-binary.sh"}
+      ]
+    },
+    {
+      "id": "machine-diagnostics",
+      "summary": "Global format selection, JSONL schema, parity, spans, paths, and bounded parser recovery.",
+      "rules": [
+        "V1-CLI-007", "V1-DIAG-001", "V1-DIAG-002", "V1-DIAG-003", "V1-DIAG-004"
+      ],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-diagnostics.sh"},
+        {"kind": "script", "path": "scripts/check-parser-recovery.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/diagnostics/multiple-project/src/main.mlg"}
+      ]
+    },
+    {
+      "id": "native-runtime-safety",
+      "summary": "Supported hosts, strict generated C, fatal guards, no-unwind behavior, and sanitizer sweep.",
+      "rules": ["V1-RUN-001", "V1-RUN-002", "V1-RUN-003"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-v08-acceptance.sh"},
+        {"kind": "script", "path": "scripts/check-generated-c-sanitizers.sh"}
+      ]
+    },
+    {
+      "id": "reproducibility",
+      "summary": "Generated C and release archive identity plus explicit native binary exclusion.",
+      "rules": ["V1-RUN-004"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-v08-reproducibility.sh"}
+      ]
+    },
+    {
+      "id": "release-artifacts",
+      "summary": "Target archives, checksum bundle, payload contract, and installer verification.",
+      "rules": ["V1-RUN-005", "V1-RUN-006"],
+      "evidence": [
+        {"kind": "script", "path": "scripts/check-release-artifacts.sh"},
+        {"kind": "script", "path": "scripts/check-release-helpers.sh"}
+      ]
+    },
+    {
+      "id": "implementation-boundary",
+      "summary": "Backend internals and non-guaranteed representations remain outside source compatibility.",
+      "rules": ["V1-RUN-007", "V1-COMP-013"],
+      "evidence": [
+        {"kind": "rust-test", "symbol": "rejects_invalid_ir_main_signature_before_emission"},
+        {"kind": "command", "command": "python3 scripts/check-v1-conformance.py"}
+      ]
+    },
+    {
+      "id": "compatibility-policy",
+      "summary": "Version relation, 1.x guarantees, release classes, deprecation, exceptions, and no editions.",
+      "rules": [
+        "V1-COMP-001", "V1-COMP-002", "V1-COMP-003", "V1-COMP-004",
+        "V1-COMP-005", "V1-COMP-006", "V1-COMP-007", "V1-COMP-008",
+        "V1-COMP-009", "V1-COMP-010", "V1-COMP-011", "V1-COMP-012"
+      ],
+      "evidence": [
+        {"kind": "command", "command": "python3 scripts/check-v1-conformance.py"},
+        {"kind": "command", "command": "rg -n '^## (Version model|1.x guarantees|Release classes|Deprecation|Soundness and security exception)' docs/COMPATIBILITY.md"}
+      ]
+    }
+  ]
+}

@@ -309,6 +309,11 @@
   version relation, v1.x source/semantic compatibility, release class, deprecation,
   soundness exception과 no-edition policy를 고정한다. P169는 총 98개 rule의 conformance
   evidence와 v0.x migration을 통합한다.
+- v0.9 P169 완료: `docs/conformance/v1-rules.json`은 98개 rule을 23개 profile과
+  63개 evidence item에 exact-set으로 연결하고 `scripts/check-v1-conformance.py`가 stale
+  rule/path/test를 fail-closed 검사한다. `docs/MIGRATION_V1.md`와
+  `scripts/check-v1-migration.sh`는 canonical `con`/`mut`, index-only non-Copy range와
+  legacy bootstrap syntax rejection을 check/build/run acceptance로 고정한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작

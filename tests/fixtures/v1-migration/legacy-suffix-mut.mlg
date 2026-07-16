@@ -1,0 +1,5 @@
+func rename(name mut string) {
+    print(name)
+}
+
+func main() {}

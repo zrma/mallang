@@ -1536,3 +1536,21 @@ compiler/language version과 v1 compatibility 약속을 고정하는 P168이다.
 `docs/V1_LANGUAGE_CONTRACT.md`의 `V1-COMP-001`-`013`, 그리고
 `docs/todo-v09-language-freeze/p168-version-compatibility.md`가 소유한다. 다음 milestone은
 98개 rule을 evidence와 연결하고 0.x migration을 통합하는 P169다.
+
+## P169: Conformance and Migration Map
+
+상태: complete (2026-07-17)
+
+- [x] 98개 contract rule의 exact-set evidence manifest
+- [x] 23개 evidence profile과 63개 script/fixture/Rust-test/command item
+- [x] duplicate, unmapped, unknown rule과 stale evidence fail-closed checker
+- [x] canonical `scripts/check.sh` conformance integration
+- [x] bootstrap borrow syntax와 0.x project/ownership/standard/tooling migration guide
+- [x] canonical borrow/range check-build-run fixture
+- [x] suffix `in`/`mut`, call `in`, by-reference range rejection fixtures
+
+Conformance schema, checker, migration guide와 executable acceptance는
+`docs/conformance/v1-rules.json`, `scripts/check-v1-conformance.py`,
+`docs/MIGRATION_V1.md`, `scripts/check-v1-migration.sh`, 그리고
+`docs/todo-v09-language-freeze/p169-conformance-migration.md`가 소유한다. 다음 milestone은
+representative `textstats`를 clean workflow로 반복 검증하는 P170이다.

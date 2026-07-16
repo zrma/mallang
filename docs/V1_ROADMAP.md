@@ -303,7 +303,7 @@ library를 제공한다.
 
 ## v0.9.0: Language Freeze
 
-상태: P168 compatibility policy complete; P169 next
+상태: P169 conformance and migration complete; P170 next
 
 목표: 새로운 핵심 기능을 멈추고 v1 compatibility contract를 검증한다.
 

@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 scripts/check-agent-harness-interface.sh
+python3 scripts/check-v1-conformance.py
 
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)
@@ -163,6 +164,7 @@ scripts/check-test-workflow.sh target/debug/mlg
 scripts/check-path-dependencies.sh target/debug/mlg
 scripts/check-diagnostics.sh target/debug/mlg
 scripts/check-parser-recovery.sh target/debug/mlg
+scripts/check-v1-migration.sh target/debug/mlg
 scripts/check-hardening-corpus.sh target/debug/mlg
 scripts/check-v08-reproducibility.sh --skip-release-archive target/debug/mlg
 scripts/check-v07-acceptance.sh

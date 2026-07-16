@@ -1,0 +1,8 @@
+func read(con name string) {
+    print(name)
+}
+
+func main() {
+    name := "kim"
+    read(in name)
+}

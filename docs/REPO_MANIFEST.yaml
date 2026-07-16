@@ -6,6 +6,8 @@ primary_entrypoints:
   - ROADMAP.md
   - docs/V1_LANGUAGE_CONTRACT.md
   - docs/COMPATIBILITY.md
+  - docs/MIGRATION_V1.md
+  - docs/conformance/v1-rules.json
   - docs/agent-harness.md
   - docs/HANDOFF.md
   - docs/ROADMAP.md
@@ -16,6 +18,8 @@ commands:
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg
   check_parser_recovery: scripts/check-parser-recovery.sh target/debug/mlg
+  check_v1_conformance: python3 scripts/check-v1-conformance.py
+  check_v1_migration: scripts/check-v1-migration.sh target/debug/mlg
   check_hardening_properties: cargo test --test hardening_properties
   check_hardening_corpus: scripts/check-hardening-corpus.sh target/debug/mlg
   check_v08_reproducibility: scripts/check-v08-reproducibility.sh target/debug/mlg

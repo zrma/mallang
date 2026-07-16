@@ -1,0 +1,19 @@
+func read(con value string) {
+    print(value)
+}
+
+func rename(mut value string) {
+    value = "lee"
+}
+
+func main() {
+    mut name := "kim"
+    read(con name)
+    rename(mut name)
+    print(name)
+
+    values := []string{"a", "b"}
+    for i := range values {
+        read(con values[i])
+    }
+}

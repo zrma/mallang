@@ -1,0 +1,5 @@
+func read(name in string) {
+    print(name)
+}
+
+func main() {}

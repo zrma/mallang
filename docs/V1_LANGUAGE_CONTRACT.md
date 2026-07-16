@@ -10,7 +10,9 @@ blocker and must be resolved before release.
 
 The words MUST, MUST NOT, SHOULD, and MAY are normative. Rule IDs are permanent:
 a rule may be clarified, deprecated, or superseded, but its ID is not reused.
-P169 maps every rule to executable or explicit verification evidence.
+`docs/conformance/v1-rules.json` maps every rule to executable or explicit
+verification evidence, and `scripts/check-v1-conformance.py` enforces exact
+coverage.
 
 ## Source and lexical contract
 
