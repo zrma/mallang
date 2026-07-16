@@ -6,7 +6,7 @@ cd "$ROOT"
 
 usage() {
   cat <<'EOF'
-usage: scripts/build-release-artifact.sh [--version <major.minor.patch>] [--output-dir <directory>]
+usage: scripts/build-release-artifact.sh [--version <major.minor.patch[-prerelease]>] [--output-dir <directory>]
 EOF
 }
 
@@ -54,13 +54,14 @@ command -v "$cargo_bin" >/dev/null 2>&1 || {
 crate_version="$({
   sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)"/\1/p' Cargo.toml
 } | head -n 1)"
-if [[ ! "$crate_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Cargo package version must be major.minor.patch, got: $crate_version" >&2
+version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+if [[ ! "$crate_version" =~ $version_pattern ]]; then
+  echo "Cargo package version must be major.minor.patch[-prerelease], got: $crate_version" >&2
   exit 1
 fi
 if [[ -z "$version" ]]; then
   version="$crate_version"
-elif [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+elif [[ ! "$version" =~ $version_pattern ]]; then
   fail_usage "invalid release version: $version"
 elif [[ "$version" != "$crate_version" ]]; then
   echo "release version $version does not match Cargo package version $crate_version" >&2

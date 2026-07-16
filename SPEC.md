@@ -1,13 +1,29 @@
-# Mallang v0.9 Specification
+# Mallang v1 Release Candidate Specification
 
-This is the Mallang language and tooling specification through the 0.9.0
-release.
+This is the Mallang language and tooling specification through the
+1.0.0-rc.1 prerelease.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 The rule-indexed v1 freeze candidate is tracked in
 `docs/V1_LANGUAGE_CONTRACT.md`; v0.9 freezes it for final v1 release validation.
 Compiler/language versioning and compatibility are defined in
 `docs/COMPATIBILITY.md`.
+
+## Published v1.0.0-rc.1 Release Candidate
+
+The first v1 release candidate adds no source-language feature after the v0.9
+freeze. It validates the same 98-rule candidate contract with the canonical,
+optimized, sanitizer and supported-platform artifact gates.
+
+The RC distribution accepts SemVer prerelease versions in archive names,
+checksums and the explicit installer. P172 installs published v0.9.0, upgrades
+the same prefix to the RC, rolls back explicitly to v0.9.0, and upgrades again.
+The representative `textstats` source and observable output remain identical at
+every phase.
+
+The stable 1.x compatibility guarantee starts at v1.0.0, not at this RC. Any
+RC blocker must be resolved without adding a new language feature or silently
+changing the frozen candidate contract.
 
 ## Published v0.9 Language Freeze
 

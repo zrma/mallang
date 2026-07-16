@@ -1590,3 +1590,22 @@ Exact freeze audit, acceptance composition과 platform evidence boundary는
 `scripts/check-v09-freeze.py`, `scripts/check-v09-acceptance.sh`와
 `docs/todo-v09-language-freeze/p171-v09-acceptance.md`가 소유한다. 다음 milestone은
 v1 RC clean install, v0.9 upgrade와 rollback rehearsal를 수행하는 P172다.
+
+## P172: v1 RC and Rollback Rehearsal
+
+상태: complete; released as v1.0.0-rc.1 prerelease (2026-07-17)
+
+- [x] SemVer prerelease archive, checksum, installer와 version identity
+- [x] malformed prerelease rejection before build/download
+- [x] clean `v1.0.0-rc.1` install and representative project
+- [x] same-prefix published v0.9.0 to RC upgrade
+- [x] explicit RC to v0.9.0 rollback and RC re-upgrade
+- [x] cross-version `textstats` observable-output identity
+- [x] canonical, optimized and complete generated C sanitizer gate
+- [x] macOS arm64/Linux x86_64 target archive와 checksum bundle
+- [x] signed `v1.0.0-rc.1` tag와 public GitHub prerelease
+
+Exact prerelease distribution and rollback sequence는
+`scripts/check-v1-rc-rehearsal.sh`, `scripts/check-v1-rc-acceptance.sh`와
+`docs/todo-v09-language-freeze/p172-v1-rc-rehearsal.md`가 소유한다. 다음 milestone은
+frozen contract를 변경하지 않고 final audit와 `v1.0.0` stable release를 닫는다.

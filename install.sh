@@ -3,8 +3,8 @@ set -eu
 
 usage() {
   cat <<'EOF'
-usage: ./install.sh --version <major.minor.patch> [--bin-dir <directory>]
-       ./install.sh --version <major.minor.patch> [--bin-dir <directory>] --archive <path> --checksums <path>
+usage: ./install.sh --version <major.minor.patch[-prerelease]> [--bin-dir <directory>]
+       ./install.sh --version <major.minor.patch[-prerelease]> [--bin-dir <directory>] --archive <path> --checksums <path>
 EOF
 }
 
@@ -52,18 +52,36 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$version" in
-  ""|*[!0-9.]*|.*|*.|*..*)
-    fail_usage "--version must be major.minor.patch"
+  ""|*[!0-9A-Za-z.-]*|.*|*.|*..*|-*|*-)
+    fail_usage "--version must be major.minor.patch[-prerelease]"
     ;;
 esac
-version_remainder=${version#*.}
+version_core=${version%%-*}
+if [ "$version_core" != "$version" ]; then
+  version_prerelease=${version#"$version_core"-}
+  case "$version_prerelease" in
+    ""|.*|*.|*..*|*[!0-9A-Za-z.-]*)
+      fail_usage "--version must be major.minor.patch[-prerelease]"
+      ;;
+  esac
+fi
+version_remainder=${version_core#*.}
 version_patch=${version_remainder#*.}
-if [ "$version_remainder" = "$version" ] || \
+version_major=${version_core%%.*}
+version_minor=${version_remainder%%.*}
+if [ "$version_remainder" = "$version_core" ] || \
    [ "$version_patch" = "$version_remainder" ] || \
    [ -z "$version_patch" ] || \
-   [ "${version_patch#*.}" != "$version_patch" ]; then
-  fail_usage "--version must be major.minor.patch"
+   [ "${version_patch#*.}" != "$version_patch" ] || \
+   [ -z "$version_major" ] || \
+   [ -z "$version_minor" ]; then
+  fail_usage "--version must be major.minor.patch[-prerelease]"
 fi
+case "$version_major:$version_minor:$version_patch" in
+  *[!0-9:]*|:*|*::*|*:)
+    fail_usage "--version must be major.minor.patch[-prerelease]"
+    ;;
+esac
 
 if [ -z "$bin_dir" ]; then
   [ -n "${HOME:-}" ] || {

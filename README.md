@@ -121,6 +121,9 @@ This repository is the Mallang language PoC workspace.
   conformance map, a 1.x compatibility policy, executable v0.x migration, and
   repeated clean-install `textstats` dogfood. It adds no source-language feature
   after v0.8 and the freeze audit permits only classified non-compiler changes.
+- v1.0.0-rc.1 validates the unchanged candidate through clean installation,
+  same-prefix v0.9 upgrade, explicit rollback, re-upgrade, representative
+  project output identity, and the complete supported-platform artifact gate.
 - v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
   source without entering later compiler stages. Deterministic lexer/parser/type/
   ownership properties, a checked-in crash corpus, typed IR preflight validation,
@@ -275,11 +278,11 @@ Run the full local gate:
 scripts/check.sh
 ```
 
-Run the complete v0.9 language-freeze acceptance, including the freeze audit,
-release binary and deep generated C sanitizer coverage:
+Run the complete v1 release-candidate acceptance, including freeze, release
+binary, deep generated C sanitizers, upgrade, rollback, and re-upgrade:
 
 ```sh
-scripts/check-v09-acceptance.sh
+scripts/check-v1-rc-acceptance.sh
 ```
 
 Run the heavier generated C sanitizer sweep before publication:
@@ -316,7 +319,7 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-VERSION=0.9.0
+VERSION=1.0.0-rc.1
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
@@ -337,7 +340,7 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-VERSION=0.9.0
+VERSION=1.0.0-rc.1
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
@@ -387,14 +390,14 @@ mlg build hello -o hello-app
 ./hello-app
 ```
 
-`scripts/check-v09-acceptance.sh` recreates this workflow from an empty work
+`scripts/check-v1-rc-acceptance.sh` recreates this workflow from an empty work
 directory with a local library dependency and an installed release artifact,
-then runs the freeze audit, compiler hardening and sanitizer gates. It is the cross-platform
-release acceptance used by CI.
+then runs the freeze audit, compiler hardening, sanitizer, upgrade, rollback and
+re-upgrade gates. It is the cross-platform release acceptance used by CI.
 
-## v0.9 Binary Distribution
+## v1 Release Candidate Binary Distribution
 
-The v0.9 GitHub Release contains:
+The v1.0.0-rc.1 GitHub prerelease contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -404,9 +407,9 @@ The v0.9 GitHub Release contains:
 Install or update the explicit version with:
 
 ```sh
-curl -fsSLO https://github.com/zrma/mallang/releases/download/v0.9.0/install.sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.0.0-rc.1/install.sh
 chmod +x install.sh
-./install.sh --version 0.9.0
+./install.sh --version 1.0.0-rc.1
 ```
 
 The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
@@ -429,7 +432,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 
 ## Layout
 
-- `SPEC.md`: published language and tooling contract through v0.9.
+- `SPEC.md`: published language and tooling contract through v1.0.0-rc.1.
 - `docs/V1_LANGUAGE_CONTRACT.md`: rule-indexed Mallang v1 candidate contract.
 - `docs/COMPATIBILITY.md`: compiler/language versioning and v1 compatibility policy.
 - `docs/MIGRATION_V1.md`: bootstrap and v0.x source/workflow migration to v1.
@@ -442,7 +445,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
-- `docs/releases/`: v0.1.0 through v0.9.0 release notes and verification records.
+- `docs/releases/`: v0.1.0 through v1.0.0-rc.1 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

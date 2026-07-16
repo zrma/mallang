@@ -16,10 +16,16 @@ RELEASE_FILES = {
     ".github/workflows/ci.yml",
     "Cargo.lock",
     "Cargo.toml",
+    "install.sh",
+    "scripts/build-release-artifact.sh",
+    "scripts/create-release-archive.py",
+    "scripts/check-v1-rc-acceptance.sh",
+    "scripts/check-v1-rc-rehearsal.sh",
     "scripts/check-release-helpers.sh",
     "scripts/check-v09-acceptance.sh",
     "scripts/check-v09-freeze.py",
     "scripts/verify-v0-rc.sh",
+    "scripts/write-release-checksums.py",
 }
 CONFORMANCE_FILES = {
     "scripts/check-test-workflow.sh",

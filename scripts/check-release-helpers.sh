@@ -62,6 +62,8 @@ check_shell_syntax \
   scripts/check-v07-acceptance.sh \
   scripts/check-v09-acceptance.sh \
   scripts/check-v09-dogfood.sh \
+  scripts/check-v1-rc-acceptance.sh \
+  scripts/check-v1-rc-rehearsal.sh \
   scripts/check.sh \
   scripts/finalize-and-push.sh \
   scripts/start-work.sh \
@@ -116,5 +118,19 @@ expect_log_contains invalid_message "invalid --message"
 
 expect_status unknown_option 2 scripts/finalize-and-push.sh --unknown-option
 expect_log_contains unknown_option "unknown option: --unknown-option"
+
+expect_status invalid_install_prerelease 2 \
+  ./install.sh --version 1.0.0-rc..1 --bin-dir "$LOG_DIR/invalid-install"
+expect_log_contains invalid_install_prerelease \
+  "--version must be major.minor.patch[-prerelease]"
+
+expect_status invalid_install_core 2 \
+  ./install.sh --version a.b.c-rc.1 --bin-dir "$LOG_DIR/invalid-install-core"
+expect_log_contains invalid_install_core \
+  "--version must be major.minor.patch[-prerelease]"
+
+expect_status invalid_build_prerelease 2 \
+  scripts/build-release-artifact.sh --version 1.0.0-rc..1
+expect_log_contains invalid_build_prerelease "invalid release version: 1.0.0-rc..1"
 
 echo "release helper contract checks passed"

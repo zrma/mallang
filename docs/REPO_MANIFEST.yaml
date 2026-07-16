@@ -26,6 +26,8 @@ commands:
   check_v08_acceptance: scripts/check-v08-acceptance.sh
   check_v09_freeze: python3 scripts/check-v09-freeze.py
   check_v09_acceptance: scripts/check-v09-acceptance.sh
+  check_v1_rc_rehearsal: scripts/check-v1-rc-rehearsal.sh
+  check_v1_rc_acceptance: scripts/check-v1-rc-acceptance.sh
   measure_v08_baseline: cargo build --release --bin mlg && scripts/measure-v08-baseline.py --compiler target/release/mlg --output docs/baselines/v0.8-performance.json
   check_release_artifacts: scripts/check-release-artifacts.sh
   check_v07_acceptance: scripts/check-v07-acceptance.sh

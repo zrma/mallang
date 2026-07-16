@@ -8,15 +8,18 @@ surface is `docs/V1_LANGUAGE_CONTRACT.md`.
 
 ## Version model
 
-Mallang uses semantic versions in the form `major.minor.patch`. One release
-version identifies the `mlg` compiler, the language contract it implements, the
-compiler-owned standard packages, the installer, and the native archives.
-Standard packages are not independently versioned.
+Mallang stable releases use semantic versions in the form `major.minor.patch`.
+A release candidate appends a SemVer prerelease suffix, such as
+`1.0.0-rc.1`. One release version identifies the `mlg` compiler, the language
+contract it implements, the compiler-owned standard packages, the installer,
+and the native archives. Standard packages are not independently versioned.
 
 - Through v0.9, the compiler package version and candidate language-specification
   line advance together.
 - v0.9.0 freezes and validates the candidate contract but is still a pre-1.0
   release.
+- v1.0.0-rc.1 rehearses the frozen contract, installation, upgrade and rollback
+  path but does not begin the stable 1.x compatibility guarantee.
 - v1.0.0 is the first stable implementation of the Mallang v1 contract.
 - Every v1.x compiler implements the same Mallang v1 language version. A v1
   source file does not select a compiler minor version.

@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P171 complete and released as v0.9.0 on 2026-07-17; P172 next
+상태: P172 complete and released as v1.0.0-rc.1 prerelease on 2026-07-17; stable v1 next
 
 ## Goal
 
@@ -39,9 +39,9 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P172: v1 RC and Rollback Rehearsal
 
-- `v1.0.0-rc.1` clean install, v0.9 upgrade, explicit rollback과 representative project를
+- [x] `v1.0.0-rc.1` clean install, v0.9 upgrade, explicit rollback과 representative project를
   supported platforms에서 검증한다.
-- unresolved blocker가 없을 때 stable v1 release milestone으로 인계한다.
+- [x] unresolved blocker가 없을 때 stable v1 release milestone으로 인계한다.
 
 ## Excluded
 

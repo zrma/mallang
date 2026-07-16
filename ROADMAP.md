@@ -263,7 +263,10 @@
   compatibility, conformance, migration, representative dogfood and native
   acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
   2026-07-17.
-- The v1 release candidate and stable release must advance through the
-  acceptance gates in that document.
+- `v1.0.0-rc.1` completed clean install, v0.9 upgrade, rollback, re-upgrade and
+  supported-platform representative-project acceptance, and was published as a
+  prerelease on 2026-07-17.
+- The stable v1 release must advance through the final acceptance gate in that
+  document.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

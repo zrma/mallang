@@ -14,7 +14,8 @@ SUPPORTED_TARGETS = {
     "x86_64-unknown-linux-gnu",
 }
 ARCHIVE_RE = re.compile(
-    r"mallang-v(?P<version>[0-9]+\.[0-9]+\.[0-9]+)-"
+    r"mallang-v(?P<version>[0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)-"
     r"(?P<target>aarch64-apple-darwin|x86_64-unknown-linux-gnu)\.tar\.gz"
 )
 

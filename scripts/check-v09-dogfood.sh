@@ -5,16 +5,28 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  echo "usage: scripts/check-v09-dogfood.sh [--compiler <path>]" >&2
+  echo "usage: scripts/check-v09-dogfood.sh [--compiler <path>] [--expected-version <version>] [--work-dir <path>]" >&2
   exit 2
 }
 
 compiler=""
+expected_version=""
+work="target/mallang/v09-dogfood"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --compiler)
       [[ $# -ge 2 ]] || usage
       compiler="$2"
+      shift 2
+      ;;
+    --expected-version)
+      [[ $# -ge 2 ]] || usage
+      expected_version="$2"
+      shift 2
+      ;;
+    --work-dir)
+      [[ $# -ge 2 ]] || usage
+      work="$2"
       shift 2
       ;;
     *)
@@ -40,12 +52,20 @@ if [[ ! -x "$compiler" ]]; then
 fi
 
 crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
-if [[ "$($compiler --version)" != "mlg $crate_version" ]]; then
+if [[ -z "$expected_version" ]]; then
+  expected_version="$crate_version"
+fi
+if [[ ! "$expected_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+  usage
+fi
+if [[ "$($compiler --version)" != "mlg $expected_version" ]]; then
   echo "v0.9 dogfood compiler version mismatch" >&2
   exit 1
 fi
 
-work="target/mallang/v09-dogfood"
+if [[ "$work" != /* ]]; then
+  work="$ROOT/$work"
+fi
 project="$work/textstats"
 snapshot="$work/source-snapshot"
 input="$ROOT/tests/fixtures/v06-reference-cli/input.txt"
@@ -167,4 +187,4 @@ if ! cmp -s "$work/iteration-1-binary.stdout" "$work/iteration-2-binary.stdout" 
   exit 1
 fi
 
-echo "v0.9 clean-install textstats format, check, test, build, and run dogfood passed twice"
+echo "Mallang $expected_version textstats format, check, test, build, and run dogfood passed twice"

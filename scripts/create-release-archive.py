@@ -14,7 +14,8 @@ import tempfile
 
 
 ROOT_NAME_RE = re.compile(
-    r"mallang-v[0-9]+\.[0-9]+\.[0-9]+-"
+    r"mallang-v[0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?-"
     r"(?:aarch64-apple-darwin|x86_64-unknown-linux-gnu)"
 )
 FILES = (

@@ -303,7 +303,7 @@ library를 제공한다.
 
 ## v0.9.0: Language Freeze
 
-상태: released as v0.9.0 after P171 acceptance (2026-07-17); P172 next
+상태: P172 complete; v1.0.0-rc.1 prerelease published (2026-07-17); stable v1 next
 
 목표: 새로운 핵심 기능을 멈추고 v1 compatibility contract를 검증한다.
 
