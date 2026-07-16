@@ -21,6 +21,8 @@ RELEASE_FILES = {
     "scripts/create-release-archive.py",
     "scripts/check-v1-rc-acceptance.sh",
     "scripts/check-v1-rc-rehearsal.sh",
+    "scripts/check-v1-stable-acceptance.sh",
+    "scripts/check-v1-stable-rehearsal.sh",
     "scripts/check-release-helpers.sh",
     "scripts/check-v09-acceptance.sh",
     "scripts/check-v09-freeze.py",
@@ -50,7 +52,7 @@ def git_paths(*args: str) -> set[str]:
 
 
 def classify(path: str) -> str | None:
-    if path in {"README.md", "ROADMAP.md", "SPEC.md"} or path.startswith("docs/"):
+    if path in {"README.md", "ROADMAP.md", "SECURITY.md", "SPEC.md"} or path.startswith("docs/"):
         return "documentation"
     if path in RELEASE_FILES:
         return "release"

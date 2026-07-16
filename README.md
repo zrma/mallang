@@ -1,8 +1,9 @@
-# Mallang PoC
+# Mallang
 
 Go-like syntax, Rust-like safety, and functional value style.
 
-This repository is the Mallang language PoC workspace.
+This repository contains the Mallang language, compiler, native release tooling,
+and normative v1 contract.
 
 ## Naming
 
@@ -22,7 +23,7 @@ This repository is the Mallang language PoC workspace.
 
 - Go-like surface syntax.
 - Entrypoint is exactly `func main()`; `main` cannot be used for methods,
-  parameters, or return-bearing signatures in v0.
+  parameters, or return-bearing signatures in v1.
 - No pointer syntax.
 - No `nil`.
 - Immutable bindings by default.
@@ -37,7 +38,7 @@ This repository is the Mallang language PoC workspace.
 - `con` and `mut` are direct call-scoped argument modes, not first-class
   reference expressions. Non-copy range traversal is index-only and uses
   indexed `con`/`mut` calls or indexed assignment for element access.
-- Borrow mode syntax is canonical in v0; there are no legacy aliases such as
+- Borrow mode syntax is canonical in v1; there are no legacy aliases such as
   `in`.
 - Native `con`/`mut` parameter ABI uses hidden references, so `mut` parameter
   assignments are visible to the caller without exposing pointer syntax.
@@ -124,6 +125,10 @@ This repository is the Mallang language PoC workspace.
 - v1.0.0-rc.1 validates the unchanged candidate through clean installation,
   same-prefix v0.9 upgrade, explicit rollback, re-upgrade, representative
   project output identity, and the complete supported-platform artifact gate.
+- v1.0.0 publishes that frozen 98-rule contract as stable. The final gate proves
+  that compiler source and the conformance map remain unchanged from v0.9.0,
+  then validates RC upgrade, rollback, stable re-upgrade, and supported-platform
+  release artifacts.
 - v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
   source without entering later compiler stages. Deterministic lexer/parser/type/
   ownership properties, a checked-in crash corpus, typed IR preflight validation,
@@ -278,11 +283,11 @@ Run the full local gate:
 scripts/check.sh
 ```
 
-Run the complete v1 release-candidate acceptance, including freeze, release
-binary, deep generated C sanitizers, upgrade, rollback, and re-upgrade:
+Run the complete v1 stable acceptance, including freeze, release binary, deep
+generated C sanitizers, RC upgrade, rollback, and stable re-upgrade:
 
 ```sh
-scripts/check-v1-rc-acceptance.sh
+scripts/check-v1-stable-acceptance.sh
 ```
 
 Run the heavier generated C sanitizer sweep before publication:
@@ -291,7 +296,7 @@ Run the heavier generated C sanitizer sweep before publication:
 scripts/check-generated-c-sanitizers.sh
 ```
 
-Run the complete local v0 release-candidate gate:
+Run the complete local release gate:
 
 ```sh
 scripts/verify-v0-rc.sh
@@ -319,7 +324,7 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-VERSION=1.0.0-rc.1
+VERSION=1.0.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
@@ -340,7 +345,7 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-VERSION=1.0.0-rc.1
+VERSION=1.0.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
@@ -390,14 +395,14 @@ mlg build hello -o hello-app
 ./hello-app
 ```
 
-`scripts/check-v1-rc-acceptance.sh` recreates this workflow from an empty work
+`scripts/check-v1-stable-acceptance.sh` recreates this workflow from an empty work
 directory with a local library dependency and an installed release artifact,
-then runs the freeze audit, compiler hardening, sanitizer, upgrade, rollback and
-re-upgrade gates. It is the cross-platform release acceptance used by CI.
+then runs the freeze audit, compiler hardening, sanitizer, RC upgrade, rollback
+and stable re-upgrade gates. It is the cross-platform release acceptance used by CI.
 
-## v1 Release Candidate Binary Distribution
+## v1 Stable Binary Distribution
 
-The v1.0.0-rc.1 GitHub prerelease contains:
+The v1.0.0 GitHub release contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -407,9 +412,9 @@ The v1.0.0-rc.1 GitHub prerelease contains:
 Install or update the explicit version with:
 
 ```sh
-curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.0.0-rc.1/install.sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.0.0/install.sh
 chmod +x install.sh
-./install.sh --version 1.0.0-rc.1
+./install.sh --version 1.0.0
 ```
 
 The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
@@ -432,8 +437,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 
 ## Layout
 
-- `SPEC.md`: published language and tooling contract through v1.0.0-rc.1.
-- `docs/V1_LANGUAGE_CONTRACT.md`: rule-indexed Mallang v1 candidate contract.
+- `SPEC.md`: published stable Mallang v1 language and tooling contract.
+- `docs/V1_LANGUAGE_CONTRACT.md`: rule-indexed Mallang v1 stable contract.
 - `docs/COMPATIBILITY.md`: compiler/language versioning and v1 compatibility policy.
 - `docs/MIGRATION_V1.md`: bootstrap and v0.x source/workflow migration to v1.
 - `docs/conformance/v1-rules.json`: exact v1 rule-to-evidence map.
@@ -445,7 +450,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
-- `docs/releases/`: v0.1.0 through v1.0.0-rc.1 release notes and verification records.
+- `SECURITY.md`: supported-version and private vulnerability reporting policy.
+- `docs/releases/`: v0.1.0 through v1.0.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

@@ -1,12 +1,12 @@
-# Mallang v1 Candidate Language Contract
+# Mallang v1 Language Contract
 
-Status: candidate freeze inventory after v0.8.0; not yet the stable v1 contract
+Status: stable from Mallang v1.0.0
 
 This document indexes the source, standard-library, CLI, diagnostic, runtime,
-and distribution behavior proposed for Mallang v1. Detailed syntax examples and
+and distribution behavior required for Mallang v1. Detailed syntax examples and
 edge-case wording remain in `SPEC.md` and `docs/STANDARD_LIBRARY.md`. If those
-documents disagree with a rule here during v0.9, the disagreement is a freeze
-blocker and must be resolved before release.
+documents disagree with a rule here, the disagreement is a compatibility defect
+and must be resolved under `docs/COMPATIBILITY.md`.
 
 The words MUST, MUST NOT, SHOULD, and MAY are normative. Rule IDs are permanent:
 a rule may be clarified, deprecated, or superseded, but its ID is not reused.

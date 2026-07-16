@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P172 complete and released as v1.0.0-rc.1 prerelease on 2026-07-17; stable v1 next
+상태: complete; v0.9.0 freeze, v1.0.0-rc.1 rehearsal와 v1.0.0 stable release 완료
 
 ## Goal
 

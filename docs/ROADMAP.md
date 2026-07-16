@@ -1609,3 +1609,22 @@ Exact prerelease distribution and rollback sequence는
 `scripts/check-v1-rc-rehearsal.sh`, `scripts/check-v1-rc-acceptance.sh`와
 `docs/todo-v09-language-freeze/p172-v1-rc-rehearsal.md`가 소유한다. 다음 milestone은
 frozen contract를 변경하지 않고 final audit와 `v1.0.0` stable release를 닫는다.
+
+## v1.0.0: Stable Release
+
+상태: complete; released as v1.0.0 (2026-07-17)
+
+- [x] Cargo, compiler, archive, checksum과 installer exact stable version
+- [x] v0.9.0 이후 compiler source와 conformance map 불변
+- [x] 98 rules / 23 profiles / 64 evidence final completeness
+- [x] published RC to stable same-prefix upgrade
+- [x] explicit stable to RC rollback and stable re-upgrade
+- [x] cross-version `textstats` observable-output identity
+- [x] canonical, optimized and complete generated C sanitizer gate
+- [x] macOS arm64/Linux x86_64 stable archive와 checksum bundle
+- [x] signed `v1.0.0` tag, public stable release와 security reporting boundary
+
+Stable final audit와 배포 sequence는 `scripts/check-v1-stable-acceptance.sh`,
+`scripts/check-v1-stable-rehearsal.sh`와
+`docs/todo-v1-stable-release/acceptance.md`가 소유한다. 이후 변경은
+`docs/COMPATIBILITY.md`의 1.x contract를 따른다.

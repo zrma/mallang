@@ -1,13 +1,28 @@
-# Mallang v1 Release Candidate Specification
+# Mallang v1 Specification
 
-This is the Mallang language and tooling specification through the
-1.0.0-rc.1 prerelease.
+This is the stable Mallang v1 language and tooling specification published with
+the 1.0.0 release.
 
-Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
-The rule-indexed v1 freeze candidate is tracked in
-`docs/V1_LANGUAGE_CONTRACT.md`; v0.9 freezes it for final v1 release validation.
+Future milestones are non-normative plans. The rule-indexed v1 contract is
+tracked in `docs/V1_LANGUAGE_CONTRACT.md`, and its evidence mapping is enforced
+by `scripts/check-v1-conformance.py`.
 Compiler/language versioning and compatibility are defined in
 `docs/COMPATIBILITY.md`.
+
+## Published v1.0.0 Stable Contract
+
+Mallang v1.0.0 is the first stable implementation of the frozen 98-rule v1
+contract. It adds no source-language feature after v0.9.0 and changes no
+compiler source or conformance mapping after that freeze release.
+
+The stable distribution is validated on macOS arm64 and Linux x86_64 through
+canonical, optimized, complete generated C sanitizer, archive, checksum and
+clean-install gates. The final rehearsal upgrades published v1.0.0-rc.1 to
+v1.0.0 in one prefix, rolls back explicitly to the RC, and re-upgrades to stable
+while preserving representative `textstats` observable output.
+
+The 1.x compatibility guarantees in `docs/COMPATIBILITY.md` begin with this
+release.
 
 ## Published v1.0.0-rc.1 Release Candidate
 
@@ -21,9 +36,7 @@ the same prefix to the RC, rolls back explicitly to v0.9.0, and upgrades again.
 The representative `textstats` source and observable output remain identical at
 every phase.
 
-The stable 1.x compatibility guarantee starts at v1.0.0, not at this RC. Any
-RC blocker must be resolved without adding a new language feature or silently
-changing the frozen candidate contract.
+The stable 1.x compatibility guarantee starts at v1.0.0, not at this RC.
 
 ## Published v0.9 Language Freeze
 

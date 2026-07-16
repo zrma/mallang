@@ -10,8 +10,8 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/verify-v0-rc.sh [--skip-deep-sanitizers]
 
-Runs the local release-candidate verification gate without moving bookmarks or
-pushing to any remote. The package version selects v0.9 or v1 RC acceptance.
+Runs the local release verification gate without moving bookmarks or pushing to
+any remote. The package version selects v0.9, v1 RC, or v1 stable acceptance.
 USAGE
 }
 
@@ -91,7 +91,9 @@ PYVERIFY
 
 scripts/check-release-helpers.sh
 crate_version="$(sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
-if [[ "$crate_version" == 1.0.0-rc.* ]]; then
+if [[ "$crate_version" == "1.0.0" ]]; then
+  acceptance="scripts/check-v1-stable-acceptance.sh"
+elif [[ "$crate_version" == 1.0.0-rc.* ]]; then
   acceptance="scripts/check-v1-rc-acceptance.sh"
 else
   acceptance="scripts/check-v09-acceptance.sh"
@@ -105,4 +107,4 @@ verify_checked_roadmaps
 verify_no_empty_local_stack_changes
 verify_codex_attribution
 
-echo "release-candidate local verification passed: $crate_version"
+echo "release local verification passed: $crate_version"

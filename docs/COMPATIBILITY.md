@@ -1,6 +1,6 @@
 # Mallang Versioning and Compatibility Policy
 
-Status: approved v1 candidate policy; stable from the v1.0.0 release
+Status: stable from the v1.0.0 release
 
 This policy defines how compiler releases, the language contract, the standard
 library, the CLI, and supported native targets evolve. The rule-indexed language
