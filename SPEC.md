@@ -6,6 +6,8 @@ release.
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 The rule-indexed v1 freeze candidate is tracked in
 `docs/V1_LANGUAGE_CONTRACT.md`; it remains candidate material until v0.9.0.
+Compiler/language versioning and compatibility are defined in
+`docs/COMPATIBILITY.md`.
 
 ## Published v0.8 Compiler Hardening
 

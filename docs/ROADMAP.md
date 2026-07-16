@@ -1518,3 +1518,21 @@ Candidate contract와 current-source drift audit은
 `docs/V1_LANGUAGE_CONTRACT.md`와
 `docs/todo-v09-language-freeze/p167-normative-inventory.md`가 소유한다. 다음 milestone은
 compiler/language version과 v1 compatibility 약속을 고정하는 P168이다.
+
+## P168: Version and Compatibility Policy
+
+상태: complete (2026-07-17)
+
+- [x] compiler release와 implemented language contract의 단일 version model
+- [x] `v0.9.0` candidate freeze와 `v1.0.0` first stable 관계
+- [x] v1.x source acceptance와 observable semantics guarantee
+- [x] patch/minor/major change classification
+- [x] deprecation notice와 next-major removal policy
+- [x] narrow soundness/security compatibility exception
+- [x] edition, manifest version field와 source pragma 제외
+- [x] stable surface와 implementation detail 경계
+
+공개 정책과 normative rule은 `docs/COMPATIBILITY.md`,
+`docs/V1_LANGUAGE_CONTRACT.md`의 `V1-COMP-001`-`013`, 그리고
+`docs/todo-v09-language-freeze/p168-version-compatibility.md`가 소유한다. 다음 milestone은
+98개 rule을 evidence와 연결하고 0.x migration을 통합하는 P169다.

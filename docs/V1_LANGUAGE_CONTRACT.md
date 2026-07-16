@@ -108,7 +108,7 @@ contradiction with an already implemented v1 rule.
 
 | Rule | Normative requirement | Detail owner |
 | --- | --- | --- |
-| `V1-STD-001` | The compiler MUST provide exactly `std/errors`, `std/strings`, `std/os`, `std/io`, `std/fs`, and `std/collections` as compiler-versioned packages. | `docs/STANDARD_LIBRARY.md` |
+| `V1-STD-001` | The compiler MUST provide `std/errors`, `std/strings`, `std/os`, `std/io`, `std/fs`, and `std/collections` as the v1 baseline compiler-versioned packages. Compatible 1.x additions remain governed by `V1-COMP-007`. | `docs/STANDARD_LIBRARY.md` |
 | `V1-STD-002` | Standard APIs MUST expose no native pointer, allocator, handle, borrowed return, or platform numeric error code. Recoverable failures MUST use `Result[..., errors.Error]`. | `docs/STANDARD_LIBRARY.md` Imports and ownership |
 | `V1-STD-003` | `string` and all text APIs MUST preserve valid UTF-8 semantics, documented byte-versus-scalar indexing, exact embedded-NUL behavior, and strict parse behavior. | `docs/STANDARD_LIBRARY.md` strings, io, fs |
 | `V1-STD-004` | `std/os` MUST expose arguments, environment lookup, and process exit with the documented UTF-8, missing-value, NUL, and `0..255` behavior. | `docs/STANDARD_LIBRARY.md` os |
@@ -145,6 +145,26 @@ contradiction with an already implemented v1 rule.
 | `V1-RUN-005` | A release MUST provide target-named archives, `install.sh`, and `SHA256SUMS`. Each archive MUST contain `bin/mlg`, README, MIT license, and Apache-2.0 license. | `SPEC.md` Release Artifacts and Installation |
 | `V1-RUN-006` | The installer MUST require an explicit version, verify checksum, archive entries, and staged binary version, and atomically replace only the destination `mlg`. | `SPEC.md` Release Artifacts and Installation |
 | `V1-RUN-007` | The C backend, compiler allocation counters, failure-injection controls, generated symbols, and native layouts MUST remain implementation details rather than stable source or native ABI. | `SPEC.md` Backend Strategy |
+
+## Versioning and compatibility
+
+`docs/COMPATIBILITY.md` is the detail owner for the following rules.
+
+| Rule | Normative requirement | Detail owner |
+| --- | --- | --- |
+| `V1-COMP-001` | One semantic version MUST identify the compiler, implemented language contract, compiler-owned standard packages, installer, and native archives. | `docs/COMPATIBILITY.md` Version model |
+| `V1-COMP-002` | v1.0.0 MUST be the first stable implementation of Mallang v1; every v1.x compiler MUST implement that same language version. | `docs/COMPATIBILITY.md` Version model |
+| `V1-COMP-003` | A later v1.x compiler MUST continue to accept every valid v1 program. | `docs/COMPATIBILITY.md` 1.x guarantees |
+| `V1-COMP-004` | A later v1.x compiler MUST NOT silently change a valid v1 program's observable semantics. | `docs/COMPATIBILITY.md` Compatibility unit |
+| `V1-COMP-005` | Stable standard-library signatures, ownership/failure behavior, user CLI meanings, diagnostic schema, archive shape, and installer verification MUST remain compatible throughout v1.x. | `docs/COMPATIBILITY.md` 1.x guarantees |
+| `V1-COMP-006` | Patch releases MUST preserve valid source and observable semantics except for the documented soundness and security exception. | `docs/COMPATIBILITY.md` Release classes |
+| `V1-COMP-007` | Minor releases MAY add only backward-compatible language, library, tooling, diagnostic, or target surface. | `docs/COMPATIBILITY.md` Release classes |
+| `V1-COMP-008` | A source rejection, semantic change, stable API/CLI removal, or supported-target removal MUST require a new major version unless the soundness exception applies. | `docs/COMPATIBILITY.md` Release classes |
+| `V1-COMP-009` | Deprecation MUST preserve source through v1.x, identify a replacement and major-version removal, and SHOULD provide at least one minor release of compiler diagnostic notice when practical. | `docs/COMPATIBILITY.md` Deprecation |
+| `V1-COMP-010` | A soundness or security compatibility exception MUST be narrow, rule-identified, regression-tested, migrated, and release-noted. | `docs/COMPATIBILITY.md` Soundness and security exception |
+| `V1-COMP-011` | Rule IDs MUST NOT be recycled; clarification, deprecation, and supersession MUST preserve the original ID history. | `docs/COMPATIBILITY.md` Deprecation |
+| `V1-COMP-012` | Mallang v1 MUST NOT add an edition, manifest language-version field, source pragma, or per-project compatibility switch. | `docs/COMPATIBILITY.md` Version model |
+| `V1-COMP-013` | Exact human diagnostic wording, inspection stdout, generated C/native ABI, cross-version artifact bytes, and numerical performance MUST NOT be compatibility guarantees. | `docs/COMPATIBILITY.md` 1.x guarantees |
 
 ## Explicit v1 exclusions
 

@@ -4,6 +4,8 @@ primary_entrypoints:
   - README.md
   - SPEC.md
   - ROADMAP.md
+  - docs/V1_LANGUAGE_CONTRACT.md
+  - docs/COMPATIBILITY.md
   - docs/agent-harness.md
   - docs/HANDOFF.md
   - docs/ROADMAP.md

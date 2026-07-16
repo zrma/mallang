@@ -301,6 +301,14 @@
   macOS arm64/Linux x86_64 matrix와 checksum bundle이 같은 boundary를 검증한다. Performance
   threshold는 supported-platform 반복 표본 전까지 observational로 유지한다. v0.9 Q1-Q6는
   승인됐고 현재 v0.8 language surface를 v1 candidate로 동결한다.
+- v0.9 P167 완료: `docs/V1_LANGUAGE_CONTRACT.md`에 source, project, type, ownership,
+  standard library, CLI/diagnostic와 native distribution surface를 85개 stable rule ID로
+  inventory했다. Copy/move classification, user enum과 nested match의 stale `SPEC.md` 문구를
+  current implementation에 맞게 교정했다.
+- v0.9 P168 완료: `docs/COMPATIBILITY.md`와 `V1-COMP-001`-`013`이 compiler/language
+  version relation, v1.x source/semantic compatibility, release class, deprecation,
+  soundness exception과 no-edition policy를 고정한다. P169는 총 98개 rule의 conformance
+  evidence와 v0.x migration을 통합한다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작

@@ -424,6 +424,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 ## Layout
 
 - `SPEC.md`: published language and tooling contract through v0.8.
+- `docs/V1_LANGUAGE_CONTRACT.md`: rule-indexed Mallang v1 candidate contract.
+- `docs/COMPATIBILITY.md`: compiler/language versioning and v1 compatibility policy.
 - `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.

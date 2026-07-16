@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P167 complete on 2026-07-16; P168 next
+상태: P168 complete on 2026-07-17; P169 next
 
 ## Goal
 
@@ -17,9 +17,9 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P168: Version and Compatibility Policy
 
-- compiler/language version 관계, v1 source compatibility, deprecation과 breaking-change 규칙을
+- [x] compiler/language version 관계, v1 source compatibility, deprecation과 breaking-change 규칙을
   공개 문서로 고정한다.
-- v1에는 edition field나 per-project language-version switch를 추가하지 않는다.
+- [x] v1에는 edition field나 per-project language-version switch를 추가하지 않는다.
 
 ### P169: Conformance and Migration Map
 
