@@ -1,6 +1,6 @@
 # Mallang v1 Roadmap
 
-상태: planned
+상태: complete; v1.0.0 released (2026-07-17)
 
 기준 릴리스: `v0.1.0`
 
