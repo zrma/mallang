@@ -1,6 +1,6 @@
 # Spec: v0.9 Language Freeze
 
-상태: P170 complete on 2026-07-17; P171 next
+상태: P171 complete and released as v0.9.0 on 2026-07-17; P172 next
 
 ## Goal
 
@@ -34,8 +34,8 @@ compatibility, conformance, migration, dogfood와 release rehearsal의 빈틈을
 
 ### P171: v0.9 Acceptance and Release
 
-- freeze 이후 change audit, conformance completeness와 supported-platform artifact를 검증한다.
-- `v0.9.0`을 language-freeze release로 게시한다.
+- [x] freeze 이후 change audit, conformance completeness와 supported-platform artifact를 검증한다.
+- [x] `v0.9.0`을 language-freeze release로 게시한다.
 
 ### P172: v1 RC and Rollback Rehearsal
 

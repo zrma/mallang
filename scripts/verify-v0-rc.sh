@@ -91,9 +91,9 @@ PYVERIFY
 
 scripts/check-release-helpers.sh
 if [[ "$VERIFY_DEEP" -eq 1 ]]; then
-  scripts/check-v08-acceptance.sh
+  scripts/check-v09-acceptance.sh
 else
-  scripts/check-v08-acceptance.sh --skip-deep-sanitizers
+  scripts/check-v09-acceptance.sh --skip-deep-sanitizers
 fi
 verify_checked_roadmaps
 verify_no_empty_local_stack_changes

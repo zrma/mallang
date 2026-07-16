@@ -1,13 +1,28 @@
-# Mallang v0.8 Specification
+# Mallang v0.9 Specification
 
-This is the Mallang language and tooling specification through the 0.8.0
+This is the Mallang language and tooling specification through the 0.9.0
 release.
 
 Later milestones are non-normative plans tracked in `docs/V1_ROADMAP.md`.
 The rule-indexed v1 freeze candidate is tracked in
-`docs/V1_LANGUAGE_CONTRACT.md`; it remains candidate material until v0.9.0.
+`docs/V1_LANGUAGE_CONTRACT.md`; v0.9 freezes it for final v1 release validation.
 Compiler/language versioning and compatibility are defined in
 `docs/COMPATIBILITY.md`.
+
+## Published v0.9 Language Freeze
+
+v0.9 adds no new source-language feature after v0.8. It publishes the implemented language as a
+rule-indexed v1 candidate, connects all 98 normative rules to executable or explicit evidence,
+defines the 1.x compatibility promise, and consolidates v0.x migration guidance.
+
+The `textstats` representative project consumes the frozen syntax, ownership model, standard
+packages, project graph, formatter, tests, native build and runtime from a clean installed release
+compiler. The workflow runs twice and verifies source, output and generated C identity together
+with strict C, ASan/UBSan and allocation accounting.
+
+The freeze change audit confirms that compiler `src/` is unchanged from the signed v0.8.0 base.
+Intervening work is limited to documentation corrections, conformance and migration evidence,
+representative dogfood, and release metadata.
 
 ## Published v0.8 Compiler Hardening
 

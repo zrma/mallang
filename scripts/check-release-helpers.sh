@@ -60,6 +60,8 @@ check_shell_syntax \
   scripts/check-release-binary.sh \
   scripts/check-release-helpers.sh \
   scripts/check-v07-acceptance.sh \
+  scripts/check-v09-acceptance.sh \
+  scripts/check-v09-dogfood.sh \
   scripts/check.sh \
   scripts/finalize-and-push.sh \
   scripts/start-work.sh \

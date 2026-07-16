@@ -1573,3 +1573,20 @@ Standalone clean-install gate와 issue inventory는
 `scripts/check-v09-dogfood.sh`와
 `docs/todo-v09-language-freeze/p170-representative-dogfood.md`가 소유한다. 다음 milestone은
 freeze audit, supported-platform artifacts와 `v0.9.0` release를 닫는 P171이다.
+
+## P171: v0.9 Acceptance and Release
+
+상태: complete; released as v0.9.0 (2026-07-17)
+
+- [x] signed `v0.8.0` base 이후 compiler source zero-change audit
+- [x] documentation, conformance, dogfood와 release change classification
+- [x] 98 rules, 23 profiles와 64 evidence item completeness
+- [x] canonical, optimized release compiler와 complete generated C sanitizer gate
+- [x] macOS arm64/Linux x86_64 target archive와 checksum bundle
+- [x] package version, published v0.9 spec와 release notes
+- [x] signed `v0.9.0` tag와 public GitHub binary release
+
+Exact freeze audit, acceptance composition과 platform evidence boundary는
+`scripts/check-v09-freeze.py`, `scripts/check-v09-acceptance.sh`와
+`docs/todo-v09-language-freeze/p171-v09-acceptance.md`가 소유한다. 다음 milestone은
+v1 RC clean install, v0.9 upgrade와 rollback rehearsal를 수행하는 P172다.

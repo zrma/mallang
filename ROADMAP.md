@@ -259,7 +259,11 @@
   defense, property/corpus, observational baseline, reproducibility and native
   acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
   2026-07-16.
-- Language freeze and the stable release must advance
-  through the acceptance gates in that document.
+- `v0.9.0: Language Freeze` completed P167-P171 normative inventory,
+  compatibility, conformance, migration, representative dogfood and native
+  acceptance on macOS arm64 and Ubuntu Linux x86_64, and was released on
+  2026-07-17.
+- The v1 release candidate and stable release must advance through the
+  acceptance gates in that document.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.
