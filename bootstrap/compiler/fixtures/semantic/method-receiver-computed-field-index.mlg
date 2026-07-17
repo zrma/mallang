@@ -1,0 +1,29 @@
+type User struct {
+    name string
+}
+
+type Holder struct {
+    user User
+}
+
+func identityHolder(holder Holder) Holder {
+    return holder
+}
+
+func identityUsers(users [1]User) [1]User {
+    return users
+}
+
+func (con self User) inspect() int {
+    return 1
+}
+
+func readHolder(holder Holder) int {
+    return identityHolder(holder).user.inspect()
+}
+
+func readUsers(users [1]User) int {
+    return identityUsers(users)[0].inspect()
+}
+
+func main() {}

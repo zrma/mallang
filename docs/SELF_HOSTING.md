@@ -99,5 +99,7 @@ same assignment-place checks for field/index post targets. P176c3b2b2 checks
 range source reads, Copy/index-only bindings, body scope, active-source
 assignment and persistent outer moves. P176c4a checks owned/`con`/`mut` direct
 local method receivers, method arguments and receiver/argument borrow overlap.
-Field/index/temporary receivers and deterministic drop insertion remain
+P176c4b extends the same ownership rules to local-rooted field/index receivers
+and temporary/computed bases without evaluating receiver inputs twice. Complete
+ADT/closure/generic semantics and deterministic typed-IR drop insertion remain
 incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

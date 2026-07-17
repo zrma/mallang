@@ -1,0 +1,22 @@
+type Counter struct {
+    value int
+}
+
+type Holder struct {
+    counter Counter
+}
+
+func (con self Counter) valueOf() int {
+    return self.value
+}
+
+func (mut self Counter) increment() {
+    self.value = self.value + 1
+}
+
+func exercise(mut holder Holder) int {
+    holder.counter.increment()
+    return holder.counter.valueOf()
+}
+
+func main() {}

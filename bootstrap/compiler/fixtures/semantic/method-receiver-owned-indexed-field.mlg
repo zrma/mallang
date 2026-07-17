@@ -1,0 +1,17 @@
+type User struct {
+    name string
+}
+
+type Holder struct {
+    user User
+}
+
+func (self User) consume() int {
+    return 1
+}
+
+func exercise(holders [1]Holder) int {
+    return holders[0].user.consume()
+}
+
+func main() {}

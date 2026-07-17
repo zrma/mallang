@@ -1,0 +1,17 @@
+type User struct {
+    name string
+}
+
+func identity(user User) User {
+    return user
+}
+
+func (con self User) inspect() int {
+    return 1
+}
+
+func exercise(user User) int {
+    return identity(user).inspect()
+}
+
+func main() {}

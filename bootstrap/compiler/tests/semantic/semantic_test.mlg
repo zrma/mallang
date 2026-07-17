@@ -1339,3 +1339,63 @@ test RejectsMethodReceiverArgumentOverlap() {
     source := "type Counter struct { value int } func (mut self Counter) touch(mut value int) { value = value + 1 } func exercise(mut counter Counter) int { counter.touch(mut counter.value); return 0 } func main() {}"
     assert(checkTestSource(source) == "borrow of `counter.value` overlaps with an active borrow in this call")
 }
+
+test ChecksFieldMethodReceiverModes() {
+    source := "type Counter struct { value int } type Holder struct { counter Counter } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(mut holder Holder) int { holder.counter.increment(); return holder.counter.valueOf() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksIndexMethodReceiverModes() {
+    source := "type Counter struct { value int } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(mut counters [1]Counter) int { counters[0].increment(); return counters[0].valueOf() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksTemporaryMethodReceiverModes() {
+    source := "type Counter struct { value int } func identity(counter Counter) Counter { return counter } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) increment() { self.value = self.value + 1 } func inspect(counter Counter) int { identity(counter).increment(); return 0 } func read(counter Counter) int { return identity(counter).valueOf() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksComputedFieldAndIndexMethodReceivers() {
+    source := "type User struct { name string } type Holder struct { user User } func identityHolder(holder Holder) Holder { return holder } func identityUsers(users [1]User) [1]User { return users } func (con self User) inspect() int { return 1 } func readHolder(holder Holder) int { return identityHolder(holder).user.inspect() } func readUsers(users [1]User) int { return identityUsers(users)[0].inspect() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsImmutableFieldMutableMethodReceiver() {
+    source := "type Counter struct { value int } type Holder struct { counter Counter } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(holder Holder) int { holder.counter.increment(); return 0 } func main() {}"
+    assert(checkTestSource(source) == "cannot mutably borrow field of immutable binding `holder`")
+}
+
+test RejectsImmutableIndexMutableMethodReceiver() {
+    source := "type Counter struct { value int } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(counters [1]Counter) int { counters[0].increment(); return 0 } func main() {}"
+    assert(checkTestSource(source) == "cannot mutably borrow place of immutable binding `counters`")
+}
+
+test RejectsFieldMethodReceiverArgumentOverlap() {
+    source := "type Counter struct { value int } type Holder struct { counter Counter } func (mut self Counter) touch(mut value int) { value = value + 1 } func exercise(mut holder Holder) int { holder.counter.touch(mut holder.counter.value); return 0 } func main() {}"
+    assert(checkTestSource(source) == "borrow of `holder.counter.value` overlaps with an active borrow in this call")
+}
+
+test RejectsIndexMethodReceiverArgumentOverlap() {
+    source := "type Counter struct { value int } func (mut self Counter) touch(mut value int) { value = value + 1 } func exercise(mut counters [1]Counter) int { counters[0].touch(mut counters[0].value); return 0 } func main() {}"
+    assert(checkTestSource(source) == "borrow of `counters[?].value` overlaps with an active borrow in this call")
+}
+
+test RejectsOwnedFieldMethodReceiverMove() {
+    source := "type User struct { name string } type Holder struct { user User } func (self User) consume() int { return 1 } func exercise(holder Holder) int { return holder.user.consume() } func main() {}"
+    assert(checkTestSource(source) == "moving non-copy field out of `holder` is not supported without destructuring")
+}
+
+test RejectsOwnedComputedFieldMethodReceiverMove() {
+    source := "type User struct { name string } type Holder struct { user User } func identity(holder Holder) Holder { return holder } func (self User) consume() int { return 1 } func exercise(holder Holder) int { return identity(holder).user.consume() } func main() {}"
+    assert(checkTestSource(source) == "moving a non-copy field out of a computed struct value is not supported without destructuring")
+}
+
+test RejectsOwnedIndexedFieldMethodReceiverMove() {
+    source := "type User struct { name string } type Holder struct { user User } func (self User) consume() int { return 1 } func exercise(holders [1]Holder) int { return holders[0].user.consume() } func main() {}"
+    assert(checkTestSource(source) == "moving non-copy field out of indexed element is not supported without destructuring")
+}
+
+test RejectsMovedFieldMethodReceiver() {
+    source := "type User struct { name string } type Holder struct { user User } func take(holder Holder) int { return 1 } func (con self User) inspect() int { return 1 } func exercise(holder Holder) int { consumed := take(holder); return holder.user.inspect() } func main() {}"
+    assert(checkTestSource(source) == "borrow of moved value `holder`")
+}

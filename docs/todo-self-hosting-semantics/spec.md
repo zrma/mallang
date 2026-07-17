@@ -63,6 +63,7 @@ agrees.
 - P176c4a: distinguish owned, `con` and `mut` direct local method receivers,
   including argument mode and receiver/argument overlap (complete)
 - P176c4b: extend method receiver ownership to field, index and temporary bases
+  (complete)
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
 
@@ -294,7 +295,22 @@ specialization and function-body checking until later P176 slices.
   Stage0's first diagnostic message and source span.
 - One hundred semantic fixtures, six typed-IR fixtures and seventy-four Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
-  ASan/UBSan. Field, index and temporary receiver bases remain P176c4b.
+  ASan/UBSan at the P176c4a boundary.
+
+## P176c4b Evidence
+
+- Local-rooted field and array/slice index receivers resolve through the same
+  prefix-aware stable-place model as call arguments. Moved roots, immutable
+  `mut` roots and receiver/argument overlap preserve Stage0's diagnostic stage,
+  message and span.
+- Temporary, computed-field and computed-index receivers use a cloned local
+  state for method lookup, then evaluate the real full expression exactly once.
+  Owned field receivers preserve Stage0's direct, indexed and computed
+  non-Copy move restrictions.
+- One hundred thirteen semantic fixtures, six typed-IR fixtures and eighty-six
+  Mallang project tests pass through Stage0, generated Stage1, strict
+  allocation accounting and ASan/UBSan. Complete ADT, closure, generic and
+  typed-IR coverage remains P176d-P176e.
 
 ## B2 Completion Criteria
 

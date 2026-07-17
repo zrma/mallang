@@ -1,0 +1,22 @@
+type User struct {
+    name string
+}
+
+type Holder struct {
+    user User
+}
+
+func take(holder Holder) int {
+    return 1
+}
+
+func (con self User) inspect() int {
+    return 1
+}
+
+func exercise(holder Holder) int {
+    consumed := take(holder)
+    return holder.user.inspect()
+}
+
+func main() {}

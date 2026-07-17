@@ -1,0 +1,18 @@
+type Counter struct {
+    value int
+}
+
+func (con self Counter) valueOf() int {
+    return self.value
+}
+
+func (mut self Counter) increment() {
+    self.value = self.value + 1
+}
+
+func exercise(mut counters [1]Counter) int {
+    counters[0].increment()
+    return counters[0].valueOf()
+}
+
+func main() {}

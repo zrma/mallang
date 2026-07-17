@@ -1269,10 +1269,10 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
         return self.checkCall(con program, expression)
     }
     if kind == "Expr.FieldAccess" {
-        return self.checkFieldAccess(con program, expression)
+        return self.checkFieldAccess(con program, expression, con valueUse)
     }
     if kind == "Expr.Index" {
-        return self.checkIndexAccess(con program, expression)
+        return self.checkIndexAccess(con program, expression, con valueUse)
     }
     if kind == "Expr.If" {
         return self.checkIfExpression(con program, expression, con valueUse)
@@ -1403,7 +1403,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     return Ok(thenType)
 }
 
-func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
     base := ast.Child(con program, expression, 0)
     match self.checkExpressionUse(con program, base, con "read") {
         case Ok(baseType) {
@@ -1419,6 +1419,19 @@ func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, express
             for mut index := 0; index < len(self.structs[structure].fields); index = index + 1 {
                 if self.structs[structure].fields[index].name == field {
                     ty := copyType(con self.structs[structure].fields[index].ty)
+                    if valueUse == "owned" && !ty.copy {
+                        if ty.kind != "slice" || !isDirectBorrowExpression(con program, base) {
+                            if !isDirectBorrowExpression(con program, base) {
+                                return Err(newError("moving a non-copy field out of a computed struct value is not supported without destructuring", ast.Span(con program, expression)))
+                            }
+                            match rejectFieldBaseMove(con program, base) {
+                                case Ok(_) {}
+                                case Err(error) {
+                                    return Err(error)
+                                }
+                            }
+                        }
+                    }
                     self.recordType(expression, con ty)
                     return Ok(ty)
                 }
@@ -1432,7 +1445,7 @@ func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, express
     }
 }
 
-func (mut self CheckedProgram) checkIndexAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkIndexAccess(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
     base := ast.Child(con program, expression, 0)
     index := ast.Child(con program, expression, 1)
     mut baseType := unitType()
@@ -1473,7 +1486,7 @@ func (mut self CheckedProgram) checkIndexAccess(con program ast.Program, express
             return Err(error)
         }
     }
-    if !element.copy {
+    if valueUse == "owned" && !element.copy {
         mut collection := "slice"
         if baseType.kind == "array" {
             collection = "array"
@@ -1659,19 +1672,15 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
 
 func (mut self CheckedProgram) checkMethodCall(con program ast.Program, expression int, callee int) Result[ResolvedType, SemanticError] {
     receiver := ast.Child(con program, callee, 0)
-    if ast.Kind(con program, receiver) != "Expr.Var" {
-        return Err(newError("B2c4a semantic checker does not yet accept non-local method receivers", ast.Span(con program, receiver)))
+    mut receiverType := unitType()
+    match self.checkReceiverProbeType(con program, receiver) {
+        case Ok(ty) {
+            receiverType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
     }
-    receiverName := ast.Value(con program, receiver)
-    receiverLocal := localIndex(con self.locals, con receiverName)
-    if receiverLocal < 0 {
-        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
-    }
-    if self.locals[receiverLocal].moved {
-        return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
-    }
-    receiverType := copyType(con self.locals[receiverLocal].ty)
-    self.recordType(receiver, con receiverType)
     if receiverType.kind != "struct" {
         message := strings.join(con []string{"method call requires a struct receiver, got `", token.CopyText(con receiverType.text), "`",}, con "")
         return Err(newError(message, ast.Span(con program, receiver)))
@@ -1690,21 +1699,33 @@ func (mut self CheckedProgram) checkMethodCall(con program ast.Program, expressi
     if receiverMode == "owned" {
         match self.checkExpression(con program, receiver) {
             case Ok(ty) {
-                checkedReceiverType = ty
+                checkedReceiverType = copyType(con ty)
             }
             case Err(error) {
                 return Err(error)
             }
         }
     } else {
-        if self.locals[receiverLocal].moved {
-            return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
+        if isDirectBorrowExpression(con program, receiver) {
+            match self.checkReceiverBorrow(con program, receiver, receiverMode == "mut") {
+                case Ok(place) {
+                    checkedReceiverType = copyType(con place.ty)
+                    receiverBorrow = place
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            match self.checkFullExpressionRead(con program, receiver) {
+                case Ok(ty) {
+                    checkedReceiverType = ty
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
         }
-        if receiverMode == "mut" && !self.locals[receiverLocal].mutable {
-            return Err(newError(strings.join(con []string{"cannot mutably borrow immutable binding `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
-        }
-        checkedReceiverType = copyType(con self.locals[receiverLocal].ty)
-        receiverBorrow = BorrowPlace{root: token.CopyText(con receiverName), segments: []string{}, ty: copyType(con checkedReceiverType), exclusive: receiverMode == "mut",}
     }
     expectedReceiverType := copyType(con self.methods[method].receiver.ty)
     if checkedReceiverType.text != expectedReceiverType.text {
@@ -1722,6 +1743,137 @@ func (mut self CheckedProgram) checkMethodCall(con program ast.Program, expressi
             return Err(error)
         }
     }
+}
+
+func (mut self CheckedProgram) checkReceiverProbeType(con program ast.Program, receiver int) Result[ResolvedType, SemanticError] {
+    if isDirectBorrowExpression(con program, receiver) {
+        match self.resolveBorrowPlace(con program, receiver) {
+            case Ok(place) {
+                local := localIndex(con self.locals, con place.root)
+                if local < 0 {
+                    return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, receiver)))
+                }
+                if self.locals[local].moved {
+                    root := directBorrowRootExpression(con program, receiver)
+                    return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, root)))
+                }
+                return Ok(copyType(con place.ty))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    match self.checkFullExpressionRead(con program, receiver) {
+        case Ok(ty) {
+            self.locals = baseLocals
+            return Ok(ty)
+        }
+        case Err(error) {
+            self.locals = baseLocals
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkReceiverBorrow(con program ast.Program, receiver int, mutable bool) Result[BorrowPlace, SemanticError] {
+    match self.resolveBorrowPlace(con program, receiver) {
+        case Ok(place) {
+            local := localIndex(con self.locals, con place.root)
+            if local < 0 {
+                return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, receiver)))
+            }
+            if self.locals[local].moved {
+                return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, receiver)))
+            }
+            if mutable && !self.locals[local].mutable {
+                mut subject := ""
+                if hasIndexSegment(con place.segments) {
+                    subject = "place of"
+                } else if len(place.segments) > 0 {
+                    subject = "field of"
+                }
+                mut separator := ""
+                if subject != "" {
+                    separator = " "
+                }
+                message := strings.join(con []string{"cannot mutably borrow ", subject, separator, "immutable binding `", token.CopyText(con place.root), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, receiver)))
+            }
+            return Ok(BorrowPlace{root: token.CopyText(con place.root), segments: copySegments(con place.segments), ty: copyType(con place.ty), exclusive: mutable,})
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkFullExpressionRead(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, expression, 0)
+        match self.checkFullExpressionRead(con program, base) {
+            case Ok(baseType) {
+                field := ast.Value(con program, expression)
+                match self.resolveStructField(con baseType, con field, ast.Span(con program, expression), con "field access") {
+                    case Ok(ty) {
+                        self.recordType(expression, con ty)
+                        return Ok(ty)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Index" {
+        base := ast.Child(con program, expression, 0)
+        index := ast.Child(con program, expression, 1)
+        mut baseType := unitType()
+        match self.checkFullExpressionRead(con program, base) {
+            case Ok(ty) {
+                baseType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        mut indexType := unitType()
+        match self.checkExpression(con program, index) {
+            case Ok(ty) {
+                indexType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        if baseType.kind != "array" && baseType.kind != "slice" {
+            message := strings.join(con []string{"indexing requires a fixed-size array or slice, got `", token.CopyText(con baseType.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, base)))
+        }
+        match self.validateIndex(con program, index, con indexType, con baseType) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.typeArgument(con baseType, 0) {
+            case Ok(ty) {
+                self.recordType(expression, con ty)
+                return Ok(ty)
+            }
+            case Err(_) {
+                return Err(newError("checked index element type is missing", ast.Span(con program, expression)))
+            }
+        }
+    }
+    return self.checkExpression(con program, expression)
 }
 
 func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
@@ -1992,6 +2144,41 @@ func hasIndexSegment(con segments []string) bool {
         }
     }
     return false
+}
+
+func isDirectBorrowExpression(con program ast.Program, expression int) bool {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Var" {
+        return true
+    }
+    if kind == "Expr.FieldAccess" || kind == "Expr.Index" {
+        return isDirectBorrowExpression(con program, ast.Child(con program, expression, 0))
+    }
+    return false
+}
+
+func directBorrowRootExpression(con program ast.Program, expression int) int {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.FieldAccess" || kind == "Expr.Index" {
+        return directBorrowRootExpression(con program, ast.Child(con program, expression, 0))
+    }
+    return expression
+}
+
+func rejectFieldBaseMove(con program ast.Program, base int) Result[bool, SemanticError] {
+    kind := ast.Kind(con program, base)
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, base)
+        message := strings.join(con []string{"moving non-copy field out of `", token.CopyText(con name), "` is not supported without destructuring",}, con "")
+        return Err(newError(message, ast.Span(con program, base)))
+    }
+    if kind == "Expr.Index" {
+        return Err(newError("moving non-copy field out of indexed element is not supported without destructuring", ast.Span(con program, base)))
+    }
+    if kind == "Expr.FieldAccess" {
+        return rejectFieldBaseMove(con program, ast.Child(con program, base, 0))
+    }
+    return Ok(true)
 }
 
 func borrowPlacesOverlap(con left BorrowPlace, con right BorrowPlace) bool {
