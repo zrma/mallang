@@ -69,7 +69,7 @@ Mallang to specific 1.x versions.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
   the complete lexer/parser plus declaration/type checking, primitive body
   checking, direct/indirect calls, field/index places and the incremental
-  typed-IR subset.
+  typed-IR subset with nested if statements.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
@@ -85,6 +85,7 @@ bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is active: P176a provides the
 declaration/type checker, P176b1 adds primitive bodies and typed IR, and P176b2
 adds named function values plus direct/indirect calls. P176b3a adds field/index
-reads, and P176b3b adds mutable field/index assignment places. Control flow,
-ownership and deterministic drop insertion remain incomplete, so no complete
-semantic, typed-IR or Stage1 compiler claim is made yet.
+reads, and P176b3b adds mutable field/index assignment places. P176b4a adds
+nested lexical scopes and if-statement return convergence. If
+expressions, loops, ownership and deterministic drop insertion remain
+incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

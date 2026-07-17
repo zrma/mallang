@@ -128,6 +128,43 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
 func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
     kind := ast.Kind(con syntax, statement)
     value := ast.Value(con syntax, statement)
+    if kind == "Stmt.If" {
+        condition := ast.Child(con syntax, statement, 0)
+        mut children := []int{}
+        match self.lowerExpression(con syntax, condition, con checked) {
+            case Ok(irCondition) {
+                children = append(children, irCondition)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        thenBlock := ast.Child(con syntax, statement, 1)
+        match self.lowerBlock(con syntax, thenBlock, con checked) {
+            case Ok(body) {
+                block := self.addNode("B", "Block.Then", "", "unit", ast.Span(con syntax, statement), body)
+                children = append(children, block)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        mut elseBody := []int{}
+        if ast.ChildCount(con syntax, statement) > 2 {
+            elseBlock := ast.Child(con syntax, statement, 2)
+            match self.lowerBlock(con syntax, elseBlock, con checked) {
+                case Ok(body) {
+                    elseBody = body
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        elseBlock := self.addNode("B", "Block.Else", "", "unit", ast.Span(con syntax, statement), elseBody)
+        children = append(children, elseBlock)
+        return Ok(self.addNode("S", "Stmt.If", "", "unit", ast.Span(con syntax, statement), children))
+    }
     if kind == "Stmt.FieldAssign" {
         base := ast.Child(con syntax, statement, 0)
         expression := ast.Child(con syntax, statement, 1)
@@ -188,6 +225,22 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         }
     }
     return Err(newError("B2b typed IR does not yet accept this statement", ast.Span(con syntax, statement)))
+}
+
+func (mut self Lowerer) lowerBlock(con syntax ast.Program, block int, con checked semantic.CheckedProgram) Result[[]int, Error] {
+    mut body := []int{}
+    for mut statement := 0; statement < ast.ChildCount(con syntax, block); statement = statement + 1 {
+        syntaxNode := ast.Child(con syntax, block, statement)
+        match self.lowerStatement(con syntax, syntaxNode, con checked) {
+            case Ok(irNode) {
+                body = append(body, irNode)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(body)
 }
 
 func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {

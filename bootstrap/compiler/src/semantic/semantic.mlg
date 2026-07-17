@@ -73,6 +73,7 @@ pub type Local struct {
     mutable bool
     ty ResolvedType
     function int
+    scopeDepth int
 }
 
 pub type CheckedProgram struct {
@@ -84,6 +85,7 @@ pub type CheckedProgram struct {
     typedNodes []TypedNode
     functionReferences []FunctionReference
     locals []Local
+    scopeDepth int
 }
 
 pub type SemanticError struct {
@@ -92,7 +94,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{},}
+    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{}, scopeDepth: 0,}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -532,6 +534,7 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
             }
 
             self.locals = locals
+            self.scopeDepth = 0
             match self.checkBlock(con program, blockNode, con returnType) {
                 case Ok(returned) {
                     if returnType.kind != "unit" && !returned {
@@ -576,7 +579,8 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
         expression := ast.Child(con program, statement, 0)
         match self.checkExpression(con program, expression) {
             case Ok(ty) {
-                if localIndex(con self.locals, con name) >= 0 {
+                existing := localIndex(con self.locals, con name)
+                if existing >= 0 && self.locals[existing].scopeDepth == self.scopeDepth {
                     message := strings.join(con []string{"binding `", token.CopyText(con name), "` already exists in this block",}, con "")
                     return Err(newError(message, ast.Span(con program, statement)))
                 }
@@ -585,7 +589,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if reference >= 0 {
                     function = self.functionReferences[reference].function
                 }
-                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty, function: function})
+                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty, function: function, scopeDepth: self.scopeDepth})
                 return Ok(false)
             }
             case Err(error) {
@@ -641,6 +645,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
             }
         }
     }
+    if kind == "Stmt.If" {
+        return self.checkIfStatement(con program, statement, con returnType)
+    }
     if kind == "Stmt.Return" {
         expression := ast.Child(con program, statement, 0)
         match self.checkExpression(con program, expression) {
@@ -668,6 +675,57 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this statement", ast.Span(con program, statement)))
+}
+
+func (mut self CheckedProgram) checkIfStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
+    condition := ast.Child(con program, statement, 0)
+    match self.checkExpression(con program, condition) {
+        case Ok(conditionType) {
+            if conditionType.kind != "bool" {
+                return Err(newError("if condition must have type `bool`", ast.Span(con program, condition)))
+            }
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    baseDepth := self.scopeDepth
+    thenBlock := ast.Child(con program, statement, 1)
+    self.scopeDepth = baseDepth + 1
+    mut thenReturns := false
+    match self.checkBlock(con program, thenBlock, con returnType) {
+        case Ok(returned) {
+            thenReturns = returned
+        }
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth
+            return Err(error)
+        }
+    }
+
+    self.locals = copyLocals(con baseLocals)
+    self.scopeDepth = baseDepth
+    mut elseReturns := false
+    if ast.ChildCount(con program, statement) > 2 {
+        elseBlock := ast.Child(con program, statement, 2)
+        self.scopeDepth = baseDepth + 1
+        match self.checkBlock(con program, elseBlock, con returnType) {
+            case Ok(returned) {
+                elseReturns = returned
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+    }
+    self.locals = baseLocals
+    self.scopeDepth = baseDepth
+    return Ok(thenReturns && elseReturns)
 }
 
 func (mut self CheckedProgram) checkFieldAssign(con program ast.Program, statement int) Result[bool, SemanticError] {
@@ -1544,7 +1602,7 @@ func hasParam(con params []ParamSig, con name string) bool {
 }
 
 func localIndex(con locals []Local, con name string) int {
-    for mut index := 0; index < len(locals); index = index + 1 {
+    for mut index := len(locals) - 1; index >= 0; index = index - 1 {
         if locals[index].name == name {
             return index
         }
@@ -1553,7 +1611,15 @@ func localIndex(con locals []Local, con name string) int {
 }
 
 func localFromParam(con param ParamSig) Local {
-    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty), function: -1,}
+    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
+}
+
+func copyLocals(con locals []Local) []Local {
+    mut copied := []Local{}
+    for mut index := 0; index < len(locals); index = index + 1 {
+        copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
+    }
+    return copied
 }
 
 func copyType(con ty ResolvedType) ResolvedType {

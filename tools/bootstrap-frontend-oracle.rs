@@ -297,6 +297,20 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             "unit".to_string(),
             vec![normalize_ir_expression(expr, depth + 1)],
         ),
+        IrStmtKind::If {
+            condition,
+            then_body,
+            else_body,
+        } => (
+            "Stmt.If",
+            "",
+            "unit".to_string(),
+            vec![
+                normalize_ir_expression(condition, depth + 1),
+                normalize_ir_block("Block.Then", then_body, statement.span, depth + 1),
+                normalize_ir_block("Block.Else", else_body, statement.span, depth + 1),
+            ],
+        ),
         IrStmtKind::Expr { expr } => (
             "Stmt.Expr",
             "",
@@ -339,6 +353,14 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
         &ty,
         &children,
     )
+}
+
+fn normalize_ir_block(kind: &str, body: &[IrStmt], span: Span, depth: usize) -> String {
+    let children = body
+        .iter()
+        .map(|statement| normalize_ir_statement(statement, depth + 1))
+        .collect::<Vec<_>>();
+    normalize_ir_line(depth, "B", kind, span, "", "unit", &children)
 }
 
 fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {

@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176b3 complete
+Status: in progress; P176a-P176b4a complete
 
 ## Objective
 
@@ -42,7 +42,9 @@ agrees.
 - P176b2: type direct calls, arguments and named function values (complete)
 - P176b3a: type field/index reads and lower their typed IR (complete)
 - P176b3b: type mutable local-rooted field/index assignment places (complete)
-- P176b4: enforce nested lexical scopes and branch type convergence
+- P176b4a: enforce nested lexical scopes and if-statement return convergence
+  (complete)
+- P176b4b: type if expressions and enforce branch type convergence
 
 ### P176c: Ownership And Places
 
@@ -145,6 +147,18 @@ specialization and function-body checking until later P176 slices.
   B2 subset. Twenty-five Mallang project tests pass through Stage0.
 - Generated Stage1, strict allocation accounting and ASan/UBSan agree with the
   Rust oracle across the focused fixtures and 159-source parser corpus.
+
+## P176b4a Evidence
+
+- Locals carry lexical depth, nearest-binding lookup permits nested shadowing,
+  and duplicate checks remain scoped to the current block.
+- If branches start from independent outer-local snapshots; branch locals do
+  not leak, and a statement is return-complete only when both branches return.
+- If typed IR uses deterministic condition, `Block.Then` and `Block.Else`
+  children, including an empty else block when Rust IR loses source presence.
+- Forty-seven semantic fixtures, five typed-IR fixtures and twenty-eight
+  Mallang project tests cover the cumulative B2 subset through Stage0,
+  generated Stage1, strict accounting and ASan/UBSan.
 
 ## B2 Completion Criteria
 

@@ -1,0 +1,5 @@
+func main() {
+    if 1 {
+        value := 1
+    }
+}

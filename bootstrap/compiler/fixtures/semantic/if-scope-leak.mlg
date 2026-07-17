@@ -1,0 +1,6 @@
+func main() {
+    if true {
+        inner := 1
+    }
+    leaked := inner
+}
