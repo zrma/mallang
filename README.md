@@ -470,6 +470,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
 - `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
+- `docs/SELF_HOSTING.md`: active B0-B5 staged self-hosting and fixed-point contract.
+- `bootstrap/probe/`: Stage0-built B0 Mallang bootstrap capability probe.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
 - `docs/releases/`: v0.1.0 through v1.1.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.

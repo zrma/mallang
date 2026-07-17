@@ -1647,3 +1647,19 @@ Exact API decision and evidence are owned by
 `docs/todo-v11-streaming-text-io/`. This is a backward-compatible minor release;
 it adds no syntax, source-visible handle, borrowed return, or v1.0 semantic
 change.
+
+## P174: B0 Self-Hosting Bootstrap Contract
+
+상태: complete (2026-07-17)
+
+- [x] Stage0/Stage1/Stage2와 trusted-seed 경계 정의
+- [x] generated C와 conformance fixed-point 판정 정의
+- [x] temporary host driver와 compiler-owned semantics 경계 정의
+- [x] Rust Stage0으로 tracked Mallang bootstrap probe format/check/test/build
+- [x] independent probe build의 generated C byte identity
+- [x] exact native probe output과 canonical repository gate
+- [x] B1 frontend differential slice와 no-premature-language-change 경계
+
+Exact bootstrap contract and current acceptance are owned by
+`docs/SELF_HOSTING.md` and `docs/todo-self-hosting-bootstrap/`. The next active
+slice is the B1 Mallang lexer/parser data model and Rust differential harness.

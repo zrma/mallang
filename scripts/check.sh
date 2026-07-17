@@ -6,6 +6,7 @@ cd "$ROOT"
 
 scripts/check-agent-harness-interface.sh
 python3 scripts/check-v1-conformance.py
+scripts/check-self-hosting-bootstrap.sh
 
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)

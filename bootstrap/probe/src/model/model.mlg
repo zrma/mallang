@@ -1,0 +1,20 @@
+package model
+
+import "std/strings"
+
+pub type Summary struct {
+    source_bytes int
+    has_main bool
+}
+
+pub func Summarize(con source string) Summary {
+    return Summary{source_bytes: strings.byteLen(con source), has_main: strings.contains(con source, con "func main"),}
+}
+
+pub func Render(con summary Summary) string {
+    byte_count := strings.fromInt(summary.source_bytes)
+    has_main := strings.fromBool(summary.has_main)
+    parts := []string{"bootstrap-host-ready\nsource_bytes=", byte_count, "\nhas_main=", has_main, "\n",}
+    empty := ""
+    return strings.join(con parts, con empty)
+}

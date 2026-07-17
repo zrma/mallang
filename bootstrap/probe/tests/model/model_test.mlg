@@ -1,0 +1,14 @@
+package model
+
+test SummarizesCompilerShapedSource() {
+    source := "func main() {}\n"
+    summary := Summarize(con source)
+    assert(summary.source_bytes == 15)
+    assert(summary.has_main)
+}
+
+test RejectsSourceWithoutEntrypoint() {
+    source := "package model\n"
+    summary := Summarize(con source)
+    assert(!summary.has_main)
+}

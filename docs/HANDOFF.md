@@ -503,6 +503,8 @@ target/mallang/match-statement
 - `docs/todo-v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
 - `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
 - `docs/todo-v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
+- `docs/SELF_HOSTING.md`: active B0-B5 self-hosting and fixed-point contract
+- `docs/todo-self-hosting-bootstrap/`: active B0 bootstrap feasibility and decisions
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
 - `SECURITY.md`: stable supported version과 private vulnerability reporting policy
 - `ROADMAP.md`: compiler milestone
@@ -518,10 +520,11 @@ target/mallang/match-statement
 3. 다음 milestone은 구체적인 repo-owned gap과 acceptance evidence가 있을 때 별도
    `docs/todo-*` 문서로 시작한다.
 
-현재 post-v1 작업은 `std/fs.forEachLine[C,S]`를 제공하는 v1.1 compatible
-addition이다. Source-visible native handle 없이 context/state/callback borrow를 한 call에
-가두며, `scripts/check-streaming-file-io-runtime.sh`가 UTF-8, line boundary, failure,
-allocation과 sanitizer 계약을 검증한다.
+현재 post-v1 작업은 B0-B5 self-hosting program이다. B0에서 Rust Stage0이 tracked
+Mallang probe를 format/check/test/build/run하고 same-input generated C identity를
+검증했다. 다음 활성 단계는 B1 lexer/parser differential frontend이며, public language
+또는 standard-library addition은 representative compiler blocker가 확인되기 전에는
+포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

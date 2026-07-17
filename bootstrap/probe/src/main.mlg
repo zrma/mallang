@@ -1,0 +1,47 @@
+package main
+
+import "std/errors"
+import "std/fs"
+import "std/io"
+import "std/os"
+import "bootstrap_probe/model"
+
+func ExitWithError(kind errors.Kind) {
+    match io.writeStderr(con "bootstrap probe failed\n") {
+        case Ok(_) {}
+        case Err(_) {}
+    }
+    os.exit(1)
+}
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            if len(args) != 2 {
+                match io.writeStderr(con "usage: bootstrap-probe <source>\n") {
+                    case Ok(_) {}
+                    case Err(_) {}
+                }
+                os.exit(2)
+            }
+            match fs.readText(con args[1]) {
+                case Ok(source) {
+                    summary := model.Summarize(con source)
+                    rendered := model.Render(con summary)
+                    match io.writeStdout(con rendered) {
+                        case Ok(_) {}
+                        case Err(error) {
+                            ExitWithError(error.kind)
+                        }
+                    }
+                }
+                case Err(error) {
+                    ExitWithError(error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            ExitWithError(error.kind)
+        }
+    }
+}

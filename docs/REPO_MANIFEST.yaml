@@ -7,6 +7,7 @@ primary_entrypoints:
   - docs/V1_LANGUAGE_CONTRACT.md
   - docs/COMPATIBILITY.md
   - docs/MIGRATION_V1.md
+  - docs/SELF_HOSTING.md
   - docs/conformance/v1-rules.json
   - docs/agent-harness.md
   - docs/HANDOFF.md
@@ -16,6 +17,7 @@ commands:
   check: scripts/check.sh
   check_test_workflow: scripts/check-test-workflow.sh target/debug/mlg
   check_streaming_file_io: scripts/check-streaming-file-io-runtime.sh
+  check_self_hosting_bootstrap: scripts/check-self-hosting-bootstrap.sh
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg
   check_parser_recovery: scripts/check-parser-recovery.sh target/debug/mlg
