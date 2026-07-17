@@ -26,6 +26,42 @@ pub func CopyText(con text string) string {
     }
 }
 
+pub func Kind(con value Token) string {
+    return CopyText(con value.kind)
+}
+
+pub func HasKind(con value Token, con expected string) bool {
+    return value.kind == expected
+}
+
+pub func Value(con value Token) string {
+    return CopyText(con value.value)
+}
+
+pub func HasValue(con value Token, con expected string) bool {
+    return value.value == expected
+}
+
+pub func Start(con value Token) int {
+    return value.start
+}
+
+pub func End(con value Token) int {
+    return value.end
+}
+
+pub func ErrorMessage(con error LexError) string {
+    return CopyText(con error.message)
+}
+
+pub func ErrorStart(con error LexError) int {
+    return error.start
+}
+
+pub func ErrorEnd(con error LexError) int {
+    return error.end
+}
+
 pub func EncodeBytes(con text string) string {
     mut parts := []string{}
     for mut index := 0; index < strings.byteLen(con text); index = index + 1 {

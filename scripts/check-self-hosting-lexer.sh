@@ -35,6 +35,7 @@ ORACLE="$WORK/bootstrap-frontend-oracle"
 PROJECT="bootstrap/compiler"
 GENERATED_C="$PROJECT/target/mallang/bootstrap_compiler.c"
 FIXTURES="$PROJECT/fixtures/lexer"
+PARSER_FIXTURES="$PROJECT/fixtures/parser"
 mkdir -p "$WORK"
 
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
@@ -74,7 +75,11 @@ int main(int argc, char **argv) {
         return 3;
     }
     if (mallang_live_allocation_count() != 0) {
-        fprintf(stderr, "bootstrap frontend leaked compiler-owned allocations\n");
+        fprintf(
+            stderr,
+            "bootstrap frontend leaked compiler-owned allocations: %lld\n",
+            (long long)mallang_live_allocation_count()
+        );
         return 4;
     }
     return 0;
@@ -116,30 +121,90 @@ for fixture in "$FIXTURES"/*.mlg; do
   fi
 done
 
-for regression in append-match append-match-loop; do
+for fixture in "$PARSER_FIXTURES"/*.mlg; do
+  stem="parser-$(basename "$fixture" .mlg)"
+  oracle_output="$WORK/$stem.oracle"
+  stage1_output="$WORK/$stem.stage1"
+  strict_output="$WORK/$stem.strict"
+  sanitizer_output="$WORK/$stem.sanitizer"
+
+  "$ORACLE" parse "$fixture" >"$oracle_output"
+  "$STAGE1" parse "$fixture" >"$stage1_output"
+  "$WORK/accounting" parse "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+  "$WORK/accounting-san" parse "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+
+  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
+    if ! cmp -s "$oracle_output" "$actual"; then
+      echo "self-hosting parser differential mismatch: $stem" >&2
+      diff -u "$oracle_output" "$actual" >&2 || true
+      exit 1
+    fi
+  done
+  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
+    echo "self-hosting parser runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
+    exit 1
+  fi
+done
+
+for regression in append-match append-match-loop string-equality-temporaries; do
   fixture="tests/fixtures/self-hosting/$regression.mlg"
   binary="$WORK/$regression"
   "$STAGE0" build "$fixture" -o "$binary" >/dev/null
+  generated_c="target/mallang/$regression.c"
+  generated_c_abs="$(cd "$(dirname "$generated_c")" && pwd)/$(basename "$generated_c")"
+  accounting_source="$WORK/$regression-accounting.c"
+  cat >"$accounting_source" <<EOF
+#define main mallang_fixture_main
+#include "$generated_c_abs"
+#undef main
+
+int main(void) {
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(stderr, "self-hosting regression accounting did not start at zero\n");
+        return 2;
+    }
+    if (mallang_fixture_main() != 0) {
+        fprintf(stderr, "self-hosting regression returned a non-zero status\n");
+        return 3;
+    }
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(
+            stderr,
+            "self-hosting regression leaked compiler-owned allocations: %lld\n",
+            (long long)mallang_live_allocation_count()
+        );
+        return 4;
+    }
+    return 0;
+}
+EOF
+  "$CLANG_BIN" "${COMMON_FLAGS[@]}" "$accounting_source" -o "$binary-accounting"
   "$CLANG_BIN" \
     "${COMMON_FLAGS[@]}" \
     -fsanitize=address,undefined \
     -fno-omit-frame-pointer \
-    "target/mallang/$regression.c" \
+    "$accounting_source" \
     -o "$binary-san"
   "$binary" >"$WORK/$regression.stdout"
+  "$binary-accounting" >"$WORK/$regression.accounting.stdout" \
+    2>"$WORK/$regression.accounting.stderr"
   "$binary-san" >"$WORK/$regression.sanitizer.stdout" 2>"$WORK/$regression.sanitizer.stderr"
-  if ! cmp -s "$WORK/$regression.stdout" "$WORK/$regression.sanitizer.stdout" || \
-    [[ -s "$WORK/$regression.sanitizer.stderr" ]]; then
+  if ! cmp -s "$WORK/$regression.stdout" "$WORK/$regression.accounting.stdout" || \
+    ! cmp -s "$WORK/$regression.stdout" "$WORK/$regression.sanitizer.stdout" || \
+    [[ -s "$WORK/$regression.accounting.stderr" || \
+      -s "$WORK/$regression.sanitizer.stderr" ]]; then
     echo "self-hosting lexer cleanup regression failed: $regression" >&2
-    cat "$WORK/$regression.sanitizer.stderr" >&2
+    cat "$WORK/$regression.accounting.stderr" "$WORK/$regression.sanitizer.stderr" >&2
     exit 1
   fi
 done
 
 if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
-  [[ "$(cat "$WORK/append-match-loop.stdout")" != "1" ]]; then
+  [[ "$(cat "$WORK/append-match-loop.stdout")" != "1" ]] || \
+  [[ "$(cat "$WORK/string-equality-temporaries.stdout")" != $'true\ntrue' ]]; then
   echo "self-hosting lexer cleanup regression output mismatch" >&2
   exit 1
 fi
 
-echo "self-hosting B1 lexer differential, determinism, ownership, and sanitizer gate passed"
+echo "self-hosting B1 frontend differential, determinism, ownership, and sanitizer gate passed"

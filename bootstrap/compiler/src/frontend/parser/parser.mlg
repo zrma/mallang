@@ -1,0 +1,494 @@
+package parser
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+type Parser struct {
+    tokens []token.Token
+    nodes []ast.Node
+    errors []ast.ParseError
+    cursor int
+}
+
+type ParsedNode struct {
+    category string
+    index int
+}
+
+pub func Parse(tokens []token.Token) Result[ast.Program, []ast.ParseError] {
+    mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, errors: []ast.ParseError{}, cursor: 0}
+    root := parser.parseProgramRoot()
+    if parser.failed() {
+        return Err(parser.errors)
+    }
+    return Ok(ast.NewProgram(parser.nodes, root))
+}
+
+func (mut self Parser) parseProgramRoot() int {
+    start := self.currentSpan()
+    mut sourceChildren := []int{}
+
+    if self.at("Keyword.Package") {
+        sourceChildren = append(sourceChildren, self.parsePackageDecl())
+    }
+    for self.at("Keyword.Import") &&(!self.failed()) {
+        sourceChildren = append(sourceChildren, self.parseImportDecl())
+    }
+
+    mut structs := []int{}
+    mut enums := []int{}
+    mut functions := []int{}
+    mut tests := []int{}
+    for(!self.at("Eof")) &&(!self.failed()) {
+        declaration := self.parseTopLevelDecl()
+        if declaration.category == "Struct" {
+            structs = append(structs, declaration.index)
+        } else if declaration.category == "Enum" {
+            enums = append(enums, declaration.index)
+        } else if declaration.category == "Function" {
+            functions = append(functions, declaration.index)
+        } else if declaration.category == "Test" {
+            tests = append(tests, declaration.index)
+        }
+    }
+
+    end := self.currentSpan()
+    programSpan := source.Join(source.Copy(con start), source.Copy(con end))
+    sourceUnit := self.addNode("SourceUnit", "", source.Copy(con programSpan), sourceChildren)
+    mut children := []int{sourceUnit}
+    for mut index := 0; index < len(structs); index = index + 1 {
+        children = append(children, structs[index])
+    }
+    for mut index := 0; index < len(enums); index = index + 1 {
+        children = append(children, enums[index])
+    }
+    for mut index := 0; index < len(functions); index = index + 1 {
+        children = append(children, functions[index])
+    }
+    for mut index := 0; index < len(tests); index = index + 1 {
+        children = append(children, tests[index])
+    }
+    return self.addNode("Program", "", programSpan, children)
+}
+
+func (mut self Parser) parseTopLevelDecl() ParsedNode {
+    start := self.currentSpan()
+    mut visibility := "Package"
+    if self.at("Keyword.Pub") {
+        visibility = "Public"
+        self.advance()
+    }
+
+    if self.at("Keyword.Type") {
+        return self.parseTypeDecl(token.CopyText(con visibility), source.Copy(con start))
+    }
+    if self.at("Keyword.Func") {
+        return self.parseFunctionDecl(token.CopyText(con visibility), source.Copy(con start))
+    }
+    if self.atIdent("test") {
+        if visibility == "Public" {
+            self.recordError("test declarations cannot be public", source.Copy(con start))
+            return ParsedNode{category: "Error", index: -1}
+        }
+        return self.parseTestDecl(source.Copy(con start))
+    }
+    if visibility == "Public" {
+        self.recordErrorHere("expected `type` or `func` declaration after `pub`")
+    } else if self.at("Keyword.Package") {
+        self.recordErrorHere("package declaration must appear first")
+    } else if self.at("Keyword.Import") {
+        self.recordErrorHere("import declarations must appear before top-level declarations")
+    } else {
+        self.recordErrorHere("expected `type`, `func`, `test`, or `pub` declaration")
+    }
+    return ParsedNode{category: "Error", index: -1}
+}
+
+func (mut self Parser) parsePackageDecl() int {
+    start := self.expect("Keyword.Package", "expected `package` declaration")
+    end := self.currentSpan()
+    name := self.expectIdent("expected package name")
+    return self.addNode("PackageDecl", name, source.Join(start, end), []int{})
+}
+
+func (mut self Parser) parseImportDecl() int {
+    start := self.expect("Keyword.Import", "expected `import` declaration")
+    end := self.currentSpan()
+    path := self.expectValue("String", "expected import path string")
+    return self.addNode("ImportDecl", path, source.Join(start, end), []int{})
+}
+
+func (mut self Parser) parseTypeDecl(visibility string, start source.Span) ParsedNode {
+    self.expect("Keyword.Type", "expected `type` declaration")
+    name := self.expectIdent("expected type name")
+    typeParams := self.parseTypeParams()
+
+    if self.at("Keyword.Struct") {
+        self.advance()
+        index := self.parseStructDecl(token.CopyText(con visibility), token.CopyText(con name), copyIndexes(con typeParams), source.Copy(con start))
+        return ParsedNode{category: "Struct", index: index}
+    }
+    if self.at("Keyword.Enum") {
+        self.advance()
+        index := self.parseEnumDecl(token.CopyText(con visibility), token.CopyText(con name), copyIndexes(con typeParams), source.Copy(con start))
+        return ParsedNode{category: "Enum", index: index}
+    }
+    self.recordErrorHere("expected `struct` or `enum` after type name")
+    return ParsedNode{category: "Error", index: -1}
+}
+
+func (mut self Parser) parseStructDecl(visibility string, name string, typeParams []int, start source.Span) int {
+    self.expect("LeftBrace", "expected `{` before struct fields")
+    mut children := typeParams
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseFieldDecl())
+        for self.at("Comma") || self.at("Semicolon") {
+            self.advance()
+        }
+    }
+    end := self.expect("RightBrace", "expected `}` after struct fields")
+    kind := strings.join(con []string{"StructDecl.", visibility}, con "")
+    return self.addNode(kind, name, source.Join(start, end), children)
+}
+
+func (mut self Parser) parseEnumDecl(visibility string, name string, typeParams []int, start source.Span) int {
+    self.expect("LeftBrace", "expected `{` before enum variants")
+    mut children := typeParams
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseEnumVariant())
+        for self.at("Comma") || self.at("Semicolon") {
+            self.advance()
+        }
+    }
+    end := self.expect("RightBrace", "expected `}` after enum variants")
+    kind := strings.join(con []string{"EnumDecl.", visibility}, con "")
+    return self.addNode(kind, name, source.Join(start, end), children)
+}
+
+func (mut self Parser) parseEnumVariant() int {
+    start := self.currentSpan()
+    name := self.expectIdent("expected enum variant name")
+    mut end := source.Copy(con start)
+    mut children := []int{}
+    if self.at("LeftParen") {
+        self.advance()
+        children = append(children, self.parseTypeRef())
+        for self.at("Comma") &&(!self.failed()) {
+            self.advance()
+            children = append(children, self.parseTypeRef())
+        }
+        end = self.expect("RightParen", "expected `)` after enum variant payloads")
+    }
+    return self.addNode("EnumVariant", name, source.Join(start, end), children)
+}
+
+func (mut self Parser) parseTypeParams() []int {
+    if !self.at("LeftBracket") {
+        return []int{}
+    }
+    self.advance()
+    mut params := []int{}
+    if self.at("RightBracket") {
+        self.recordErrorHere("expected type parameter")
+    } else {
+        for !self.failed() {
+            span := self.currentSpan()
+            name := self.expectIdent("expected type parameter name")
+            params = append(params, self.addNode("TypeParam", name, span, []int{}))
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    self.expect("RightBracket", "expected `]` after type parameters")
+    return params
+}
+
+func (mut self Parser) parseFieldDecl() int {
+    start := self.currentSpan()
+    name := self.expectIdent("expected struct field name")
+    ty := self.parseTypeRef()
+    end := ast.NodeSpan(con self.nodes[ty])
+    return self.addNode("FieldDecl", name, source.Join(start, end), []int{ty})
+}
+
+func (mut self Parser) parseFunctionDecl(visibility string, start source.Span) ParsedNode {
+    self.expect("Keyword.Func", "expected `func` declaration")
+    mut receiver := -1
+    if self.at("LeftParen") {
+        receiver = self.parseReceiver()
+    }
+    name := self.expectIdent("expected function name")
+    mut children := self.parseTypeParams()
+    if receiver >= 0 {
+        children = append(children, receiver)
+    }
+    self.expect("LeftParen", "expected `(` after function name")
+    if !self.at("RightParen") {
+        for !self.failed() {
+            children = append(children, self.parseParam("Param"))
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    self.expect("RightParen", "expected `)` after function parameters")
+    if self.startsTypeRef() {
+        returnType := self.parseTypeRef()
+        returnSpan := ast.NodeSpan(con self.nodes[returnType])
+        children = append(children, self.addNode("ReturnType", "", returnSpan, []int{returnType}))
+    }
+    block := self.parseEmptyBlock()
+    children = append(children, block)
+    end := ast.NodeSpan(con self.nodes[block])
+    kind := strings.join(con []string{"FunctionDecl.", visibility}, con "")
+    index := self.addNode(kind, name, source.Join(start, end), children)
+    return ParsedNode{category: "Function", index: index}
+}
+
+func (mut self Parser) parseTestDecl(start source.Span) ParsedNode {
+    self.expectIdentNamed("test", "expected `test` declaration")
+    name := self.expectIdent("expected test name")
+    self.expect("LeftParen", "expected `(` after test name")
+    self.expect("RightParen", "test declarations cannot take parameters")
+    block := self.parseEmptyBlock()
+    end := ast.NodeSpan(con self.nodes[block])
+    index := self.addNode("TestDecl", name, source.Join(start, end), []int{block})
+    return ParsedNode{category: "Test", index: index}
+}
+
+func (mut self Parser) parseReceiver() int {
+    self.expect("LeftParen", "expected `(` before method receiver")
+    param := self.parseParam("ReceiverParam")
+    self.expect("RightParen", "expected `)` after method receiver")
+    span := ast.NodeSpan(con self.nodes[param])
+    return self.addNode("Receiver", "", span, []int{param})
+}
+
+func (mut self Parser) parseParam(prefix string) int {
+    start := self.currentSpan()
+    mut mode := "Owned"
+    if self.at("Keyword.Con") {
+        mode = "Con"
+        self.advance()
+    } else if self.at("Keyword.Mut") {
+        mode = "Mut"
+        self.advance()
+    }
+    name := self.expectIdent("expected parameter name")
+    ty := self.parseTypeRef()
+    end := ast.NodeSpan(con self.nodes[ty])
+    kind := strings.join(con []string{prefix, ".", mode}, con "")
+    return self.addNode(kind, name, source.Join(start, end), []int{ty})
+}
+
+func (mut self Parser) parseTypeRef() int {
+    if self.at("Keyword.Func") {
+        return self.parseFunctionTypeRef()
+    }
+    if self.at("LeftBracket") {
+        return self.parseArrayTypeRef()
+    }
+
+    start := self.currentSpan()
+    mut end := source.Copy(con start)
+    mut name := self.expectIdent("expected type name")
+    if self.at("Dot") {
+        self.advance()
+        end = self.currentSpan()
+        selected := self.expectIdent("expected type name after `.`")
+        name = strings.join(con []string{name, ".", selected}, con "")
+    }
+
+    mut args := []int{}
+    if self.at("LeftBracket") {
+        self.advance()
+        if self.at("RightBracket") {
+            self.recordErrorHere("expected type argument")
+        } else {
+            for !self.failed() {
+                args = append(args, self.parseTypeRef())
+                if !self.at("Comma") {
+                    break
+                }
+                self.advance()
+            }
+        }
+        end = self.expect("RightBracket", "expected `]` after type arguments")
+    }
+    return self.addNode("Type.Named", name, source.Join(start, end), args)
+}
+
+func (mut self Parser) parseFunctionTypeRef() int {
+    start := self.expect("Keyword.Func", "expected `func` in function type")
+    mut mutable := "Immutable"
+    if self.at("Keyword.Mut") {
+        mutable = "Mutable"
+        self.advance()
+    }
+    self.expect("LeftParen", "expected `(` after function type")
+    mut children := []int{}
+    if !self.at("RightParen") {
+        for !self.failed() {
+            paramStart := self.currentSpan()
+            mut mode := "Owned"
+            if self.at("Keyword.Con") {
+                mode = "Con"
+                self.advance()
+            } else if self.at("Keyword.Mut") {
+                mode = "Mut"
+                self.advance()
+            }
+            ty := self.parseTypeRef()
+            end := ast.NodeSpan(con self.nodes[ty])
+            kind := strings.join(con []string{"FunctionTypeParam.", mode}, con "")
+            children = append(children, self.addNode(kind, "", source.Join(paramStart, end), []int{ty}))
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    paramsEnd := self.expect("RightParen", "expected `)` after function type parameters")
+    mut end := source.Copy(con paramsEnd)
+    mut kind := strings.join(con []string{"Type.Function.", mutable}, con "")
+    if !self.startsTypeRef() {
+        self.recordError("expected function return type; use `unit` for no value", source.Copy(con paramsEnd))
+        kind = "Type.Function.Error"
+    } else {
+        returnType := self.parseTypeRef()
+        end = ast.NodeSpan(con self.nodes[returnType])
+        children = append(children, self.addNode("FunctionReturnType", "", source.Copy(con end), []int{returnType}))
+    }
+    return self.addNode(kind, "", source.Join(start, end), children)
+}
+
+func (mut self Parser) parseArrayTypeRef() int {
+    start := self.expect("LeftBracket", "expected `[` before array length")
+    if self.at("RightBracket") {
+        self.advance()
+        element := self.parseTypeRef()
+        end := ast.NodeSpan(con self.nodes[element])
+        return self.addNode("Type.Slice", "", source.Join(source.Copy(con start), end), []int{element})
+    }
+    if !self.at("Int") {
+        self.recordErrorHere("expected array length or `]` for slice type")
+        self.advance()
+        return self.addNode("Type.Array.Error", "", source.Copy(con start), []int{})
+    }
+    lengthSpan := self.currentSpan()
+    lengthText := token.Value(con self.tokens[self.cursor])
+    self.advance()
+    mut length := 0
+    match strings.parseInt(con lengthText) {
+        case Ok(value) {
+            length = value
+        }
+        case Err(_) {
+            self.recordError("array length is out of range", lengthSpan)
+        }
+    }
+    self.expect("RightBracket", "expected `]` after array length")
+    element := self.parseTypeRef()
+    end := ast.NodeSpan(con self.nodes[element])
+    return self.addNode("Type.Array", strings.fromInt(length), source.Join(start, end), []int{element})
+}
+
+func (mut self Parser) parseEmptyBlock() int {
+    start := self.expect("LeftBrace", "expected `{`")
+    if !self.at("RightBrace") {
+        self.recordErrorHere("statement parsing is not available in this bootstrap slice")
+        return self.addNode("Block.Error", "", source.Copy(con start), []int{})
+    }
+    end := self.expect("RightBrace", "expected `}` after block")
+    return self.addNode("Block", "", source.Join(start, end), []int{})
+}
+
+func (mut self Parser) addNode(kind string, value string, span source.Span, children []int) int {
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, ast.NewNode(kind, value, span, children))
+    return index
+}
+
+func (con self Parser) startsTypeRef() bool {
+    return self.at("Ident") || self.at("LeftBracket") || self.at("Keyword.Func")
+}
+
+func (mut self Parser) expect(kind string, message string) source.Span {
+    if !self.at(kind) {
+        span := self.currentSpan()
+        self.recordError(message, source.Copy(con span))
+        return span
+    }
+    span := self.currentSpan()
+    self.advance()
+    return span
+}
+
+func (mut self Parser) expectIdent(message string) string {
+    return self.expectValue("Ident", message)
+}
+
+func (mut self Parser) expectIdentNamed(expected string, message string) string {
+    if !self.atIdent(expected) {
+        self.recordErrorHere(message)
+        return ""
+    }
+    value := token.Value(con self.tokens[self.cursor])
+    self.advance()
+    return value
+}
+
+func (mut self Parser) expectValue(kind string, message string) string {
+    if !self.at(kind) {
+        self.recordErrorHere(message)
+        return ""
+    }
+    value := token.Value(con self.tokens[self.cursor])
+    self.advance()
+    return value
+}
+
+func (con self Parser) at(kind string) bool {
+    return token.HasKind(con self.tokens[self.cursor], con kind)
+}
+
+func (con self Parser) atIdent(expected string) bool {
+    return self.at("Ident") && token.HasValue(con self.tokens[self.cursor], con expected)
+}
+
+func (mut self Parser) advance() {
+    if !self.at("Eof") {
+        self.cursor = self.cursor + 1
+    }
+}
+
+func (con self Parser) currentSpan() source.Span {
+    return source.NewSpan(0, token.Start(con self.tokens[self.cursor]), token.End(con self.tokens[self.cursor]))
+}
+
+func (con self Parser) failed() bool {
+    return len(self.errors) > 0
+}
+
+func (mut self Parser) recordErrorHere(message string) {
+    self.recordError(message, self.currentSpan())
+}
+
+func (mut self Parser) recordError(message string, span source.Span) {
+    if !self.failed() {
+        self.errors = append(self.errors, ast.NewError(message, span))
+    }
+}
+
+func copyIndexes(con values []int) []int {
+    mut copied := []int{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, values[index])
+    }
+    return copied
+}

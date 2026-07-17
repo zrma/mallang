@@ -1673,6 +1673,7 @@ slice is the B1 Mallang lexer/parser data model and Rust differential harness.
 - [x] strict C, ASan/UBSan, allocation accounting과 failure injection gate
 - [x] Mallang source/span/token model과 normalized differential schema
 - [x] frozen v1 complete lexer와 Rust Stage0 token/diagnostic differential
+- [x] flat syntax arena와 declaration/type parser differential
 - [ ] syntax-only AST와 frozen v1 complete parser
 - [ ] positive/rejection/crash corpus AST/diagnostic differential
 - [ ] B1 canonical, publication과 supported-platform CI acceptance
@@ -1681,4 +1682,6 @@ Exact scope and decisions are owned by `docs/todo-self-hosting-frontend/`.
 P175a adds only owned standard-library operations and no pointer, borrowed
 substring, mutable string or syntax change. P175b adds the tracked Mallang
 compiler source root, complete lexer and deterministic Rust differential gate.
-The next slice is the syntax-only AST and frozen v1 parser.
+P175c1 adds a syntax arena and declaration/type parser while preserving the
+existing ownership model. The next slice is statement, expression and bounded
+recovery parsing.

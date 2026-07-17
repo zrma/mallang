@@ -2281,10 +2281,53 @@ print(word != "rust")
     let c = generate_c_from_ir(&ir).unwrap();
 
     assert!(c.contains("#include <string.h>"));
-    assert!(c.contains("mallang_string_equal(mlg_word, (mlg_String){"));
-    assert!(c.contains("!mallang_string_equal(mlg_word, (mlg_String){"));
+    assert!(c.contains("mallang_string_equal(mallang_checked_left_"));
+    assert!(c.contains("!mallang_string_equal(mallang_checked_left_"));
+    assert_eq!(
+        c.matches("mallang_string_equal(mallang_checked_left_")
+            .count(),
+        2
+    );
+    assert_eq!(
+        c.matches("mlg_drop_string(&(mlg_mallang_full_expr_")
+            .count(),
+        2
+    );
     assert!(c.contains("memcmp(mlg_left.mlg_data, mlg_right.mlg_data, mlg_left.mlg_len)"));
     assert!(c.contains("mlg_drop_string(&(mlg_word));"));
+}
+
+#[test]
+fn drops_owned_string_equality_operands_after_comparison() {
+    let program = parse(
+        r#"
+func copy(value string) string {
+    return value
+}
+
+func main() {
+    print(copy("mallang") == copy("mallang"))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    let comparison = c
+        .find(" = (mallang_string_equal(mallang_checked_left_")
+        .expect("string comparison result temporary");
+    let first_drop = c[comparison..]
+        .find("mlg_drop_string(&(mlg_mallang_full_expr_")
+        .map(|offset| comparison + offset)
+        .expect("owned operand cleanup");
+    assert!(comparison < first_drop);
+    assert_eq!(
+        c.matches("mlg_drop_string(&(mlg_mallang_full_expr_")
+            .count(),
+        2
+    );
 }
 
 #[test]

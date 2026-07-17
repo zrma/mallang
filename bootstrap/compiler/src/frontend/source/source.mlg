@@ -1,0 +1,39 @@
+package source
+
+pub type Span struct {
+    source int
+    start int
+    end int
+}
+
+pub func NewSpan(source int, start int, end int) Span {
+    return Span{source: source, start: start, end: end}
+}
+
+pub func Copy(con span Span) Span {
+    return Span{source: span.source, start: span.start, end: span.end}
+}
+
+pub func Join(left Span, right Span) Span {
+    mut start := left.start
+    if right.start < start {
+        start = right.start
+    }
+    mut end := left.end
+    if right.end > end {
+        end = right.end
+    }
+    return Span{source: left.source, start: start, end: end}
+}
+
+pub func Source(con span Span) int {
+    return span.source
+}
+
+pub func Start(con span Span) int {
+    return span.start
+}
+
+pub func End(con span Span) int {
+    return span.end
+}

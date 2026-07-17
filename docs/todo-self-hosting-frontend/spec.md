@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175b complete, P175c parser implementation next
+Status: active; P175a-P175b and P175c1 complete, P175c2 parser body work next
 
 ## Goal
 
@@ -13,8 +13,10 @@ and frontend diagnostic equivalence against the Rust Stage0 oracle.
   linear-time lexer, with runtime, rejection, allocation and sanitizer evidence
 - **P175b**: define Mallang source/span/token data and implement the complete
   lexer with deterministic differential output
-- **P175c**: define the syntax-focused frontend AST and implement declaration,
-  statement, expression and type parsing
+- **P175c1**: define the flat syntax arena and implement package, import,
+  declaration and type parsing with exact Rust-oracle normalization
+- **P175c2**: implement statement and expression parsing, then add bounded
+  recovery without changing the frozen grammar
 - **P175d**: run the positive, rejection and crash corpus through both frontends
   and close B1 only when normalized tokens, ASTs and diagnostics agree
 
@@ -52,6 +54,26 @@ compatibility evidence.
   ASan/UBSan and zero live compiler-owned allocations.
 - The cleanup regressions under `tests/fixtures/self-hosting/` protect owned
   slice append reassignment through `match`, including cleanup-bearing values.
+
+## P175c1 Evidence
+
+- `bootstrap/compiler/src/frontend/source/source.mlg` and
+  `bootstrap/compiler/src/frontend/ast/ast.mlg` define byte spans and a flat
+  node arena with stable preorder normalization. The arena allows repeated
+  syntax traversal through `con` without weakening move-only enum rules.
+- `bootstrap/compiler/src/frontend/parser/parser.mlg` parses package and import
+  clauses, struct and enum declarations, generic type parameters, functions,
+  methods, tests and the frozen v1 type grammar. Function bodies are accepted
+  only when empty in this slice.
+- `bootstrap/compiler/fixtures/parser/` covers normalized success and rejection
+  output, and `tools/bootstrap-frontend-oracle.rs` maps the equivalent Rust AST
+  subset into the same harness-owned representation.
+- Token predicate helpers compare private token fields in place, avoiding an
+  owned copy solely for parser lookahead.
+- The P175c1 work exposed and fixed Stage0 cleanup of owned temporary strings in
+  equality expressions. `string-equality-temporaries.mlg` now proves that the
+  comparison happens before reverse-order cleanup under strict allocation
+  accounting and ASan/UBSan.
 
 ## Excluded
 

@@ -1,0 +1,137 @@
+package ast
+
+import "std/strings"
+import "bootstrap_compiler/frontend/source"
+
+pub type Node struct {
+    kind string
+    value string
+    span source.Span
+    children []int
+}
+
+pub type Program struct {
+    nodes []Node
+    root int
+}
+
+pub type ParseError struct {
+    message string
+    span source.Span
+}
+
+pub func NewNode(kind string, value string, span source.Span, children []int) Node {
+    return Node{kind: kind, value: value, span: span, children: children}
+}
+
+pub func NewProgram(nodes []Node, root int) Program {
+    return Program{nodes: nodes, root: root}
+}
+
+pub func NewError(message string, span source.Span) ParseError {
+    return ParseError{message: message, span: span}
+}
+
+pub func NodeKind(con node Node) string {
+    return copyText(con node.kind)
+}
+
+pub func NodeValue(con node Node) string {
+    return copyText(con node.value)
+}
+
+pub func NodeSpan(con node Node) source.Span {
+    return source.Copy(con node.span)
+}
+
+pub func NodeChildCount(con node Node) int {
+    return len(node.children)
+}
+
+pub func NodeChild(con node Node, child int) int {
+    return node.children[child]
+}
+
+pub func Root(con program Program) int {
+    return program.root
+}
+
+pub func NodeCount(con program Program) int {
+    return len(program.nodes)
+}
+
+pub func Kind(con program Program, index int) string {
+    return copyText(con program.nodes[index].kind)
+}
+
+pub func Value(con program Program, index int) string {
+    return copyText(con program.nodes[index].value)
+}
+
+pub func Span(con program Program, index int) source.Span {
+    return source.Copy(con program.nodes[index].span)
+}
+
+pub func ChildCount(con program Program, index int) int {
+    return len(program.nodes[index].children)
+}
+
+pub func Child(con program Program, index int, child int) int {
+    return program.nodes[index].children[child]
+}
+
+pub func ErrorMessage(con error ParseError) string {
+    return copyText(con error.message)
+}
+
+pub func ErrorSpan(con error ParseError) source.Span {
+    return source.Copy(con error.span)
+}
+
+pub func Normalize(con program Program) string {
+    return normalizeNode(con program, program.root, 0)
+}
+
+pub func NormalizeError(con error ParseError) string {
+    span := source.Copy(con error.span)
+    parts := []string{"PERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", encodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
+
+func normalizeNode(con program Program, index int, depth int) string {
+    span := source.Copy(con program.nodes[index].span)
+    parts := []string{"N|", strings.fromInt(depth), "|", copyText(con program.nodes[index].kind), "|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", encodeBytes(con program.nodes[index].value), "|", strings.fromInt(len(program.nodes[index].children)),}
+    mut normalized := strings.join(con parts, con "")
+    for mut child := 0; child < len(program.nodes[index].children); child = child + 1 {
+        childIndex := program.nodes[index].children[child]
+        childText := normalizeNode(con program, childIndex, depth + 1)
+        normalized = strings.join(con []string{normalized, "\n", childText}, con "")
+    }
+    return normalized
+}
+
+func copyText(con text string) string {
+    return match strings.slice(con text, 0, strings.byteLen(con text)) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+func encodeBytes(con text string) string {
+    mut parts := []string{}
+    for mut index := 0; index < strings.byteLen(con text); index = index + 1 {
+        match strings.byteAt(con text, index) {
+            case Ok(value) {
+                parts = append(parts, strings.fromInt(value))
+            }
+            case Err(_) {
+                parts = append(parts, "invalid")
+            }
+        }
+    }
+    return strings.join(con parts, con ",")
+}

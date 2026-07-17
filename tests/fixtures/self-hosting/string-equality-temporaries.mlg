@@ -1,0 +1,17 @@
+import "std/strings"
+
+func copyText(con text string) string {
+    return match strings.slice(con text, 0, strings.byteLen(con text)) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+func main() {
+    print(copyText(con "mallang") == copyText(con "mallang"))
+    print(copyText(con "mallang") != copyText(con "rust"))
+}

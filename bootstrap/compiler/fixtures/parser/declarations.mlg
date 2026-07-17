@@ -1,0 +1,17 @@
+package demo
+
+import "std/strings"
+
+pub type Box[T] struct {
+    value T
+}
+
+type Outcome[T, E] enum {
+    Empty
+    Value(T)
+    Failure(E)
+}
+
+pub func (con box Box[T]) Map[U](con transform func(con T) U, values [2][]string) Outcome[U, string] {}
+
+test Parses() {}

@@ -419,6 +419,36 @@ impl<'a> CGenerator<'a> {
                 postlude: Vec::new(),
             });
         }
+
+        if operand_ty == &Type::String && matches!(op, BinaryOp::Equal | BinaryOp::NotEqual) {
+            let left_temp = checked_binary_left_temp_name(expr);
+            let right_temp = checked_binary_right_temp_name(expr);
+            let result_temp = checked_binary_result_temp_name(expr);
+            let mut prelude = left.prelude;
+            prelude.push(format!(
+                "{} {left_temp} = {};",
+                operand_ty.c_name(),
+                left.code
+            ));
+            prelude.extend(right.prelude);
+            prelude.push(format!(
+                "{} {right_temp} = {};",
+                operand_ty.c_name(),
+                right.code
+            ));
+            prelude.push(format!(
+                "bool {result_temp} = {};",
+                c_binary_expr(op, &expr.ty, operand_ty, left_temp, right_temp)
+            ));
+            prelude.extend(right.postlude);
+            prelude.extend(left.postlude);
+            return Ok(CExpr {
+                prelude,
+                code: result_temp,
+                postlude: Vec::new(),
+            });
+        }
+
         let left_temp = checked_binary_left_temp_name(expr);
         let right_temp = checked_binary_right_temp_name(expr);
         let mut prelude = left.prelude;

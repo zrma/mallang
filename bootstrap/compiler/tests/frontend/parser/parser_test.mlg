@@ -1,0 +1,60 @@
+package parser
+
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+
+test ParsesDeclarationsAndTypes() {
+    source := "package demo\nimport \"std/strings\"\npub type Box[T] struct { value T }\ntype Outcome[T, E] enum { Empty Value(T) Failure(E) }\npub func (con box Box[T]) Map[U](con transform func(con T) U, values [2][]string) Outcome[U, string] {}\ntest Parses() {}\n"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(program) {
+                    root := ast.Root(con program)
+                    assert(ast.Kind(con program, root) == "Program")
+                    assert(ast.ChildCount(con program, root) == 5)
+                    sourceUnit := ast.Child(con program, root, 0)
+                    assert(ast.Kind(con program, sourceUnit) == "SourceUnit")
+                    assert(ast.ChildCount(con program, sourceUnit) == 2)
+                    structDecl := ast.Child(con program, root, 1)
+                    assert(ast.Kind(con program, structDecl) == "StructDecl.Public")
+                    assert(ast.Value(con program, structDecl) == "Box")
+                    enumDecl := ast.Child(con program, root, 2)
+                    assert(ast.Kind(con program, enumDecl) == "EnumDecl.Package")
+                    assert(ast.Value(con program, enumDecl) == "Outcome")
+                    functionDecl := ast.Child(con program, root, 3)
+                    assert(ast.Kind(con program, functionDecl) == "FunctionDecl.Public")
+                    assert(ast.Value(con program, functionDecl) == "Map")
+                    assert(ast.ChildCount(con program, functionDecl) == 6)
+                    testDecl := ast.Child(con program, root, 4)
+                    assert(ast.Kind(con program, testDecl) == "TestDecl")
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsLatePackageDeclaration() {
+    source := "func main() {}\npackage late\n"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(errors) {
+                    assert(len(errors) == 1)
+                    assert(ast.ErrorMessage(con errors[0]) == "package declaration must appear first")
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

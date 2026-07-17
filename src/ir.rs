@@ -1008,8 +1008,15 @@ impl<'a> Lowerer<'a> {
                 )
             }
             ExprKind::Binary { op, left, right } => {
-                let left = self.lower_expr(left, locals)?;
-                let right = self.lower_expr(right, locals)?;
+                let mut lowered_left = self.lower_expr(left, locals)?;
+                let read_only_strings = matches!(lowered_left.ty, Type::String)
+                    && matches!(op, BinaryOp::Equal | BinaryOp::NotEqual);
+                let lowered_right = if read_only_strings {
+                    lowered_left = self.lower_read_source_expr(left, locals)?;
+                    self.lower_read_source_expr(right, locals)?
+                } else {
+                    self.lower_expr(right, locals)?
+                };
                 let ty = match op {
                     BinaryOp::Add
                     | BinaryOp::Subtract
@@ -1028,8 +1035,8 @@ impl<'a> Lowerer<'a> {
                 (
                     IrExprKind::Binary {
                         op: *op,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: Box::new(lowered_left),
+                        right: Box::new(lowered_right),
                     },
                     ty,
                 )
@@ -6261,6 +6268,43 @@ func main() {
             args[0].expr.kind,
             IrExprKind::FullExprTemporary { .. }
         ));
+    }
+
+    #[test]
+    fn ir_keeps_owned_string_equality_operands_alive_for_the_full_expression() {
+        let program = parse(
+            r#"
+func copy(value string) string {
+    return value
+}
+
+func main() {
+    left := "mallang"
+    print(left == copy("mallang"))
+    print(copy("rust") != copy("mallang"))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+
+        let IrExprKind::Binary { left, right, .. } = &print_arg(&main.body[1]).kind else {
+            panic!("expected string equality");
+        };
+        assert!(matches!(left.kind, IrExprKind::Var(ref name) if name == "left"));
+        assert!(matches!(right.kind, IrExprKind::FullExprTemporary { .. }));
+
+        let IrExprKind::Binary { left, right, .. } = &print_arg(&main.body[2]).kind else {
+            panic!("expected string inequality");
+        };
+        assert!(matches!(left.kind, IrExprKind::FullExprTemporary { .. }));
+        assert!(matches!(right.kind, IrExprKind::FullExprTemporary { .. }));
     }
 
     #[test]
