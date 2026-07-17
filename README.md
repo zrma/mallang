@@ -291,6 +291,13 @@ generated C sanitizers, RC upgrade, rollback, and stable re-upgrade:
 scripts/check-v1-stable-acceptance.sh
 ```
 
+Run the current post-stable 1.x conformance, runtime, sanitizer, deterministic
+artifact, and clean-install acceptance:
+
+```sh
+scripts/check-v1x-acceptance.sh
+```
+
 Run the heavier generated C sanitizer sweep before publication:
 
 ```sh

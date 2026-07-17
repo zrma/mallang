@@ -7,7 +7,7 @@ Usage:
   scripts/finalize-and-push.sh --verify-only
   scripts/finalize-and-push.sh --message "<type>: <summary>" [--bookmark main] [--no-push]
 
-By default, writes a jj description with Codex attribution, runs the v0 RC
+By default, writes a jj description with Codex attribution, runs the release
 verification gate, verifies that the remote bookmark did not move before and
 after verification, moves the bookmark, pushes it with jj, and verifies the
 remote bookmark points at the published commit.
@@ -15,7 +15,7 @@ remote bookmark points at the published commit.
 Use --no-push to run the same local finalization gate, including remote
 freshness checks, without moving bookmarks or pushing to any remote.
 
-Use --verify-only to run the v0 RC verification gate without changing the jj
+Use --verify-only to run the release verification gate without changing the jj
 description, moving bookmarks, or pushing to any remote.
 USAGE
 }

@@ -66,6 +66,8 @@ check_shell_syntax \
   scripts/check-v1-rc-rehearsal.sh \
   scripts/check-v1-stable-acceptance.sh \
   scripts/check-v1-stable-rehearsal.sh \
+  scripts/check-v1x-acceptance.sh \
+  scripts/check-streaming-file-io-runtime.sh \
   scripts/check.sh \
   scripts/finalize-and-push.sh \
   scripts/start-work.sh \

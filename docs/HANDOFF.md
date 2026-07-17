@@ -350,6 +350,7 @@ scripts/check-v1-rc-rehearsal.sh
 scripts/check-v1-rc-acceptance.sh
 scripts/check-v1-stable-rehearsal.sh
 scripts/check-v1-stable-acceptance.sh
+scripts/check-v1x-acceptance.sh
 scripts/check-release-artifacts.sh
 scripts/check-release-binary.sh
 scripts/check-release-helpers.sh
