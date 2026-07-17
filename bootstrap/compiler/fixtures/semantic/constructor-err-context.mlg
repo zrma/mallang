@@ -1,0 +1,5 @@
+func exercise() {
+    value := Err("bad")
+}
+
+func main() {}

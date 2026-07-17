@@ -1,0 +1,18 @@
+func inferred(value int) Option[int] {
+    wrapped := Some(value)
+    return wrapped
+}
+
+func empty() Option[int] {
+    return None
+}
+
+func success(value int) Result[int, string] {
+    return Ok(value)
+}
+
+func failure(message string) Result[int, string] {
+    return Err(message)
+}
+
+func main() {}

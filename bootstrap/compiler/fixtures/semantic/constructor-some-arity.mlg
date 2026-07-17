@@ -1,0 +1,5 @@
+func exercise() Option[int] {
+    return Some()
+}
+
+func main() {}

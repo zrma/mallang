@@ -1,0 +1,5 @@
+func exercise(con value int) Option[int] {
+    return Some(con value)
+}
+
+func main() {}

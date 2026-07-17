@@ -1242,6 +1242,9 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
     }
     if kind == "Expr.Var" {
         name := ast.Value(con program, expression)
+        if name == "None" {
+            return self.checkNoneConstructor(con program, expression, con expectedType, hasExpected)
+        }
         index := localIndex(con self.locals, con name)
         if index < 0 {
             if name == "main" {
@@ -1273,7 +1276,7 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
         return Ok(ty)
     }
     if kind == "Expr.Call" {
-        return self.checkCall(con program, expression)
+        return self.checkCall(con program, expression, con expectedType, hasExpected)
     }
     if kind == "Expr.StructLiteral" {
         return self.checkStructLiteral(con program, expression, con expectedType, hasExpected)
@@ -1759,7 +1762,7 @@ func (con self CheckedProgram) resolveStructField(con baseType ResolvedType, con
     return Err(newError(message, source.Copy(con span)))
 }
 
-func (mut self CheckedProgram) checkCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkCall(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     callee := ast.Child(con program, expression, 0)
     if ast.Kind(con program, callee) == "Expr.FieldAccess" {
         return self.checkMethodCall(con program, expression, callee)
@@ -1769,6 +1772,15 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
     }
 
     name := ast.Value(con program, callee)
+    if name == "Some" {
+        return self.checkSomeConstructor(con program, expression, con expectedType, hasExpected)
+    }
+    if name == "Ok" {
+        return self.checkResultConstructor(con program, expression, con expectedType, hasExpected, true)
+    }
+    if name == "Err" {
+        return self.checkResultConstructor(con program, expression, con expectedType, hasExpected, false)
+    }
     local := localIndex(con self.locals, con name)
     mut function := -1
     mut indirect := false
@@ -1802,6 +1814,111 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
             resultType := copyType(con self.functions[function].returnType)
             self.recordType(expression, con resultType)
             return Ok(resultType)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkNoneConstructor(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
+    if !hasExpected || expectedType.kind != "option" {
+        return Err(newError("`None` requires expected `Option[T]` context", ast.Span(con program, expression)))
+    }
+    ty := copyType(con expectedType)
+    self.recordType(expression, con ty)
+    return Ok(ty)
+}
+
+func (mut self CheckedProgram) checkSomeConstructor(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
+    mut value := -1
+    match constructorArgument(con program, expression, con "Some") {
+        case Ok(argument) {
+            value = argument
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut expectedPayload := unitType()
+    mut hasExpectedPayload := false
+    if hasExpected && expectedType.kind == "option" {
+        match self.typeArgument(con expectedType, 0) {
+            case Ok(payload) {
+                expectedPayload = payload
+                hasExpectedPayload = true
+            }
+            case Err(_) {
+                return Err(newError("checked Option payload type is missing", ast.Span(con program, expression)))
+            }
+        }
+    }
+
+    match self.checkExpressionExpected(con program, value, con "owned", con expectedPayload, hasExpectedPayload) {
+        case Ok(payloadType) {
+            ty := self.makeOptionType(con payloadType)
+            self.recordType(expression, con ty)
+            return Ok(ty)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkResultConstructor(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool, ok bool) Result[ResolvedType, SemanticError] {
+    mut constructor := "Err"
+    if ok {
+        constructor = "Ok"
+    }
+    mut value := -1
+    match constructorArgument(con program, expression, con constructor) {
+        case Ok(argument) {
+            value = argument
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if !hasExpected || expectedType.kind != "result" {
+        message := strings.join(con []string{"`", constructor, "` requires expected `Result[T, E]` context",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    mut okType := unitType()
+    match self.typeArgument(con expectedType, 0) {
+        case Ok(ty) {
+            okType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked Result success type is missing", ast.Span(con program, expression)))
+        }
+    }
+    mut errorType := unitType()
+    match self.typeArgument(con expectedType, 1) {
+        case Ok(ty) {
+            errorType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked Result error type is missing", ast.Span(con program, expression)))
+        }
+    }
+
+    mut expectedPayload := copyType(con errorType)
+    if ok {
+        expectedPayload = copyType(con okType)
+    }
+    match self.checkExpressionExpected(con program, value, con "owned", con expectedPayload, true) {
+        case Ok(payloadType) {
+            if ok {
+                okType = payloadType
+            } else {
+                errorType = payloadType
+            }
+            ty := self.makeResultType(con okType, con errorType)
+            self.recordType(expression, con ty)
+            return Ok(ty)
         }
         case Err(error) {
             return Err(error)
@@ -2362,6 +2479,18 @@ func (mut self CheckedProgram) recordTypeShape(con ty ResolvedType, con argument
     }
 }
 
+func (mut self CheckedProgram) makeOptionType(con payload ResolvedType) ResolvedType {
+    ty := makeType(strings.join(con []string{"Option[", token.CopyText(con payload.text), "]",}, con ""), "option", payload.copy, payload.cleanup)
+    self.recordTypeShape(con ty, con []ResolvedType{copyType(con payload)}, -1)
+    return ty
+}
+
+func (mut self CheckedProgram) makeResultType(con okType ResolvedType, con errorType ResolvedType) ResolvedType {
+    ty := makeType(strings.join(con []string{"Result[", token.CopyText(con okType.text), ", ", token.CopyText(con errorType.text), "]",}, con ""), "result", okType.copy && errorType.copy, okType.cleanup || errorType.cleanup)
+    self.recordTypeShape(con ty, con []ResolvedType{copyType(con okType), copyType(con errorType)}, -1)
+    return ty
+}
+
 func (con self CheckedProgram) typeShapeIndex(con ty ResolvedType) int {
     for mut index := 0; index < len(self.typeShapes); index = index + 1 {
         if self.typeShapes[index].text == ty.text {
@@ -2880,6 +3009,19 @@ func argModeFromKind(con kind string) string {
         return "mut"
     }
     return "owned"
+}
+
+func constructorArgument(con program ast.Program, expression int, con constructor string) Result[int, SemanticError] {
+    if ast.ChildCount(con program, expression) != 2 {
+        message := strings.join(con []string{"`", token.CopyText(con constructor), "` expects exactly one argument",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    argument := ast.Child(con program, expression, 1)
+    if argModeFromKind(con ast.Kind(con program, argument)) != "owned" {
+        message := strings.join(con []string{"`", token.CopyText(con constructor), "` expects an owned argument",}, con "")
+        return Err(newError(message, ast.Span(con program, argument)))
+    }
+    return Ok(ast.Child(con program, argument, 0))
 }
 
 func isBuiltinTypeName(con name string) bool {

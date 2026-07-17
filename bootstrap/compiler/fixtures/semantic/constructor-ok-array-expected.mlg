@@ -1,0 +1,5 @@
+func exercise() Result[[2]int, string] {
+    return Ok([1]int{1})
+}
+
+func main() {}

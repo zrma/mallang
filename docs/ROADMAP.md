@@ -1721,8 +1721,9 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] explicit struct/array/slice composite literal semantics
 - [x] expected-type propagation into explicit literals through calls, returns,
   assignments, nested fields/elements and if-expression branches
-- [ ] expected-type propagation through Option/Result/user enum constructors
-  and remaining match contexts
+- [x] expected-type propagation through `None`/`Some`/`Ok`/`Err`
+- [ ] user enum constructor payload semantics and expected-type propagation
+- [ ] expected-type propagation through remaining match contexts
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

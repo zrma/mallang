@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b1 complete
+Status: in progress; P176a-P176d1b2a complete
 
 ## Objective
 
@@ -75,8 +75,12 @@ agrees.
 - P176d1b1: propagate explicit struct, array and slice literal expected types
   through calls, returns, assignments, fields, elements and branch expressions
   while preserving Stage0 diagnostic priority (complete)
-- P176d1b2: propagate expected types through Option, Result and user enum
-  constructors plus the remaining match expression contexts
+- P176d1b2a: propagate expected types through `None`, `Some`, `Ok` and `Err`,
+  including nested literal payloads and constructor context diagnostics
+  (complete)
+- P176d1b2b: check user enum constructors and propagate their payload types
+- P176d1b2c: propagate expected types through the remaining match expression
+  contexts
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -344,8 +348,21 @@ specialization and function-body checking until later P176 slices.
 - One hundred thirty-one semantic fixtures, six typed-IR fixtures and one
   hundred four Mallang project tests pass through Stage0 and generated Stage1.
   Strict allocation accounting, ASan/UBSan and the canonical repository gate
-  cover the same corpus. Option, Result and user enum constructors plus the
-  remaining match contexts remain P176d1b2.
+  cover the same corpus. Built-in constructors continue in P176d1b2a; user
+  enum constructors and the remaining match contexts remain P176d1b2b-P176d1b2c.
+
+## P176d1b2a Evidence
+
+- `None` requires an expected `Option[T]`; `Ok` and `Err` require an expected
+  `Result[T, E]`. `Some` may infer its payload without context and uses an
+  expected Option payload when one is available.
+- Constructor arity and owned-argument mode are checked before context.
+  Expected payload types flow recursively into struct and array literals while
+  primitive payload mismatches preserve the enclosing result-type diagnostic.
+- One hundred forty-one semantic fixtures, six typed-IR fixtures and one
+  hundred fourteen Mallang project tests pass through Stage0 and generated
+  Stage1. User enum constructors remain P176d1b2b, and match expression
+  propagation remains P176d1b2c.
 
 ## B2 Completion Criteria
 

@@ -1,0 +1,5 @@
+func exercise() {
+    value := Ok(1)
+}
+
+func main() {}

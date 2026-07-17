@@ -297,4 +297,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2d1b1 expected literal differential, B1 frontend, determinism, accounting, and sanitizer gate passed: parser-corpus=$parser_corpus_count"
+echo "self-hosting B2d1b2a builtin constructor differential, B1 frontend, determinism, accounting, and sanitizer gate passed: parser-corpus=$parser_corpus_count"

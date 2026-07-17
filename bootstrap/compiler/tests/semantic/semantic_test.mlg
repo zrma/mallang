@@ -1489,3 +1489,53 @@ test RejectsIndexedAssignmentArrayLiteralExpectedTypeMismatch() {
     source := "func exercise(mut values [1][2]int) { values[0] = [1]int{1} } func main() {}"
     assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
 }
+
+test ChecksBuiltinConstructorsWithExpectedTypes() {
+    source := "func inferred(value int) Option[int] { wrapped := Some(value); return wrapped } func empty() Option[int] { return None } func success(value int) Result[int, string] { return Ok(value) } func failure(message string) Result[int, string] { return Err(message) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsNoneWithoutExpectedOptionContext() {
+    source := "func exercise() { value := None } func main() {}"
+    assert(checkTestSource(source) == "`None` requires expected `Option[T]` context")
+}
+
+test RejectsOkWithoutExpectedResultContext() {
+    source := "func exercise() { value := Ok(1) } func main() {}"
+    assert(checkTestSource(source) == "`Ok` requires expected `Result[T, E]` context")
+}
+
+test RejectsErrWithoutExpectedResultContext() {
+    source := "func exercise() { value := Err(\"bad\") } func main() {}"
+    assert(checkTestSource(source) == "`Err` requires expected `Result[T, E]` context")
+}
+
+test RejectsSomeConstructorArity() {
+    source := "func exercise() Option[int] { return Some() } func main() {}"
+    assert(checkTestSource(source) == "`Some` expects exactly one argument")
+}
+
+test RejectsSomeConstructorMode() {
+    source := "func exercise(con value int) Option[int] { return Some(con value) } func main() {}"
+    assert(checkTestSource(source) == "`Some` expects an owned argument")
+}
+
+test RejectsSomeNestedArrayExpectedTypeMismatch() {
+    source := "func exercise() Option[[2]int] { return Some([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsOkNestedArrayExpectedTypeMismatch() {
+    source := "func exercise() Result[[2]int, string] { return Ok([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsErrNestedStructExpectedTypeMismatch() {
+    source := "type Left struct { value int } type Right struct { value int } func exercise() Result[int, Left] { return Err(Right{value: 1}) } func main() {}"
+    assert(checkTestSource(source) == "struct literal type mismatch: expected `Left`, got `Right`")
+}
+
+test RejectsSomeResultTypeMismatch() {
+    source := "func exercise() Option[int] { return Some(\"bad\") } func main() {}"
+    assert(checkTestSource(source) == "return type mismatch: expected `Option[int]`, got `Option[string]`")
+}
