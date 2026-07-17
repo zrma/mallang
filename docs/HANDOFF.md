@@ -528,10 +528,11 @@ Mallang probe를 format/check/test/build/run하고 same-input generated C identi
 source를 Rust Stage0, generated Stage1, strict accounting, sanitizer 네 경로에서
 byte-for-byte differential 검증해 닫았다. 현재 B2는 비제네릭 선언과 resolved type
 signature, primitive function body, named function value와 direct/indirect call을
-Mallang으로 검사하고 incremental typed IR을 Rust Stage0과 비교한다. integrated gate는
-159개 repository source와 26개 semantic fixture, 2개 IR fixture를
-normal/strict/sanitizer 경로에서 검증한다. 다음 slice는 field/index place와 nested
-scope checking이다. public language 또는 standard-library addition은
+Mallang으로 검사하고 field/index read까지 incremental typed IR을 Rust Stage0과
+비교한다. integrated gate는 159개 repository source와 34개 semantic fixture,
+3개 IR fixture를 normal/strict/sanitizer 경로에서 검증한다. 다음 slice는 mutable
+field/index assignment place와 nested scope checking이다. public language 또는
+standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification

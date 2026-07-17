@@ -346,6 +346,19 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
             );
             ("Expr.IndirectCall", String::new(), children)
         }
+        IrExprKind::FieldAccess { base, field } => (
+            "Expr.FieldAccess",
+            field.clone(),
+            vec![normalize_ir_expression(base, depth + 1)],
+        ),
+        IrExprKind::Index { base, index } => (
+            "Expr.Index",
+            String::new(),
+            vec![
+                normalize_ir_expression(base, depth + 1),
+                normalize_ir_expression(index, depth + 1),
+            ],
+        ),
         IrExprKind::Unary { op, expr } => (
             match op {
                 UnaryOp::Negate => "Expr.Unary.Negate",

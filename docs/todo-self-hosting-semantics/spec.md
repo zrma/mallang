@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176b2 complete
+Status: in progress; P176a-P176b3a complete
 
 ## Objective
 
@@ -40,7 +40,8 @@ agrees.
 - P176b1: check primitive literals, unary/binary operators, bindings,
   assignment and return types; lower that subset into typed IR
 - P176b2: type direct calls, arguments and named function values (complete)
-- P176b3: type field/index access and assignment places
+- P176b3a: type field/index reads and lower their typed IR (complete)
+- P176b3b: type mutable local-rooted field/index assignment places
 - P176b4: enforce nested lexical scopes and branch type convergence
 
 ### P176c: Ownership And Places
@@ -119,6 +120,19 @@ specialization and function-body checking until later P176 slices.
   rewriting and deterministic `Drop` insertion remain explicitly in P176e.
 - The integrated generated-Stage1 gate covers 159 repository parser sources,
   strict allocation accounting and ASan/UBSan with empty stderr.
+
+## P176b3a Evidence
+
+- A canonical type-shape registry preserves nested array, slice, Option and
+  Result arguments without making `ResolvedType` recursive or retaining syntax.
+- Struct field reads and fixed-array/slice index reads agree with Stage0 for
+  field existence, base/index type, negative and out-of-bounds literals, and
+  the current Copy-element restriction.
+- Thirty-four semantic fixtures and three typed-IR fixtures cover the cumulative
+  B2 subset. Twenty-two Mallang project tests pass through Stage0.
+- `FieldAccess` and `Index` typed nodes preserve Stage0 result types, source
+  spans, field names and child evaluation order through normal, strict
+  accounting and ASan/UBSan execution.
 
 ## B2 Completion Criteria
 

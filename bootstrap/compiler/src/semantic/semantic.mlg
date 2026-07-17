@@ -12,6 +12,12 @@ pub type ResolvedType struct {
     cleanup bool
 }
 
+pub type TypeShape struct {
+    text string
+    arguments []ResolvedType
+    arrayLength int
+}
+
 pub type FieldSig struct {
     name string
     ty ResolvedType
@@ -70,6 +76,7 @@ pub type Local struct {
 }
 
 pub type CheckedProgram struct {
+    typeShapes []TypeShape
     structs []StructSig
     enums []EnumSig
     functions []FunctionSig
@@ -85,7 +92,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{},}
+    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{},}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -686,6 +693,12 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
     if kind == "Expr.Call" {
         return self.checkCall(con program, expression)
     }
+    if kind == "Expr.FieldAccess" {
+        return self.checkFieldAccess(con program, expression)
+    }
+    if kind == "Expr.Index" {
+        return self.checkIndexAccess(con program, expression)
+    }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
         match self.checkExpression(con program, operand) {
@@ -752,6 +765,116 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
+}
+
+func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    base := ast.Child(con program, expression, 0)
+    match self.checkExpression(con program, base) {
+        case Ok(baseType) {
+            if baseType.kind != "struct" {
+                message := strings.join(con []string{"field access requires a struct value, got `", token.CopyText(con baseType.text), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, base)))
+            }
+            structure := self.structIndex(con baseType.text)
+            if structure < 0 {
+                return Err(newError("checked struct signature is missing", ast.Span(con program, expression)))
+            }
+            field := ast.Value(con program, expression)
+            for mut index := 0; index < len(self.structs[structure].fields); index = index + 1 {
+                if self.structs[structure].fields[index].name == field {
+                    ty := copyType(con self.structs[structure].fields[index].ty)
+                    self.recordType(expression, con ty)
+                    return Ok(ty)
+                }
+            }
+            message := strings.join(con []string{"unknown field `", token.CopyText(con field), "` on `", token.CopyText(con baseType.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkIndexAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    base := ast.Child(con program, expression, 0)
+    index := ast.Child(con program, expression, 1)
+    mut baseType := unitType()
+    match self.checkExpression(con program, base) {
+        case Ok(ty) {
+            baseType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    mut indexType := unitType()
+    match self.checkExpression(con program, index) {
+        case Ok(ty) {
+            indexType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    if baseType.kind != "array" && baseType.kind != "slice" {
+        message := strings.join(con []string{"indexing requires a fixed-size array or slice, got `", token.CopyText(con baseType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, base)))
+    }
+    mut element := unitType()
+    match self.typeArgument(con baseType, 0) {
+        case Ok(ty) {
+            element = ty
+        }
+        case Err(_) {
+            return Err(newError("checked index element type is missing", ast.Span(con program, expression)))
+        }
+    }
+    match self.validateIndex(con program, index, con indexType, con baseType) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if !element.copy {
+        mut collection := "slice"
+        if baseType.kind == "array" {
+            collection = "array"
+        }
+        message := strings.join(con []string{collection, " indexing requires a Copy element type in v0, got `", token.CopyText(con element.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    self.recordType(expression, con element)
+    return Ok(element)
+}
+
+func (con self CheckedProgram) validateIndex(con program ast.Program, index int, con indexType ResolvedType, con baseType ResolvedType) Result[bool, SemanticError] {
+    mut collection := "slice"
+    if baseType.kind == "array" {
+        collection = "array"
+    }
+    if indexType.kind != "int" {
+        message := strings.join(con []string{token.CopyText(con collection), " index must have type `int`, got `", token.CopyText(con indexType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, index)))
+    }
+    match constInt(con program, index) {
+        case Ok(value) {
+            if value < 0 {
+                message := strings.join(con []string{collection, " index ", strings.fromInt(value), " must be non-negative",}, con "")
+                return Err(newError(message, ast.Span(con program, index)))
+            }
+            if baseType.kind == "array" {
+                length := self.arrayLength(con baseType)
+                if value >= length {
+                    message := strings.join(con []string{"array index ", strings.fromInt(value), " is out of bounds for length ", strings.fromInt(length),}, con "")
+                    return Err(newError(message, ast.Span(con program, index)))
+                }
+            }
+        }
+        case Err(_) {}
+    }
+    return Ok(true)
 }
 
 func (mut self CheckedProgram) checkCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
@@ -846,6 +969,41 @@ func (mut self CheckedProgram) recordType(node int, con ty ResolvedType) {
     self.typedNodes = append(self.typedNodes, TypedNode{node: node, ty: copyType(con ty)})
 }
 
+func (mut self CheckedProgram) recordTypeShape(con ty ResolvedType, con arguments []ResolvedType, arrayLength int) {
+    if self.typeShapeIndex(con ty) < 0 {
+        mut copiedArguments := []ResolvedType{}
+        for mut index := 0; index < len(arguments); index = index + 1 {
+            copiedArguments = append(copiedArguments, copyType(con arguments[index]))
+        }
+        self.typeShapes = append(self.typeShapes, TypeShape{text: token.CopyText(con ty.text), arguments: copiedArguments, arrayLength: arrayLength,})
+    }
+}
+
+func (con self CheckedProgram) typeShapeIndex(con ty ResolvedType) int {
+    for mut index := 0; index < len(self.typeShapes); index = index + 1 {
+        if self.typeShapes[index].text == ty.text {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) typeArgument(con ty ResolvedType, argument int) Result[ResolvedType, bool] {
+    shape := self.typeShapeIndex(con ty)
+    if shape < 0 || argument < 0 || argument >= len(self.typeShapes[shape].arguments) {
+        return Err(false)
+    }
+    return Ok(copyType(con self.typeShapes[shape].arguments[argument]))
+}
+
+func (con self CheckedProgram) arrayLength(con ty ResolvedType) int {
+    shape := self.typeShapeIndex(con ty)
+    if shape < 0 {
+        return - 1
+    }
+    return self.typeShapes[shape].arrayLength
+}
+
 func (mut self CheckedProgram) recordFunctionReference(node int, function int, direct bool) {
     self.functionReferences = append(self.functionReferences, FunctionReference{node: node, function: function, direct: direct})
 }
@@ -862,6 +1020,15 @@ func (con self CheckedProgram) functionReferenceIndex(node int) int {
 func (con self CheckedProgram) functionIndex(con name string) int {
     for mut index := 0; index < len(self.functions); index = index + 1 {
         if self.functions[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) structIndex(con name string) int {
+    for mut index := 0; index < len(self.structs); index = index + 1 {
+        if self.structs[index].name == name {
             return index
         }
     }
@@ -903,7 +1070,7 @@ func (con self CheckedProgram) methodIndex(con receiver string, con name string)
     return - 1
 }
 
-func (con self CheckedProgram) resolveParam(con program ast.Program, node int) Result[ParamSig, SemanticError] {
+func (mut self CheckedProgram) resolveParam(con program ast.Program, node int) Result[ParamSig, SemanticError] {
     name := ast.Value(con program, node)
     if isBuiltinValueName(con name) {
         return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, node)))
@@ -921,7 +1088,7 @@ func (con self CheckedProgram) resolveParam(con program ast.Program, node int) R
     }
 }
 
-func (con self CheckedProgram) resolveType(con program ast.Program, node int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Result[ResolvedType, SemanticError] {
     kind := ast.Kind(con program, node)
     name := ast.Value(con program, node)
     span := ast.Span(con program, node)
@@ -931,12 +1098,14 @@ func (con self CheckedProgram) resolveType(con program ast.Program, node int) Re
         if childCount != 1 {
             return Err(newError("malformed slice type reference", source.Copy(con span)))
         }
-        return match self.resolveType(con program, ast.Child(con program, node, 0)) {
+        match self.resolveType(con program, ast.Child(con program, node, 0)) {
             case Ok(element) {
-                Ok(ResolvedType{text: strings.join(con []string{"[]", token.CopyText(con element.text),}, con ""), kind: "slice", copy: false, cleanup: true,})
+                ty := makeType(strings.join(con []string{"[]", token.CopyText(con element.text),}, con ""), "slice", false, true)
+                self.recordTypeShape(con ty, con []ResolvedType{copyType(con element)}, -1)
+                return Ok(ty)
             }
             case Err(error) {
-                Err(error)
+                return Err(error)
             }
         }
     }
@@ -946,7 +1115,18 @@ func (con self CheckedProgram) resolveType(con program ast.Program, node int) Re
         }
         match self.resolveType(con program, ast.Child(con program, node, 0)) {
             case Ok(element) {
-                return Ok(ResolvedType{text: strings.join(con []string{"[", token.CopyText(con name), "]", token.CopyText(con element.text),}, con ""), kind: "array", copy: false, cleanup: element.cleanup,})
+                mut length := 0
+                match strings.parseInt(con name) {
+                    case Ok(value) {
+                        length = value
+                    }
+                    case Err(_) {
+                        return Err(newError("malformed fixed-size array length", source.Copy(con span)))
+                    }
+                }
+                ty := makeType(strings.join(con []string{"[", token.CopyText(con name), "]", token.CopyText(con element.text),}, con ""), "array", false, element.cleanup)
+                self.recordTypeShape(con ty, con []ResolvedType{copyType(con element)}, length)
+                return Ok(ty)
             }
             case Err(error) {
                 return Err(error)
@@ -1007,12 +1187,14 @@ func (con self CheckedProgram) resolveType(con program ast.Program, node int) Re
         if childCount != 1 {
             return Err(newError("`Option` expects exactly 1 type argument", source.Copy(con span)))
         }
-        return match self.resolveType(con program, ast.Child(con program, node, 0)) {
+        match self.resolveType(con program, ast.Child(con program, node, 0)) {
             case Ok(inner) {
-                Ok(ResolvedType{text: strings.join(con []string{"Option[", token.CopyText(con inner.text), "]",}, con ""), kind: "option", copy: inner.copy, cleanup: inner.cleanup,})
+                ty := makeType(strings.join(con []string{"Option[", token.CopyText(con inner.text), "]",}, con ""), "option", inner.copy, inner.cleanup)
+                self.recordTypeShape(con ty, con []ResolvedType{copyType(con inner)}, -1)
+                return Ok(ty)
             }
             case Err(error) {
-                Err(error)
+                return Err(error)
             }
         }
     }
@@ -1024,7 +1206,9 @@ func (con self CheckedProgram) resolveType(con program ast.Program, node int) Re
             case Ok(okType) {
                 match self.resolveType(con program, ast.Child(con program, node, 1)) {
                     case Ok(errorType) {
-                        return Ok(ResolvedType{text: strings.join(con []string{"Result[", token.CopyText(con okType.text), ", ", token.CopyText(con errorType.text), "]",}, con ""), kind: "result", copy: okType.copy && errorType.copy, cleanup: okType.cleanup || errorType.cleanup,})
+                        ty := makeType(strings.join(con []string{"Result[", token.CopyText(con okType.text), ", ", token.CopyText(con errorType.text), "]",}, con ""), "result", okType.copy && errorType.copy, okType.cleanup || errorType.cleanup)
+                        self.recordTypeShape(con ty, con []ResolvedType{copyType(con okType), copyType(con errorType)}, -1)
+                        return Ok(ty)
                     }
                     case Err(error) {
                         return Err(error)
@@ -1131,6 +1315,10 @@ func copyType(con ty ResolvedType) ResolvedType {
     return ResolvedType{text: token.CopyText(con ty.text), kind: token.CopyText(con ty.kind), copy: ty.copy, cleanup: ty.cleanup,}
 }
 
+func makeType(text string, kind string, copy bool, cleanup bool) ResolvedType {
+    return ResolvedType{text: text, kind: kind, copy: copy, cleanup: cleanup,}
+}
+
 func intType() ResolvedType {
     return ResolvedType{text: "int", kind: "int", copy: true, cleanup: false,}
 }
@@ -1141,6 +1329,31 @@ func boolType() ResolvedType {
 
 func stringType() ResolvedType {
     return ResolvedType{text: "string", kind: "string", copy: false, cleanup: true,}
+}
+
+func constInt(con program ast.Program, expression int) Result[int, bool] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Int" {
+        return match strings.parseInt(con ast.Value(con program, expression)) {
+            case Ok(value) {
+                Ok(value)
+            }
+            case Err(_) {
+                Err(false)
+            }
+        }
+    }
+    if kind == "Expr.Unary.Negate" {
+        return match constInt(con program, ast.Child(con program, expression, 0)) {
+            case Ok(value) {
+                Ok(-value)
+            }
+            case Err(_) {
+                Err(false)
+            }
+        }
+    }
+    return Err(false)
 }
 
 func isBinaryKind(con kind string) bool {

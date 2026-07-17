@@ -174,3 +174,55 @@ test RejectsIndirectFunctionCallMode() {
         }
     }
 }
+
+test ChecksFieldAndIndexReads() {
+    source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func readSlice(con values []int, index int) int { return values[index] } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsArrayIndexOutOfBounds() {
+    source := "func read(con values [2]int) int { return values[2] } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "array index 2 is out of bounds for length 2")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

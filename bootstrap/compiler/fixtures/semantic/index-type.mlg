@@ -1,0 +1,5 @@
+func read(con values [2]int) int {
+    return values["zero"]
+}
+
+func main() {}

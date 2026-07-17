@@ -297,4 +297,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2b2 call semantic/typed IR differential, B1 frontend, determinism, ownership, and sanitizer gate passed: parser-corpus=$parser_corpus_count"
+echo "self-hosting B2b3a field/index read differential, B1 frontend, determinism, ownership, and sanitizer gate passed: parser-corpus=$parser_corpus_count"

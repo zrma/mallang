@@ -1,0 +1,18 @@
+type User struct {
+    name string
+    age int
+}
+
+func readAge(con user User) int {
+    return user.age
+}
+
+func readArray(con values [3]int) int {
+    return values[0] + values[2]
+}
+
+func readSlice(con values []int, index int) int {
+    return values[index]
+}
+
+func main() {}

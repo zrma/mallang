@@ -1705,7 +1705,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] focused success/rejection Rust Stage0 differential fixtures
 - [x] primitive expression, binding/assignment/return checking과 typed IR subset
 - [x] direct call, named function value, argument mode와 indirect call typed IR
-- [ ] field/index place와 nested scope checking
+- [x] field/index read type checking과 typed IR
+- [ ] mutable field/index assignment place와 nested scope checking
 - [ ] owned/`con`/`mut` place state와 branch/loop ownership join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

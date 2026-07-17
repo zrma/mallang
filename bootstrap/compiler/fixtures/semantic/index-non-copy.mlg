@@ -1,0 +1,9 @@
+type User struct {
+    age int
+}
+
+func read(con users [2]User) User {
+    return users[0]
+}
+
+func main() {}

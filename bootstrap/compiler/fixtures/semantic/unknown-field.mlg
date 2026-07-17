@@ -1,0 +1,9 @@
+type User struct {
+    age int
+}
+
+func read(con user User) int {
+    return user.missing
+}
+
+func main() {}
