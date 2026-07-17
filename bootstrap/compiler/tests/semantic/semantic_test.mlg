@@ -668,3 +668,183 @@ test RejectsUseAfterMoveFromIfExpressionBranch() {
         }
     }
 }
+
+test ChecksLoopBorrowsAndOuterReuse() {
+    source := "func inspect(con value string) int { return 1 } func consume(value string) int { return 2 } func exercise(flag bool) int { value := \"hello\"; for flag { current := inspect(con value) }; return consume(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsLoopBodyPersistentMove() {
+    source := "func consume(value string) int { return 1 } func exercise(flag bool) int { value := \"hello\"; for flag { current := consume(value) }; return 0 } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "loop cannot move persistent value `value` in v0")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsLoopConditionPersistentMove() {
+    source := "func consume(value string) bool { return true } func exercise() int { value := \"hello\"; for consume(value) {}; return 0 } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "loop cannot move persistent value `value` in v0")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test ChecksLoopBodyLocalMove() {
+    source := "func consume(value string) int { return 1 } func exercise(flag bool) int { for flag { value := \"hello\"; current := consume(value) }; return 0 } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsNonBoolLoopCondition() {
+    source := "func exercise() int { for 1 {}; return 0 } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "for condition must have type `bool`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test ChecksAndRejectsLoopControlByDepth() {
+    accepted := "func exercise(flag bool) int { for flag { continue }; for { break }; return 0 } func main() {}"
+    match lexer.Lex(accepted) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+
+    rejected := "func exercise() int { break; return 0 } func main() {}"
+    match lexer.Lex(rejected) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "`break` can only be used inside a loop")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

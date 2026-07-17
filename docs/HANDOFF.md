@@ -530,12 +530,13 @@ byte-for-byte differential 검증해 닫았다. 현재 B2는 비제네릭 선언
 signature, primitive function body, named function value와 direct/indirect call을
 Mallang으로 검사하고 field/index read까지 incremental typed IR을 Rust Stage0과
 비교하며 mutable field/index assignment place도 검사한다. integrated gate는 159개
-repository source와 65개 semantic fixture, 6개 IR fixture를
+repository source와 71개 semantic fixture, 6개 IR fixture를
 normal/strict/sanitizer 경로에서 검증한다. nested lexical scope, if-statement
 return convergence와 if-expression branch type convergence까지 구현됐으며
 non-Copy local move, nested field/index `con`/`mut` borrow와 same-call overlap도
-검사한다. statement/expression `if`의 outer move state도 보수적으로 병합한다.
-다음 slice는 loop-persistent ownership state join이다. public language
+검사한다. statement/expression `if`의 outer move state를 병합하고 condition 및
+conditionless loop의 condition/body persistent move도 거부한다. 다음 slice는
+three-clause init/post와 range loop ownership state join이다. public language
 또는 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 

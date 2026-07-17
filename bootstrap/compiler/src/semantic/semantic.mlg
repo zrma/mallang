@@ -95,6 +95,7 @@ pub type CheckedProgram struct {
     functionReferences []FunctionReference
     locals []Local
     scopeDepth int
+    loopDepth int
 }
 
 pub type SemanticError struct {
@@ -103,7 +104,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{}, scopeDepth: 0,}
+    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -544,6 +545,7 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
 
             self.locals = locals
             self.scopeDepth = 0
+            self.loopDepth = 0
             match self.checkBlock(con program, blockNode, con returnType) {
                 case Ok(returned) {
                     if returnType.kind != "unit" && !returned {
@@ -658,6 +660,20 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
     if kind == "Stmt.If" {
         return self.checkIfStatement(con program, statement, con returnType)
     }
+    if kind == "Stmt.For" {
+        return self.checkForStatement(con program, statement, con returnType)
+    }
+    if kind == "Stmt.Break" || kind == "Stmt.Continue" {
+        if self.loopDepth == 0 {
+            mut keyword := "break"
+            if kind == "Stmt.Continue" {
+                keyword = "continue"
+            }
+            message := strings.join(con []string{"`", keyword, "` can only be used inside a loop",}, con "")
+            return Err(newError(message, ast.Span(con program, statement)))
+        }
+        return Ok(false)
+    }
     if kind == "Stmt.Return" {
         expression := ast.Child(con program, statement, 0)
         match self.checkExpression(con program, expression) {
@@ -739,6 +755,82 @@ func (mut self CheckedProgram) checkIfStatement(con program ast.Program, stateme
     self.locals = mergeBranchMoves(con baseLocals, con thenLocals, con elseLocals)
     self.scopeDepth = baseDepth
     return Ok(thenReturns && elseReturns)
+}
+
+func (mut self CheckedProgram) checkForStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
+    childCount := ast.ChildCount(con program, statement)
+    if childCount < 1 {
+        return Err(newError("malformed for statement", ast.Span(con program, statement)))
+    }
+    body := ast.Child(con program, statement, childCount - 1)
+    if ast.Kind(con program, body) != "Block" {
+        return Err(newError("B2c3b checker does not yet accept three-clause for statements", ast.Span(con program, statement)))
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    baseDepth := self.scopeDepth
+    baseLoopDepth := self.loopDepth
+    loopScopeDepth := baseDepth + 1
+    mut loopLocals := copyLocals(con baseLocals)
+
+    if childCount > 1 {
+        conditionNode := ast.Child(con program, statement, 0)
+        if ast.Kind(con program, conditionNode) != "ForCondition" || childCount != 2 {
+            return Err(newError("B2c3b checker does not yet accept three-clause for statements", ast.Span(con program, statement)))
+        }
+        condition := ast.Child(con program, conditionNode, 0)
+        self.locals = copyLocals(con loopLocals)
+        match self.checkExpression(con program, condition) {
+            case Ok(conditionType) {
+                if conditionType.kind != "bool" {
+                    self.locals = copyLocals(con baseLocals)
+                    return Err(newError("for condition must have type `bool`", ast.Span(con program, condition)))
+                }
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                return Err(error)
+            }
+        }
+        conditionLocals := copyLocals(con self.locals)
+        match rejectLoopPersistentMoves(con loopLocals, con conditionLocals, loopScopeDepth, con ast.Span(con program, condition)) {
+            case Ok(_) {
+                loopLocals = conditionLocals
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                return Err(error)
+            }
+        }
+    }
+
+    self.locals = copyLocals(con loopLocals)
+    self.scopeDepth = loopScopeDepth + 1
+    self.loopDepth = baseLoopDepth + 1
+    match self.checkBlock(con program, body, con returnType) {
+        case Ok(_) {}
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth
+            self.loopDepth = baseLoopDepth
+            return Err(error)
+        }
+    }
+    bodyLocals := copyLocals(con self.locals)
+    match rejectLoopPersistentMoves(con loopLocals, con bodyLocals, loopScopeDepth, con ast.Span(con program, body)) {
+        case Ok(_) {}
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth
+            self.loopDepth = baseLoopDepth
+            return Err(error)
+        }
+    }
+
+    self.locals = mergeLoopMoves(con baseLocals, con loopLocals, con bodyLocals)
+    self.scopeDepth = baseDepth
+    self.loopDepth = baseLoopDepth
+    return Ok(false)
 }
 
 func (mut self CheckedProgram) checkFieldAssign(con program ast.Program, statement int) Result[bool, SemanticError] {
@@ -1915,6 +2007,30 @@ func mergeBranchMoves(con baseLocals []Local, con thenLocals []Local, con elseLo
         merged[index].moved = merged[index].moved || movedInThen || movedInElse
     }
     return merged
+}
+
+func mergeLoopMoves(con baseLocals []Local, con loopLocals []Local, con bodyLocals []Local) []Local {
+    mut merged := copyLocals(con baseLocals)
+    for mut index := 0; index < len(merged); index = index + 1 {
+        movedInLoop := index < len(loopLocals) && loopLocals[index].moved
+        movedInBody := index < len(bodyLocals) && bodyLocals[index].moved
+        merged[index].moved = merged[index].moved || movedInLoop || movedInBody
+    }
+    return merged
+}
+
+func rejectLoopPersistentMoves(con beforeLocals []Local, con afterLocals []Local, loopScopeDepth int, con span source.Span) Result[bool, SemanticError] {
+    mut limit := len(beforeLocals)
+    if len(afterLocals) < limit {
+        limit = len(afterLocals)
+    }
+    for mut index := 0; index < limit; index = index + 1 {
+        if afterLocals[index].moved && !beforeLocals[index].moved && afterLocals[index].scopeDepth <= loopScopeDepth && !afterLocals[index].ty.copy {
+            message := strings.join(con []string{"loop cannot move persistent value `", token.CopyText(con afterLocals[index].name), "` in v0",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+    }
+    return Ok(true)
 }
 
 func copyType(con ty ResolvedType) ResolvedType {

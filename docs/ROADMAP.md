@@ -1712,7 +1712,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] non-Copy local move와 direct local `con`/`mut` call borrow
 - [x] nested field/index borrow place와 same-call overlap
 - [x] statement/expression `if` branch ownership state join
-- [ ] loop-persistent ownership state join
+- [x] condition/conditionless loop persistent ownership state와 loop control
+- [ ] three-clause/range loop persistent ownership state join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

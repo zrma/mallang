@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c3a complete
+Status: in progress; P176a-P176c3b1 complete
 
 ## Objective
 
@@ -53,7 +53,9 @@ agrees.
 - P176c2: validate field/index borrow places and same-call overlap (complete)
 - P176c3a: merge move state across statement and expression branches
   (complete)
-- P176c3b: merge move state across loops
+- P176c3b1: check condition and conditionless loops, loop control and
+  condition/body persistent move state (complete)
+- P176c3b2: check three-clause and range loop persistent move state
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
@@ -219,6 +221,19 @@ specialization and function-body checking until later P176 slices.
 - Sixty-five semantic fixtures, six typed-IR fixtures and forty-two Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan. Loop-persistent move-state joins remain P176c3b work.
+
+## P176c3b1 Evidence
+
+- Condition and conditionless `for` statements check body-local scope and
+  preserve outer locals through call-scoped borrows. Conditions require `bool`.
+- A newly moved non-Copy binding that persists across iterations is rejected in
+  the condition or body with Stage0's diagnostic. Values declared inside the
+  body remain iteration-local and may move.
+- `break` and `continue` track nested loop depth and are rejected outside a
+  loop. A loop remains non-return-complete even when conditionless.
+- Seventy-one semantic fixtures, six typed-IR fixtures and forty-eight Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Three-clause init/post and range-loop ownership remain P176c3b2.
 
 ## B2 Completion Criteria
 

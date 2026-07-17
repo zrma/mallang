@@ -1,0 +1,17 @@
+func inspect(con value string) int {
+    return 1
+}
+
+func consume(value string) int {
+    return 2
+}
+
+func exercise(flag bool) int {
+    value := "hello"
+    for flag {
+        current := inspect(con value)
+    }
+    return consume(value)
+}
+
+func main() {}

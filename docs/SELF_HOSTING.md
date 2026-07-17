@@ -91,6 +91,8 @@ nested lexical scopes and if-statement return convergence, while P176b4b adds
 if-expression branch type convergence. P176c1 adds non-Copy local moves and
 direct local `con`/`mut` call borrows, and P176c2 extends them to nested
 field/index places with same-call overlap checking. P176c3a conservatively
-merges outer move state across statement and expression `if` branches. Loop
-ownership joins and deterministic drop insertion remain incomplete, so no
-complete semantic, typed-IR or Stage1 compiler claim is made.
+merges outer move state across statement and expression `if` branches. P176c3b1
+checks condition and conditionless loop scope, control depth and persistent
+condition/body moves. Three-clause and range-loop ownership plus deterministic
+drop insertion remain incomplete, so no complete semantic, typed-IR or Stage1
+compiler claim is made.

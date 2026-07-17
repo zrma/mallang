@@ -1,0 +1,6 @@
+func exercise() int {
+    break
+    return 0
+}
+
+func main() {}
