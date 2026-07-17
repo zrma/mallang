@@ -527,10 +527,10 @@ Mallang probe를 format/check/test/build/run하고 same-input generated C identi
 검증했다. B1은 frozen v1 frontend와 bounded recovery를 완성하고 155개 repository
 source를 Rust Stage0, generated Stage1, strict accounting, sanitizer 네 경로에서
 byte-for-byte differential 검증해 닫았다. 현재 B2 P176a는 비제네릭 선언과 resolved
-type signature를 Mallang으로 검사하고 focused success/rejection corpus를 Rust Stage0과
-비교한다. 다음 slice는 primitive expression, statement, local scope checking과 typed IR
-subset이다. public language 또는 standard-library addition은 representative compiler
-blocker가 확인되기 전에는 포함하지 않는다.
+type signature와 primitive function body를 Mallang으로 검사하고 첫 typed IR subset을
+Rust Stage0과 비교한다. 다음 slice는 direct call/function value와 field/index place,
+nested scope checking이다. public language 또는 standard-library addition은
+representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

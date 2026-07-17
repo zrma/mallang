@@ -51,11 +51,24 @@ pub type MethodSig struct {
     returnType ResolvedType
 }
 
+pub type TypedNode struct {
+    node int
+    ty ResolvedType
+}
+
+pub type Local struct {
+    name string
+    mutable bool
+    ty ResolvedType
+}
+
 pub type CheckedProgram struct {
     structs []StructSig
     enums []EnumSig
     functions []FunctionSig
     methods []MethodSig
+    typedNodes []TypedNode
+    locals []Local
 }
 
 pub type SemanticError struct {
@@ -64,7 +77,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{},}
+    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, locals: []Local{},}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -100,8 +113,55 @@ pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
         root := ast.Root(con program)
         return Err(newError("program must declare `func main()`", ast.Span(con program, root)))
     }
+    match checked.checkFunctionBodies(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
 
     return Ok(checked)
+}
+
+pub func NodeType(con checked CheckedProgram, node int) Result[string, bool] {
+    for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
+        if checked.typedNodes[index].node == node {
+            return Ok(token.CopyText(con checked.typedNodes[index].ty.text))
+        }
+    }
+    return Err(false)
+}
+
+pub func FunctionReturnType(con checked CheckedProgram, con name string) Result[string, bool] {
+    for mut index := 0; index < len(checked.functions); index = index + 1 {
+        if checked.functions[index].name == name {
+            return Ok(token.CopyText(con checked.functions[index].returnType.text))
+        }
+    }
+    return Err(false)
+}
+
+pub func FunctionParamCount(con checked CheckedProgram, con name string) int {
+    index := checked.functionIndex(con name)
+    if index < 0 {
+        return - 1
+    }
+    return len(checked.functions[index].params)
+}
+
+pub func FunctionParamName(con checked CheckedProgram, con name string, param int) string {
+    index := checked.functionIndex(con name)
+    return token.CopyText(con checked.functions[index].params[param].name)
+}
+
+pub func FunctionParamMode(con checked CheckedProgram, con name string, param int) string {
+    index := checked.functionIndex(con name)
+    return token.CopyText(con checked.functions[index].params[param].mode)
+}
+
+pub func FunctionParamType(con checked CheckedProgram, con name string, param int) string {
+    index := checked.functionIndex(con name)
+    return token.CopyText(con checked.functions[index].params[param].ty.text)
 }
 
 pub func ErrorMessage(con error SemanticError) string {
@@ -384,6 +444,284 @@ func (mut self CheckedProgram) collectFunctionSignatures(con program ast.Program
     return Ok(true)
 }
 
+func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        declarationKind := ast.Kind(con program, declaration)
+        if isFunctionKind(con declarationKind) {
+            name := ast.Value(con program, declaration)
+            mut receiverNode := -1
+            mut blockNode := -1
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                node := ast.Child(con program, declaration, item)
+                nodeKind := ast.Kind(con program, node)
+                if nodeKind == "Receiver" {
+                    receiverNode = ast.Child(con program, node, 0)
+                } else if nodeKind == "Block" {
+                    blockNode = node
+                }
+            }
+
+            mut locals := []Local{}
+            mut returnType := unitType()
+            if receiverNode >= 0 {
+                receiverTypeNode := ast.Child(con program, receiverNode, 0)
+                mut receiverTypeName := ""
+                match self.resolveType(con program, receiverTypeNode) {
+                    case Ok(receiverType) {
+                        receiverTypeName = token.CopyText(con receiverType.text)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                methodIndex := self.methodIndex(con receiverTypeName, con name)
+                if methodIndex < 0 {
+                    return Err(newError("checked method signature is missing", ast.Span(con program, declaration)))
+                }
+                locals = append(locals, localFromParam(con self.methods[methodIndex].receiver))
+                for mut param := 0; param < len(self.methods[methodIndex].params); param = param + 1 {
+                    locals = append(locals, localFromParam(con self.methods[methodIndex].params[param]))
+                }
+                returnType = copyType(con self.methods[methodIndex].returnType)
+            } else {
+                functionIndex := self.functionIndex(con name)
+                if functionIndex < 0 {
+                    return Err(newError("checked function signature is missing", ast.Span(con program, declaration)))
+                }
+                for mut param := 0; param < len(self.functions[functionIndex].params); param = param + 1 {
+                    locals = append(locals, localFromParam(con self.functions[functionIndex].params[param]))
+                }
+                returnType = copyType(con self.functions[functionIndex].returnType)
+            }
+
+            self.locals = locals
+            match self.checkBlock(con program, blockNode, con returnType) {
+                case Ok(returned) {
+                    if returnType.kind != "unit" && !returned {
+                        message := strings.join(con []string{"function `", token.CopyText(con name), "` must return `", token.CopyText(con returnType.text), "`",}, con "")
+                        return Err(newError(message, ast.Span(con program, declaration)))
+                    }
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) checkBlock(con program ast.Program, block int, con returnType ResolvedType) Result[bool, SemanticError] {
+    mut returned := false
+    for mut statementIndex := 0; statementIndex < ast.ChildCount(con program, block); statementIndex = statementIndex + 1 {
+        statement := ast.Child(con program, block, statementIndex)
+        match self.checkStatement(con program, statement, con returnType) {
+            case Ok(statementReturned) {
+                if statementReturned {
+                    returned = true
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(returned)
+}
+
+func (mut self CheckedProgram) checkStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
+    kind := ast.Kind(con program, statement)
+    if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" {
+        name := ast.Value(con program, statement)
+        if isBuiltinValueName(con name) {
+            return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, statement)))
+        }
+        expression := ast.Child(con program, statement, 0)
+        match self.checkExpression(con program, expression) {
+            case Ok(ty) {
+                if localIndex(con self.locals, con name) >= 0 {
+                    message := strings.join(con []string{"binding `", token.CopyText(con name), "` already exists in this block",}, con "")
+                    return Err(newError(message, ast.Span(con program, statement)))
+                }
+                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty})
+                return Ok(false)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Stmt.Assign" {
+        name := ast.Value(con program, statement)
+        index := localIndex(con self.locals, con name)
+        if index < 0 {
+            return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, statement)))
+        }
+        if !self.locals[index].mutable {
+            return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, statement)))
+        }
+        expression := ast.Child(con program, statement, 0)
+        match self.checkExpression(con program, expression) {
+            case Ok(valueType) {
+                if valueType.text != self.locals[index].ty.text {
+                    message := strings.join(con []string{"assignment type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con self.locals[index].ty.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, statement)))
+                }
+                return Ok(false)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Stmt.Return" {
+        expression := ast.Child(con program, statement, 0)
+        match self.checkExpression(con program, expression) {
+            case Ok(valueType) {
+                if valueType.text != returnType.text {
+                    message := strings.join(con []string{"return type mismatch: expected `", token.CopyText(con returnType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, statement)))
+                }
+                return Ok(true)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Stmt.Expr" {
+        expression := ast.Child(con program, statement, 0)
+        return match self.checkExpression(con program, expression) {
+            case Ok(_) {
+                Ok(false)
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
+    return Err(newError("B2b semantic checker does not yet accept this statement", ast.Span(con program, statement)))
+}
+
+func (mut self CheckedProgram) checkExpression(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Int" {
+        ty := intType()
+        self.recordType(expression, con ty)
+        return Ok(ty)
+    }
+    if kind == "Expr.String" {
+        ty := stringType()
+        self.recordType(expression, con ty)
+        return Ok(ty)
+    }
+    if kind == "Expr.Bool" {
+        ty := boolType()
+        self.recordType(expression, con ty)
+        return Ok(ty)
+    }
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, expression)
+        index := localIndex(con self.locals, con name)
+        if index < 0 {
+            return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+        }
+        ty := copyType(con self.locals[index].ty)
+        self.recordType(expression, con ty)
+        return Ok(ty)
+    }
+    if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
+        operand := ast.Child(con program, expression, 0)
+        match self.checkExpression(con program, operand) {
+            case Ok(operandType) {
+                if kind == "Expr.Unary.Negate" && operandType.kind != "int" {
+                    return Err(newError("`-` expects an `int` operand", ast.Span(con program, operand)))
+                }
+                if kind == "Expr.Unary.Not" && operandType.kind != "bool" {
+                    return Err(newError("`!` expects a `bool` operand", ast.Span(con program, operand)))
+                }
+                mut ty := intType()
+                if kind == "Expr.Unary.Not" {
+                    ty = boolType()
+                }
+                self.recordType(expression, con ty)
+                return Ok(ty)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if isBinaryKind(con kind) {
+        left := ast.Child(con program, expression, 0)
+        right := ast.Child(con program, expression, 1)
+        mut leftType := unitType()
+        match self.checkExpression(con program, left) {
+            case Ok(ty) {
+                leftType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.checkExpression(con program, right) {
+            case Ok(rightType) {
+                combinedSpan := source.Join(ast.Span(con program, left), ast.Span(con program, right))
+                if leftType.text != rightType.text {
+                    return Err(newError("binary operands must have the same type", source.Copy(con combinedSpan)))
+                }
+                mut resultType := boolType()
+                if isArithmeticKind(con kind) {
+                    if leftType.kind != "int" {
+                        return Err(newError("arithmetic operators currently require `int` operands", source.Copy(con combinedSpan)))
+                    }
+                    resultType = intType()
+                } else if isEqualityKind(con kind) {
+                    if leftType.kind != "int" && leftType.kind != "bool" && leftType.kind != "string" {
+                        return Err(newError("equality currently supports `int`, `bool`, and `string` operands", source.Copy(con combinedSpan)))
+                    }
+                } else if isLogicalKind(con kind) {
+                    if leftType.kind != "bool" {
+                        return Err(newError("logical operators require `bool` operands", source.Copy(con combinedSpan)))
+                    }
+                } else if leftType.kind != "int" {
+                    return Err(newError("ordering comparisons currently require `int` operands", source.Copy(con combinedSpan)))
+                }
+                self.recordType(expression, con resultType)
+                return Ok(resultType)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
+}
+
+func (mut self CheckedProgram) recordType(node int, con ty ResolvedType) {
+    self.typedNodes = append(self.typedNodes, TypedNode{node: node, ty: copyType(con ty)})
+}
+
+func (con self CheckedProgram) functionIndex(con name string) int {
+    for mut index := 0; index < len(self.functions); index = index + 1 {
+        if self.functions[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) methodIndex(con receiver string, con name string) int {
+    for mut index := 0; index < len(self.methods); index = index + 1 {
+        if self.methods[index].receiver.ty.text == receiver && self.methods[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
 func (con self CheckedProgram) resolveParam(con program ast.Program, node int) Result[ParamSig, SemanticError] {
     name := ast.Value(con program, node)
     if isBuiltinValueName(con name) {
@@ -593,6 +931,51 @@ func hasParam(con params []ParamSig, con name string) bool {
         }
     }
     return false
+}
+
+func localIndex(con locals []Local, con name string) int {
+    for mut index := 0; index < len(locals); index = index + 1 {
+        if locals[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func localFromParam(con param ParamSig) Local {
+    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty),}
+}
+
+func copyType(con ty ResolvedType) ResolvedType {
+    return ResolvedType{text: token.CopyText(con ty.text), kind: token.CopyText(con ty.kind), copy: ty.copy, cleanup: ty.cleanup,}
+}
+
+func intType() ResolvedType {
+    return ResolvedType{text: "int", kind: "int", copy: true, cleanup: false,}
+}
+
+func boolType() ResolvedType {
+    return ResolvedType{text: "bool", kind: "bool", copy: true, cleanup: false,}
+}
+
+func stringType() ResolvedType {
+    return ResolvedType{text: "string", kind: "string", copy: false, cleanup: true,}
+}
+
+func isBinaryKind(con kind string) bool {
+    return isArithmeticKind(con kind) || isEqualityKind(con kind) || isLogicalKind(con kind) || kind == "Expr.Binary.Less" || kind == "Expr.Binary.LessEqual" || kind == "Expr.Binary.Greater" || kind == "Expr.Binary.GreaterEqual"
+}
+
+func isArithmeticKind(con kind string) bool {
+    return kind == "Expr.Binary.Add" || kind == "Expr.Binary.Subtract" || kind == "Expr.Binary.Multiply" || kind == "Expr.Binary.Divide" || kind == "Expr.Binary.Remainder"
+}
+
+func isEqualityKind(con kind string) bool {
+    return kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual"
+}
+
+func isLogicalKind(con kind string) bool {
+    return kind == "Expr.Binary.LogicalAnd" || kind == "Expr.Binary.LogicalOr"
 }
 
 func isStructKind(con kind string) bool {

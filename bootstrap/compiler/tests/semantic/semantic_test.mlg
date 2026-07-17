@@ -58,3 +58,67 @@ test RejectsUnknownTypes() {
         }
     }
 }
+
+test ChecksPrimitiveFunctionBodies() {
+    source := "func compute(left int, right int) int { mut total := left + right * 2; total = total - 1; return total } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            root := ast.Root(con program)
+                            function := ast.Child(con program, root, 1)
+                            block := ast.Child(con program, function, ast.ChildCount(con program, function) - 1)
+                            binding := ast.Child(con program, block, 0)
+                            expression := ast.Child(con program, binding, 0)
+                            match NodeType(con checked, expression) {
+                                case Ok(ty) {
+                                    assert(ty == "int")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsImmutableAssignment() {
+    source := "func main() { value := 1; value = 2 }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "cannot assign to immutable binding `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

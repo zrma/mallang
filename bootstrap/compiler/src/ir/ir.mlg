@@ -1,0 +1,201 @@
+package ir
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/semantic"
+
+pub type Node struct {
+    category string
+    kind string
+    value string
+    ty string
+    span source.Span
+    children []int
+}
+
+pub type Param struct {
+    name string
+    mode string
+    ty string
+}
+
+pub type Function struct {
+    name string
+    params []Param
+    returnType string
+    body []int
+}
+
+pub type Program struct {
+    nodes []Node
+    functions []Function
+}
+
+pub type Error struct {
+    message string
+    span source.Span
+}
+
+type Lowerer struct {
+    nodes []Node
+    functions []Function
+}
+
+pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
+    mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{},}
+    root := ast.Root(con syntax)
+    for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
+        declaration := ast.Child(con syntax, root, child)
+        declarationKind := ast.Kind(con syntax, declaration)
+        if declarationKind == "FunctionDecl.Package" || declarationKind == "FunctionDecl.Public" {
+            match lowerer.lowerFunction(con syntax, declaration, con checked) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions})
+}
+
+pub func Normalize(con program Program) string {
+    mut lines := []string{strings.join(con []string{"IR|", strings.fromInt(len(program.functions)),}, con ""),}
+    for mut functionIndex := 0; functionIndex < len(program.functions); functionIndex = functionIndex + 1 {
+        lines = append(lines, strings.join(con []string{"FUNCTION|", token.CopyText(con program.functions[functionIndex].name), "|", token.CopyText(con program.functions[functionIndex].returnType), "|", strings.fromInt(len(program.functions[functionIndex].params)), "|", strings.fromInt(len(program.functions[functionIndex].body)),}, con ""))
+        for mut paramIndex := 0; paramIndex < len(program.functions[functionIndex].params); paramIndex = paramIndex + 1 {
+            lines = append(lines, strings.join(con []string{"IPARAM|", token.CopyText(con program.functions[functionIndex].name), "|", token.CopyText(con program.functions[functionIndex].params[paramIndex].mode), "|", token.CopyText(con program.functions[functionIndex].params[paramIndex].name), "|", token.CopyText(con program.functions[functionIndex].params[paramIndex].ty),}, con ""))
+        }
+        for mut statementIndex := 0; statementIndex < len(program.functions[functionIndex].body); statementIndex = statementIndex + 1 {
+            lines = append(lines, normalizeNode(con program, program.functions[functionIndex].body[statementIndex], 0))
+        }
+    }
+    return strings.join(con lines, con "\n")
+}
+
+pub func NormalizeError(con error Error) string {
+    span := source.Copy(con error.span)
+    return strings.join(con []string{"IERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con error.message),}, con "")
+}
+
+func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, con checked semantic.CheckedProgram) Result[bool, Error] {
+    name := ast.Value(con syntax, declaration)
+    mut block := -1
+    for mut child := 0; child < ast.ChildCount(con syntax, declaration); child = child + 1 {
+        node := ast.Child(con syntax, declaration, child)
+        kind := ast.Kind(con syntax, node)
+        if kind == "Receiver" {
+            return Err(newError("B2b typed IR does not yet accept methods", ast.Span(con syntax, declaration)))
+        }
+        if kind == "Block" {
+            block = node
+        }
+    }
+
+    mut returnType := ""
+    match semantic.FunctionReturnType(con checked, con name) {
+        case Ok(ty) {
+            returnType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked function return type is missing", ast.Span(con syntax, declaration)))
+        }
+    }
+    paramCount := semantic.FunctionParamCount(con checked, con name)
+    mut params := []Param{}
+    for mut param := 0; param < paramCount; param = param + 1 {
+        params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
+    }
+
+    mut body := []int{}
+    for mut statement := 0; statement < ast.ChildCount(con syntax, block); statement = statement + 1 {
+        syntaxNode := ast.Child(con syntax, block, statement)
+        match self.lowerStatement(con syntax, syntaxNode, con checked) {
+            case Ok(irNode) {
+                body = append(body, irNode)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    self.functions = append(self.functions, Function{name: name, params: params, returnType: returnType, body: body})
+    return Ok(true)
+}
+
+func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
+    kind := ast.Kind(con syntax, statement)
+    value := ast.Value(con syntax, statement)
+    if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "Stmt.Assign" || kind == "Stmt.Return" || kind == "Stmt.Expr" {
+        expression := ast.Child(con syntax, statement, 0)
+        match self.lowerExpression(con syntax, expression, con checked) {
+            case Ok(child) {
+                mut ty := "unit"
+                if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" {
+                    match semantic.NodeType(con checked, expression) {
+                        case Ok(expressionType) {
+                            ty = expressionType
+                        }
+                        case Err(_) {
+                            return Err(newError("checked let expression type is missing", ast.Span(con syntax, statement)))
+                        }
+                    }
+                }
+                return Ok(self.addNode("S", kind, value, ty, ast.Span(con syntax, statement), []int{child}))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Err(newError("B2b typed IR does not yet accept this statement", ast.Span(con syntax, statement)))
+}
+
+func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    kind := ast.Kind(con syntax, expression)
+    value := ast.Value(con syntax, expression)
+    mut ty := ""
+    match semantic.NodeType(con checked, expression) {
+        case Ok(resolved) {
+            ty = resolved
+        }
+        case Err(_) {
+            return Err(newError("checked expression type is missing", ast.Span(con syntax, expression)))
+        }
+    }
+
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con syntax, expression); child = child + 1 {
+        syntaxChild := ast.Child(con syntax, expression, child)
+        match self.lowerExpression(con syntax, syntaxChild, con checked) {
+            case Ok(irChild) {
+                children = append(children, irChild)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode("E", kind, value, ty, ast.Span(con syntax, expression), children))
+}
+
+func (mut self Lowerer) addNode(category string, kind string, value string, ty string, span source.Span, children []int) int {
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, Node{category: category, kind: kind, value: value, ty: ty, span: span, children: children})
+    return index
+}
+
+func normalizeNode(con program Program, node int, depth int) string {
+    span := source.Copy(con program.nodes[node].span)
+    mut output := strings.join(con []string{"I|", strings.fromInt(depth), "|", token.CopyText(con program.nodes[node].category), "|", token.CopyText(con program.nodes[node].kind), "|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con program.nodes[node].value), "|", token.CopyText(con program.nodes[node].ty), "|", strings.fromInt(len(program.nodes[node].children)),}, con "")
+    for mut child := 0; child < len(program.nodes[node].children); child = child + 1 {
+        output = strings.join(con []string{output, "\n", normalizeNode(con program, program.nodes[node].children[child], depth + 1),}, con "")
+    }
+    return output
+}
+
+func newError(message string, span source.Span) Error {
+    return Error{message: message, span: span}
+}

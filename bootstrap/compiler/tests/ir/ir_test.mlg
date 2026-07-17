@@ -1,0 +1,41 @@
+package ir
+
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/semantic"
+
+test LowersPrimitiveTypedNodes() {
+    source := "func compute(left int, right int) int { mut total := left + right * 2; total = total - 1; return total } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions) == 2)
+                                    assert(len(lowered.nodes) == 12)
+                                    assert(lowered.nodes[11].kind == "Stmt.Return")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

@@ -67,7 +67,8 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer/parser plus the first declaration and resolved-type checker.
+  the complete lexer/parser plus declaration/type checking, primitive body
+  checking and the first typed-IR subset.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
@@ -81,5 +82,6 @@ Mallang to specific 1.x versions.
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is active: P176a provides the
-first declaration/type checker and focused semantic differential contract. No
-complete semantic, typed-IR or Stage1 compiler claim is made yet.
+declaration/type checker, and P176b1 adds primitive bodies and typed IR. Calls,
+places, control flow and ownership remain incomplete, so no complete semantic,
+typed-IR or Stage1 compiler claim is made yet.

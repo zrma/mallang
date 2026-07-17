@@ -1,0 +1,9 @@
+func compute(left int, right int, flag bool) int {
+    mut total := left + right * 2
+    total = total - 1
+    inverted := !flag
+    same := inverted == false
+    return total
+}
+
+func main() {}

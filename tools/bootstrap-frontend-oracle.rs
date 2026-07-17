@@ -8,20 +8,22 @@ use mallang::ast::{
     Program, SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp,
     Visibility,
 };
+use mallang::ir::{IrExpr, IrExprKind, IrStmt, IrStmtKind};
 use mallang::{
-    check, lex, parse_with_diagnostics, CheckedProgram, Keyword, LexError, Span, Token, TokenKind,
+    check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
+    Token, TokenKind,
 };
 
 fn main() -> ExitCode {
     let mut args = env::args();
     let _program = args.next();
     let Some(first) = args.next() else {
-        eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
         return ExitCode::from(2);
     };
-    let (mode, path) = if first == "parse" || first == "check" {
+    let (mode, path) = if first == "parse" || first == "check" || first == "ir" {
         let Some(path) = args.next() else {
-            eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
+            eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
             return ExitCode::from(2);
         };
         (first.as_str(), path)
@@ -29,7 +31,7 @@ fn main() -> ExitCode {
         ("lex", first)
     };
     if args.next().is_some() {
-        eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
         return ExitCode::from(2);
     }
 
@@ -41,7 +43,40 @@ fn main() -> ExitCode {
         }
     };
 
-    if mode == "check" {
+    if mode == "ir" {
+        match parse_with_diagnostics(&source) {
+            Ok(program) => match check(&program) {
+                Ok(checked) => match lower(&checked) {
+                    Ok(ir) => println!("{}", normalize_ir(&ir)),
+                    Err(error) => println!(
+                        "IERR|{}|{}|{}|{}",
+                        error.span.source.index(),
+                        error.span.start,
+                        error.span.end,
+                        encode_bytes(&error.message)
+                    ),
+                },
+                Err(error) => println!(
+                    "SERR|{}|{}|{}|{}",
+                    error.span.source.index(),
+                    error.span.start,
+                    error.span.end,
+                    encode_bytes(&error.message)
+                ),
+            },
+            Err(errors) => {
+                for error in errors {
+                    println!(
+                        "PERR|{}|{}|{}|{}",
+                        error.span.source.index(),
+                        error.span.start,
+                        error.span.end,
+                        encode_bytes(&error.message)
+                    );
+                }
+            }
+        }
+    } else if mode == "check" {
         match parse_with_diagnostics(&source) {
             Ok(program) => match check(&program) {
                 Ok(checked) => println!("{}", normalize_checked(&checked)),
@@ -202,6 +237,153 @@ fn normalize_param_mode(mode: ParamMode) -> &'static str {
         ParamMode::Con => "con",
         ParamMode::Mut => "mut",
     }
+}
+
+fn normalize_ir(program: &IrProgram) -> String {
+    let mut lines = vec![format!("IR|{}", program.functions.len())];
+    for function in &program.functions {
+        lines.push(format!(
+            "FUNCTION|{}|{}|{}|{}",
+            function.name,
+            function.return_type.source_name(),
+            function.params.len(),
+            function.body.len()
+        ));
+        for param in &function.params {
+            lines.push(format!(
+                "IPARAM|{}|{}|{}|{}",
+                function.name,
+                normalize_param_mode(param.mode),
+                param.name,
+                param.ty.source_name()
+            ));
+        }
+        lines.extend(
+            function
+                .body
+                .iter()
+                .map(|statement| normalize_ir_statement(statement, 0)),
+        );
+    }
+    lines.join("\n")
+}
+
+fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
+    let (kind, value, ty, children) = match &statement.kind {
+        IrStmtKind::Let {
+            mutable,
+            name,
+            ty,
+            expr,
+        } => (
+            if *mutable {
+                "Stmt.Let.Mutable"
+            } else {
+                "Stmt.Let.Immutable"
+            },
+            name.as_str(),
+            ty.source_name(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
+        IrStmtKind::Assign { name, expr } => (
+            "Stmt.Assign",
+            name.as_str(),
+            "unit".to_string(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
+        IrStmtKind::Return { expr } => (
+            "Stmt.Return",
+            "",
+            "unit".to_string(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
+        IrStmtKind::Expr { expr } => (
+            "Stmt.Expr",
+            "",
+            "unit".to_string(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
+        other => panic!("unsupported P176b IR statement in oracle: {other:?}"),
+    };
+    normalize_ir_line(
+        depth,
+        "S",
+        kind,
+        statement.span,
+        value,
+        &ty,
+        &children,
+    )
+}
+
+fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
+    let (kind, value, children) = match &expression.kind {
+        IrExprKind::Int(value) => ("Expr.Int", value.to_string(), Vec::new()),
+        IrExprKind::String(value) => ("Expr.String", value.clone(), Vec::new()),
+        IrExprKind::Bool(value) => ("Expr.Bool", value.to_string(), Vec::new()),
+        IrExprKind::Var(value) => ("Expr.Var", value.clone(), Vec::new()),
+        IrExprKind::Unary { op, expr } => (
+            match op {
+                UnaryOp::Negate => "Expr.Unary.Negate",
+                UnaryOp::Not => "Expr.Unary.Not",
+            },
+            String::new(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
+        IrExprKind::Binary { op, left, right } => (
+            match op {
+                BinaryOp::Add => "Expr.Binary.Add",
+                BinaryOp::Subtract => "Expr.Binary.Subtract",
+                BinaryOp::Multiply => "Expr.Binary.Multiply",
+                BinaryOp::Divide => "Expr.Binary.Divide",
+                BinaryOp::Remainder => "Expr.Binary.Remainder",
+                BinaryOp::Equal => "Expr.Binary.Equal",
+                BinaryOp::NotEqual => "Expr.Binary.NotEqual",
+                BinaryOp::LogicalAnd => "Expr.Binary.LogicalAnd",
+                BinaryOp::LogicalOr => "Expr.Binary.LogicalOr",
+                BinaryOp::Less => "Expr.Binary.Less",
+                BinaryOp::LessEqual => "Expr.Binary.LessEqual",
+                BinaryOp::Greater => "Expr.Binary.Greater",
+                BinaryOp::GreaterEqual => "Expr.Binary.GreaterEqual",
+            },
+            String::new(),
+            vec![
+                normalize_ir_expression(left, depth + 1),
+                normalize_ir_expression(right, depth + 1),
+            ],
+        ),
+        other => panic!("unsupported P176b IR expression in oracle: {other:?}"),
+    };
+    normalize_ir_line(
+        depth,
+        "E",
+        kind,
+        expression.span,
+        &value,
+        &expression.ty.source_name(),
+        &children,
+    )
+}
+
+fn normalize_ir_line(
+    depth: usize,
+    category: &str,
+    kind: &str,
+    span: Span,
+    value: &str,
+    ty: &str,
+    children: &[String],
+) -> String {
+    let mut lines = vec![format!(
+        "I|{depth}|{category}|{kind}|{}|{}|{}|{}|{ty}|{}",
+        span.source.index(),
+        span.start,
+        span.end,
+        encode_bytes(value),
+        children.len()
+    )];
+    lines.extend(children.iter().cloned());
+    lines.join("\n")
 }
 
 struct NormalizedNode {

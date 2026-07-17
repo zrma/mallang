@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a complete, P176b next
+Status: in progress; P176a complete, P176b primitive subset implemented
 
 ## Objective
 
@@ -37,10 +37,11 @@ agrees.
 
 ### P176b: Expressions, Statements And Local Types
 
-- check primitive literals, unary/binary operators and return types
-- type local bindings, assignment, calls and field/index access
-- enforce lexical scopes, duplicate bindings and branch type convergence
-- lower the supported subset into typed expression and statement arenas
+- P176b1: check primitive literals, unary/binary operators, bindings,
+  assignment and return types; lower that subset into typed IR
+- P176b2: type direct calls, arguments and named function values
+- P176b3: type field/index access and assignment places
+- P176b4: enforce nested lexical scopes and branch type convergence
 
 ### P176c: Ownership And Places
 
@@ -88,6 +89,19 @@ specialization and function-body checking until later P176 slices.
 - The integrated self-hosting gate validates 157 repository parser sources and
   every semantic fixture through generated Stage1, strict allocation accounting
   and ASan/UBSan execution with empty stderr.
+
+## P176b1 Evidence
+
+- `CheckedProgram` records a flat `TypedNode` arena keyed by B1 syntax node
+  index; no first-class borrow or retained syntax reference is introduced.
+- Primitive function bodies enforce local uniqueness, mutability, assignment
+  type, unary/binary operand, return type and return-completeness rules.
+- Eighteen semantic fixtures cover the P176a contract plus primitive positive
+  and rejection bodies, and 16 Mallang project tests pass through Stage0.
+- `bootstrap/compiler/src/ir/ir.mlg` lowers primitive typed functions,
+  parameters, statements and expression trees into a separate flat IR arena.
+- The primitive IR fixture matches Stage0 `IrProgram` normalization exactly,
+  including node category, kind, type, source span, value and child order.
 
 ## B2 Completion Criteria
 
