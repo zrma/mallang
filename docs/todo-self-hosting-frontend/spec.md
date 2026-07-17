@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175c2b1 complete, P175c2b2 expression parser next
+Status: active; P175a-P175c2b complete, P175c3 bounded recovery next
 
 ## Goal
 
@@ -43,7 +43,7 @@ compatibility evidence.
 - [x] strict C, ASan/UBSan, allocation accounting and failure injection evidence
 - [x] Mallang source/span/token model and stable byte-oriented normalization
 - [x] complete Mallang lexer and Rust token/diagnostic differential corpus
-- [ ] Mallang frontend AST and complete parser
+- [x] Mallang frontend AST and complete success-path parser
 - [ ] normalized AST and diagnostic differential corpus
 - [ ] B1 canonical, publication and supported-platform CI gates
 
@@ -104,6 +104,17 @@ compatibility evidence.
 - `control-flow.mlg` differentially covers loop header variants, built-in and
   qualified multi-payload patterns, nested blocks and assertions under strict
   C, zero-allocation accounting and ASan/UBSan.
+
+## P175c2b2 Evidence
+
+- Expression parsing now covers plain/mutable function literals, optional
+  return types, if/else-if expressions and expression match arms.
+- Recursive built-in and qualified variant patterns reuse the pending pattern
+  arena and materialize every nested node with the enclosing arm span required
+  by the Rust normalization contract.
+- `control-expressions.mlg` differentially covers nested `Some(Ok(...))`,
+  generic qualified variants, both closure mutabilities and nested if branches
+  under deterministic C, strict accounting and sanitizer execution.
 
 ## Excluded
 

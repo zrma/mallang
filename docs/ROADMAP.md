@@ -1676,7 +1676,8 @@ slice is the B1 Mallang lexer/parser data model and Rust differential harness.
 - [x] flat syntax arena와 declaration/type parser differential
 - [x] core statement, Pratt/postfix expression과 literal/call/assignment differential
 - [x] statement control flow, test assertion과 match pattern differential
-- [ ] syntax-only AST와 frozen v1 complete parser
+- [x] function literal, if/match expression과 recursive pattern differential
+- [x] syntax-only AST와 frozen v1 success-path complete parser
 - [ ] positive/rejection/crash corpus AST/diagnostic differential
 - [ ] B1 canonical, publication과 supported-platform CI acceptance
 
@@ -1686,6 +1687,6 @@ substring, mutable string or syntax change. P175b adds the tracked Mallang
 compiler source root, complete lexer and deterministic Rust differential gate.
 P175c1 adds a syntax arena and declaration/type parser while preserving the
 existing ownership model. P175c2a adds core statements, Pratt/postfix
-expressions and construction/call forms. P175c2b1 adds statement control flow,
-test assertions and match patterns. The next slice is function literals plus
-if/match expressions and complete recursive pattern coverage.
+expressions and construction/call forms. P175c2b adds statement control flow,
+test assertions, function literals, if/match expressions and recursive
+patterns. The next slice is bounded statement and top-level parser recovery.

@@ -1,0 +1,32 @@
+package parser_control_expressions
+
+type Maybe[T] enum {
+    Empty
+    Value(T)
+}
+
+func evaluate(flag bool, input Option[Result[int, string]]) int {
+    transform := func(con value int) int {
+        return value + 1
+    }
+    mut identity := func mut(value int) int {
+        return value
+    }
+    selected := if flag {
+        transform(con 1)
+    } else if false {
+        2
+    } else {
+        3
+    }
+    decoded := match input {
+        case Some(Ok(value)) { value }
+        case Some(Err(message)) { 0 }
+        case None { 0 }
+    }
+    qualified := match Maybe[int].Value(4) {
+        case Maybe.Value(value) { value }
+        case Maybe.Empty { 0 }
+    }
+    return selected + decoded + qualified + identity(0)
+}

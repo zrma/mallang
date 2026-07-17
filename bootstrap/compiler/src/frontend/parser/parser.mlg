@@ -39,6 +39,11 @@ type PendingPattern struct {
     children []int
 }
 
+type ExpressionBranch struct {
+    expression int
+    end source.Span
+}
+
 pub func Parse(tokens []token.Token) Result[ast.Program, []ast.ParseError] {
     mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, patterns: []PendingPattern{}, errors: []ast.ParseError{}, cursor: 0, allowStructLiterals: true, inTestDeclaration: false,}
     root := parser.parseProgramRoot()
@@ -842,6 +847,18 @@ func (mut self Parser) parsePrefix() int {
     }
 
     start := self.currentSpan()
+    if self.at("Keyword.If") {
+        self.advance()
+        return self.finishIfExpression(source.Copy(con start))
+    }
+    if self.at("Keyword.Match") {
+        self.advance()
+        return self.finishMatchExpression(source.Copy(con start))
+    }
+    if self.at("Keyword.Func") {
+        self.advance()
+        return self.finishFunctionLiteral(source.Copy(con start))
+    }
     if self.at("Int") {
         text := token.Value(con self.tokens[self.cursor])
         self.advance()
@@ -917,6 +934,106 @@ func (mut self Parser) parsePrefix() int {
     self.recordError("expected expression", source.Copy(con start))
     self.advance()
     return self.addNode("Expr.Error", "", source.Copy(con start), []int{})
+}
+
+func (mut self Parser) finishFunctionLiteral(start source.Span) int {
+    mut mutable := "Immutable"
+    if self.at("Keyword.Mut") {
+        mutable = "Mutable"
+        self.advance()
+    }
+    self.expect("LeftParen", "expected `(` after `func`")
+    mut children := []int{}
+    if !self.at("RightParen") {
+        for !self.failed() {
+            children = append(children, self.parseParam("Param"))
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    self.expect("RightParen", "expected `)` after closure parameters")
+    if self.startsTypeRef() {
+        returnType := self.parseTypeRef()
+        returnSpan := self.nodeSpan(returnType)
+        children = append(children, self.addNode("ReturnType", "", returnSpan, []int{returnType}))
+    }
+    body := self.parseBlock()
+    children = append(children, body)
+    kind := strings.join(con []string{"Expr.FunctionLiteral.", mutable}, con "")
+    return self.addNode(kind, "", source.Join(start, self.nodeSpan(body)), children)
+}
+
+func (mut self Parser) finishIfExpression(start source.Span) int {
+    condition := self.parseExpressionWithoutStructLiterals()
+    thenBranch := self.parseIfBranchExpression()
+    self.expect("Keyword.Else", "expected `else` in if expression")
+
+    mut elseExpression := -1
+    mut end := source.Copy(con thenBranch.end)
+    if self.at("Keyword.If") {
+        ifStart := self.currentSpan()
+        self.advance()
+        elseExpression = self.finishIfExpression(ifStart)
+        end = self.nodeSpan(elseExpression)
+    } else {
+        elseBranch := self.parseIfBranchExpression()
+        elseExpression = elseBranch.expression
+        end = source.Copy(con elseBranch.end)
+    }
+
+    return self.addNode("Expr.If", "", source.Join(start, end), []int{condition, thenBranch.expression, elseExpression})
+}
+
+func (mut self Parser) parseIfBranchExpression() ExpressionBranch {
+    self.expect("LeftBrace", "expected `{` before if branch")
+    if self.at("RightBrace") {
+        span := self.currentSpan()
+        self.recordError("expected expression in if branch", source.Copy(con span))
+        return ExpressionBranch{expression: self.addNode("Expr.Error", "", source.Copy(con span), []int{}), end: span}
+    }
+    expression := self.parseExpression()
+    for self.at("Semicolon") {
+        self.advance()
+    }
+    end := self.expect("RightBrace", "expected `}` after if branch")
+    return ExpressionBranch{expression: expression, end: end}
+}
+
+func (mut self Parser) finishMatchExpression(start source.Span) int {
+    scrutinee := self.parseExpressionWithoutStructLiterals()
+    self.expect("LeftBrace", "expected `{` before match arms")
+    mut children := []int{scrutinee}
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseMatchArm())
+    }
+    end := self.expect("RightBrace", "expected `}` after match arms")
+    return self.addNode("Expr.Match", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) parseMatchArm() int {
+    start := self.expect("Keyword.Case", "expected `case` in match")
+    pattern := self.parseMatchPattern()
+    branch := self.parseMatchBranchExpression()
+    span := source.Join(start, source.Copy(con branch.end))
+    normalizedPattern := self.materializePattern(pattern, source.Copy(con span))
+    return self.addNode("MatchArm", "", span, []int{normalizedPattern, branch.expression})
+}
+
+func (mut self Parser) parseMatchBranchExpression() ExpressionBranch {
+    self.expect("LeftBrace", "expected `{` before match branch")
+    if self.at("RightBrace") {
+        span := self.currentSpan()
+        self.recordError("expected expression in match branch", source.Copy(con span))
+        return ExpressionBranch{expression: self.addNode("Expr.Error", "", source.Copy(con span), []int{}), end: span}
+    }
+    expression := self.parseExpression()
+    for self.at("Semicolon") {
+        self.advance()
+    }
+    end := self.expect("RightBrace", "expected `}` after match branch")
+    return ExpressionBranch{expression: expression, end: end}
 }
 
 func (mut self Parser) parseArrayLiteral() int {

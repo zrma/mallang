@@ -147,3 +147,43 @@ test ParsesTestAssertion() {
         }
     }
 }
+
+test ParsesFunctionAndControlExpressions() {
+    source := "func run(flag bool, value Option[Result[int, string]]) int { transform := func(con input int) int { return input + 1 }; selected := if flag { transform(con 1) } else { 0 }; decoded := match value { case Some(Ok(inner)) { inner } case Some(Err(message)) { 0 } case None { 0 } }; return selected + decoded }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(program) {
+                    root := ast.Root(con program)
+                    functionDecl := ast.Child(con program, root, 1)
+                    block := ast.Child(con program, functionDecl, ast.ChildCount(con program, functionDecl) - 1)
+
+                    closureBinding := ast.Child(con program, block, 0)
+                    closure := ast.Child(con program, closureBinding, 0)
+                    assert(ast.Kind(con program, closure) == "Expr.FunctionLiteral.Immutable")
+
+                    ifBinding := ast.Child(con program, block, 1)
+                    ifExpression := ast.Child(con program, ifBinding, 0)
+                    assert(ast.Kind(con program, ifExpression) == "Expr.If")
+
+                    matchBinding := ast.Child(con program, block, 2)
+                    matchExpression := ast.Child(con program, matchBinding, 0)
+                    assert(ast.Kind(con program, matchExpression) == "Expr.Match")
+                    firstArm := ast.Child(con program, matchExpression, 1)
+                    pattern := ast.Child(con program, firstArm, 0)
+                    assert(ast.Kind(con program, pattern) == "Pattern.NestedBuiltin")
+                    assert(ast.Value(con program, pattern) == "Some")
+                    nested := ast.Child(con program, pattern, 0)
+                    assert(ast.Kind(con program, nested) == "Pattern.Ok")
+                    assert(ast.Value(con program, nested) == "inner")
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
