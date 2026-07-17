@@ -1,6 +1,6 @@
 # Mallang v1.1 Streaming Text I/O
 
-Status: implementation complete; release acceptance pending
+Status: release-ready; supported-platform acceptance pending
 
 ## Goal
 
@@ -47,5 +47,6 @@ Open, read, invalid-data and close failures return `errors.Error`.
 - [x] strict generated C, ASan/UBSan and zero live-allocation checks
 - [x] canonical Mallang gate
 - [x] release-binary and clean installed-artifact Mallang gates
+- [x] published v1.0.0 upgrade, rollback and re-upgrade compatibility rehearsal
 - [ ] macOS arm64 and Linux x86_64 release artifact gates
 - [ ] signed `v1.1.0` tag, GitHub Release and clean installer smoke

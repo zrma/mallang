@@ -24,7 +24,7 @@ while preserving representative `textstats` observable output.
 The 1.x compatibility guarantees in `docs/COMPATIBILITY.md` begin with this
 release.
 
-## Candidate v1.1 Compatible Standard Library Addition
+## v1.1 Compatible Standard Library Addition
 
 The first post-stable addition is the generic `std/fs.forEachLine[C,S]` API. It
 adds no syntax and preserves every v1.0 program and observable behavior. The
@@ -36,7 +36,8 @@ The visitor receives valid UTF-8 line text without LF, a one-based line number,
 and cannot retain the borrowed line. Open, read and close failures remain
 recoverable `errors.Error` values. Peak runtime storage scales with the longest
 line rather than total input size. The exact contract and release acceptance are
-owned by `docs/todo-v11-streaming-text-io/`.
+owned by `docs/todo-v11-streaming-text-io/`. Mallang 1.1.0 is the compatible
+minor release for this addition.
 
 ## Published v1.0.0-rc.1 Release Candidate
 

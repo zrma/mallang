@@ -20,5 +20,6 @@ fi
 python3 scripts/check-v1-conformance.py
 scripts/check-v08-acceptance.sh "$@"
 scripts/check-release-artifacts.sh >/dev/null
+scripts/check-v1x-upgrade.sh --reuse-release-artifact
 
-echo "Mallang $crate_version post-stable conformance, runtime, and release artifact acceptance passed"
+echo "Mallang $crate_version post-stable compatibility, runtime, and release artifact acceptance passed"

@@ -129,6 +129,10 @@ and normative v1 contract.
   that compiler source and the conformance map remain unchanged from v0.9.0,
   then validates RC upgrade, rollback, stable re-upgrade, and supported-platform
   release artifacts.
+- v1.1.0 adds bounded-memory UTF-8 line processing through
+  `std/fs.forEachLine[C,S]` without exposing a file handle or changing existing
+  v1 source semantics. The release gate upgrades published v1.0.0, rolls back,
+  and re-upgrades while preserving representative program output.
 - v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
   source without entering later compiler stages. Deterministic lexer/parser/type/
   ownership properties, a checked-in crash corpus, typed IR preflight validation,
@@ -298,6 +302,13 @@ artifact, and clean-install acceptance:
 scripts/check-v1x-acceptance.sh
 ```
 
+Run the published v1.0.0 upgrade, rollback, current re-upgrade, existing-source
+compatibility, and streaming addition rehearsal:
+
+```sh
+scripts/check-v1x-upgrade.sh
+```
+
 Run the heavier generated C sanitizer sweep before publication:
 
 ```sh
@@ -332,7 +343,7 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-VERSION=1.0.0
+VERSION=1.1.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
@@ -353,7 +364,7 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-VERSION=1.0.0
+VERSION=1.1.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
@@ -408,9 +419,9 @@ directory with a local library dependency and an installed release artifact,
 then runs the freeze audit, compiler hardening, sanitizer, RC upgrade, rollback
 and stable re-upgrade gates. It is the cross-platform release acceptance used by CI.
 
-## v1 Stable Binary Distribution
+## v1 Binary Distribution
 
-The v1.0.0 GitHub release contains:
+The v1.1.0 GitHub release contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -420,9 +431,9 @@ The v1.0.0 GitHub release contains:
 Install or update the explicit version with:
 
 ```sh
-curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.0.0/install.sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.1.0/install.sh
 chmod +x install.sh
-./install.sh --version 1.0.0
+./install.sh --version 1.1.0
 ```
 
 The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
@@ -460,7 +471,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
 - `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
-- `docs/releases/`: v0.1.0 through v1.0.0 release notes and verification records.
+- `docs/releases/`: v0.1.0 through v1.1.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

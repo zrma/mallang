@@ -32,6 +32,7 @@ commands:
   check_v1_stable_rehearsal: scripts/check-v1-stable-rehearsal.sh
   check_v1_stable_acceptance: scripts/check-v1-stable-acceptance.sh
   check_v1x_acceptance: scripts/check-v1x-acceptance.sh
+  check_v1x_upgrade: scripts/check-v1x-upgrade.sh
   measure_v08_baseline: cargo build --release --bin mlg && scripts/measure-v08-baseline.py --compiler target/release/mlg --output docs/baselines/v0.8-performance.json
   check_release_artifacts: scripts/check-release-artifacts.sh
   check_v07_acceptance: scripts/check-v07-acceptance.sh
