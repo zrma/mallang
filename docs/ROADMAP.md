@@ -1704,7 +1704,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] primitive, Option, Result, array, slice, nominal, function type resolution
 - [x] focused success/rejection Rust Stage0 differential fixtures
 - [x] primitive expression, binding/assignment/return checking과 typed IR subset
-- [ ] direct call, function value, field/index place와 nested scope checking
+- [x] direct call, named function value, argument mode와 indirect call typed IR
+- [ ] field/index place와 nested scope checking
 - [ ] owned/`con`/`mut` place state와 branch/loop ownership join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
@@ -1712,6 +1713,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 
 Exact scope and decisions are owned by `docs/todo-self-hosting-semantics/`.
 P176a freezes declaration/type normalization without changing public syntax or
-the standard library. P176b1 adds primitive bodies and typed IR; P176b2-P176e
-extend calls, places, nested scopes, ownership,
+the standard library. P176b1 adds primitive bodies and typed IR, and P176b2
+adds direct/indirect calls and named function values. P176b3-P176e extend
+places, nested scopes, ownership,
 specialization and typed IR in independently differential-tested slices.

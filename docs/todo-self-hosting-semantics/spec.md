@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a complete, P176b primitive subset implemented
+Status: in progress; P176a-P176b2 complete
 
 ## Objective
 
@@ -39,7 +39,7 @@ agrees.
 
 - P176b1: check primitive literals, unary/binary operators, bindings,
   assignment and return types; lower that subset into typed IR
-- P176b2: type direct calls, arguments and named function values
+- P176b2: type direct calls, arguments and named function values (complete)
 - P176b3: type field/index access and assignment places
 - P176b4: enforce nested lexical scopes and branch type convergence
 
@@ -102,6 +102,23 @@ specialization and function-body checking until later P176 slices.
   parameters, statements and expression trees into a separate flat IR arena.
 - The primitive IR fixture matches Stage0 `IrProgram` normalization exactly,
   including node category, kind, type, source span, value and child order.
+
+## P176b2 Evidence
+
+- AST-node function references distinguish top-level direct references from
+  local function values without adding recursive fields or first-class borrows
+  to `ResolvedType`.
+- Direct and indirect calls enforce Stage0 arity, owned/`con`/`mut` mode and
+  argument type diagnostics; named function values and aliases retain their
+  callable signature.
+- Twenty-six semantic fixtures cover declaration/body checks plus direct and
+  indirect call success and rejection cases. Nineteen Mallang project tests
+  pass through Stage0.
+- Two typed-IR fixtures match Stage0 for primitive nodes and `FunctionValue`,
+  `Call`, `IndirectCall` and mode-bearing argument nodes. Cleanup-local return
+  rewriting and deterministic `Drop` insertion remain explicitly in P176e.
+- The integrated generated-Stage1 gate covers 159 repository parser sources,
+  strict allocation accounting and ASan/UBSan with empty stderr.
 
 ## B2 Completion Criteria
 

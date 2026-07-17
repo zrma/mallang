@@ -1,0 +1,24 @@
+func add(left int, right int) int {
+    return left + right
+}
+
+func inspect(con value int) int {
+    return value
+}
+
+func increment(mut value int) int {
+    value = value + 1
+    return value
+}
+
+func compute() int {
+    direct := add(1, 2)
+    operation := add
+    indirect := operation(3, 4)
+    inspected := inspect(con indirect)
+    mut changed := 5
+    updated := increment(mut changed)
+    return direct + inspected + updated
+}
+
+func main() {}

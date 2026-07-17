@@ -56,10 +56,17 @@ pub type TypedNode struct {
     ty ResolvedType
 }
 
+pub type FunctionReference struct {
+    node int
+    function int
+    direct bool
+}
+
 pub type Local struct {
     name string
     mutable bool
     ty ResolvedType
+    function int
 }
 
 pub type CheckedProgram struct {
@@ -68,6 +75,7 @@ pub type CheckedProgram struct {
     functions []FunctionSig
     methods []MethodSig
     typedNodes []TypedNode
+    functionReferences []FunctionReference
     locals []Local
 }
 
@@ -77,7 +85,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, locals: []Local{},}
+    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{},}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -162,6 +170,20 @@ pub func FunctionParamMode(con checked CheckedProgram, con name string, param in
 pub func FunctionParamType(con checked CheckedProgram, con name string, param int) string {
     index := checked.functionIndex(con name)
     return token.CopyText(con checked.functions[index].params[param].ty.text)
+}
+
+pub func FunctionReferenceName(con checked CheckedProgram, node int) Result[string, bool] {
+    index := checked.functionReferenceIndex(node)
+    if index < 0 || checked.functionReferences[index].function < 0 {
+        return Err(false)
+    }
+    function := checked.functionReferences[index].function
+    return Ok(token.CopyText(con checked.functions[function].name))
+}
+
+pub func FunctionReferenceDirect(con checked CheckedProgram, node int) bool {
+    index := checked.functionReferenceIndex(node)
+    return index >= 0 && checked.functionReferences[index].direct
 }
 
 pub func ErrorMessage(con error SemanticError) string {
@@ -480,9 +502,13 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
                 if methodIndex < 0 {
                     return Err(newError("checked method signature is missing", ast.Span(con program, declaration)))
                 }
-                locals = append(locals, localFromParam(con self.methods[methodIndex].receiver))
+                mut receiverLocal := localFromParam(con self.methods[methodIndex].receiver)
+                receiverLocal.function = self.functionIndexForType(con receiverLocal.ty)
+                locals = append(locals, receiverLocal)
                 for mut param := 0; param < len(self.methods[methodIndex].params); param = param + 1 {
-                    locals = append(locals, localFromParam(con self.methods[methodIndex].params[param]))
+                    mut local := localFromParam(con self.methods[methodIndex].params[param])
+                    local.function = self.functionIndexForType(con local.ty)
+                    locals = append(locals, local)
                 }
                 returnType = copyType(con self.methods[methodIndex].returnType)
             } else {
@@ -491,7 +517,9 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
                     return Err(newError("checked function signature is missing", ast.Span(con program, declaration)))
                 }
                 for mut param := 0; param < len(self.functions[functionIndex].params); param = param + 1 {
-                    locals = append(locals, localFromParam(con self.functions[functionIndex].params[param]))
+                    mut local := localFromParam(con self.functions[functionIndex].params[param])
+                    local.function = self.functionIndexForType(con local.ty)
+                    locals = append(locals, local)
                 }
                 returnType = copyType(con self.functions[functionIndex].returnType)
             }
@@ -545,7 +573,12 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                     message := strings.join(con []string{"binding `", token.CopyText(con name), "` already exists in this block",}, con "")
                     return Err(newError(message, ast.Span(con program, statement)))
                 }
-                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty})
+                mut function := -1
+                reference := self.functionReferenceIndex(expression)
+                if reference >= 0 {
+                    function = self.functionReferences[reference].function
+                }
+                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty, function: function})
                 return Ok(false)
             }
             case Err(error) {
@@ -568,6 +601,11 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if valueType.text != self.locals[index].ty.text {
                     message := strings.join(con []string{"assignment type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con self.locals[index].ty.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
                     return Err(newError(message, ast.Span(con program, statement)))
+                }
+                self.locals[index].function = -1
+                reference := self.functionReferenceIndex(expression)
+                if reference >= 0 {
+                    self.locals[index].function = self.functionReferences[reference].function
                 }
                 return Ok(false)
             }
@@ -626,11 +664,27 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
         name := ast.Value(con program, expression)
         index := localIndex(con self.locals, con name)
         if index < 0 {
-            return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+            if name == "main" {
+                return Err(newError("`main` cannot be used as a function value", ast.Span(con program, expression)))
+            }
+            function := self.functionIndex(con name)
+            if function < 0 {
+                return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+            }
+            ty := self.functionType(function)
+            self.recordType(expression, con ty)
+            self.recordFunctionReference(expression, function, true)
+            return Ok(ty)
         }
         ty := copyType(con self.locals[index].ty)
         self.recordType(expression, con ty)
+        if ty.kind == "function" {
+            self.recordFunctionReference(expression, self.locals[index].function, false)
+        }
         return Ok(ty)
+    }
+    if kind == "Expr.Call" {
+        return self.checkCall(con program, expression)
     }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
@@ -700,8 +754,109 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
 }
 
+func (mut self CheckedProgram) checkCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    callee := ast.Child(con program, expression, 0)
+    if ast.Kind(con program, callee) != "Expr.Var" {
+        return Err(newError("only direct function and method calls are supported in v0", ast.Span(con program, callee)))
+    }
+
+    name := ast.Value(con program, callee)
+    local := localIndex(con self.locals, con name)
+    mut function := -1
+    mut indirect := false
+    if local >= 0 {
+        if self.locals[local].ty.kind != "function" {
+            return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is not callable",}, con ""), ast.Span(con program, expression)))
+        }
+        function = self.locals[local].function
+        indirect = true
+        if function < 0 {
+            return Err(newError("B2b semantic checker cannot yet resolve this function value signature", ast.Span(con program, expression)))
+        }
+        calleeType := copyType(con self.locals[local].ty)
+        self.recordType(callee, con calleeType)
+        self.recordFunctionReference(callee, function, false)
+    } else {
+        function = self.functionIndex(con name)
+        if function < 0 {
+            return Err(newError(strings.join(con []string{"unknown function `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, callee)))
+        }
+        calleeType := self.functionType(function)
+        self.recordType(callee, con calleeType)
+        self.recordFunctionReference(callee, function, true)
+    }
+
+    match self.checkCallArguments(con program, expression, function, con name, indirect) {
+        case Ok(_) {
+            resultType := copyType(con self.functions[function].returnType)
+            self.recordType(expression, con resultType)
+            return Ok(resultType)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    parameterCount := len(self.functions[function].params)
+    if argumentCount != parameterCount {
+        message := strings.join(con []string{"function `", token.CopyText(con name), "` expects ", strings.fromInt(parameterCount), " arguments, got ", strings.fromInt(argumentCount),}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    for mut index := 0; index < argumentCount; index = index + 1 {
+        argument := ast.Child(con program, expression, index + 1)
+        argumentMode := argModeFromKind(con ast.Kind(con program, argument))
+        parameterMode := token.CopyText(con self.functions[function].params[index].mode)
+        mut parameterName := token.CopyText(con self.functions[function].params[index].name)
+        if indirect {
+            parameterName = strings.join(con []string{"argument ", strings.fromInt(index + 1),}, con "")
+        }
+        if argumentMode != parameterMode {
+            mut expectation := "expects an owned argument"
+            if parameterMode == "con" {
+                expectation = "expects `con` argument"
+            } else if parameterMode == "mut" {
+                expectation = "expects `mut` argument"
+            }
+            message := strings.join(con []string{"parameter `", parameterName, "` ", expectation,}, con "")
+            return Err(newError(message, ast.Span(con program, argument)))
+        }
+
+        value := ast.Child(con program, argument, 0)
+        match self.checkExpression(con program, value) {
+            case Ok(argumentType) {
+                parameterType := copyType(con self.functions[function].params[index].ty)
+                if argumentType.text != parameterType.text {
+                    message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, argument)))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(true)
+}
+
 func (mut self CheckedProgram) recordType(node int, con ty ResolvedType) {
     self.typedNodes = append(self.typedNodes, TypedNode{node: node, ty: copyType(con ty)})
+}
+
+func (mut self CheckedProgram) recordFunctionReference(node int, function int, direct bool) {
+    self.functionReferences = append(self.functionReferences, FunctionReference{node: node, function: function, direct: direct})
+}
+
+func (con self CheckedProgram) functionReferenceIndex(node int) int {
+    for mut index := 0; index < len(self.functionReferences); index = index + 1 {
+        if self.functionReferences[index].node == node {
+            return index
+        }
+    }
+    return - 1
 }
 
 func (con self CheckedProgram) functionIndex(con name string) int {
@@ -711,6 +866,32 @@ func (con self CheckedProgram) functionIndex(con name string) int {
         }
     }
     return - 1
+}
+
+func (con self CheckedProgram) functionIndexForType(con ty ResolvedType) int {
+    if ty.kind != "function" {
+        return - 1
+    }
+    for mut index := 0; index < len(self.functions); index = index + 1 {
+        functionType := self.functionType(index)
+        if functionType.text == ty.text {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) functionType(index int) ResolvedType {
+    mut params := []string{}
+    for mut param := 0; param < len(self.functions[index].params); param = param + 1 {
+        mut prefix := ""
+        mode := token.CopyText(con self.functions[index].params[param].mode)
+        if mode != "owned" {
+            prefix = strings.join(con []string{mode, " ",}, con "")
+        }
+        params = append(params, strings.join(con []string{prefix, token.CopyText(con self.functions[index].params[param].ty.text),}, con ""))
+    }
+    return ResolvedType{text: strings.join(con []string{"func(", strings.join(con params, con ", "), ") ", token.CopyText(con self.functions[index].returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,}
 }
 
 func (con self CheckedProgram) methodIndex(con receiver string, con name string) int {
@@ -943,7 +1124,7 @@ func localIndex(con locals []Local, con name string) int {
 }
 
 func localFromParam(con param ParamSig) Local {
-    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty),}
+    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty), function: -1,}
 }
 
 func copyType(con ty ResolvedType) ResolvedType {
@@ -999,6 +1180,16 @@ func modeFromKind(con kind string) string {
         return "con"
     }
     if kind == "Param.Mut" || kind == "ReceiverParam.Mut" || kind == "FunctionTypeParam.Mut" {
+        return "mut"
+    }
+    return "owned"
+}
+
+func argModeFromKind(con kind string) string {
+    if kind == "Arg.Con" {
+        return "con"
+    }
+    if kind == "Arg.Mut" {
         return "mut"
     }
     return "owned"

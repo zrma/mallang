@@ -166,6 +166,56 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         }
     }
 
+    if kind == "Expr.Call" {
+        callee := ast.Child(con syntax, expression, 0)
+        mut children := []int{}
+        mut callKind := "Expr.IndirectCall"
+        mut callValue := ""
+        if semantic.FunctionReferenceDirect(con checked, callee) {
+            callKind = "Expr.Call"
+            match semantic.FunctionReferenceName(con checked, callee) {
+                case Ok(name) {
+                    callValue = name
+                }
+                case Err(_) {
+                    return Err(newError("checked direct function reference is missing", ast.Span(con syntax, callee)))
+                }
+            }
+        } else {
+            match self.lowerExpression(con syntax, callee, con checked) {
+                case Ok(irCallee) {
+                    children = append(children, irCallee)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con syntax, expression); child = child + 1 {
+            argument := ast.Child(con syntax, expression, child)
+            match self.lowerArgument(con syntax, argument, con checked) {
+                case Ok(irArgument) {
+                    children = append(children, irArgument)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("E", callKind, callValue, token.CopyText(con ty), ast.Span(con syntax, expression), children))
+    }
+
+    if kind == "Expr.Var" && semantic.FunctionReferenceDirect(con checked, expression) {
+        return match semantic.FunctionReferenceName(con checked, expression) {
+            case Ok(name) {
+                Ok(self.addNode("E", "Expr.FunctionValue", name, token.CopyText(con ty), ast.Span(con syntax, expression), []int{}))
+            }
+            case Err(_) {
+                Err(newError("checked function value reference is missing", ast.Span(con syntax, expression)))
+            }
+        }
+    }
+
     mut children := []int{}
     for mut child := 0; child < ast.ChildCount(con syntax, expression); child = child + 1 {
         syntaxChild := ast.Child(con syntax, expression, child)
@@ -179,6 +229,27 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         }
     }
     return Ok(self.addNode("E", kind, value, ty, ast.Span(con syntax, expression), children))
+}
+
+func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con checked semantic.CheckedProgram) Result[int, Error] {
+    expression := ast.Child(con syntax, argument, 0)
+    mut ty := ""
+    match semantic.NodeType(con checked, expression) {
+        case Ok(resolved) {
+            ty = resolved
+        }
+        case Err(_) {
+            return Err(newError("checked argument expression type is missing", ast.Span(con syntax, argument)))
+        }
+    }
+    return match self.lowerExpression(con syntax, expression, con checked) {
+        case Ok(child) {
+            Ok(self.addNode("A", ast.Kind(con syntax, argument), "", ty, ast.Span(con syntax, argument), []int{child}))
+        }
+        case Err(error) {
+            Err(error)
+        }
+    }
 }
 
 func (mut self Lowerer) addNode(category string, kind string, value string, ty string, span source.Span, children []int) int {

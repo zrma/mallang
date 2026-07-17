@@ -8,7 +8,7 @@ use mallang::ast::{
     Program, SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp,
     Visibility,
 };
-use mallang::ir::{IrExpr, IrExprKind, IrStmt, IrStmtKind};
+use mallang::ir::{IrArg, IrExpr, IrExprKind, IrStmt, IrStmtKind};
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
     Token, TokenKind,
@@ -303,6 +303,12 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             "unit".to_string(),
             vec![normalize_ir_expression(expr, depth + 1)],
         ),
+        IrStmtKind::Drop { expr } => (
+            "Stmt.Drop",
+            "",
+            "unit".to_string(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
         other => panic!("unsupported P176b IR statement in oracle: {other:?}"),
     };
     normalize_ir_line(
@@ -322,6 +328,24 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         IrExprKind::String(value) => ("Expr.String", value.clone(), Vec::new()),
         IrExprKind::Bool(value) => ("Expr.Bool", value.to_string(), Vec::new()),
         IrExprKind::Var(value) => ("Expr.Var", value.clone(), Vec::new()),
+        IrExprKind::FunctionValue { function } => {
+            ("Expr.FunctionValue", function.clone(), Vec::new())
+        }
+        IrExprKind::Call { callee, args } => (
+            "Expr.Call",
+            callee.clone(),
+            args.iter()
+                .map(|arg| normalize_ir_argument(arg, depth + 1))
+                .collect(),
+        ),
+        IrExprKind::IndirectCall { callee, args } => {
+            let mut children = vec![normalize_ir_expression(callee, depth + 1)];
+            children.extend(
+                args.iter()
+                    .map(|arg| normalize_ir_argument(arg, depth + 1)),
+            );
+            ("Expr.IndirectCall", String::new(), children)
+        }
         IrExprKind::Unary { op, expr } => (
             match op {
                 UnaryOp::Negate => "Expr.Unary.Negate",
@@ -362,6 +386,23 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         &value,
         &expression.ty.source_name(),
         &children,
+    )
+}
+
+fn normalize_ir_argument(argument: &IrArg, depth: usize) -> String {
+    let kind = match argument.mode {
+        ArgMode::Owned => "Arg.Owned",
+        ArgMode::Con => "Arg.Con",
+        ArgMode::Mut => "Arg.Mut",
+    };
+    normalize_ir_line(
+        depth,
+        "A",
+        kind,
+        argument.span,
+        "",
+        &argument.expr.ty.source_name(),
+        &[normalize_ir_expression(&argument.expr, depth + 1)],
     )
 }
 

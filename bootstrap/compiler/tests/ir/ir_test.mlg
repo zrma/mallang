@@ -39,3 +39,50 @@ test LowersPrimitiveTypedNodes() {
         }
     }
 }
+
+test LowersFunctionValuesAndCalls() {
+    source := "func add(left int, right int) int { return left + right } func select() func(int, int) int { return add } func apply(con operation func(int, int) int, left int, right int) int { return operation(left, right) } func compute() int { return add(1, 2) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    mut functionValues := 0
+                                    mut directCalls := 0
+                                    mut indirectCalls := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Expr.FunctionValue" {
+                                            functionValues = functionValues + 1
+                                        } else if lowered.nodes[node].kind == "Expr.Call" {
+                                            directCalls = directCalls + 1
+                                        } else if lowered.nodes[node].kind == "Expr.IndirectCall" {
+                                            indirectCalls = indirectCalls + 1
+                                        }
+                                    }
+                                    assert(functionValues == 1)
+                                    assert(directCalls == 1)
+                                    assert(indirectCalls == 1)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

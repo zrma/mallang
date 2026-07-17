@@ -1,0 +1,17 @@
+func add(left int, right int) int {
+    return left + right
+}
+
+func select() func(int, int) int {
+    return add
+}
+
+func apply(con operation func(int, int) int, left int, right int) int {
+    return operation(left, right)
+}
+
+func compute() int {
+    return add(1, 2)
+}
+
+func main() {}

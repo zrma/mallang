@@ -1,0 +1,8 @@
+func inspect(con value int) int {
+    return value
+}
+
+func main() {
+    value := 1
+    inspected := inspect(value)
+}

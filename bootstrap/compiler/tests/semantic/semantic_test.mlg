@@ -122,3 +122,55 @@ test RejectsImmutableAssignment() {
         }
     }
 }
+
+test ChecksDirectAndIndirectFunctionCalls() {
+    source := "func add(left int, right int) int { return left + right } func compute() int { direct := add(1, 2); operation := add; indirect := operation(3, 4); return direct + indirect } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsIndirectFunctionCallMode() {
+    source := "func inspect(con value int) int { return value } func main() { operation := inspect; value := 1; inspected := operation(value) }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "parameter `argument 1` expects `con` argument")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
