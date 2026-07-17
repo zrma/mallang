@@ -67,7 +67,7 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer, syntax arena and frozen v1 success-path parser.
+  the complete lexer, syntax arena, frozen v1 parser and bounded recovery.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   incremental parser differential, ownership accounting and sanitizer gate.
@@ -75,7 +75,7 @@ Mallang to specific 1.x versions.
 - `docs/todo-self-hosting-frontend/`: active B1 work breakdown and decisions.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
-B1 P175c2b now covers the complete frozen v1 success-path syntax, including
-statement control flow, function literals, if/match expressions and recursive
-patterns. The active P175c3 slice adds bounded statement and top-level recovery;
-no Stage1 compiler claim is made yet.
+B1 P175c3 now covers the complete frozen v1 syntax plus bounded statement and
+top-level recovery with the same 32-error cap as Rust Stage0. The active P175d
+slice expands this into the full positive, rejection and crash differential
+corpus; no Stage1 compiler claim is made yet.

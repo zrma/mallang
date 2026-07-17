@@ -13,6 +13,7 @@ type Parser struct {
     cursor int
     allowStructLiterals bool
     inTestDeclaration bool
+    attemptFailed bool
 }
 
 type ParsedNode struct {
@@ -45,10 +46,10 @@ type ExpressionBranch struct {
 }
 
 pub func Parse(tokens []token.Token) Result[ast.Program, []ast.ParseError] {
-    mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, patterns: []PendingPattern{}, errors: []ast.ParseError{}, cursor: 0, allowStructLiterals: true, inTestDeclaration: false,}
+    mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, patterns: []PendingPattern{}, errors: []ast.ParseError{}, cursor: 0, allowStructLiterals: true, inTestDeclaration: false, attemptFailed: false,}
     root := parser.parseProgramRoot()
-    if parser.failed() {
-        return Err(parser.errors)
+    if parser.hasErrors() {
+        return Err(sortParseErrors(parser.errors))
     }
     return Ok(ast.NewProgram(parser.nodes, root))
 }
@@ -58,19 +59,37 @@ func (mut self Parser) parseProgramRoot() int {
     mut sourceChildren := []int{}
 
     if self.at("Keyword.Package") {
-        sourceChildren = append(sourceChildren, self.parsePackageDecl())
+        declarationStart := self.cursor
+        self.beginAttempt()
+        declaration := self.parsePackageDecl()
+        if self.failed() {
+            self.recoverTopLevel(declarationStart)
+        } else {
+            sourceChildren = append(sourceChildren, declaration)
+        }
     }
-    for self.at("Keyword.Import") &&(!self.failed()) {
-        sourceChildren = append(sourceChildren, self.parseImportDecl())
+    for self.at("Keyword.Import") &&(!self.diagnosticCapReached()) {
+        declarationStart := self.cursor
+        self.beginAttempt()
+        declaration := self.parseImportDecl()
+        if self.failed() {
+            self.recoverTopLevel(declarationStart)
+        } else {
+            sourceChildren = append(sourceChildren, declaration)
+        }
     }
 
     mut structs := []int{}
     mut enums := []int{}
     mut functions := []int{}
     mut tests := []int{}
-    for(!self.at("Eof")) &&(!self.failed()) {
+    for(!self.at("Eof")) &&(!self.diagnosticCapReached()) {
+        declarationStart := self.cursor
+        self.beginAttempt()
         declaration := self.parseTopLevelDecl()
-        if declaration.category == "Struct" {
+        if self.failed() {
+            self.recoverTopLevel(declarationStart)
+        } else if declaration.category == "Struct" {
             structs = append(structs, declaration.index)
         } else if declaration.category == "Enum" {
             enums = append(enums, declaration.index)
@@ -98,6 +117,58 @@ func (mut self Parser) parseProgramRoot() int {
         children = append(children, tests[index])
     }
     return self.addNode("Program", "", programSpan, children)
+}
+
+func (mut self Parser) recoverTopLevel(declarationStart int) bool {
+    self.cursor = declarationStart
+    self.allowStructLiterals = true
+    self.inTestDeclaration = false
+
+    startedWithPublic := self.at("Keyword.Pub")
+    self.advance()
+    if startedWithPublic &&(self.at("Keyword.Type") || self.at("Keyword.Func")) {
+        self.advance()
+    }
+
+    mut parenDepth := 0
+    mut braceDepth := 0
+    mut bracketDepth := 0
+    for !self.at("Eof") {
+        if parenDepth == 0 && bracketDepth == 0 && braceDepth <= 1 && self.atTopLevelRecoveryBoundary() {
+            self.attemptFailed = false
+            return true
+        }
+
+        if self.at("LeftParen") {
+            parenDepth = parenDepth + 1
+        } else if self.at("RightParen") {
+            if parenDepth > 0 {
+                parenDepth = parenDepth - 1
+            }
+        } else if self.at("LeftBrace") {
+            braceDepth = braceDepth + 1
+        } else if self.at("RightBrace") {
+            if braceDepth > 0 {
+                braceDepth = braceDepth - 1
+            }
+            if braceDepth == 0 {
+                parenDepth = 0
+                bracketDepth = 0
+            }
+        } else if self.at("LeftBracket") {
+            bracketDepth = bracketDepth + 1
+        } else if self.at("RightBracket") && bracketDepth > 0 {
+            bracketDepth = bracketDepth - 1
+        }
+        self.advance()
+    }
+    self.attemptFailed = false
+    return false
+}
+
+func (con self Parser) atTopLevelRecoveryBoundary() bool {
+    return self.at("Keyword.Pub") || self.at("Keyword.Type") || self.at("Keyword.Package") || self.at("Keyword.Import") ||(self.at("Keyword.Func") && self.atOffset(1, "Ident")) ||(self.atIdent("test") && self.atOffset(1, "Ident")
+    )
 }
 
 func (mut self Parser) parseTopLevelDecl() ParsedNode {
@@ -264,10 +335,16 @@ func (mut self Parser) parseFunctionDecl(visibility string, start source.Span) P
         }
     }
     self.expect("RightParen", "expected `)` after function parameters")
+    if self.failed() {
+        return ParsedNode{category: "Error", index: -1}
+    }
     if self.startsTypeRef() {
         returnType := self.parseTypeRef()
         returnSpan := ast.NodeSpan(con self.nodes[returnType])
         children = append(children, self.addNode("ReturnType", "", returnSpan, []int{returnType}))
+    }
+    if self.failed() {
+        return ParsedNode{category: "Error", index: -1}
     }
     block := self.parseBlock()
     children = append(children, block)
@@ -282,6 +359,9 @@ func (mut self Parser) parseTestDecl(start source.Span) ParsedNode {
     name := self.expectIdent("expected test name")
     self.expect("LeftParen", "expected `(` after test name")
     self.expect("RightParen", "test declarations cannot take parameters")
+    if self.failed() {
+        return ParsedNode{category: "Error", index: -1}
+    }
     previous := self.inTestDeclaration
     self.inTestDeclaration = true
     block := self.parseBlock()
@@ -430,15 +510,108 @@ func (mut self Parser) parseArrayTypeRef() int {
 
 func (mut self Parser) parseBlock() int {
     start := self.expect("LeftBrace", "expected `{`")
+    if self.failed() {
+        return self.addNode("Block", "", source.Copy(con start), []int{})
+    }
     mut statements := []int{}
-    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
-        statements = append(statements, self.parseStatement())
-        for self.at("Semicolon") {
-            self.advance()
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.diagnosticCapReached()) {
+        if self.atTopLevelRecoveryBoundary() {
+            self.beginAttempt()
+            boundary := self.currentSpan()
+            self.recordError("expected `}` after block", source.Copy(con boundary))
+            return self.addNode("Block", "", source.Join(source.Copy(con start), boundary), copyIndexes(con statements))
+        }
+
+        statementStart := self.cursor
+        self.beginAttempt()
+        statement := self.parseStatement()
+        if self.failed() {
+            recovery := self.recoverBlockStatement(statementStart)
+            if recovery == "AbandonToTopLevel" {
+                self.beginAttempt()
+                boundary := self.currentSpan()
+                self.recordError("expected `}` after block", source.Copy(con boundary))
+                return self.addNode("Block", "", source.Join(source.Copy(con start), boundary), copyIndexes(con statements))
+            }
+            self.attemptFailed = false
+        } else {
+            statements = append(statements, statement)
+            for self.at("Semicolon") {
+                self.advance()
+            }
         }
     }
+
+    if self.diagnosticCapReached() {
+        for !self.at("Eof") {
+            self.advance()
+        }
+        self.attemptFailed = false
+        return self.addNode("Block", "", source.Join(source.Copy(con start), self.currentSpan()), copyIndexes(con statements))
+    }
+
+    self.beginAttempt()
     end := self.expect("RightBrace", "expected `}` after block")
-    return self.addNode("Block", "", source.Join(start, end), statements)
+    block := self.addNode("Block", "", source.Join(source.Copy(con start), end), statements)
+    if !self.failed() {
+        self.attemptFailed = false
+    }
+    return block
+}
+
+func (mut self Parser) recoverBlockStatement(statementStart int) string {
+    self.cursor = statementStart
+    self.allowStructLiterals = true
+
+    if self.atTopLevelRecoveryBoundary() {
+        return "AbandonToTopLevel"
+    }
+
+    self.advance()
+    mut parenDepth := 0
+    mut braceDepth := 0
+    mut bracketDepth := 0
+    for !self.at("Eof") {
+        if braceDepth == 0 && self.at("RightBrace") {
+            return "EndBlock"
+        }
+        if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+            if self.at("Semicolon") {
+                self.advance()
+                return "Continue"
+            }
+            if self.atUnambiguousStatementStart() {
+                return "Continue"
+            }
+            if self.atTopLevelRecoveryBoundary() {
+                return "AbandonToTopLevel"
+            }
+        }
+
+        if self.at("LeftParen") {
+            parenDepth = parenDepth + 1
+        } else if self.at("RightParen") {
+            if parenDepth > 0 {
+                parenDepth = parenDepth - 1
+            }
+        } else if self.at("LeftBrace") {
+            braceDepth = braceDepth + 1
+        } else if self.at("RightBrace") {
+            if braceDepth > 0 {
+                braceDepth = braceDepth - 1
+            }
+        } else if self.at("LeftBracket") {
+            bracketDepth = bracketDepth + 1
+        } else if self.at("RightBracket") && bracketDepth > 0 {
+            bracketDepth = bracketDepth - 1
+        }
+        self.advance()
+    }
+    return "AbandonToTopLevel"
+}
+
+func (con self Parser) atUnambiguousStatementStart() bool {
+    return self.at("Keyword.Return") || self.at("Keyword.For") || self.at("Keyword.Break") || self.at("Keyword.Continue") || self.at("Keyword.Mut")
 }
 
 func (mut self Parser) parseStatement() int {
@@ -954,10 +1127,16 @@ func (mut self Parser) finishFunctionLiteral(start source.Span) int {
         }
     }
     self.expect("RightParen", "expected `)` after closure parameters")
+    if self.failed() {
+        return self.addNode("Expr.Error", "", source.Join(source.Copy(con start), self.currentSpan()), []int{})
+    }
     if self.startsTypeRef() {
         returnType := self.parseTypeRef()
         returnSpan := self.nodeSpan(returnType)
         children = append(children, self.addNode("ReturnType", "", returnSpan, []int{returnType}))
+    }
+    if self.failed() {
+        return self.addNode("Expr.Error", "", source.Join(source.Copy(con start), self.currentSpan()), []int{})
     }
     body := self.parseBlock()
     children = append(children, body)
@@ -1395,7 +1574,19 @@ func (con self Parser) currentSpan() source.Span {
 }
 
 func (con self Parser) failed() bool {
+    return self.attemptFailed
+}
+
+func (con self Parser) hasErrors() bool {
     return len(self.errors) > 0
+}
+
+func (con self Parser) diagnosticCapReached() bool {
+    return len(self.errors) >= 32
+}
+
+func (mut self Parser) beginAttempt() {
+    self.attemptFailed = false
 }
 
 func (mut self Parser) recordErrorHere(message string) {
@@ -1403,8 +1594,21 @@ func (mut self Parser) recordErrorHere(message string) {
 }
 
 func (mut self Parser) recordError(message string, span source.Span) {
-    if !self.failed() {
-        self.errors = append(self.errors, ast.NewError(message, span))
+    if !self.attemptFailed {
+        self.attemptFailed = true
+        if !self.diagnosticCapReached() {
+            mut duplicate := false
+            for mut index := 0; index < len(self.errors); index = index + 1 {
+                existingMessage := ast.ErrorMessage(con self.errors[index])
+                existingSpan := ast.ErrorSpan(con self.errors[index])
+                if existingMessage == message && source.Source(con existingSpan) == source.Source(con span) && source.Start(con existingSpan) == source.Start(con span) && source.End(con existingSpan) == source.End(con span) {
+                    duplicate = true
+                }
+            }
+            if !duplicate {
+                self.errors = append(self.errors, ast.NewError(message, span))
+            }
+        }
     }
 }
 
@@ -1414,4 +1618,36 @@ func copyIndexes(con values []int) []int {
         copied = append(copied, values[index])
     }
     return copied
+}
+
+func sortParseErrors(errors []ast.ParseError) []ast.ParseError {
+    mut used := []bool{}
+    for mut index := 0; index < len(errors); index = index + 1 {
+        used = append(used, false)
+    }
+
+    mut sorted := []ast.ParseError{}
+    for len(sorted) < len(errors) {
+        mut best := -1
+        for mut index := 0; index < len(errors); index = index + 1 {
+            if !used[index]&&(best < 0 || parseErrorPrecedes(con errors[index], con errors[best])) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        sorted = append(sorted, ast.NewError(ast.ErrorMessage(con errors[best]), ast.ErrorSpan(con errors[best])))
+    }
+    return sorted
+}
+
+func parseErrorPrecedes(con left ast.ParseError, con right ast.ParseError) bool {
+    leftSpan := ast.ErrorSpan(con left)
+    rightSpan := ast.ErrorSpan(con right)
+    if source.Start(con leftSpan) != source.Start(con rightSpan) {
+        return source.Start(con leftSpan) < source.Start(con rightSpan)
+    }
+    return source.End(con leftSpan) < source.End(con rightSpan)
 }

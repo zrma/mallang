@@ -1,0 +1,8 @@
+type Counter struct {}
+
+func brokenOne(value int {}
+func (con self Counter) Value() int {
+    return 1
+}
+func brokenTwo(value int {}
+func main() {}

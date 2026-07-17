@@ -187,3 +187,46 @@ test ParsesFunctionAndControlExpressions() {
         }
     }
 }
+
+test RecoversMultipleParserDiagnostics() {
+    source := "func brokenOne(value int {}\nfunc good() {}\nfunc brokenTwo(value bool {}\nfunc main() {}\n"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(errors) {
+                    assert(len(errors) == 2)
+                    assert(ast.ErrorMessage(con errors[0]) == "expected `)` after function parameters")
+                    assert(ast.ErrorMessage(con errors[1]) == "expected `)` after function parameters")
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test AbandonsUnclosedBlockAtNamedFunction() {
+    source := "func first() {\n    broken := ;\nfunc second(value int {}\nfunc main() {}\n"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(errors) {
+                    assert(len(errors) == 3)
+                    assert(ast.ErrorMessage(con errors[0]) == "expected expression")
+                    assert(ast.ErrorMessage(con errors[1]) == "expected `}` after block")
+                    assert(ast.ErrorMessage(con errors[2]) == "expected `)` after function parameters")
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

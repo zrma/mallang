@@ -522,11 +522,11 @@ target/mallang/match-statement
 
 현재 post-v1 작업은 B0-B5 self-hosting program이다. B0에서 Rust Stage0이 tracked
 Mallang probe를 format/check/test/build/run하고 same-input generated C identity를
-검증했다. B1 P175c2b는 frozen v1 success-path parser 전체를 Rust Stage0 oracle에
-대해 strict C, sanitizer, allocation accounting까지 differential 검증했다. 다음
-활성 slice는 P175c3 bounded statement/top-level recovery이며, public language 또는
-standard-library addition은 representative compiler blocker가 확인되기 전에는
-포함하지 않는다.
+검증했다. B1 P175c3는 frozen v1 parser와 bounded statement/top-level recovery,
+32-error cap을 Rust Stage0 oracle에 대해 strict C, sanitizer, allocation
+accounting까지 differential 검증했다. 다음 활성 slice는 P175d full
+positive/rejection/crash corpus이며, public language 또는 standard-library addition은
+representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

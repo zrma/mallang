@@ -1,0 +1,9 @@
+func main() {
+    run := func() {
+        inner := ;
+        print("inner")
+    }
+    outer := ;
+}
+
+func next() {}

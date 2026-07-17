@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175c2b complete, P175c3 bounded recovery next
+Status: active; P175a-P175c3 complete, P175d full differential corpus next
 
 ## Goal
 
@@ -115,6 +115,19 @@ compatibility evidence.
 - `control-expressions.mlg` differentially covers nested `Some(Ok(...))`,
   generic qualified variants, both closure mutabilities and nested if branches
   under deterministic C, strict accounting and sanitizer execution.
+
+## P175c3 Evidence
+
+- The Mallang parser now separates global diagnostics from the current parse
+  attempt, records one primary error per declaration or statement, suppresses
+  exact duplicates and caps each source at 32 parse errors.
+- Top-level recovery tracks parenthesis, brace and bracket depth; block recovery
+  keeps nested function literals local while abandoning an unclosed block only
+  at an unambiguous named declaration boundary.
+- Recovery fixtures cover multiple declarations and statements, nested
+  closures, missing block ends, receiver methods and the diagnostic cap. Their
+  normalized errors match Rust Stage0 under strict C, allocation accounting and
+  ASan/UBSan.
 
 ## Excluded
 

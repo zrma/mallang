@@ -1,0 +1,4 @@
+func brokenOne(value int {}
+func good() {}
+func brokenTwo(value bool {}
+func main() {}
