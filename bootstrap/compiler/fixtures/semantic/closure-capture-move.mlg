@@ -1,0 +1,9 @@
+func run() bool {
+    name := "kim"
+    show := func() bool {
+        return name == "kim"
+    }
+    return name == "kim"
+}
+
+func main() {}

@@ -1,0 +1,10 @@
+func run() bool {
+    name := "kim"
+    taken := name
+    show := func() bool {
+        return name == "kim"
+    }
+    return true
+}
+
+func main() {}

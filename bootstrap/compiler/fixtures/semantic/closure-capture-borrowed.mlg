@@ -1,0 +1,7 @@
+func make(con name string) func() bool {
+    return func() bool {
+        return name == "kim"
+    }
+}
+
+func main() {}

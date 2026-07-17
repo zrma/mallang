@@ -1,0 +1,9 @@
+func run() int {
+    offset := 10
+    add := func(value int) int {
+        return value + offset
+    }
+    return offset + add(2)
+}
+
+func main() {}

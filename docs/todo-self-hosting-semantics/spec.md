@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d2a1 complete
+Status: in progress; P176a-P176d2a2 complete
 
 ## Objective
 
@@ -92,7 +92,7 @@ agrees.
 - P176d2a1: check capture-free plain and mutable function literals, structural
   callable signatures, return completeness and indirect calls (complete)
 - P176d2a2: collect plain closure captures and enforce Copy/non-Copy capture
-  ownership
+  ownership (complete)
 - P176d2a3: propagate mutable and nested captures through places, calls and
   nested function literals
 - arrays, slices, structs, enums, match coverage and recursive ADTs
@@ -458,6 +458,21 @@ specialization and function-body checking until later P176 slices.
   Two hundred seven semantic fixtures, six typed-IR fixtures and one hundred
   eighty Mallang project tests pass through Stage0 and generated Stage1. Plain
   owned capture collection and move semantics remain P176d2a2.
+
+## P176d2a2 Evidence
+
+- Closure checks seed only the currently visible outer bindings, keep closure
+  parameters and body locals shadowing-safe, and record actual captures in
+  deterministic first-use order.
+- Capture metadata preserves the source name and resolved type. Copy captures
+  leave the outer binding available, while non-Copy captures move it only after
+  the closure body and all capture preconditions pass.
+- Moved values, borrowed non-Copy values and active range sources cannot be
+  captured. Plain closure captures remain immutable and cannot be moved out.
+- Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
+  Two hundred seventeen semantic fixtures, six typed-IR fixtures and one hundred
+  ninety-one Mallang project tests pass through Stage0 and generated Stage1.
+  Mutable access and nested capture propagation remain P176d2a3.
 
 ## B2 Completion Criteria
 

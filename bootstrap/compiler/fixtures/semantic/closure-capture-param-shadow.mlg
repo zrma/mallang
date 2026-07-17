@@ -1,0 +1,10 @@
+func run() bool {
+    name := "outer"
+    show := func(con name string) bool {
+        return name == "outer"
+    }
+    matched := show(con name)
+    return matched && name == "outer"
+}
+
+func main() {}

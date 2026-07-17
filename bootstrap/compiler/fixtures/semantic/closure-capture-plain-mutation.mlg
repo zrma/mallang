@@ -1,0 +1,10 @@
+func run() int {
+    mut count := 0
+    next := func() int {
+        count = count + 1
+        return count
+    }
+    return 0
+}
+
+func main() {}

@@ -1869,3 +1869,83 @@ test RejectsFunctionLiteralCallArgumentType() {
     source := "func run() int { transform := func(value int) int { return value }; return transform(false) } func main() {}"
     assert(checkTestSource(source) == "argument type mismatch for `transform`: expected `int`, got `bool`")
 }
+
+test ChecksCopyClosureCaptures() {
+    source := "func run() int { offset := 10; add := func(value int) int { return value + offset }; return offset + add(2) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RecordsClosureCaptureMetadata() {
+    source := "func run() int { offset := 10; add := func(value int) int { return value + offset }; return add(2) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            assert(len(checked.closures) == 1)
+                            assert(len(checked.closures[0].captures) == 1)
+                            assert(checked.closures[0].captures[0].name == "offset")
+                            assert(checked.closures[0].captures[0].ty.text == "int")
+                            assert(!checked.closures[0].captures[0].mutable)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test MovesNonCopyClosureCaptures() {
+    source := "func run() bool { name := \"kim\"; show := func() bool { return name == \"kim\" }; return name == \"kim\" } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `name`")
+}
+
+test RejectsBorrowedNonCopyClosureCaptures() {
+    source := "func make(con name string) func() bool { return func() bool { return name == \"kim\" } } func main() {}"
+    assert(checkTestSource(source) == "cannot capture borrowed non-Copy value `name`")
+}
+
+test RejectsMovedClosureCaptures() {
+    source := "func run() bool { name := \"kim\"; taken := name; show := func() bool { return name == \"kim\" }; return true } func main() {}"
+    assert(checkTestSource(source) == "cannot capture moved value `name`")
+}
+
+test RejectsActiveRangeSourceClosureCaptures() {
+    source := "func run(values []int) { for _, value := range values { show := func() int { return values[0] } } } func main() {}"
+    assert(checkTestSource(source) == "cannot capture active range source `values`")
+}
+
+test RejectsMovingOutOfPlainClosureCaptures() {
+    source := "func make(name string) func() string { return func() string { return name } } func main() {}"
+    assert(checkTestSource(source) == "cannot move borrowed value `name`")
+}
+
+test RejectsPlainClosureCaptureMutation() {
+    source := "func run() int { mut count := 0; next := func() int { count = count + 1; return count }; return 0 } func main() {}"
+    assert(checkTestSource(source) == "cannot assign to immutable binding `count`")
+}
+
+test CapturesVisibleShadowedBindingOnly() {
+    source := "func run() bool { name := \"outer\"; if true { name := \"inner\"; show := func() bool { return name == \"inner\" }; matched := show() }; return name == \"outer\" } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ClosureParametersShadowOuterBindings() {
+    source := "func run() bool { name := \"outer\"; show := func(con name string) bool { return name == \"outer\" }; matched := show(con name); return matched && name == \"outer\" } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test MovesCapturedFunctionValues() {
+    source := "func double(value int) int { return value * 2 } func run() int { transform := double; apply := func(value int) int { return transform(value) }; return transform(1) + apply(2) } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `transform`")
+}

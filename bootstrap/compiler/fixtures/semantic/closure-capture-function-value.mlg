@@ -1,0 +1,13 @@
+func double(value int) int {
+    return value * 2
+}
+
+func run() int {
+    transform := double
+    apply := func(value int) int {
+        return transform(value)
+    }
+    return transform(1) + apply(2)
+}
+
+func main() {}

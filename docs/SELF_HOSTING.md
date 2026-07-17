@@ -117,6 +117,9 @@ deterministic exhaustiveness and scrutinee ownership. P176d1b2c2b2 adds nested
 built-in/user enum payload patterns, Cartesian multi-payload coverage and finite
 recursive-enum coverage. P176d2a1 adds capture-free plain/mutable function
 literals, structural callable signatures and indirect mutable-call checks.
-Capture ownership, complete generic semantics and deterministic typed-IR drop
-insertion remain incomplete, so no complete semantic, typed-IR or Stage1
-compiler claim is made.
+P176d2a2 records plain closure captures in first-use order, preserves capture
+metadata, copies Copy captures and moves non-Copy captures at creation while
+rejecting moved, borrowed non-Copy and active range-source captures. Mutable and
+nested capture propagation, complete generic semantics and deterministic
+typed-IR drop insertion remain incomplete, so no complete semantic, typed-IR or
+Stage1 compiler claim is made.

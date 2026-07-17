@@ -1,0 +1,7 @@
+func make(name string) func() string {
+    return func() string {
+        return name
+    }
+}
+
+func main() {}

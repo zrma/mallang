@@ -1,0 +1,9 @@
+func run(values []int) {
+    for _, value := range values {
+        show := func() int {
+            return values[0]
+        }
+    }
+}
+
+func main() {}

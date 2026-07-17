@@ -1,0 +1,13 @@
+func run() bool {
+    name := "outer"
+    if true {
+        name := "inner"
+        show := func() bool {
+            return name == "inner"
+        }
+        matched := show()
+    }
+    return name == "outer"
+}
+
+func main() {}
