@@ -1,0 +1,5 @@
+func exercise(value int) int {
+    return value.missing()
+}
+
+func main() {}

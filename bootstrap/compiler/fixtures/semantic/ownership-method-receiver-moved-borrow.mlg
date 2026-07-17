@@ -1,0 +1,18 @@
+type User struct {
+    name string
+}
+
+func take(user User) int {
+    return 1
+}
+
+func (con self User) inspect() int {
+    return 1
+}
+
+func exercise(user User) int {
+    consumed := take(user)
+    return user.inspect()
+}
+
+func main() {}

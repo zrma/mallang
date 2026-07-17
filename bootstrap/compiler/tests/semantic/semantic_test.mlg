@@ -4,6 +4,31 @@ import "bootstrap_compiler/frontend/ast"
 import "bootstrap_compiler/frontend/lexer"
 import "bootstrap_compiler/frontend/parser"
 
+func checkTestSource(source string) string {
+    return match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            ""
+                        }
+                        case Err(error) {
+                            ErrorMessage(con error)
+                        }
+                    }
+                }
+                case Err(_) {
+                    "parser error"
+                }
+            }
+        }
+        case Err(_) {
+            "lexer error"
+        }
+    }
+}
+
 test CollectsDeclarationSignatures() {
     source := "type User struct { name string; age int } type Choice enum { Empty; Score(int) } func describe(con value Option[string]) string { return \"ok\" } func (mut user User) rename(con name string) {} func main() {}"
     match lexer.Lex(source) {
@@ -1263,4 +1288,54 @@ test RejectsBuiltinRangeBinding() {
             assert(false)
         }
     }
+}
+
+test ChecksLocalMethodReceiverModes() {
+    source := "type Counter struct { value int } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(mut counter Counter) int { counter.increment(); return counter.valueOf() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksOwnedMethodReceiver() {
+    source := "type User struct { name string } func (self User) consume() int { return 1 } func exercise(user User) int { return user.consume() } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsOwnedMethodReceiverReuse() {
+    source := "type User struct { name string } func (self User) consume() int { return 1 } func exercise(user User) int { consumed := user.consume(); return user.consume() } func main() {}"
+    assert(checkTestSource(source) == "borrow of moved value `user`")
+}
+
+test RejectsImmutableMutableMethodReceiver() {
+    source := "type Counter struct { value int } func (mut self Counter) increment() { self.value = self.value + 1 } func exercise(counter Counter) int { counter.increment(); return 0 } func main() {}"
+    assert(checkTestSource(source) == "cannot mutably borrow immutable binding `counter`")
+}
+
+test RejectsMovedMethodReceiverBorrow() {
+    source := "type User struct { name string } func take(user User) int { return 1 } func (con self User) inspect() int { return 1 } func exercise(user User) int { consumed := take(user); return user.inspect() } func main() {}"
+    assert(checkTestSource(source) == "borrow of moved value `user`")
+}
+
+test RejectsUnknownMethodCall() {
+    source := "type User struct { name string } func exercise(con user User) int { return user.missing() } func main() {}"
+    assert(checkTestSource(source) == "unknown method `missing` on `User`")
+}
+
+test RejectsMethodArgumentMode() {
+    source := "type User struct { name string } func (con self User) compare(con other User) int { return 1 } func exercise(con left User, con right User) int { return left.compare(right) } func main() {}"
+    assert(checkTestSource(source) == "parameter `other` expects `con` argument")
+}
+
+test RejectsMethodArgumentArity() {
+    source := "type User struct { name string } func (con self User) compare(con other User) int { return 1 } func exercise(con user User) int { return user.compare() } func main() {}"
+    assert(checkTestSource(source) == "function `compare` expects 1 arguments, got 0")
+}
+
+test ChecksSharedMethodReceiverArgumentBorrow() {
+    source := "type Pair struct { value int } func (con self Pair) inspect(con value int) int { return value } func exercise(con pair Pair) int { return pair.inspect(con pair.value) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsMethodReceiverArgumentOverlap() {
+    source := "type Counter struct { value int } func (mut self Counter) touch(mut value int) { value = value + 1 } func exercise(mut counter Counter) int { counter.touch(mut counter.value); return 0 } func main() {}"
+    assert(checkTestSource(source) == "borrow of `counter.value` overlaps with an active borrow in this call")
 }

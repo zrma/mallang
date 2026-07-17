@@ -97,6 +97,7 @@ condition/body moves. P176c3b2a adds loop-scoped init bindings, optional
 conditions and direct-binding post assignment ownership. P176c3b2b1 reuses the
 same assignment-place checks for field/index post targets. P176c3b2b2 checks
 range source reads, Copy/index-only bindings, body scope, active-source
-assignment and persistent outer moves. Receiver ownership modes and
-deterministic drop insertion remain incomplete, so no complete semantic,
-typed-IR or Stage1 compiler claim is made.
+assignment and persistent outer moves. P176c4a checks owned/`con`/`mut` direct
+local method receivers, method arguments and receiver/argument borrow overlap.
+Field/index/temporary receivers and deterministic drop insertion remain
+incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

@@ -1,0 +1,13 @@
+type Pair struct {
+    value int
+}
+
+func (con self Pair) inspect(con value int) int {
+    return value
+}
+
+func exercise(con pair Pair) int {
+    return pair.inspect(con pair.value)
+}
+
+func main() {}

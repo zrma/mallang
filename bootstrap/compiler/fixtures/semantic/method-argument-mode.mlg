@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func (con self User) compare(con other User) int {
+    return 1
+}
+
+func exercise(con left User, con right User) int {
+    return left.compare(right)
+}
+
+func main() {}

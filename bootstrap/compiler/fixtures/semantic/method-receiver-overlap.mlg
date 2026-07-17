@@ -1,0 +1,14 @@
+type Counter struct {
+    value int
+}
+
+func (mut self Counter) touch(mut value int) {
+    value = value + 1
+}
+
+func exercise(mut counter Counter) int {
+    counter.touch(mut counter.value)
+    return 0
+}
+
+func main() {}

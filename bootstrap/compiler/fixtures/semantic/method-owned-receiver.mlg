@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func (self User) consume() int {
+    return 1
+}
+
+func exercise(user User) int {
+    return user.consume()
+}
+
+func main() {}

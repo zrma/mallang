@@ -1,0 +1,9 @@
+type User struct {
+    name string
+}
+
+func exercise(con user User) int {
+    return user.missing()
+}
+
+func main() {}

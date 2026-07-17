@@ -1609,6 +1609,9 @@ func (con self CheckedProgram) resolveStructField(con baseType ResolvedType, con
 
 func (mut self CheckedProgram) checkCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
     callee := ast.Child(con program, expression, 0)
+    if ast.Kind(con program, callee) == "Expr.FieldAccess" {
+        return self.checkMethodCall(con program, expression, callee)
+    }
     if ast.Kind(con program, callee) != "Expr.Var" {
         return Err(newError("only direct function and method calls are supported in v0", ast.Span(con program, callee)))
     }
@@ -1654,6 +1657,73 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
     }
 }
 
+func (mut self CheckedProgram) checkMethodCall(con program ast.Program, expression int, callee int) Result[ResolvedType, SemanticError] {
+    receiver := ast.Child(con program, callee, 0)
+    if ast.Kind(con program, receiver) != "Expr.Var" {
+        return Err(newError("B2c4a semantic checker does not yet accept non-local method receivers", ast.Span(con program, receiver)))
+    }
+    receiverName := ast.Value(con program, receiver)
+    receiverLocal := localIndex(con self.locals, con receiverName)
+    if receiverLocal < 0 {
+        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
+    }
+    if self.locals[receiverLocal].moved {
+        return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
+    }
+    receiverType := copyType(con self.locals[receiverLocal].ty)
+    self.recordType(receiver, con receiverType)
+    if receiverType.kind != "struct" {
+        message := strings.join(con []string{"method call requires a struct receiver, got `", token.CopyText(con receiverType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, receiver)))
+    }
+
+    methodName := ast.Value(con program, callee)
+    method := self.methodIndex(con receiverType.text, con methodName)
+    if method < 0 {
+        message := strings.join(con []string{"unknown method `", token.CopyText(con methodName), "` on `", token.CopyText(con receiverType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    receiverMode := token.CopyText(con self.methods[method].receiver.mode)
+    mut receiverBorrow := BorrowPlace{root: "", segments: []string{}, ty: unitType(), exclusive: false,}
+    mut checkedReceiverType := unitType()
+    if receiverMode == "owned" {
+        match self.checkExpression(con program, receiver) {
+            case Ok(ty) {
+                checkedReceiverType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    } else {
+        if self.locals[receiverLocal].moved {
+            return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
+        }
+        if receiverMode == "mut" && !self.locals[receiverLocal].mutable {
+            return Err(newError(strings.join(con []string{"cannot mutably borrow immutable binding `", token.CopyText(con receiverName), "`",}, con ""), ast.Span(con program, receiver)))
+        }
+        checkedReceiverType = copyType(con self.locals[receiverLocal].ty)
+        receiverBorrow = BorrowPlace{root: token.CopyText(con receiverName), segments: []string{}, ty: copyType(con checkedReceiverType), exclusive: receiverMode == "mut",}
+    }
+    expectedReceiverType := copyType(con self.methods[method].receiver.ty)
+    if checkedReceiverType.text != expectedReceiverType.text {
+        message := strings.join(con []string{"receiver type mismatch for `", token.CopyText(con methodName), "`: expected `", token.CopyText(con expectedReceiverType.text), "`, got `", token.CopyText(con checkedReceiverType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, receiver)))
+    }
+
+    match self.checkMethodArguments(con program, expression, method, con methodName, con receiverBorrow) {
+        case Ok(_) {
+            resultType := copyType(con self.methods[method].returnType)
+            self.recordType(expression, con resultType)
+            return Ok(resultType)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
 func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
     argumentCount := ast.ChildCount(con program, expression) - 1
     parameterCount := len(self.functions[function].params)
@@ -1684,7 +1754,8 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         value := ast.Child(con program, argument, 0)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
-            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut") {
+            emptyReceiver := BorrowPlace{root: "", segments: []string{}, ty: unitType(), exclusive: false,}
+            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con emptyReceiver) {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -1711,7 +1782,61 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
     return Ok(true)
 }
 
-func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call int, argumentIndex int, mutable bool) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, expression int, method int, con name string, con receiverBorrow BorrowPlace) Result[bool, SemanticError] {
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    parameterCount := len(self.methods[method].params)
+    if argumentCount != parameterCount {
+        message := strings.join(con []string{"function `", token.CopyText(con name), "` expects ", strings.fromInt(parameterCount), " arguments, got ", strings.fromInt(argumentCount),}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    for mut index := 0; index < argumentCount; index = index + 1 {
+        argument := ast.Child(con program, expression, index + 1)
+        argumentMode := argModeFromKind(con ast.Kind(con program, argument))
+        parameterMode := token.CopyText(con self.methods[method].params[index].mode)
+        parameterName := token.CopyText(con self.methods[method].params[index].name)
+        if argumentMode != parameterMode {
+            mut expectation := "expects an owned argument"
+            if parameterMode == "con" {
+                expectation = "expects `con` argument"
+            } else if parameterMode == "mut" {
+                expectation = "expects `mut` argument"
+            }
+            message := strings.join(con []string{"parameter `", parameterName, "` ", expectation,}, con "")
+            return Err(newError(message, ast.Span(con program, argument)))
+        }
+
+        value := ast.Child(con program, argument, 0)
+        mut argumentType := unitType()
+        if argumentMode == "con" || argumentMode == "mut" {
+            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con receiverBorrow) {
+                case Ok(ty) {
+                    argumentType = ty
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            match self.checkExpression(con program, value) {
+                case Ok(ty) {
+                    argumentType = ty
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        parameterType := copyType(con self.methods[method].params[index].ty)
+        if argumentType.text != parameterType.text {
+            message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, argument)))
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call int, argumentIndex int, mutable bool, con receiverBorrow BorrowPlace) Result[ResolvedType, SemanticError] {
     argument := ast.Child(con program, call, argumentIndex + 1)
     value := ast.Child(con program, argument, 0)
     match self.resolveBorrowPlace(con program, value) {
@@ -1739,6 +1864,10 @@ func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call
             }
 
             current := BorrowPlace{root: token.CopyText(con place.root), segments: copySegments(con place.segments), ty: copyType(con place.ty), exclusive: mutable,}
+            if receiverBorrow.root != "" && borrowPlacesOverlap(con current, con receiverBorrow) &&(current.exclusive || receiverBorrow.exclusive) {
+                message := strings.join(con []string{"borrow of `", borrowPlaceText(con current), "` overlaps with an active borrow in this call",}, con "")
+                return Err(newError(message, ast.Span(con program, argument)))
+            }
             for mut index := 0; index < argumentIndex; index = index + 1 {
                 previousArgument := ast.Child(con program, call, index + 1)
                 previousMode := argModeFromKind(con ast.Kind(con program, previousArgument))

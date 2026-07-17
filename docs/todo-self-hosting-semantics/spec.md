@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c3b2b2 complete
+Status: in progress; P176a-P176c4a complete
 
 ## Objective
 
@@ -60,7 +60,9 @@ agrees.
 - P176c3b2b1: check field/index post targets through shared assignment places
   (complete)
 - P176c3b2b2: check range loop bindings and persistent move state (complete)
-- distinguish owned, `con` and `mut` method receivers
+- P176c4a: distinguish owned, `con` and `mut` direct local method receivers,
+  including argument mode and receiver/argument overlap (complete)
+- P176c4b: extend method receiver ownership to field, index and temporary bases
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
 
@@ -277,7 +279,22 @@ specialization and function-body checking until later P176 slices.
   is merged conservatively.
 - Eighty-nine semantic fixtures, six typed-IR fixtures and sixty-four Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
-  ASan/UBSan. Receiver ownership modes remain the next P176c slice.
+  ASan/UBSan. Direct local receiver ownership remains P176c4a.
+
+## P176c4a Evidence
+
+- Direct local method calls probe a struct receiver before resolving the method.
+  Owned receivers move non-Copy locals, `con` receivers retain availability and
+  `mut` receivers require a mutable root.
+- Method arguments preserve function-call arity, mode and type diagnostics.
+  Receiver borrows participate in the same prefix-place overlap check as
+  `con`/`mut` arguments, allowing shared/shared access and rejecting exclusive
+  overlap.
+- Moved receiver probes, unknown methods and non-struct receivers preserve
+  Stage0's first diagnostic message and source span.
+- One hundred semantic fixtures, six typed-IR fixtures and seventy-four Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Field, index and temporary receiver bases remain P176c4b.
 
 ## B2 Completion Criteria
 
