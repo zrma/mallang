@@ -1694,3 +1694,68 @@ test PreservesLoopDepthAndOuterShadowAcrossMatchStatementArms() {
     source := "func read(con value string) int { return 0 } func exercise(input Option[int], value string) int { for true { match input { case Some(value) { copy := value; break } case None { continue } } }; return read(con value) } func main() {}"
     assert(checkTestSource(source) == "")
 }
+
+test ChecksFlatUserEnumMatchExpressionsAndStatements() {
+    source := "type Choice enum { Empty; Score(int); Pair(int, string) } func measure(value string) int { return 1 } func read(input Choice) int { return match input { case Choice.Empty { 0 } case Choice.Score(value) { value } case Choice.Pair(value, message) { value + measure(message) } } } func inspect(input Choice) int { match input { case Choice.Empty { return 0 } case Choice.Score(value) { return value } case Choice.Pair(value, _) { return value } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsNonExhaustiveUserEnumMatch() {
+    source := "type State enum { Ready; Idle; Busy } func inspect(input State) int { return match input { case State.Ready { 1 } } } func main() {}"
+    assert(checkTestSource(source) == "match is not exhaustive; missing State.Busy, State.Idle")
+}
+
+test RejectsDuplicateUserEnumMatchPattern() {
+    source := "type Choice enum { Empty; Score(int) } func inspect(input Choice) int { return match input { case Choice.Empty { 0 } case Choice.Empty { 1 } case Choice.Score(value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test RejectsUnreachableUserEnumWildcard() {
+    source := "type Choice enum { Empty; Score(int) } func inspect(input Choice) int { return match input { case _ { 0 } case Choice.Empty { 1 } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test RejectsUserEnumMatchPatternType() {
+    source := "type Choice enum { Empty } type Other enum { Empty } func inspect(input Choice) int { return match input { case Other.Empty { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "pattern type `Other` does not match `Choice`")
+}
+
+test RejectsMissingUserEnumMatchVariant() {
+    source := "type Choice enum { Empty } func inspect(input Choice) int { return match input { case Choice.Missing { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "enum `Choice` has no variant `Missing`")
+}
+
+test RejectsZeroPayloadUserEnumDestructure() {
+    source := "type Choice enum { Empty } func inspect(input Choice) int { return match input { case Choice.Empty(value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "zero-payload variant `Choice.Empty` cannot destructure a payload")
+}
+
+test RejectsMissingUserEnumPayloadPattern() {
+    source := "type Choice enum { Score(int) } func inspect(input Choice) int { return match input { case Choice.Score { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "variant `Choice.Score` requires a payload pattern")
+}
+
+test RejectsUserEnumPayloadArity() {
+    source := "type Choice enum { Pair(int, string) } func inspect(input Choice) int { return match input { case Choice.Pair(value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "variant `Choice.Pair` requires 2 payload patterns, got 1")
+}
+
+test RejectsDuplicateUserEnumPayloadBinding() {
+    source := "type Choice enum { Pair(int, int) } func inspect(input Choice) int { return match input { case Choice.Pair(value, value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "duplicate pattern binding `value`")
+}
+
+test RejectsBuiltinUserEnumPayloadBinding() {
+    source := "type Choice enum { Score(int) } func inspect(input Choice) int { return match input { case Choice.Score(print) { print } } } func main() {}"
+    assert(checkTestSource(source) == "`print` is a built-in value name")
+}
+
+test ChecksUserEnumPayloadBindingTypes() {
+    source := "type Choice enum { Empty; Text(string) } func inspect(input Choice) int { return match input { case Choice.Empty { 0 } case Choice.Text(value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "match arms must have the same type: got `int` and `string`")
+}
+
+test MovesOwnedUserEnumMatchScrutinee() {
+    source := "type Choice enum { Empty; Text(string) } func measure(value string) int { return 1 } func inspect(input Choice) int { selected := match input { case Choice.Empty { 0 } case Choice.Text(value) { measure(value) } }; moved := input; return selected } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `input`")
+}

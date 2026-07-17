@@ -1,0 +1,19 @@
+type Choice enum {
+    Empty
+    Text(string)
+}
+
+func measure(value string) int {
+    return 1
+}
+
+func inspect(input Choice) int {
+    selected := match input {
+        case Choice.Empty { 0 }
+        case Choice.Text(value) { measure(value) }
+    }
+    moved := input
+    return selected
+}
+
+func main() {}

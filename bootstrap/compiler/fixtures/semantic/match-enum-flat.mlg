@@ -1,0 +1,27 @@
+type Choice enum {
+    Empty
+    Score(int)
+    Pair(int, string)
+}
+
+func measure(value string) int {
+    return 1
+}
+
+func read(input Choice) int {
+    return match input {
+        case Choice.Empty { 0 }
+        case Choice.Score(value) { value }
+        case Choice.Pair(value, message) { value + measure(message) }
+    }
+}
+
+func inspect(input Choice) int {
+    match input {
+        case Choice.Empty { return 0 }
+        case Choice.Score(value) { return value }
+        case Choice.Pair(value, _) { return value }
+    }
+}
+
+func main() {}

@@ -111,6 +111,8 @@ payload types, owned modes and move order. P176d1b2c1 checks flat
 `Option`/`Result` expression match patterns, exhaustiveness, expected arm types,
 binding scopes and branch move joins. P176d1b2c2a extends the same flat pattern
 contract to statement match, including return convergence and loop-control
-scope. Nested and user enum patterns, complete ADT/closure/generic semantics and
-deterministic typed-IR drop insertion remain incomplete, so no complete
-semantic, typed-IR or Stage1 compiler claim is made.
+scope. P176d1b2c2b1 extends expression and statement matches to flat
+non-generic user enum variants with zero, one or multiple payload bindings,
+deterministic exhaustiveness and scrutinee ownership. Nested patterns, complete
+ADT/closure/generic semantics and deterministic typed-IR drop insertion remain
+incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

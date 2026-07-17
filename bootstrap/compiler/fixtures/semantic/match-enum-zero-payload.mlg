@@ -1,0 +1,11 @@
+type Choice enum {
+    Empty
+}
+
+func inspect(input Choice) int {
+    return match input {
+        case Choice.Empty(value) { value }
+    }
+}
+
+func main() {}

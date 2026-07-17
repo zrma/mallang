@@ -1,0 +1,13 @@
+type State enum {
+    Ready
+    Idle
+    Busy
+}
+
+func inspect(input State) int {
+    return match input {
+        case State.Ready { 1 }
+    }
+}
+
+func main() {}

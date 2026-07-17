@@ -92,6 +92,12 @@ type RangeBindings struct {
     valid bool
 }
 
+type PatternVariantParts struct {
+    typeName string
+    variantName string
+    valid bool
+}
+
 pub type CheckedProgram struct {
     typeShapes []TypeShape
     structs []StructSig
@@ -789,11 +795,11 @@ func (mut self CheckedProgram) checkFlatMatchStatement(con program ast.Program, 
             return Err(error)
         }
     }
-    if scrutineeType.kind != "option" && scrutineeType.kind != "result" {
+    if scrutineeType.kind != "option" && scrutineeType.kind != "result" && scrutineeType.kind != "enum" {
         message := strings.join(con []string{"match scrutinee must be an enum, `Option`, or `Result`, got `", token.CopyText(con scrutineeType.text), "`",}, con "")
         return Err(newError(message, ast.Span(con program, statement)))
     }
-    match self.checkFlatMatchPatterns(con program, statement, con scrutineeType) {
+    match self.checkMatchPatterns(con program, statement, con scrutineeType) {
         case Ok(_) {}
         case Err(error) {
             return Err(error)
@@ -808,7 +814,7 @@ func (mut self CheckedProgram) checkFlatMatchStatement(con program ast.Program, 
         arm := ast.Child(con program, statement, armIndex)
         self.locals = copyLocals(con baseLocals)
         self.scopeDepth = baseDepth + 1
-        match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+        match self.addMatchBindings(con program, arm, con scrutineeType) {
             case Ok(_) {}
             case Err(error) {
                 self.locals = copyLocals(con baseLocals)
@@ -1631,11 +1637,11 @@ func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, exp
             return Err(error)
         }
     }
-    if scrutineeType.kind != "option" && scrutineeType.kind != "result" {
+    if scrutineeType.kind != "option" && scrutineeType.kind != "result" && scrutineeType.kind != "enum" {
         message := strings.join(con []string{"match scrutinee must be an enum, `Option`, or `Result`, got `", token.CopyText(con scrutineeType.text), "`",}, con "")
         return Err(newError(message, ast.Span(con program, expression)))
     }
-    match self.checkFlatMatchPatterns(con program, expression, con scrutineeType) {
+    match self.checkMatchPatterns(con program, expression, con scrutineeType) {
         case Ok(_) {}
         case Err(error) {
             return Err(error)
@@ -1653,7 +1659,7 @@ func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, exp
             arm := ast.Child(con program, expression, armIndex)
             self.locals = copyLocals(con baseLocals)
             self.scopeDepth = baseDepth + 1
-            match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+            match self.addMatchBindings(con program, arm, con scrutineeType) {
                 case Ok(_) {}
                 case Err(error) {
                     self.locals = copyLocals(con baseLocals)
@@ -1690,7 +1696,7 @@ func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, exp
         arm := ast.Child(con program, expression, armIndex)
         self.locals = copyLocals(con baseLocals)
         self.scopeDepth = baseDepth + 1
-        match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+        match self.addMatchBindings(con program, arm, con scrutineeType) {
             case Ok(_) {}
             case Err(error) {
                 self.locals = copyLocals(con baseLocals)
@@ -1730,7 +1736,14 @@ func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, exp
     return Ok(firstType)
 }
 
-func (con self CheckedProgram) checkFlatMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+func (con self CheckedProgram) checkMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    if scrutineeType.kind == "enum" {
+        return self.checkUserEnumMatchPatterns(con program, expression, con scrutineeType)
+    }
+    return self.checkBuiltinMatchPatterns(con program, expression, con scrutineeType)
+}
+
+func (con self CheckedProgram) checkBuiltinMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
     mut seenFirst := false
     mut seenSecond := false
     for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
@@ -1796,6 +1809,134 @@ func (con self CheckedProgram) checkFlatMatchPatterns(con program ast.Program, e
     return Err(newError(message, ast.Span(con program, expression)))
 }
 
+func (con self CheckedProgram) checkUserEnumMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    enumIndex := self.enumIndex(con scrutineeType.text)
+    if enumIndex < 0 {
+        return Err(newError("checked enum signature is missing", ast.Span(con program, expression)))
+    }
+    mut seen := []bool{}
+    for mut variant := 0; variant < len(self.enums[enumIndex].variants); variant = variant + 1 {
+        seen = append(seen, false)
+    }
+
+    for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
+        arm := ast.Child(con program, expression, armIndex)
+        pattern := ast.Child(con program, arm, 0)
+        if ast.Kind(con program, pattern) == "Pattern.Wildcard" {
+            mut complete := true
+            for mut variant := 0; variant < len(seen); variant = variant + 1 {
+                complete = complete && seen[variant]
+            }
+            if complete {
+                return Err(newError("match pattern is duplicate or unreachable", ast.Span(con program, arm)))
+            }
+            for mut variant := 0; variant < len(seen); variant = variant + 1 {
+                seen[variant]= true
+            }
+        } else {
+            mut variantIndex := -1
+            match self.validateUserEnumPattern(con program, pattern, enumIndex) {
+                case Ok(index) {
+                    variantIndex = index
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            if seen[variantIndex] {
+                return Err(newError("match pattern is duplicate or unreachable", ast.Span(con program, arm)))
+            }
+            seen[variantIndex]= true
+        }
+    }
+
+    mut missing := []string{}
+    for mut variant := 0; variant < len(seen); variant = variant + 1 {
+        if !seen[variant] {
+            missing = append(missing, strings.join(con []string{token.CopyText(con self.enums[enumIndex].name), ".", token.CopyText(con self.enums[enumIndex].variants[variant].name),}, con ""))
+        }
+    }
+    if len(missing) == 0 {
+        return Ok(true)
+    }
+    sorted := sortTexts(missing)
+    message := strings.join(con []string{"match is not exhaustive; missing ", strings.join(con sorted, con ", "),}, con "")
+    return Err(newError(message, ast.Span(con program, expression)))
+}
+
+func (con self CheckedProgram) validateUserEnumPattern(con program ast.Program, pattern int, enumIndex int) Result[int, SemanticError] {
+    kind := ast.Kind(con program, pattern)
+    if kind != "Pattern.Variant" {
+        mut patternName := "match pattern"
+        if kind == "Pattern.Some" {
+            patternName = "Some"
+        } else if kind == "Pattern.None" {
+            patternName = "None"
+        } else if kind == "Pattern.Ok" {
+            patternName = "Ok"
+        } else if kind == "Pattern.Err" {
+            patternName = "Err"
+        } else if kind == "Pattern.NestedBuiltin" {
+            patternName = ast.Value(con program, pattern)
+        } else {
+            return Err(newError("B2d1b2c2b1 semantic checker does not yet accept this enum match pattern", ast.Span(con program, pattern)))
+        }
+        message := strings.join(con []string{"pattern `", patternName, "` does not match payload type `", token.CopyText(con self.enums[enumIndex].name), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+
+    parts := splitPatternVariant(con ast.Value(con program, pattern))
+    if !parts.valid {
+        return Err(newError("malformed user enum match pattern", ast.Span(con program, pattern)))
+    }
+    if parts.typeName != self.enums[enumIndex].name {
+        message := strings.join(con []string{"pattern type `", token.CopyText(con parts.typeName), "` does not match `", token.CopyText(con self.enums[enumIndex].name), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+    variantIndex := enumVariantIndex(con self.enums[enumIndex], con parts.variantName)
+    if variantIndex < 0 {
+        message := strings.join(con []string{"enum `", token.CopyText(con parts.typeName), "` has no variant `", token.CopyText(con parts.variantName), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+
+    expectedCount := len(self.enums[enumIndex].variants[variantIndex].payloads)
+    actualCount := ast.ChildCount(con program, pattern)
+    prefix := strings.join(con []string{token.CopyText(con parts.typeName), ".", token.CopyText(con parts.variantName),}, con "")
+    if expectedCount == 0 && actualCount > 0 {
+        message := strings.join(con []string{"zero-payload variant `", token.CopyText(con prefix), "` cannot destructure a payload",}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+    if expectedCount == 1 && actualCount == 0 {
+        message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires a payload pattern",}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+    if expectedCount != actualCount {
+        message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires ", strings.fromInt(expectedCount), " payload patterns, got ", strings.fromInt(actualCount),}, con "")
+        return Err(newError(message, ast.Span(con program, pattern)))
+    }
+
+    mut bindings := []string{}
+    for mut payload := 0; payload < actualCount; payload = payload + 1 {
+        payloadPattern := ast.Child(con program, pattern, payload)
+        payloadKind := ast.Kind(con program, payloadPattern)
+        if payloadKind == "Pattern.Binding" {
+            name := ast.Value(con program, payloadPattern)
+            if isBuiltinValueName(con name) {
+                message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con "")
+                return Err(newError(message, ast.Span(con program, pattern)))
+            }
+            if containsText(con bindings, con name) {
+                message := strings.join(con []string{"duplicate pattern binding `", token.CopyText(con name), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, pattern)))
+            }
+            bindings = append(bindings, name)
+        } else if payloadKind != "Pattern.Wildcard" {
+            return Err(newError("B2d1b2c2b1 semantic checker does not yet accept nested enum payload patterns", ast.Span(con program, pattern)))
+        }
+    }
+    return Ok(variantIndex)
+}
+
 func (con self CheckedProgram) flatMatchCoverage(con program ast.Program, pattern int, con scrutineeType ResolvedType) Result[int, SemanticError] {
     kind := ast.Kind(con program, pattern)
     if kind == "Pattern.Wildcard" {
@@ -1833,7 +1974,14 @@ func (con self CheckedProgram) flatMatchCoverage(con program ast.Program, patter
     return Err(newError(message, ast.Span(con program, pattern)))
 }
 
-func (mut self CheckedProgram) addFlatMatchBinding(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+func (mut self CheckedProgram) addMatchBindings(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    if scrutineeType.kind == "enum" {
+        return self.addUserEnumMatchBindings(con program, arm, con scrutineeType)
+    }
+    return self.addBuiltinMatchBinding(con program, arm, con scrutineeType)
+}
+
+func (mut self CheckedProgram) addBuiltinMatchBinding(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
     pattern := ast.Child(con program, arm, 0)
     kind := ast.Kind(con program, pattern)
     mut argument := -1
@@ -1859,6 +2007,33 @@ func (mut self CheckedProgram) addFlatMatchBinding(con program ast.Program, arm 
             return Err(newError("checked match payload type is missing", ast.Span(con program, arm)))
         }
     }
+}
+
+func (mut self CheckedProgram) addUserEnumMatchBindings(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    pattern := ast.Child(con program, arm, 0)
+    if ast.Kind(con program, pattern) == "Pattern.Wildcard" {
+        return Ok(false)
+    }
+    parts := splitPatternVariant(con ast.Value(con program, pattern))
+    enumIndex := self.enumIndex(con scrutineeType.text)
+    if !parts.valid || enumIndex < 0 {
+        return Err(newError("checked enum match pattern is missing", ast.Span(con program, arm)))
+    }
+    variantIndex := enumVariantIndex(con self.enums[enumIndex], con parts.variantName)
+    if variantIndex < 0 {
+        return Err(newError("checked enum match variant is missing", ast.Span(con program, arm)))
+    }
+    mut added := false
+    for mut payload := 0; payload < ast.ChildCount(con program, pattern); payload = payload + 1 {
+        payloadPattern := ast.Child(con program, pattern, payload)
+        if ast.Kind(con program, payloadPattern) == "Pattern.Binding" {
+            name := ast.Value(con program, payloadPattern)
+            ty := copyType(con self.enums[enumIndex].variants[variantIndex].payloads[payload])
+            self.locals = append(self.locals, Local{name: name, mutable: false, borrowed: false, moved: false, rangeSource: false, ty: ty, function: -1, scopeDepth: self.scopeDepth,})
+            added = true
+        }
+    }
+    return Ok(added)
 }
 
 func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
@@ -3217,6 +3392,15 @@ func enumVariantIndex(con value EnumSig, con name string) int {
     return - 1
 }
 
+func containsText(con values []string, con expected string) bool {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index]== expected {
+            return true
+        }
+    }
+    return false
+}
+
 func hasParam(con params []ParamSig, con name string) bool {
     for mut index := 0; index < len(params); index = index + 1 {
         if params[index].name == name {
@@ -3272,6 +3456,86 @@ func parseRangeBindings(con value string) RangeBindings {
         case None {}
     }
     return result
+}
+
+func splitPatternVariant(con value string) PatternVariantParts {
+    mut result := PatternVariantParts{typeName: "", variantName: "", valid: false,}
+    match strings.find(con value, con ".") {
+        case Some(offset) {
+            mut typeName := ""
+            match strings.slice(con value, 0, offset) {
+                case Ok(text) {
+                    typeName = text
+                }
+                case Err(_) {}
+            }
+            mut variantName := ""
+            match strings.slice(con value, offset + 1, strings.byteLen(con value)) {
+                case Ok(text) {
+                    variantName = text
+                }
+                case Err(_) {}
+            }
+            valid := typeName != "" && variantName != ""
+            result = PatternVariantParts{typeName: typeName, variantName: variantName, valid: valid,}
+        }
+        case None {}
+    }
+    return result
+}
+
+func sortTexts(values []string) []string {
+    mut used := []bool{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        used = append(used, false)
+    }
+
+    mut sorted := []string{}
+    for len(sorted) < len(values) {
+        mut best := -1
+        for mut index := 0; index < len(values); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con values[index], con values[best])) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        sorted = append(sorted, token.CopyText(con values[best]))
+    }
+    return sorted
+}
+
+func textPrecedes(con left string, con right string) bool {
+    mut limit := strings.byteLen(con left)
+    if strings.byteLen(con right) < limit {
+        limit = strings.byteLen(con right)
+    }
+    for mut index := 0; index < limit; index = index + 1 {
+        mut leftByte := 0
+        match strings.byteAt(con left, index) {
+            case Ok(value) {
+                leftByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        mut rightByte := 0
+        match strings.byteAt(con right, index) {
+            case Ok(value) {
+                rightByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        if leftByte != rightByte {
+            return leftByte < rightByte
+        }
+    }
+    return strings.byteLen(con left) < strings.byteLen(con right)
 }
 
 func mergeBranchMoves(con baseLocals []Local, con thenLocals []Local, con elseLocals []Local) []Local {

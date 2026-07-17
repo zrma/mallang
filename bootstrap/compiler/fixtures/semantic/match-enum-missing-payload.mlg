@@ -1,0 +1,11 @@
+type Choice enum {
+    Score(int)
+}
+
+func inspect(input Choice) int {
+    return match input {
+        case Choice.Score { 0 }
+    }
+}
+
+func main() {}

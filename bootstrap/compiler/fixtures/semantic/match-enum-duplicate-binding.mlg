@@ -1,0 +1,11 @@
+type Choice enum {
+    Pair(int, int)
+}
+
+func inspect(input Choice) int {
+    return match input {
+        case Choice.Pair(value, value) { value }
+    }
+}
+
+func main() {}

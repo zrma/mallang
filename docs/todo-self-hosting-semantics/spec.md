@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b2c2a complete
+Status: in progress; P176a-P176d1b2c2b1 complete
 
 ## Objective
 
@@ -84,8 +84,11 @@ agrees.
   exhaustiveness, arm bindings, expected types and branch move joins (complete)
 - P176d1b2c2a: extend flat `Option`/`Result` coverage, binding scopes, return
   convergence and move joins to statement-form match (complete)
-- P176d1b2c2b: extend expression and statement match semantics to user enums
-  and nested patterns
+- P176d1b2c2b1: extend expression and statement match semantics to flat
+  non-generic user enum variants, payload bindings and deterministic coverage
+  (complete)
+- P176d1b2c2b2: extend coverage and bindings through nested built-in and user
+  enum patterns, including recursive ADTs
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -408,6 +411,20 @@ specialization and function-body checking until later P176 slices.
   One hundred seventy-two semantic fixtures, six typed-IR fixtures and one
   hundred forty-five Mallang project tests pass through Stage0 and generated
   Stage1. User enum and nested recursive pattern coverage remain P176d1b2c2b.
+
+## P176d1b2c2b1 Evidence
+
+- Flat non-generic user enum expression and statement matches validate the
+  declared pattern type and variant, zero/one/multiple payload arity, wildcard
+  reachability and deterministic exhaustive coverage.
+- Payload bindings receive their declared variant payload types in isolated arm
+  scopes. Duplicate or built-in binding names are rejected, and non-Copy enum
+  scrutinees preserve the existing owned move contract.
+- Thirteen focused success and rejection fixtures match Rust Stage0
+  byte-for-byte. One hundred eighty-five semantic fixtures, six typed-IR
+  fixtures and one hundred fifty-eight Mallang project tests pass through
+  Stage0 and generated Stage1. Nested built-in/user enum patterns and recursive
+  coverage remain P176d1b2c2b2.
 
 ## B2 Completion Criteria
 
