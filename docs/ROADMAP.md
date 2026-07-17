@@ -1628,3 +1628,21 @@ Stable final audit와 배포 sequence는 `scripts/check-v1-stable-acceptance.sh`
 `scripts/check-v1-stable-rehearsal.sh`와
 `docs/todo-v1-stable-release/acceptance.md`가 소유한다. 이후 변경은
 `docs/COMPATIBILITY.md`의 1.x contract를 따른다.
+
+## P173: v1.1 Streaming Text I/O
+
+상태: implementation complete; release acceptance pending
+
+- [x] v1.0 compatibility classification과 handle-based API rejection
+- [x] generic `fs.forEachLine[C,S]` source contract
+- [x] bounded-memory generated C runtime and typed intrinsic specialization
+- [x] UTF-8, embedded NUL, LF/CRLF, empty/final-line semantics
+- [x] recoverable open/read/close failures
+- [x] strict C, ASan/UBSan and allocation-accounting gate
+- [ ] supported-platform release artifact acceptance
+- [ ] signed `v1.1.0` tag and public GitHub release
+
+Exact API decision and evidence are owned by
+`docs/todo-v11-streaming-text-io/`. This is a backward-compatible minor release;
+it adds no syntax, source-visible handle, borrowed return, or v1.0 semantic
+change.

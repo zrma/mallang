@@ -197,6 +197,16 @@ if [[ -s "$NEGATIVE_DIR/file-run.stdout" ]] || \
   exit 1
 fi
 
+printf 'INFO first\nERROR 둘\nERROR final' >"$NEGATIVE_DIR/streaming-input.txt"
+streaming_output="$(
+  "$RELEASE_BIN" run tests/fixtures/v11-streaming-io/for-each-line.mlg -- \
+    "$NEGATIVE_DIR/streaming-input.txt" ERROR
+)"
+if [[ "$streaming_output" != $'2\nERROR 둘\n3\nERROR final\n2' ]]; then
+  echo "release binary streaming file I/O smoke failed: $streaming_output" >&2
+  exit 1
+fi
+
 collections_output="$("$RELEASE_BIN" run examples/collections-map.mlg)"
 if [[ "$collections_output" != $'inserted\n1\n1\nKim\n2\ntrue\ntrue\nKim\n3\ntrue\nfalse\nKim\n3\n0' ]]; then
   echo "release binary collections Map smoke failed: $collections_output" >&2

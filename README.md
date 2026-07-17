@@ -149,8 +149,9 @@ and normative v1 contract.
   standard `Error` results, function-value thunks, and allocation-safe native
   cleanup. `std/os` provides validated process arguments, environment lookup,
   and explicit exit; `std/io` provides UTF-8 stdin and exact stdout/stderr writes
-  with recoverable errors. `std/fs` provides UTF-8 text reads and create-or-
-  overwrite exact writes with recoverable open/read/write/close errors.
+  with recoverable errors. `std/fs` provides UTF-8 text reads, create-or-
+  overwrite exact writes, and handle-free bounded-memory line visitation with
+  recoverable open/read/write/close errors.
   `std/collections` provides an opaque move-only `Map[K,V]` with deterministic
   `int`/`bool`/`string` hashing, owned insert/remove, call-scoped read/update
   callbacks, allocation-safe growth, and recursive cleanup.
@@ -442,7 +443,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/COMPATIBILITY.md`: compiler/language versioning and v1 compatibility policy.
 - `docs/MIGRATION_V1.md`: bootstrap and v0.x source/workflow migration to v1.
 - `docs/conformance/v1-rules.json`: exact v1 rule-to-evidence map.
-- `docs/STANDARD_LIBRARY.md`: implemented v0.6 standard package API and semantics.
+- `docs/STANDARD_LIBRARY.md`: stable v1 standard package API and compatible 1.x additions.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
 - `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
 - `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
@@ -450,6 +451,7 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
+- `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
 - `docs/releases/`: v0.1.0 through v1.0.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.

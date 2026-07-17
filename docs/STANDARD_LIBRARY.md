@@ -1,8 +1,8 @@
 # Mallang Standard Library Reference
 
-This document describes the implemented v0.6 standard-library surface. Standard
-packages ship with the compiler and use the compiler version; they are not
-independently versioned dependencies.
+This document describes the stable v1 standard-library surface and compatible
+1.x additions. Standard packages ship with the compiler and use the compiler
+version; they are not independently versioned dependencies.
 
 ## Imports and ownership
 
@@ -108,12 +108,28 @@ failures are recoverable `Error` values.
 ```mlg
 fs.readText(con path string) Result[string, errors.Error]
 fs.writeText(con path string, con text string) Result[unit, errors.Error]
+fs.forEachLine[C, S](
+    con path string,
+    con context C,
+    mut state S,
+    con visit func(con C, mut S, int, con string) unit
+) Result[unit, errors.Error]
 ```
 
 - Paths must not contain NUL.
 - `readText` returns owned valid UTF-8 and preserves embedded NUL content.
 - `writeText` creates or overwrites the target and writes exactly the supplied
   byte length. It is not an atomic-replace or append operation.
+- `forEachLine` opens the file once and synchronously calls `visit` for every
+  line with the borrowed context, mutable borrowed state, one-based line number,
+  and borrowed line text. It returns only after every callback has completed.
+- A line excludes its terminating LF. A preceding CR and embedded NUL bytes are
+  preserved. A terminal LF does not create an additional empty line.
+- Callback borrows cannot escape. The API exposes no file handle or borrowed
+  return, and its runtime memory is bounded by the longest line plus a fixed
+  input buffer rather than total file size.
+- If a later read or UTF-8 error occurs, callbacks completed for earlier lines
+  are not rolled back; the final result is still `Err`.
 - Open, read, write, short-write, and close failures return `errors.Error`.
 
 ## `std/collections`

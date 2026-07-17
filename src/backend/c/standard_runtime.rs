@@ -39,6 +39,34 @@ pub(super) fn intrinsic_helper_name(intrinsic: StandardIntrinsic) -> Option<&'st
     }
 }
 
+fn for_each_line_types_from_call(
+    intrinsic: StandardIntrinsic,
+    args: &[IrArg],
+) -> Option<(&Type, &Type)> {
+    if intrinsic != StandardIntrinsic::FsForEachLine {
+        return None;
+    }
+    Some((&args.get(1)?.expr.ty, &args.get(2)?.expr.ty))
+}
+
+fn for_each_line_types_from_function(
+    intrinsic: StandardIntrinsic,
+    function: &FunctionType,
+) -> Option<(&Type, &Type)> {
+    if intrinsic != StandardIntrinsic::FsForEachLine {
+        return None;
+    }
+    Some((&function.params.get(1)?.ty, &function.params.get(2)?.ty))
+}
+
+fn for_each_line_helper_name(context: &Type, state: &Type) -> String {
+    format!(
+        "mallang_std_fs_for_each_line_{}_{}",
+        mangle_type(context),
+        mangle_type(state)
+    )
+}
+
 fn collection_map_type_from_call<'a>(
     intrinsic: StandardIntrinsic,
     result_ty: &'a Type,
@@ -87,6 +115,9 @@ pub(super) fn intrinsic_helper_name_for_call(
     if let Some(helper) = intrinsic_helper_name(intrinsic) {
         return Ok(helper.to_string());
     }
+    if let Some((context, state)) = for_each_line_types_from_call(intrinsic, args) {
+        return Ok(for_each_line_helper_name(context, state));
+    }
     let map_ty = collection_map_type_from_call(intrinsic, result_ty, args)
         .ok_or_else(|| unimplemented_intrinsic(intrinsic))?;
     map_type_args(program, map_ty)?;
@@ -101,6 +132,9 @@ pub(super) fn intrinsic_helper_name_for_function(
     if let Some(helper) = intrinsic_helper_name(intrinsic) {
         return Ok(helper.to_string());
     }
+    if let Some((context, state)) = for_each_line_types_from_function(intrinsic, function) {
+        return Ok(for_each_line_helper_name(context, state));
+    }
     let map_ty = collection_map_type_from_function(intrinsic, function)
         .ok_or_else(|| unimplemented_intrinsic(intrinsic))?;
     map_type_args(program, map_ty)?;
@@ -112,6 +146,12 @@ pub(super) fn intrinsic_callable_thunk_name(
     function: &FunctionType,
 ) -> String {
     let mut name = intrinsic.internal_name();
+    if let Some((context, state)) = for_each_line_types_from_function(intrinsic, function) {
+        name.push('_');
+        name.push_str(&mangle_type(context));
+        name.push('_');
+        name.push_str(&mangle_type(state));
+    }
     if let Some(map_ty) = collection_map_type_from_function(intrinsic, function) {
         name.push('_');
         name.push_str(&mangle_type(map_ty));
@@ -129,6 +169,7 @@ fn unimplemented_intrinsic(intrinsic: StandardIntrinsic) -> CompileError {
 pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, CompileError> {
     let used = standard_uses(program);
     if used.map_uses.is_empty()
+        && used.for_each_line_uses.is_empty()
         && used
             .intrinsics
             .iter()
@@ -255,7 +296,22 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
             ],
         ));
     }
-    output.push_str(&emit_platform_runtime(program, &used.intrinsics)?);
+    let for_each_line_uses = used
+        .for_each_line_uses
+        .values()
+        .map(|line_use| {
+            (
+                for_each_line_helper_name(&line_use.context, &line_use.state),
+                line_use.context.clone(),
+                line_use.state.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    output.push_str(&emit_platform_runtime(
+        program,
+        &used.intrinsics,
+        &for_each_line_uses,
+    )?);
     for map_use in used.map_uses.values() {
         output.push_str(&emit_map_runtime(program, map_use)?);
     }
@@ -359,11 +415,17 @@ struct StandardUses {
     intrinsics: BTreeSet<StandardIntrinsic>,
     function_values: BTreeMap<String, (StandardIntrinsic, FunctionType)>,
     map_uses: BTreeMap<String, MapUse>,
+    for_each_line_uses: BTreeMap<String, ForEachLineUse>,
 }
 
 struct MapUse {
     ty: Type,
     intrinsics: BTreeSet<StandardIntrinsic>,
+}
+
+struct ForEachLineUse {
+    context: Type,
+    state: Type,
 }
 
 fn standard_uses(program: &IrProgram) -> StandardUses {
@@ -470,6 +532,9 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
     match &expression.kind {
         IrExprKind::IntrinsicCall { intrinsic, args } => {
             used.intrinsics.insert(*intrinsic);
+            if let Some((context, state)) = for_each_line_types_from_call(*intrinsic, args) {
+                record_for_each_line_use(used, context.clone(), state.clone());
+            }
             if let Some(map_ty) = collection_map_type_from_call(*intrinsic, &expression.ty, args) {
                 record_map_use(used, map_ty.clone(), *intrinsic);
             }
@@ -480,6 +545,11 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
         IrExprKind::IntrinsicFunctionValue { intrinsic } => {
             used.intrinsics.insert(*intrinsic);
             if let Type::Function(function) = &expression.ty {
+                if let Some((context, state)) =
+                    for_each_line_types_from_function(*intrinsic, function)
+                {
+                    record_for_each_line_use(used, context.clone(), state.clone());
+                }
                 if let Some(map_ty) = collection_map_type_from_function(*intrinsic, function) {
                     record_map_use(used, map_ty.clone(), *intrinsic);
                 }
@@ -567,6 +637,13 @@ fn collect_expr_intrinsics(expression: &IrExpr, used: &mut StandardUses) {
         | IrExprKind::Var(_)
         | IrExprKind::FunctionValue { .. } => {}
     }
+}
+
+fn record_for_each_line_use(used: &mut StandardUses, context: Type, state: Type) {
+    let key = for_each_line_helper_name(&context, &state);
+    used.for_each_line_uses
+        .entry(key)
+        .or_insert(ForEachLineUse { context, state });
 }
 
 fn record_map_use(used: &mut StandardUses, map_ty: Type, intrinsic: StandardIntrinsic) {

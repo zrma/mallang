@@ -495,6 +495,7 @@ target/mallang/match-statement
 - `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P160 implementation evidence
 - `docs/todo-v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
 - `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
+- `docs/todo-v11-streaming-text-io/`: implemented v1.1 additive streaming text I/O, pending release acceptance
 - `docs/releases/`: v0.1.0부터 v1.0.0까지의 release notes와 verification record
 - `SECURITY.md`: stable supported version과 private vulnerability reporting policy
 - `ROADMAP.md`: compiler milestone
@@ -509,6 +510,11 @@ target/mallang/match-statement
    exception이어야 하며, regression, migration과 release note를 함께 추가한다.
 3. 다음 milestone은 구체적인 repo-owned gap과 acceptance evidence가 있을 때 별도
    `docs/todo-*` 문서로 시작한다.
+
+현재 post-v1 작업은 `std/fs.forEachLine[C,S]`를 제공하는 v1.1 compatible
+addition이다. Source-visible native handle 없이 context/state/callback borrow를 한 call에
+가두며, `scripts/check-streaming-file-io-runtime.sh`가 UTF-8, line boundary, failure,
+allocation과 sanitizer 계약을 검증한다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

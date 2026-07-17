@@ -791,7 +791,7 @@ mod tests {
         let mut sources = SourceMap::new();
         let main = sources.add_file(
             "file.mlg",
-            "import \"std/fs\"\nfunc main() { path := \"file.txt\"; text := \"text\"; read := fs.readText; input := read(con path); written := fs.writeText(con path, con text) }\n",
+            "import \"std/fs\"\nfunc Visit(con context string, mut state int, line_number int, con line string) { state = state + line_number }\nfunc main() { path := \"file.txt\"; text := \"text\"; mut state := 0; visit := Visit; lines := fs.forEachLine[string, int]; visited := lines(con path, con text, mut state, con visit); read := fs.readText; input := read(con path); written := fs.writeText(con path, con text) }\n",
         );
 
         let c = generate_c_sources(&sources, &[main]).unwrap();
@@ -800,6 +800,8 @@ mod tests {
         assert!(c.contains("mallang_std_file_path"));
         assert!(c.contains("mallang_std_fs_read_text"));
         assert!(c.contains("mallang_std_fs_write_text"));
+        assert!(c.contains("mallang_std_fs_for_each_line_"));
+        assert!(c.contains("file line visitor"));
         assert!(c.contains("mallang_callable_thunk_mlg___mlg_pkg_"));
         assert!(!c.contains("mallang_process_init"));
     }

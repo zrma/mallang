@@ -254,6 +254,7 @@ scripts/check-process-io-runtime.sh
 "${CARGO[@]}" run --quiet --bin mlg -- check examples/file-io.mlg >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build examples/file-io.mlg -o target/mallang/file-io >/dev/null
 scripts/check-file-io-runtime.sh
+scripts/check-streaming-file-io-runtime.sh
 "${CARGO[@]}" run --quiet --bin mlg -- check examples/collections-map.mlg >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build examples/collections-map.mlg -o target/mallang/collections-map >/dev/null
 collections_map_output="$(target/mallang/collections-map)"

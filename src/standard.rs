@@ -27,6 +27,7 @@ pub enum StandardType {
 pub enum StandardIntrinsic {
     FsReadText,
     FsWriteText,
+    FsForEachLine,
     IoReadStdin,
     IoWriteStdout,
     IoWriteStderr,
@@ -54,6 +55,7 @@ pub enum StandardIntrinsic {
 pub const STANDARD_INTRINSICS: &[StandardIntrinsic] = &[
     StandardIntrinsic::FsReadText,
     StandardIntrinsic::FsWriteText,
+    StandardIntrinsic::FsForEachLine,
     StandardIntrinsic::IoReadStdin,
     StandardIntrinsic::IoWriteStdout,
     StandardIntrinsic::IoWriteStderr,
@@ -81,7 +83,7 @@ pub const STANDARD_INTRINSICS: &[StandardIntrinsic] = &[
 impl StandardIntrinsic {
     pub const fn package_path(self) -> &'static str {
         match self {
-            Self::FsReadText | Self::FsWriteText => "std/fs",
+            Self::FsReadText | Self::FsWriteText | Self::FsForEachLine => "std/fs",
             Self::IoReadStdin | Self::IoWriteStdout | Self::IoWriteStderr => "std/io",
             Self::OsArgs | Self::OsEnv | Self::OsExit => "std/os",
             Self::StringsByteLen
@@ -107,6 +109,7 @@ impl StandardIntrinsic {
         match self {
             Self::FsReadText => "readText",
             Self::FsWriteText => "writeText",
+            Self::FsForEachLine => "forEachLine",
             Self::IoReadStdin => "readStdin",
             Self::IoWriteStdout => "writeStdout",
             Self::IoWriteStderr => "writeStderr",
@@ -147,7 +150,16 @@ pub fn package(path: &str, span: Span) -> Option<Package> {
             declaration("Kind", PackageDeclarationKind::Enum, &[], span),
             declaration("Error", PackageDeclarationKind::Struct, &[], span),
         ],
-        "std/fs" => function_declarations(&["readText", "writeText"], &[], span),
+        "std/fs" => {
+            let mut declarations = function_declarations(&["readText", "writeText"], &[], span);
+            declarations.push(declaration(
+                "forEachLine",
+                PackageDeclarationKind::Function,
+                &["C", "S"],
+                span,
+            ));
+            declarations
+        }
         "std/io" => function_declarations(&["readStdin", "writeStdout", "writeStderr"], &[], span),
         "std/os" => function_declarations(&["args", "env", "exit"], &[], span),
         "std/strings" => function_declarations(
@@ -329,6 +341,41 @@ fn add_fs_functions(program: &mut Program, span: Span) {
         vec![
             param("path", ParamMode::Con, named_type("string", span), span),
             param("text", ParamMode::Con, named_type("string", span), span),
+        ],
+        Some(result_type(
+            named_type("unit", span),
+            error_type(span),
+            span,
+        )),
+        span,
+    );
+    let type_params = ["C", "S"];
+    let context = || named_type("C", span);
+    let state = || named_type("S", span);
+    add_function(
+        program,
+        StandardIntrinsic::FsForEachLine,
+        &type_params,
+        vec![
+            param("path", ParamMode::Con, named_type("string", span), span),
+            param("context", ParamMode::Con, context(), span),
+            param("state", ParamMode::Mut, state(), span),
+            param(
+                "visit",
+                ParamMode::Con,
+                callback_type(
+                    false,
+                    vec![
+                        (ParamMode::Con, context()),
+                        (ParamMode::Mut, state()),
+                        (ParamMode::Owned, named_type("int", span)),
+                        (ParamMode::Con, named_type("string", span)),
+                    ],
+                    named_type("unit", span),
+                    span,
+                ),
+                span,
+            ),
         ],
         Some(result_type(
             named_type("unit", span),
@@ -733,15 +780,27 @@ fn map_type(key: TypeRef, value: TypeRef, span: Span) -> TypeRef {
 }
 
 fn function_type(mode: ParamMode, ty: TypeRef, span: Span) -> TypeRef {
+    callback_type(false, vec![(mode, ty)], named_type("unit", span), span)
+}
+
+fn callback_type(
+    mutable: bool,
+    params: Vec<(ParamMode, TypeRef)>,
+    return_type: TypeRef,
+    span: Span,
+) -> TypeRef {
     TypeRef {
         name: "func".to_string(),
         args: Vec::new(),
         array_len: None,
         slice: false,
         function: Some(FunctionTypeRef {
-            mutable: false,
-            params: vec![FunctionTypeParam { mode, ty, span }],
-            return_type: Box::new(named_type("unit", span)),
+            mutable,
+            params: params
+                .into_iter()
+                .map(|(mode, ty)| FunctionTypeParam { mode, ty, span })
+                .collect(),
+            return_type: Box::new(return_type),
             span,
         }),
         span,
@@ -768,7 +827,7 @@ mod tests {
             assert!(names.insert((intrinsic.package_path(), intrinsic.function_name())));
         }
 
-        assert_eq!(names.len(), 24);
+        assert_eq!(names.len(), 25);
     }
 
     #[test]

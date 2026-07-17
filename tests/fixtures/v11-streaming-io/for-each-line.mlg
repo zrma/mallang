@@ -1,0 +1,31 @@
+import "std/fs"
+import "std/os"
+import "std/strings"
+
+func Visit(con needle string, mut matches int, line_number int, con line string) {
+    if strings.contains(con line, con needle) {
+        matches = matches + 1
+        print(line_number)
+        print(line)
+    }
+}
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            mut matches := 0
+            visit := Visit
+            match fs.forEachLine[string, int](con args[1], con args[2], mut matches, con visit) {
+                case Ok(_) {
+                    print(matches)
+                }
+                case Err(error) {
+                    print(error.kind)
+                }
+            }
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}

@@ -155,6 +155,7 @@
       "rules": ["V1-STD-005"],
       "evidence": [
         {"kind": "script", "path": "scripts/check-file-io-runtime.sh"},
+        {"kind": "script", "path": "scripts/check-streaming-file-io-runtime.sh"},
         {"kind": "fixture", "path": "tests/fixtures/v06-file-io/read.mlg"}
       ]
     },

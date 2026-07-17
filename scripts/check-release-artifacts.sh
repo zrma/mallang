@@ -251,6 +251,17 @@ if [[ "$run_output" != $'kim\n42\n22\n15\ngeneric\n8\nupdated\n13\n0' ]]; then
   echo "installed release binary project run output mismatch" >&2
   exit 1
 fi
+
+printf 'INFO first\nERROR 둘\nERROR final' >"$work/streaming-input.txt"
+streaming_output="$(
+  "$installed" run tests/fixtures/v11-streaming-io/for-each-line.mlg -- \
+    "$work/streaming-input.txt" ERROR
+)"
+if [[ "$streaming_output" != $'2\nERROR 둘\n3\nERROR final\n2' ]]; then
+  echo "installed release binary streaming file I/O smoke failed" >&2
+  exit 1
+fi
+
 test_output="$($installed test "$project")"
 expected_test_output=$'test hello/greet::ReadsPrivateProductionState ... ok\ntest hello::CopyAndOwnedValues ... ok\ntest hello::GenericAndClosure ... ok\ntest hello::MapAndStandardIo ... ok\ntest hello::RecursiveAdt ... ok\ntest result: ok. 5 passed; 0 failed'
 if [[ "$test_output" != "$expected_test_output" ]]; then
