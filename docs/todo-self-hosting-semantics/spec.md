@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b2c1 complete
+Status: in progress; P176a-P176d1b2c2a complete
 
 ## Objective
 
@@ -82,8 +82,10 @@ agrees.
   propagate expected payload types (complete)
 - P176d1b2c1: check flat `Option`/`Result` expression match patterns,
   exhaustiveness, arm bindings, expected types and branch move joins (complete)
-- P176d1b2c2: extend match semantics to nested patterns, user enums and
-  statement-form control flow
+- P176d1b2c2a: extend flat `Option`/`Result` coverage, binding scopes, return
+  convergence and move joins to statement-form match (complete)
+- P176d1b2c2b: extend expression and statement match semantics to user enums
+  and nested patterns
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -394,6 +396,18 @@ specialization and function-body checking until later P176 slices.
   fixtures and one hundred thirty-seven Mallang project tests pass through
   Stage0 and generated Stage1. Nested patterns, user enum patterns and
   statement-form match remain P176d1b2c2.
+
+## P176d1b2c2a Evidence
+
+- Flat `Option` and `Result` statement matches reuse the same pattern type,
+  wildcard, duplicate and exhaustiveness contract as expression matches.
+- Each arm owns an isolated block scope, preserves enclosing loop-control
+  depth, contributes to outer move joins and must return for the match statement
+  to satisfy enclosing return completeness.
+- Eight focused success and rejection fixtures match Rust Stage0 byte-for-byte.
+  One hundred seventy-two semantic fixtures, six typed-IR fixtures and one
+  hundred forty-five Mallang project tests pass through Stage0 and generated
+  Stage1. User enum and nested recursive pattern coverage remain P176d1b2c2b.
 
 ## B2 Completion Criteria
 

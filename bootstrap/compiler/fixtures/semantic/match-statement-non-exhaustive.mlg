@@ -1,0 +1,9 @@
+func inspect(input Option[int]) {
+    match input {
+        case Some(value) {
+            copy := value
+        }
+    }
+}
+
+func main() {}

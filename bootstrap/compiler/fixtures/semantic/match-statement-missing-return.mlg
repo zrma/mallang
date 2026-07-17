@@ -1,0 +1,12 @@
+func unwrap(input Option[int]) int {
+    match input {
+        case Some(value) {
+            return value
+        }
+        case None {
+            seen := 0
+        }
+    }
+}
+
+func main() {}

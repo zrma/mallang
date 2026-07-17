@@ -1,0 +1,24 @@
+func inspectOption(input Option[int]) {
+    mut output := 0
+    match input {
+        case Some(value) {
+            output = value
+        }
+        case None {
+            output = 1
+        }
+    }
+}
+
+func inspectResult(input Result[int, string]) {
+    match input {
+        case Ok(value) {
+            copy := value
+        }
+        case Err(message) {
+            copy := message
+        }
+    }
+}
+
+func main() {}

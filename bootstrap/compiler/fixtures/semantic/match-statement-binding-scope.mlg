@@ -1,0 +1,11 @@
+func exercise(input Option[int]) int {
+    match input {
+        case Some(value) {
+            copy := value
+        }
+        case None {}
+    }
+    return value
+}
+
+func main() {}

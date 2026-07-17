@@ -1,0 +1,20 @@
+func read(con value string) int {
+    return 0
+}
+
+func exercise(input Option[int], value string) int {
+    for true {
+        match input {
+            case Some(value) {
+                copy := value
+                break
+            }
+            case None {
+                continue
+            }
+        }
+    }
+    return read(con value)
+}
+
+func main() {}

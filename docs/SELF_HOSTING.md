@@ -109,7 +109,8 @@ arguments and nested expected payloads. P176d1b2b checks known non-generic user
 enum constructors with zero, one or multiple payloads, including expected
 payload types, owned modes and move order. P176d1b2c1 checks flat
 `Option`/`Result` expression match patterns, exhaustiveness, expected arm types,
-binding scopes and branch move joins. Nested and user enum patterns,
-statement-form match, complete ADT/closure/generic semantics and deterministic
-typed-IR drop insertion remain incomplete, so no complete semantic, typed-IR or
-Stage1 compiler claim is made.
+binding scopes and branch move joins. P176d1b2c2a extends the same flat pattern
+contract to statement match, including return convergence and loop-control
+scope. Nested and user enum patterns, complete ADT/closure/generic semantics and
+deterministic typed-IR drop insertion remain incomplete, so no complete
+semantic, typed-IR or Stage1 compiler claim is made.

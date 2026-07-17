@@ -1654,3 +1654,43 @@ test RejectsBuiltinFlatMatchBindingBeforeCoverage() {
     source := "func exercise(input Option[int]) int { return match input { case Some(print) { print } case None { 0 } } } func main() {}"
     assert(checkTestSource(source) == "`print` is a built-in value name")
 }
+
+test ChecksFlatOptionAndResultMatchStatements() {
+    source := "func inspectOption(input Option[int]) { mut output := 0; match input { case Some(value) { output = value } case None { output = 1 } } } func inspectResult(input Result[int, string]) { match input { case Ok(value) { copy := value } case Err(message) { copy := message } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test UsesAllMatchStatementArmsForReturnCompleteness() {
+    source := "func unwrap(input Option[int]) int { match input { case Some(value) { return value } case None { return 0 } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsMatchStatementWithNonReturningArm() {
+    source := "func unwrap(input Option[int]) int { match input { case Some(value) { return value } case None { seen := 0 } } } func main() {}"
+    assert(checkTestSource(source) == "function `unwrap` must return `int`")
+}
+
+test RejectsNonExhaustiveFlatMatchStatement() {
+    source := "func inspect(input Option[int]) { match input { case Some(value) { copy := value } } } func main() {}"
+    assert(checkTestSource(source) == "match is not exhaustive; missing Option.None")
+}
+
+test MergesOuterMovesAcrossMatchStatementArms() {
+    source := "func exercise(input Option[int], value string) string { match input { case Some(item) { moved := value } case None {} }; return value } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `value`")
+}
+
+test MovesOwnedMatchStatementScrutinee() {
+    source := "func exercise(input Option[string]) { match input { case Some(value) { moved := value } case None {} }; moved := input } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `input`")
+}
+
+test RejectsLeakedMatchStatementBinding() {
+    source := "func exercise(input Option[int]) int { match input { case Some(value) { copy := value } case None {} }; return value } func main() {}"
+    assert(checkTestSource(source) == "unknown variable `value`")
+}
+
+test PreservesLoopDepthAndOuterShadowAcrossMatchStatementArms() {
+    source := "func read(con value string) int { return 0 } func exercise(input Option[int], value string) int { for true { match input { case Some(value) { copy := value; break } case None { continue } } }; return read(con value) } func main() {}"
+    assert(checkTestSource(source) == "")
+}

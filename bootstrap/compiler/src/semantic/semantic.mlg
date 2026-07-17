@@ -671,6 +671,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
     if kind == "Stmt.If" {
         return self.checkIfStatement(con program, statement, con returnType)
     }
+    if kind == "Stmt.Match" {
+        return self.checkFlatMatchStatement(con program, statement, con returnType)
+    }
     if kind == "Stmt.For" {
         return self.checkForStatement(con program, statement, con returnType)
     }
@@ -769,6 +772,67 @@ func (mut self CheckedProgram) checkIfStatement(con program ast.Program, stateme
     self.locals = mergeBranchMoves(con baseLocals, con thenLocals, con elseLocals)
     self.scopeDepth = baseDepth
     return Ok(thenReturns && elseReturns)
+}
+
+func (mut self CheckedProgram) checkFlatMatchStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
+    if ast.ChildCount(con program, statement) < 2 {
+        return Err(newError("match requires at least one arm", ast.Span(con program, statement)))
+    }
+
+    scrutinee := ast.Child(con program, statement, 0)
+    mut scrutineeType := unitType()
+    match self.checkExpression(con program, scrutinee) {
+        case Ok(ty) {
+            scrutineeType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if scrutineeType.kind != "option" && scrutineeType.kind != "result" {
+        message := strings.join(con []string{"match scrutinee must be an enum, `Option`, or `Result`, got `", token.CopyText(con scrutineeType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, statement)))
+    }
+    match self.checkFlatMatchPatterns(con program, statement, con scrutineeType) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    baseDepth := self.scopeDepth
+    mut mergedLocals := copyLocals(con baseLocals)
+    mut allReturn := true
+    for mut armIndex := 1; armIndex < ast.ChildCount(con program, statement); armIndex = armIndex + 1 {
+        arm := ast.Child(con program, statement, armIndex)
+        self.locals = copyLocals(con baseLocals)
+        self.scopeDepth = baseDepth + 1
+        match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+            case Ok(_) {}
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+        block := ast.Child(con program, arm, 1)
+        match self.checkBlock(con program, block, con returnType) {
+            case Ok(returned) {
+                allReturn = allReturn && returned
+                armLocals := copyLocals(con self.locals)
+                mergedLocals = mergeBranchMoves(con baseLocals, con mergedLocals, con armLocals)
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+    }
+    self.locals = mergedLocals
+    self.scopeDepth = baseDepth
+    return Ok(allReturn)
 }
 
 func (mut self CheckedProgram) checkForStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
