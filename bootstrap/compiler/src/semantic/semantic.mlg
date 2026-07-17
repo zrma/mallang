@@ -46,6 +46,7 @@ pub type ParamSig struct {
 
 pub type FunctionSig struct {
     name string
+    mutable bool
     params []ParamSig
     returnType ResolvedType
 }
@@ -119,6 +120,7 @@ pub type CheckedProgram struct {
     structs []StructSig
     enums []EnumSig
     functions []FunctionSig
+    functionTypes []FunctionSig
     methods []MethodSig
     typedNodes []TypedNode
     functionReferences []FunctionReference
@@ -133,7 +135,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
+    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, functionTypes: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -507,7 +509,7 @@ func (mut self CheckedProgram) collectFunctionSignatures(con program ast.Program
                 if self.hasFunction(con name) {
                     return Err(newError(strings.join(con []string{"duplicate function `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
                 }
-                self.functions = append(self.functions, FunctionSig{name: name, params: params, returnType: returnType})
+                self.functions = append(self.functions, FunctionSig{name: name, mutable: false, params: params, returnType: returnType})
             }
         }
     }
@@ -629,6 +631,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if reference >= 0 {
                     function = self.functionReferences[reference].function
                 }
+                if function == -1 && ty.kind == "function" {
+                    function = self.functionIndexForType(con ty)
+                }
                 self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", borrowed: false, moved: false, rangeSource: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
                 return Ok(false)
             }
@@ -661,6 +666,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 reference := self.functionReferenceIndex(expression)
                 if reference >= 0 {
                     self.locals[index].function = self.functionReferences[reference].function
+                }
+                if self.locals[index].function == -1 && valueType.kind == "function" {
+                    self.locals[index].function = self.functionIndexForType(con valueType)
                 }
                 self.locals[index].moved = false
                 return Ok(false)
@@ -1380,6 +1388,9 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
     if kind == "Expr.Index" {
         return self.checkIndexAccess(con program, expression, con valueUse)
     }
+    if kind == "Expr.FunctionLiteral.Immutable" || kind == "Expr.FunctionLiteral.Mutable" {
+        return self.checkFunctionLiteral(con program, expression)
+    }
     if kind == "Expr.If" {
         return self.checkIfExpression(con program, expression, con valueUse, con expectedType, hasExpected)
     }
@@ -1456,6 +1467,85 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
+}
+
+func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    mut params := []ParamSig{}
+    mut returnType := unitType()
+    mut block := -1
+    for mut child := 0; child < ast.ChildCount(con program, expression); child = child + 1 {
+        node := ast.Child(con program, expression, child)
+        kind := ast.Kind(con program, node)
+        if isParamKind(con kind) {
+            match self.resolveParam(con program, node) {
+                case Ok(param) {
+                    if hasParam(con params, con param.name) {
+                        message := strings.join(con []string{"duplicate closure parameter `", token.CopyText(con param.name), "`",}, con "")
+                        return Err(newError(message, ast.Span(con program, expression)))
+                    }
+                    params = append(params, param)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else if kind == "ReturnType" {
+            match self.resolveType(con program, ast.Child(con program, node, 0)) {
+                case Ok(ty) {
+                    returnType = ty
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else if kind == "Block" {
+            block = node
+        }
+    }
+    if block < 0 {
+        return Err(newError("function literal body is missing", ast.Span(con program, expression)))
+    }
+
+    outerLocals := copyLocals(con self.locals)
+    outerDepth := self.scopeDepth
+    outerLoopDepth := self.loopDepth
+    mut closureLocals := []Local{}
+    for mut param := 0; param < len(params); param = param + 1 {
+        mut local := localFromParam(con params[param])
+        local.function = self.functionIndexForType(con local.ty)
+        closureLocals = append(closureLocals, local)
+    }
+    self.locals = closureLocals
+    self.scopeDepth = 0
+    self.loopDepth = 0
+    mut returned := false
+    match self.checkBlock(con program, block, con returnType) {
+        case Ok(value) {
+            returned = value
+        }
+        case Err(error) {
+            self.locals = copyLocals(con outerLocals)
+            self.scopeDepth = outerDepth
+            self.loopDepth = outerLoopDepth
+            return Err(error)
+        }
+    }
+    self.locals = outerLocals
+    self.scopeDepth = outerDepth
+    self.loopDepth = outerLoopDepth
+    if returnType.kind != "unit" && !returned {
+        message := strings.join(con []string{"function literal must return `", token.CopyText(con returnType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    mutable := ast.Kind(con program, expression) == "Expr.FunctionLiteral.Mutable"
+    syntheticName := strings.join(con []string{"__mlg_closure_", strings.fromInt(len(self.functionTypes)),}, con "")
+    self.functionTypes = append(self.functionTypes, FunctionSig{name: syntheticName, mutable: mutable, params: copyParams(con params), returnType: copyType(con returnType),})
+    function := encodeFunctionTypeIndex(len(self.functionTypes) - 1)
+    ty := self.functionType(function)
+    self.recordType(expression, con ty)
+    self.recordFunctionReference(expression, function, false)
+    return Ok(ty)
 }
 
 func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
@@ -2578,8 +2668,12 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
         }
         function = self.locals[local].function
         indirect = true
-        if function < 0 {
+        if function == -1 {
             return Err(newError("B2b semantic checker cannot yet resolve this function value signature", ast.Span(con program, expression)))
+        }
+        if self.callableMutable(function) && !self.locals[local].mutable {
+            message := strings.join(con []string{"mutable function value `", token.CopyText(con name), "` requires mutable access",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
         }
         calleeType := copyType(con self.locals[local].ty)
         self.recordType(callee, con calleeType)
@@ -2596,7 +2690,7 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
 
     match self.checkCallArguments(con program, expression, function, con name, indirect) {
         case Ok(_) {
-            resultType := copyType(con self.functions[function].returnType)
+            resultType := self.callableReturnType(function)
             self.recordType(expression, con resultType)
             return Ok(resultType)
         }
@@ -2985,7 +3079,7 @@ func (mut self CheckedProgram) checkFullExpressionRead(con program ast.Program, 
 
 func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
     argumentCount := ast.ChildCount(con program, expression) - 1
-    parameterCount := len(self.functions[function].params)
+    parameterCount := self.callableParamCount(function)
     if argumentCount != parameterCount {
         message := strings.join(con []string{"function `", token.CopyText(con name), "` expects ", strings.fromInt(parameterCount), " arguments, got ", strings.fromInt(argumentCount),}, con "")
         return Err(newError(message, ast.Span(con program, expression)))
@@ -2994,8 +3088,8 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
     for mut index := 0; index < argumentCount; index = index + 1 {
         argument := ast.Child(con program, expression, index + 1)
         argumentMode := argModeFromKind(con ast.Kind(con program, argument))
-        parameterMode := token.CopyText(con self.functions[function].params[index].mode)
-        mut parameterName := token.CopyText(con self.functions[function].params[index].name)
+        parameterMode := self.callableParamMode(function, index)
+        mut parameterName := self.callableParamName(function, index)
         if indirect {
             parameterName = strings.join(con []string{"argument ", strings.fromInt(index + 1),}, con "")
         }
@@ -3011,7 +3105,7 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         }
 
         value := ast.Child(con program, argument, 0)
-        parameterType := copyType(con self.functions[function].params[index].ty)
+        parameterType := self.callableParamType(function, index)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
             emptyReceiver := BorrowPlace{root: "", segments: []string{}, ty: unitType(), exclusive: false,}
@@ -3531,20 +3625,75 @@ func (con self CheckedProgram) functionIndexForType(con ty ResolvedType) int {
             return index
         }
     }
+    for mut index := 0; index < len(self.functionTypes); index = index + 1 {
+        function := encodeFunctionTypeIndex(index)
+        functionType := self.functionType(function)
+        if functionType.text == ty.text {
+            return function
+        }
+    }
     return - 1
 }
 
-func (con self CheckedProgram) functionType(index int) ResolvedType {
-    mut params := []string{}
-    for mut param := 0; param < len(self.functions[index].params); param = param + 1 {
-        mut prefix := ""
-        mode := token.CopyText(con self.functions[index].params[param].mode)
-        if mode != "owned" {
-            prefix = strings.join(con []string{mode, " ",}, con "")
-        }
-        params = append(params, strings.join(con []string{prefix, token.CopyText(con self.functions[index].params[param].ty.text),}, con ""))
+func (con self CheckedProgram) callableMutable(function int) bool {
+    if function >= 0 {
+        return self.functions[function].mutable
     }
-    return ResolvedType{text: strings.join(con []string{"func(", strings.join(con params, con ", "), ") ", token.CopyText(con self.functions[index].returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,}
+    return self.functionTypes[decodeFunctionTypeIndex(function)].mutable
+}
+
+func (con self CheckedProgram) callableParamCount(function int) int {
+    if function >= 0 {
+        return len(self.functions[function].params)
+    }
+    return len(self.functionTypes[decodeFunctionTypeIndex(function)].params)
+}
+
+func (con self CheckedProgram) callableParamName(function int, param int) string {
+    if function >= 0 {
+        return token.CopyText(con self.functions[function].params[param].name)
+    }
+    return token.CopyText(con self.functionTypes[decodeFunctionTypeIndex(function)].params[param].name)
+}
+
+func (con self CheckedProgram) callableParamMode(function int, param int) string {
+    if function >= 0 {
+        return token.CopyText(con self.functions[function].params[param].mode)
+    }
+    return token.CopyText(con self.functionTypes[decodeFunctionTypeIndex(function)].params[param].mode)
+}
+
+func (con self CheckedProgram) callableParamType(function int, param int) ResolvedType {
+    if function >= 0 {
+        return copyType(con self.functions[function].params[param].ty)
+    }
+    return copyType(con self.functionTypes[decodeFunctionTypeIndex(function)].params[param].ty)
+}
+
+func (con self CheckedProgram) callableReturnType(function int) ResolvedType {
+    if function >= 0 {
+        return copyType(con self.functions[function].returnType)
+    }
+    return copyType(con self.functionTypes[decodeFunctionTypeIndex(function)].returnType)
+}
+
+func (con self CheckedProgram) functionType(function int) ResolvedType {
+    mut params := []string{}
+    for mut param := 0; param < self.callableParamCount(function); param = param + 1 {
+        mut prefix := ""
+        mode := self.callableParamMode(function, param)
+        if mode != "owned" {
+            prefix = strings.join(con []string{token.CopyText(con mode), " ",}, con "")
+        }
+        paramType := self.callableParamType(function, param)
+        params = append(params, strings.join(con []string{prefix, token.CopyText(con paramType.text),}, con ""))
+    }
+    mut mutable := ""
+    if self.callableMutable(function) {
+        mutable = " mut"
+    }
+    returnType := self.callableReturnType(function)
+    return ResolvedType{text: strings.join(con []string{"func", mutable, "(", strings.join(con params, con ", "), ") ", token.CopyText(con returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,}
 }
 
 func (con self CheckedProgram) methodIndex(con receiver string, con name string) int {
@@ -3624,6 +3773,7 @@ func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Re
             return Err(newError("malformed function type reference", source.Copy(con span)))
         }
         mut params := []string{}
+        mut signatureParams := []ParamSig{}
         for mut child := 0; child < childCount - 1; child = child + 1 {
             paramNode := ast.Child(con program, node, child)
             paramKind := ast.Kind(con program, paramNode)
@@ -3632,9 +3782,10 @@ func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Re
                 case Ok(paramType) {
                     mut prefix := ""
                     if mode != "owned" {
-                        prefix = strings.join(con []string{mode, " ",}, con "")
+                        prefix = strings.join(con []string{token.CopyText(con mode), " ",}, con "")
                     }
                     params = append(params, strings.join(con []string{prefix, token.CopyText(con paramType.text),}, con ""))
+                    signatureParams = append(signatureParams, ParamSig{name: strings.join(con []string{"argument ", strings.fromInt(child + 1),}, con ""), mode: mode, ty: copyType(con paramType),})
                 }
                 case Err(error) {
                     return Err(error)
@@ -3644,12 +3795,16 @@ func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Re
         returnWrapper := ast.Child(con program, node, childCount - 1)
         returnNode := ast.Child(con program, returnWrapper, 0)
         mut mutable := ""
+        mut functionMutable := false
         if kind == "Type.Function.Mutable" {
             mutable = " mut"
+            functionMutable = true
         }
         match self.resolveType(con program, returnNode) {
             case Ok(returnType) {
-                return Ok(ResolvedType{text: strings.join(con []string{"func", mutable, "(", strings.join(con params, con ", "), ") ", token.CopyText(con returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,})
+                ty := ResolvedType{text: strings.join(con []string{"func", mutable, "(", strings.join(con params, con ", "), ") ", token.CopyText(con returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,}
+                self.functionTypes = append(self.functionTypes, FunctionSig{name: "", mutable: functionMutable, params: signatureParams, returnType: copyType(con returnType),})
+                return Ok(ty)
             }
             case Err(error) {
                 return Err(error)
@@ -3782,6 +3937,14 @@ func enumVariantIndex(con value EnumSig, con name string) int {
         }
     }
     return - 1
+}
+
+func encodeFunctionTypeIndex(index int) int {
+    return - 2 - index
+}
+
+func decodeFunctionTypeIndex(function int) int {
+    return - 2 - function
 }
 
 func matchUsesRecursiveCoverage(con program ast.Program, expression int) bool {
@@ -3964,6 +4127,14 @@ func localIndex(con locals []Local, con name string) int {
 
 func localFromParam(con param ParamSig) Local {
     return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", borrowed: param.mode != "owned", moved: false, rangeSource: false, ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
+}
+
+func copyParams(con params []ParamSig) []ParamSig {
+    mut copied := []ParamSig{}
+    for mut index := 0; index < len(params); index = index + 1 {
+        copied = append(copied, ParamSig{name: token.CopyText(con params[index].name), mode: token.CopyText(con params[index].mode), ty: copyType(con params[index].ty),})
+    }
+    return copied
 }
 
 func copyLocals(con locals []Local) []Local {

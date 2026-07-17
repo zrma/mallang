@@ -1,0 +1,12 @@
+func make() func(int) int {
+    return func(value int) int {
+        return value + 1
+    }
+}
+
+func run() int {
+    transform := make()
+    return transform(1)
+}
+
+func main() {}

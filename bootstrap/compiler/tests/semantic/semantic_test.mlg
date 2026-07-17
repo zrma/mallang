@@ -1819,3 +1819,53 @@ test RejectsBuiltinBindingInsideNestedPattern() {
     source := "func code(value Option[Result[int, string]]) int { return match value { case Some(Ok(print)) { print } case Some(Err(message)) { 0 } case None { 0 } } } func main() {}"
     assert(checkTestSource(source) == "`print` is a built-in value name")
 }
+
+test ChecksCaptureFreeFunctionLiterals() {
+    source := "func apply(value int, transform func(con int) int) int { return transform(con value) } func run(value int) int { transform := func(con input int) int { return input + 1 }; direct := transform(con value); inline := apply(value, func(con input int) int { return input + 2 }); return direct + inline } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksReturnedFunctionLiterals() {
+    source := "func make() func(int) int { return func(value int) int { return value + 1 } } func run() int { transform := make(); return transform(1) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksMutableFunctionLiteralsAndParameters() {
+    source := "func invoke(mut transform func mut(int) int) int { return transform(1) } func run() int { mut transform := func mut(value int) int { return value + 1 }; return invoke(mut transform) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsImmutableMutableFunctionValueCall() {
+    source := "func invoke(con transform func mut(int) int) int { return transform(1) } func main() {}"
+    assert(checkTestSource(source) == "mutable function value `transform` requires mutable access")
+}
+
+test RejectsDuplicateClosureParameter() {
+    source := "func run() int { transform := func(value int, value int) int { return value }; return transform(1, 2) } func main() {}"
+    assert(checkTestSource(source) == "duplicate closure parameter `value`")
+}
+
+test RejectsMissingFunctionLiteralReturn() {
+    source := "func run() func(int) int { return func(value int) int { copy := value } } func main() {}"
+    assert(checkTestSource(source) == "function literal must return `int`")
+}
+
+test RejectsFunctionLiteralReturnMismatch() {
+    source := "func run() func(int) int { return func(value int) int { return false } } func main() {}"
+    assert(checkTestSource(source) == "return type mismatch: expected `int`, got `bool`")
+}
+
+test RejectsFunctionLiteralCallModeMismatch() {
+    source := "func run() int { transform := func(con value int) int { return value }; return transform(1) } func main() {}"
+    assert(checkTestSource(source) == "parameter `argument 1` expects `con` argument")
+}
+
+test RejectsFunctionLiteralCallArity() {
+    source := "func run() int { transform := func(value int) int { return value }; return transform() } func main() {}"
+    assert(checkTestSource(source) == "function `transform` expects 1 arguments, got 0")
+}
+
+test RejectsFunctionLiteralCallArgumentType() {
+    source := "func run() int { transform := func(value int) int { return value }; return transform(false) } func main() {}"
+    assert(checkTestSource(source) == "argument type mismatch for `transform`: expected `int`, got `bool`")
+}

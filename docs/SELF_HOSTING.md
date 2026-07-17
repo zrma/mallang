@@ -115,6 +115,8 @@ scope. P176d1b2c2b1 extends expression and statement matches to flat
 non-generic user enum variants with zero, one or multiple payload bindings,
 deterministic exhaustiveness and scrutinee ownership. P176d1b2c2b2 adds nested
 built-in/user enum payload patterns, Cartesian multi-payload coverage and finite
-recursive-enum coverage. Complete closure/generic semantics and deterministic
-typed-IR drop insertion remain incomplete, so no complete semantic, typed-IR or
-Stage1 compiler claim is made.
+recursive-enum coverage. P176d2a1 adds capture-free plain/mutable function
+literals, structural callable signatures and indirect mutable-call checks.
+Capture ownership, complete generic semantics and deterministic typed-IR drop
+insertion remain incomplete, so no complete semantic, typed-IR or Stage1
+compiler claim is made.

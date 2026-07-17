@@ -1,0 +1,16 @@
+func apply(value int, transform func(con int) int) int {
+    return transform(con value)
+}
+
+func run(value int) int {
+    transform := func(con input int) int {
+        return input + 1
+    }
+    direct := transform(con value)
+    inline := apply(value, func(con input int) int {
+        return input + 2
+    })
+    return direct + inline
+}
+
+func main() {}

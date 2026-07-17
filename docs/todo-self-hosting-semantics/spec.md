@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b2c2b2 complete
+Status: in progress; P176a-P176d2a1 complete
 
 ## Objective
 
@@ -89,8 +89,12 @@ agrees.
   (complete)
 - P176d1b2c2b2: extend coverage and bindings through nested built-in and user
   enum patterns, including recursive ADTs (complete)
-- P176d2a: check plain and mutable function literals, capture propagation and
-  closure ownership without changing the frozen callable syntax
+- P176d2a1: check capture-free plain and mutable function literals, structural
+  callable signatures, return completeness and indirect calls (complete)
+- P176d2a2: collect plain closure captures and enforce Copy/non-Copy capture
+  ownership
+- P176d2a3: propagate mutable and nested captures through places, calls and
+  nested function literals
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -441,6 +445,19 @@ specialization and function-body checking until later P176 slices.
   fixtures and one hundred seventy Mallang project tests pass through Stage0
   and generated Stage1. Function literals, captures and closure ownership begin
   in P176d2a.
+
+## P176d2a1 Evidence
+
+- Capture-free plain and mutable function literals resolve explicit parameter
+  modes, parameter/return types and body return completeness in isolated local
+  scopes.
+- Anonymous callable signatures remain private to semantic checking, preserve
+  public declaration normalization and support returned function values,
+  function arguments and mutable indirect-call access checks.
+- Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
+  Two hundred seven semantic fixtures, six typed-IR fixtures and one hundred
+  eighty Mallang project tests pass through Stage0 and generated Stage1. Plain
+  owned capture collection and move semantics remain P176d2a2.
 
 ## B2 Completion Criteria
 

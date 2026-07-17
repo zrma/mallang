@@ -1,0 +1,8 @@
+func run() int {
+    transform := func(value int) int {
+        return value
+    }
+    return transform(false)
+}
+
+func main() {}

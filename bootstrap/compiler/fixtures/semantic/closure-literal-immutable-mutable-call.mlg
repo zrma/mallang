@@ -1,0 +1,5 @@
+func invoke(con transform func mut(int) int) int {
+    return transform(1)
+}
+
+func main() {}

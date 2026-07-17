@@ -1,0 +1,12 @@
+func invoke(mut transform func mut(int) int) int {
+    return transform(1)
+}
+
+func run() int {
+    mut transform := func mut(value int) int {
+        return value + 1
+    }
+    return invoke(mut transform)
+}
+
+func main() {}

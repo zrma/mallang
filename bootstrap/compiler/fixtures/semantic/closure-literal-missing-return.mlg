@@ -1,0 +1,7 @@
+func run() func(int) int {
+    return func(value int) int {
+        copy := value
+    }
+}
+
+func main() {}
