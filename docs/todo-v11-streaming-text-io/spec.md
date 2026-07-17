@@ -1,6 +1,6 @@
 # Mallang v1.1 Streaming Text I/O
 
-Status: release-ready; supported-platform acceptance pending
+Status: complete; released as v1.1.0 on 2026-07-17
 
 ## Goal
 
@@ -48,5 +48,5 @@ Open, read, invalid-data and close failures return `errors.Error`.
 - [x] canonical Mallang gate
 - [x] release-binary and clean installed-artifact Mallang gates
 - [x] published v1.0.0 upgrade, rollback and re-upgrade compatibility rehearsal
-- [ ] macOS arm64 and Linux x86_64 release artifact gates
-- [ ] signed `v1.1.0` tag, GitHub Release and clean installer smoke
+- [x] macOS arm64 and Linux x86_64 release artifact gates
+- [x] signed `v1.1.0` tag, GitHub Release and clean installer smoke

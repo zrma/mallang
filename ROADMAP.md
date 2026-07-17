@@ -269,5 +269,8 @@
 - `v1.0.0` preserved the frozen compiler and conformance map, completed RC
   upgrade/rollback/stable re-upgrade on both supported platforms, and was
   published as the first stable release on 2026-07-17.
+- `v1.1.0` added bounded-memory `std/fs.forEachLine[C,S]`, completed v1.0.0
+  upgrade/rollback/re-upgrade compatibility and supported-platform artifact
+  acceptance, and was published on 2026-07-17.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

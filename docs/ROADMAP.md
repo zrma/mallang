@@ -1631,7 +1631,7 @@ Stable final audit와 배포 sequence는 `scripts/check-v1-stable-acceptance.sh`
 
 ## P173: v1.1 Streaming Text I/O
 
-상태: release-ready; supported-platform acceptance pending
+상태: complete; released as v1.1.0 (2026-07-17)
 
 - [x] v1.0 compatibility classification과 handle-based API rejection
 - [x] generic `fs.forEachLine[C,S]` source contract
@@ -1640,8 +1640,8 @@ Stable final audit와 배포 sequence는 `scripts/check-v1-stable-acceptance.sh`
 - [x] recoverable open/read/close failures
 - [x] strict C, ASan/UBSan and allocation-accounting gate
 - [x] published v1.0.0 upgrade, rollback, re-upgrade compatibility rehearsal
-- [ ] supported-platform release artifact acceptance
-- [ ] signed `v1.1.0` tag and public GitHub release
+- [x] supported-platform release artifact acceptance
+- [x] signed `v1.1.0` tag and public GitHub release
 
 Exact API decision and evidence are owned by
 `docs/todo-v11-streaming-text-io/`. This is a backward-compatible minor release;

@@ -1,6 +1,6 @@
 # Mallang v1.1 Streaming Text I/O Acceptance
 
-Status: release-ready; supported-platform acceptance pending
+Status: complete; released as v1.1.0 on 2026-07-17
 
 ## Canonical command
 
@@ -31,6 +31,12 @@ One explicit prefix executes the following sequence:
 - [x] bounded-memory UTF-8 line semantics and recoverable failure injection
 - [x] strict C, ASan/UBSan and zero live-allocation checks
 - [x] v1.0.0 upgrade, rollback and v1.1.0 re-upgrade compatibility rehearsal
-- [ ] macOS arm64 and Linux x86_64 full acceptance
-- [ ] combined checksum bundle and clean public installation
-- [ ] signed `v1.1.0` tag and public stable GitHub release
+- [x] macOS arm64 and Linux x86_64 full acceptance
+- [x] combined checksum bundle and clean public installation
+- [x] signed `v1.1.0` tag and public stable GitHub release
+
+The supported-platform acceptance run is:
+
+```text
+https://github.com/zrma/mallang/actions/runs/29548131849
+```

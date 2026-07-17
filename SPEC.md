@@ -24,7 +24,7 @@ while preserving representative `textstats` observable output.
 The 1.x compatibility guarantees in `docs/COMPATIBILITY.md` begin with this
 release.
 
-## v1.1 Compatible Standard Library Addition
+## Published v1.1 Compatible Standard Library Addition
 
 The first post-stable addition is the generic `std/fs.forEachLine[C,S]` API. It
 adds no syntax and preserves every v1.0 program and observable behavior. The
