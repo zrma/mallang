@@ -1,0 +1,13 @@
+func read(con value string) int {
+    return 0
+}
+
+func exercise(input Option[int], value string) int {
+    selected := match input {
+        case Some(value) { value }
+        case _ { 0 }
+    }
+    return selected + read(con value)
+}
+
+func main() {}

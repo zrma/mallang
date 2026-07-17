@@ -1594,3 +1594,63 @@ test TreatsKnownEnumPathBeforeLocalShadow() {
     source := "type Choice enum { Empty } type Holder struct { Empty int } func exercise(Choice Holder) int { return Choice.Empty } func main() {}"
     assert(checkTestSource(source) == "enum constructor type mismatch: expected `int`, got `Choice`")
 }
+
+test ChecksFlatOptionAndResultMatchExpressions() {
+    source := "func optionValue(input Option[int]) int { return match input { case Some(value) { value } case None { 0 } } } func resultValue(input Result[int, string]) int { return match input { case Ok(value) { value } case Err(message) { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsMatchExpectedLiteralTypeMismatch() {
+    source := "func exercise(input Option[int]) [2]int { return match input { case Some(value) { [2]int{value, value} } case None { [1]int{0} } } } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsNonExhaustiveFlatMatch() {
+    source := "func exercise(input Option[int]) int { return match input { case Some(value) { value } } } func main() {}"
+    assert(checkTestSource(source) == "match is not exhaustive; missing Option.None")
+}
+
+test RejectsDuplicateFlatMatchPattern() {
+    source := "func exercise(input Option[int]) int { return match input { case Some(value) { value } case Some(other) { other } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test RejectsFlatMatchPatternTypeMismatch() {
+    source := "func exercise(input Option[int]) int { return match input { case Ok(value) { value } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "pattern `Ok` does not match payload type `Option[int]`")
+}
+
+test RejectsFlatMatchArmTypeMismatch() {
+    source := "func exercise(input Option[int]) int { return match input { case Some(value) { value } case None { false } } } func main() {}"
+    assert(checkTestSource(source) == "match arms must have the same type: got `int` and `bool`")
+}
+
+test RejectsNonAdtMatchScrutinee() {
+    source := "func exercise(input int) int { return match input { case _ { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "match scrutinee must be an enum, `Option`, or `Result`, got `int`")
+}
+
+test MergesOuterMovesAcrossMatchArms() {
+    source := "func exercise(input Option[int], value string) string { selected := match input { case Some(item) { value } case None { \"fallback\" } }; return value } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `value`")
+}
+
+test MovesOwnedMatchScrutinee() {
+    source := "func exercise(input Option[string]) string { selected := match input { case Some(value) { value } case None { \"fallback\" } }; moved := input; return selected } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `input`")
+}
+
+test RetriesMatchInferenceWithConcreteArmType() {
+    source := "func exercise(input Option[int]) Option[int] { selected := match input { case Some(value) { None } case None { Some(0) } }; return selected } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test SupportsMatchWildcardAndBindingShadowing() {
+    source := "func read(con value string) int { return 0 } func exercise(input Option[int], value string) int { selected := match input { case Some(value) { value } case _ { 0 } }; return selected + read(con value) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsBuiltinFlatMatchBindingBeforeCoverage() {
+    source := "func exercise(input Option[int]) int { return match input { case Some(print) { print } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "`print` is a built-in value name")
+}

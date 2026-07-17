@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b2b complete
+Status: in progress; P176a-P176d1b2c1 complete
 
 ## Objective
 
@@ -80,8 +80,10 @@ agrees.
   (complete)
 - P176d1b2b: check zero, one and multiple-payload user enum constructors and
   propagate expected payload types (complete)
-- P176d1b2c: propagate expected types through the remaining match expression
-  contexts
+- P176d1b2c1: check flat `Option`/`Result` expression match patterns,
+  exhaustiveness, arm bindings, expected types and branch move joins (complete)
+- P176d1b2c2: extend match semantics to nested patterns, user enums and
+  statement-form control flow
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -378,6 +380,20 @@ specialization and function-body checking until later P176 slices.
 - One hundred fifty-two semantic fixtures, six typed-IR fixtures and one
   hundred twenty-five Mallang project tests pass through Stage0 and generated
   Stage1. Match expression expected-type propagation remains P176d1b2c.
+
+## P176d1b2c1 Evidence
+
+- Flat `Option` and `Result` expression matches validate scrutinee types,
+  built-in patterns, wildcard coverage, duplicate or unreachable arms and
+  deterministic exhaustiveness diagnostics before checking arm expressions.
+- Arm payload bindings use isolated lexical scopes. Expected types propagate
+  through every arm, inference retries from the first independently typable
+  arm, the scrutinee is consumed once and outer moves merge across all arms.
+- Twelve focused success and rejection fixtures match Rust Stage0
+  byte-for-byte. One hundred sixty-four semantic fixtures, six typed-IR
+  fixtures and one hundred thirty-seven Mallang project tests pass through
+  Stage0 and generated Stage1. Nested patterns, user enum patterns and
+  statement-form match remain P176d1b2c2.
 
 ## B2 Completion Criteria
 

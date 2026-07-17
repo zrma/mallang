@@ -1,0 +1,15 @@
+func optionValue(input Option[int]) int {
+    return match input {
+        case Some(value) { value }
+        case None { 0 }
+    }
+}
+
+func resultValue(input Result[int, string]) int {
+    return match input {
+        case Ok(value) { value }
+        case Err(message) { 0 }
+    }
+}
+
+func main() {}

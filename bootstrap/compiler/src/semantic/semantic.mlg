@@ -1297,6 +1297,9 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
     if kind == "Expr.If" {
         return self.checkIfExpression(con program, expression, con valueUse, con expectedType, hasExpected)
     }
+    if kind == "Expr.Match" {
+        return self.checkMatchExpression(con program, expression, con valueUse, con expectedType, hasExpected)
+    }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
         match self.checkExpression(con program, operand) {
@@ -1547,6 +1550,251 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     self.locals = mergeBranchMoves(con self.locals, con thenLocals, con elseLocals)
     self.recordType(expression, con thenType)
     return Ok(thenType)
+}
+
+func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, expression int, con valueUse string, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
+    if ast.ChildCount(con program, expression) < 2 {
+        return Err(newError("match requires at least one arm", ast.Span(con program, expression)))
+    }
+
+    scrutinee := ast.Child(con program, expression, 0)
+    mut scrutineeType := unitType()
+    match self.checkExpression(con program, scrutinee) {
+        case Ok(ty) {
+            scrutineeType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if scrutineeType.kind != "option" && scrutineeType.kind != "result" {
+        message := strings.join(con []string{"match scrutinee must be an enum, `Option`, or `Result`, got `", token.CopyText(con scrutineeType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    match self.checkFlatMatchPatterns(con program, expression, con scrutineeType) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    baseDepth := self.scopeDepth
+    mut branchExpected := copyType(con expectedType)
+    if !hasExpected {
+        mut inferred := false
+        mut firstError := newError("match arm type inference failed", ast.Span(con program, expression))
+        mut hasFirstError := false
+        for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
+            arm := ast.Child(con program, expression, armIndex)
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth + 1
+            match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+                case Ok(_) {}
+                case Err(error) {
+                    self.locals = copyLocals(con baseLocals)
+                    self.scopeDepth = baseDepth
+                    return Err(error)
+                }
+            }
+            branch := ast.Child(con program, arm, 1)
+            match self.checkExpressionExpected(con program, branch, con valueUse, con branchExpected, false) {
+                case Ok(ty) {
+                    branchExpected = ty
+                    inferred = true
+                    break
+                }
+                case Err(error) {
+                    if !hasFirstError {
+                        firstError = error
+                        hasFirstError = true
+                    }
+                }
+            }
+        }
+        self.locals = copyLocals(con baseLocals)
+        self.scopeDepth = baseDepth
+        if !inferred {
+            return Err(firstError)
+        }
+    }
+
+    mut mergedLocals := copyLocals(con baseLocals)
+    mut firstType := unitType()
+    mut hasFirstType := false
+    for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
+        arm := ast.Child(con program, expression, armIndex)
+        self.locals = copyLocals(con baseLocals)
+        self.scopeDepth = baseDepth + 1
+        match self.addFlatMatchBinding(con program, arm, con scrutineeType) {
+            case Ok(_) {}
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+        branch := ast.Child(con program, arm, 1)
+        match self.checkExpressionExpected(con program, branch, con valueUse, con branchExpected, true) {
+            case Ok(ty) {
+                if !hasFirstType {
+                    firstType = ty
+                    hasFirstType = true
+                } else if firstType.text != ty.text {
+                    message := strings.join(con []string{"match arms must have the same type: got `", token.CopyText(con firstType.text), "` and `", token.CopyText(con ty.text), "`",}, con "")
+                    self.locals = copyLocals(con baseLocals)
+                    self.scopeDepth = baseDepth
+                    return Err(newError(message, ast.Span(con program, expression)))
+                }
+                armLocals := copyLocals(con self.locals)
+                mergedLocals = mergeBranchMoves(con baseLocals, con mergedLocals, con armLocals)
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+    }
+
+    self.locals = mergedLocals
+    self.scopeDepth = baseDepth
+    if firstType.kind == "unit" {
+        return Err(newError("match expression arms must produce a value in v0", ast.Span(con program, expression)))
+    }
+    self.recordType(expression, con firstType)
+    return Ok(firstType)
+}
+
+func (con self CheckedProgram) checkFlatMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    mut seenFirst := false
+    mut seenSecond := false
+    for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
+        arm := ast.Child(con program, expression, armIndex)
+        pattern := ast.Child(con program, arm, 0)
+        patternKind := ast.Kind(con program, pattern)
+        if patternKind == "Pattern.Some" || patternKind == "Pattern.Ok" || patternKind == "Pattern.Err" {
+            name := ast.Value(con program, pattern)
+            if isBuiltinValueName(con name) {
+                message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con "")
+                return Err(newError(message, ast.Span(con program, arm)))
+            }
+        }
+        mut coverage := 0
+        match self.flatMatchCoverage(con program, pattern, con scrutineeType) {
+            case Ok(value) {
+                coverage = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        duplicate := coverage == 1 && seenFirst || coverage == 2 && seenSecond || coverage == 3 && seenFirst && seenSecond
+        if duplicate {
+            return Err(newError("match pattern is duplicate or unreachable", ast.Span(con program, arm)))
+        }
+        if coverage == 1 || coverage == 3 {
+            seenFirst = true
+        }
+        if coverage == 2 || coverage == 3 {
+            seenSecond = true
+        }
+    }
+
+    if seenFirst && seenSecond {
+        return Ok(true)
+    }
+    mut missing := ""
+    if scrutineeType.kind == "option" {
+        if !seenSecond {
+            missing = "Option.None"
+        }
+        if !seenFirst {
+            if missing == "" {
+                missing = "Option.Some"
+            } else {
+                missing = strings.join(con []string{missing, ", Option.Some",}, con "")
+            }
+        }
+    } else {
+        if !seenSecond {
+            missing = "Result.Err"
+        }
+        if !seenFirst {
+            if missing == "" {
+                missing = "Result.Ok"
+            } else {
+                missing = strings.join(con []string{missing, ", Result.Ok",}, con "")
+            }
+        }
+    }
+    message := strings.join(con []string{"match is not exhaustive; missing ", missing,}, con "")
+    return Err(newError(message, ast.Span(con program, expression)))
+}
+
+func (con self CheckedProgram) flatMatchCoverage(con program ast.Program, pattern int, con scrutineeType ResolvedType) Result[int, SemanticError] {
+    kind := ast.Kind(con program, pattern)
+    if kind == "Pattern.Wildcard" {
+        return Ok(3)
+    }
+    if scrutineeType.kind == "option" {
+        if kind == "Pattern.Some" {
+            return Ok(1)
+        }
+        if kind == "Pattern.None" {
+            return Ok(2)
+        }
+    } else {
+        if kind == "Pattern.Ok" {
+            return Ok(1)
+        }
+        if kind == "Pattern.Err" {
+            return Ok(2)
+        }
+    }
+
+    mut patternName := "match pattern"
+    if kind == "Pattern.Some" {
+        patternName = "Some"
+    } else if kind == "Pattern.None" {
+        patternName = "None"
+    } else if kind == "Pattern.Ok" {
+        patternName = "Ok"
+    } else if kind == "Pattern.Err" {
+        patternName = "Err"
+    } else {
+        return Err(newError("B2d1b2c1 semantic checker does not yet accept nested or user enum match patterns", ast.Span(con program, pattern)))
+    }
+    message := strings.join(con []string{"pattern `", patternName, "` does not match payload type `", token.CopyText(con scrutineeType.text), "`",}, con "")
+    return Err(newError(message, ast.Span(con program, pattern)))
+}
+
+func (mut self CheckedProgram) addFlatMatchBinding(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    pattern := ast.Child(con program, arm, 0)
+    kind := ast.Kind(con program, pattern)
+    mut argument := -1
+    if kind == "Pattern.Some" || kind == "Pattern.Ok" {
+        argument = 0
+    } else if kind == "Pattern.Err" {
+        argument = 1
+    } else {
+        return Ok(false)
+    }
+
+    name := ast.Value(con program, pattern)
+    if isBuiltinValueName(con name) {
+        message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con "")
+        return Err(newError(message, ast.Span(con program, arm)))
+    }
+    match self.typeArgument(con scrutineeType, argument) {
+        case Ok(ty) {
+            self.locals = append(self.locals, Local{name: name, mutable: false, borrowed: false, moved: false, rangeSource: false, ty: ty, function: -1, scopeDepth: self.scopeDepth,})
+            return Ok(true)
+        }
+        case Err(_) {
+            return Err(newError("checked match payload type is missing", ast.Span(con program, arm)))
+        }
+    }
 }
 
 func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {

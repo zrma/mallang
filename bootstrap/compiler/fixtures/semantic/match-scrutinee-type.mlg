@@ -1,0 +1,7 @@
+func exercise(input int) int {
+    return match input {
+        case _ { 0 }
+    }
+}
+
+func main() {}

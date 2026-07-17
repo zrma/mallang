@@ -1723,7 +1723,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
   assignments, nested fields/elements and if-expression branches
 - [x] expected-type propagation through `None`/`Some`/`Ok`/`Err`
 - [x] user enum constructor payload semantics and expected-type propagation
-- [ ] expected-type propagation through remaining match contexts
+- [x] flat Option/Result expression match expected types, coverage와 move join
+- [ ] nested/user enum pattern과 statement match semantics
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

@@ -1,0 +1,9 @@
+func exercise(input Option[int]) Option[int] {
+    selected := match input {
+        case Some(value) { None }
+        case None { Some(0) }
+    }
+    return selected
+}
+
+func main() {}
