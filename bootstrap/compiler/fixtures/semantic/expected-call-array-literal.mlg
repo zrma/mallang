@@ -1,0 +1,7 @@
+func consume(values [2]int) {}
+
+func exercise() {
+    consume([1]int{1})
+}
+
+func main() {}

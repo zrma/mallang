@@ -1,0 +1,6 @@
+func exercise() {
+    mut values := [2]int{1, 2}
+    values = [1]int{1}
+}
+
+func main() {}

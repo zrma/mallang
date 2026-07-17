@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c4a complete
+Status: in progress; P176a-P176d1b1 complete
 
 ## Objective
 
@@ -72,8 +72,11 @@ agrees.
 - P176d1a: check explicit non-generic struct, fixed-size array and slice literals,
   including field completeness, element counts, types and owned element moves
   (complete)
-- P176d1b: propagate expected types through literals, constructors, calls,
-  returns and branch expressions while preserving Stage0 diagnostic priority
+- P176d1b1: propagate explicit struct, array and slice literal expected types
+  through calls, returns, assignments, fields, elements and branch expressions
+  while preserving Stage0 diagnostic priority (complete)
+- P176d1b2: propagate expected types through Option, Result and user enum
+  constructors plus the remaining match expression contexts
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -328,7 +331,21 @@ specialization and function-body checking until later P176 slices.
 - One hundred twenty-one semantic fixtures, six typed-IR fixtures and
   ninety-four Mallang project tests pass through Stage0, generated Stage1,
   strict allocation accounting and ASan/UBSan. Expected-type propagation and
-  constructors remain P176d1b.
+  constructors remain P176d1b2.
+
+## P176d1b1 Evidence
+
+- Calls, returns and mutable local, field and indexed assignments pass their
+  destination type into explicit struct, fixed-array and slice literals.
+  Struct fields and array/slice elements recursively pass their declared type.
+- If-expression branches preserve the outer expected type, so a mismatched
+  literal is rejected at the literal boundary before the general branch-type
+  convergence diagnostic.
+- One hundred thirty-one semantic fixtures, six typed-IR fixtures and one
+  hundred four Mallang project tests pass through Stage0 and generated Stage1.
+  Strict allocation accounting, ASan/UBSan and the canonical repository gate
+  cover the same corpus. Option, Result and user enum constructors plus the
+  remaining match contexts remain P176d1b2.
 
 ## B2 Completion Criteria
 

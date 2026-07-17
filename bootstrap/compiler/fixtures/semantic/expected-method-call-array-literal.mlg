@@ -1,0 +1,11 @@
+type Consumer struct {
+    value int
+}
+
+func (con self Consumer) consume(values [2]int) {}
+
+func exercise(con consumer Consumer) {
+    consumer.consume([1]int{1})
+}
+
+func main() {}

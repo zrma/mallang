@@ -1439,3 +1439,53 @@ test RejectsArrayLiteralElementReuseAfterMove() {
     source := "func exercise(value string) [2]string { return [2]string{value, value} } func main() {}"
     assert(checkTestSource(source) == "use of moved value `value`")
 }
+
+test RejectsCallArrayLiteralExpectedTypeMismatch() {
+    source := "func consume(values [2]int) {} func exercise() { consume([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsReturnArrayLiteralExpectedTypeMismatch() {
+    source := "func exercise() [2]int { return [1]int{1} } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsAssignmentArrayLiteralExpectedTypeMismatch() {
+    source := "func exercise() { mut values := [2]int{1, 2}; values = [1]int{1} } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsFieldAssignmentStructLiteralExpectedTypeMismatch() {
+    source := "type Left struct { value int } type Right struct { value int } type Holder struct { item Left } func exercise(mut holder Holder) { holder.item = Right{value: 1} } func main() {}"
+    assert(checkTestSource(source) == "struct literal type mismatch: expected `Left`, got `Right`")
+}
+
+test RejectsArrayElementStructLiteralExpectedTypeMismatch() {
+    source := "type Left struct { value int } type Right struct { value int } func exercise() [1]Left { return [1]Left{Right{value: 1}} } func main() {}"
+    assert(checkTestSource(source) == "struct literal type mismatch: expected `Left`, got `Right`")
+}
+
+test RejectsStructFieldArrayLiteralExpectedTypeMismatch() {
+    source := "type Bag struct { values [2]int } func exercise() Bag { return Bag{values: [1]int{1}} } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsIfBranchLiteralExpectedTypeMismatch() {
+    source := "func exercise() [2]int { return if true { [2]int{1, 2} } else { [1]int{1} } } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsIndirectCallArrayLiteralExpectedTypeMismatch() {
+    source := "func consume(values [2]int) {} func exercise() { operation := consume; operation([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsMethodCallArrayLiteralExpectedTypeMismatch() {
+    source := "type Consumer struct { value int } func (con self Consumer) consume(values [2]int) {} func exercise(con consumer Consumer) { consumer.consume([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsIndexedAssignmentArrayLiteralExpectedTypeMismatch() {
+    source := "func exercise(mut values [1][2]int) { values[0] = [1]int{1} } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}

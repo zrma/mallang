@@ -102,6 +102,8 @@ local method receivers, method arguments and receiver/argument borrow overlap.
 P176c4b extends the same ownership rules to local-rooted field/index receivers
 and temporary/computed bases without evaluating receiver inputs twice. P176d1a
 checks explicit non-generic struct, fixed-size array and slice literals with
-owned element moves. Expected-type propagation, complete ADT/closure/generic
-semantics and deterministic typed-IR drop insertion remain incomplete, so no
-complete semantic, typed-IR or Stage1 compiler claim is made.
+owned element moves. P176d1b1 propagates expected types into those literals
+through calls, returns, assignments, nested fields/elements and if-expression
+branches. Option/Result/user enum constructor propagation, complete
+ADT/closure/generic semantics and deterministic typed-IR drop insertion remain
+incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

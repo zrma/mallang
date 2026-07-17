@@ -1,0 +1,17 @@
+type Left struct {
+    value int
+}
+
+type Right struct {
+    value int
+}
+
+type Holder struct {
+    item Left
+}
+
+func exercise(mut holder Holder) {
+    holder.item = Right{value: 1}
+}
+
+func main() {}

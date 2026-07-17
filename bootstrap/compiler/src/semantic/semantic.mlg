@@ -628,7 +628,8 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
             return Err(newError(strings.join(con []string{"cannot assign to active range source `", token.CopyText(con name), "` in v0",}, con ""), ast.Span(con program, statement)))
         }
         expression := ast.Child(con program, statement, 0)
-        match self.checkExpression(con program, expression) {
+        expectedType := copyType(con self.locals[index].ty)
+        match self.checkExpressionExpected(con program, expression, con "owned", con expectedType, true) {
             case Ok(valueType) {
                 if valueType.text != self.locals[index].ty.text {
                     message := strings.join(con []string{"assignment type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con self.locals[index].ty.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -689,7 +690,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
     }
     if kind == "Stmt.Return" {
         expression := ast.Child(con program, statement, 0)
-        match self.checkExpression(con program, expression) {
+        match self.checkExpressionExpected(con program, expression, con "owned", con returnType, true) {
             case Ok(valueType) {
                 if valueType.text != returnType.text {
                     message := strings.join(con []string{"return type mismatch: expected `", token.CopyText(con returnType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -1053,7 +1054,8 @@ func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, c
     if self.locals[local].rangeSource {
         return Err(newError(strings.join(con []string{"cannot assign to active range source `", token.CopyText(con name), "` in v0",}, con ""), source.Copy(con span)))
     }
-    match self.checkExpression(con program, value) {
+    expectedType := copyType(con self.locals[local].ty)
+    match self.checkExpressionExpected(con program, value, con "owned", con expectedType, true) {
         case Ok(valueType) {
             if valueType.text != self.locals[local].ty.text {
                 message := strings.join(con []string{"assignment type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con self.locals[local].ty.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -1117,7 +1119,7 @@ func (mut self CheckedProgram) checkFieldPlaceAssign(con program ast.Program, ba
             return Err(error)
         }
     }
-    match self.checkExpression(con program, value) {
+    match self.checkExpressionExpected(con program, value, con "owned", con fieldType, true) {
         case Ok(valueType) {
             if valueType.text != fieldType.text {
                 message := strings.join(con []string{"field `", token.CopyText(con field), "` assignment type mismatch: expected `", token.CopyText(con fieldType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -1198,7 +1200,7 @@ func (mut self CheckedProgram) checkIndexPlaceAssign(con program ast.Program, ba
             return Err(newError("checked indexed assignment element type is missing", source.Copy(con span)))
         }
     }
-    match self.checkExpression(con program, value) {
+    match self.checkExpressionExpected(con program, value, con "owned", con element, true) {
         case Ok(valueType) {
             if valueType.text != element.text {
                 message := strings.join(con []string{"indexed assignment type mismatch: expected `", token.CopyText(con element.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -1217,6 +1219,11 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
 }
 
 func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
+    expectedType := unitType()
+    return self.checkExpressionExpected(con program, expression, con valueUse, con expectedType, false)
+}
+
+func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, expression int, con valueUse string, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     kind := ast.Kind(con program, expression)
     if kind == "Expr.Int" {
         ty := intType()
@@ -1269,10 +1276,10 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
         return self.checkCall(con program, expression)
     }
     if kind == "Expr.StructLiteral" {
-        return self.checkStructLiteral(con program, expression)
+        return self.checkStructLiteral(con program, expression, con expectedType, hasExpected)
     }
     if kind == "Expr.ArrayLiteral" {
-        return self.checkArrayLiteral(con program, expression)
+        return self.checkArrayLiteral(con program, expression, con expectedType, hasExpected)
     }
     if kind == "Expr.FieldAccess" {
         return self.checkFieldAccess(con program, expression, con valueUse)
@@ -1281,7 +1288,7 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
         return self.checkIndexAccess(con program, expression, con valueUse)
     }
     if kind == "Expr.If" {
-        return self.checkIfExpression(con program, expression, con valueUse)
+        return self.checkIfExpression(con program, expression, con valueUse, con expectedType, hasExpected)
     }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
@@ -1355,8 +1362,13 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
 }
 
-func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     typeName := ast.Value(con program, expression)
+    ty := ResolvedType{text: token.CopyText(con typeName), kind: "struct", copy: false, cleanup: true,}
+    if hasExpected && expectedType.text != ty.text {
+        message := strings.join(con []string{"struct literal type mismatch: expected `", token.CopyText(con expectedType.text), "`, got `", token.CopyText(con ty.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
     structure := self.structIndex(con typeName)
     if structure < 0 {
         return Err(newError(strings.join(con []string{"unknown struct `", token.CopyText(con typeName), "`",}, con ""), ast.Span(con program, expression)))
@@ -1388,11 +1400,11 @@ func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expre
         }
 
         value := ast.Child(con program, field, 0)
-        match self.checkExpression(con program, value) {
+        expectedFieldType := copyType(con self.structs[structure].fields[signatureField].ty)
+        match self.checkExpressionExpected(con program, value, con "owned", con expectedFieldType, true) {
             case Ok(valueType) {
-                expectedType := copyType(con self.structs[structure].fields[signatureField].ty)
-                if valueType.text != expectedType.text {
-                    message := strings.join(con []string{"field `", token.CopyText(con fieldName), "` type mismatch: expected `", token.CopyText(con expectedType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                if valueType.text != expectedFieldType.text {
+                    message := strings.join(con []string{"field `", token.CopyText(con fieldName), "` type mismatch: expected `", token.CopyText(con expectedFieldType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
                     return Err(newError(message, ast.Span(con program, field)))
                 }
             }
@@ -1416,12 +1428,11 @@ func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expre
         }
     }
 
-    ty := ResolvedType{text: token.CopyText(con typeName), kind: "struct", copy: false, cleanup: true,}
     self.recordType(expression, con ty)
     return Ok(ty)
 }
 
-func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     typeNode := ast.Child(con program, expression, 0)
     mut collectionType := unitType()
     match self.resolveType(con program, typeNode) {
@@ -1431,6 +1442,10 @@ func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expres
         case Err(error) {
             return Err(error)
         }
+    }
+    if hasExpected && expectedType.text != collectionType.text {
+        message := strings.join(con []string{"array literal type mismatch: expected `", token.CopyText(con expectedType.text), "`, got `", token.CopyText(con collectionType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
     }
     if collectionType.kind != "array" && collectionType.kind != "slice" {
         return Err(newError("array literal requires a fixed-size array or slice type", ast.Span(con program, typeNode)))
@@ -1456,7 +1471,7 @@ func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expres
     }
     for mut index := 0; index < elementCount; index = index + 1 {
         value := ast.Child(con program, expression, index + 1)
-        match self.checkExpression(con program, value) {
+        match self.checkExpressionExpected(con program, value, con "owned", con elementType, true) {
             case Ok(valueType) {
                 if valueType.text != elementType.text {
                     message := strings.join(con []string{"array literal element ", strings.fromInt(index), " type mismatch: expected `", token.CopyText(con elementType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
@@ -1473,7 +1488,7 @@ func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expres
     return Ok(collectionType)
 }
 
-func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int, con valueUse string, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     condition := ast.Child(con program, expression, 0)
     match self.checkExpression(con program, condition) {
         case Ok(conditionType) {
@@ -1489,7 +1504,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     baseLocals := copyLocals(con self.locals)
     thenBranch := ast.Child(con program, expression, 1)
     mut thenType := unitType()
-    match self.checkExpressionUse(con program, thenBranch, con valueUse) {
+    match self.checkExpressionExpected(con program, thenBranch, con valueUse, con expectedType, hasExpected) {
         case Ok(ty) {
             thenType = ty
         }
@@ -1503,7 +1518,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     self.locals = copyLocals(con baseLocals)
     elseBranch := ast.Child(con program, expression, 2)
     mut elseType := unitType()
-    match self.checkExpressionUse(con program, elseBranch, con valueUse) {
+    match self.checkExpressionExpected(con program, elseBranch, con valueUse, con expectedType, hasExpected) {
         case Ok(ty) {
             elseType = ty
         }
@@ -2028,6 +2043,7 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         }
 
         value := ast.Child(con program, argument, 0)
+        parameterType := copyType(con self.functions[function].params[index].ty)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
             emptyReceiver := BorrowPlace{root: "", segments: []string{}, ty: unitType(), exclusive: false,}
@@ -2040,7 +2056,7 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
                 }
             }
         } else {
-            match self.checkExpression(con program, value) {
+            match self.checkExpressionExpected(con program, value, con "owned", con parameterType, true) {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -2049,7 +2065,6 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
                 }
             }
         }
-        parameterType := copyType(con self.functions[function].params[index].ty)
         if argumentType.text != parameterType.text {
             message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
             return Err(newError(message, ast.Span(con program, argument)))
@@ -2083,6 +2098,7 @@ func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, exp
         }
 
         value := ast.Child(con program, argument, 0)
+        parameterType := copyType(con self.methods[method].params[index].ty)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
             match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con receiverBorrow) {
@@ -2094,7 +2110,7 @@ func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, exp
                 }
             }
         } else {
-            match self.checkExpression(con program, value) {
+            match self.checkExpressionExpected(con program, value, con "owned", con parameterType, true) {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -2103,7 +2119,6 @@ func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, exp
                 }
             }
         }
-        parameterType := copyType(con self.methods[method].params[index].ty)
         if argumentType.text != parameterType.text {
             message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
             return Err(newError(message, ast.Span(con program, argument)))

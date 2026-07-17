@@ -1,0 +1,9 @@
+type Bag struct {
+    values [2]int
+}
+
+func exercise() Bag {
+    return Bag{values: [1]int{1}}
+}
+
+func main() {}

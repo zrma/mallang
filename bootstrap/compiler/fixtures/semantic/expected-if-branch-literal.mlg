@@ -1,0 +1,9 @@
+func exercise() [2]int {
+    return if true {
+        [2]int{1, 2}
+    } else {
+        [1]int{1}
+    }
+}
+
+func main() {}

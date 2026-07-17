@@ -1,0 +1,13 @@
+type Left struct {
+    value int
+}
+
+type Right struct {
+    value int
+}
+
+func exercise() [1]Left {
+    return [1]Left{Right{value: 1}}
+}
+
+func main() {}
