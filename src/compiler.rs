@@ -559,6 +559,26 @@ mod tests {
     }
 
     #[test]
+    fn lowers_self_hosting_string_cursor_intrinsics() {
+        let mut sources = SourceMap::new();
+        let main = sources.add_file(
+            "cursor.mlg",
+            "import \"std/strings\"\nfunc main() { text := \"A가\"; first := strings.byteAt(con text, 0); prefix := strings.slice(con text, 0, 1); print(first); print(prefix) }\n",
+        );
+
+        let ir = lower_sources(&sources, &[main]).unwrap();
+        let debug = format!("{ir:?}");
+        assert!(debug.contains("StringsByteAt"));
+        assert!(debug.contains("StringsSlice"));
+
+        let c = generate_c_sources(&sources, &[main]).unwrap();
+        assert!(c.contains("mallang_std_strings_byte_at"));
+        assert!(c.contains("mallang_std_strings_slice"));
+        assert!(c.contains("string byte index out of bounds"));
+        assert!(c.contains("string slice boundary splits a UTF-8 scalar"));
+    }
+
+    #[test]
     fn rejects_standard_signature_mode_and_type_mismatches() {
         let mut mode_sources = SourceMap::new();
         let mode_main = mode_sources.add_file(

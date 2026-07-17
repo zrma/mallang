@@ -18,6 +18,8 @@ use super::{
 pub(super) fn intrinsic_helper_name(intrinsic: StandardIntrinsic) -> Option<&'static str> {
     match intrinsic {
         StandardIntrinsic::StringsByteLen => Some("mallang_std_strings_byte_len"),
+        StandardIntrinsic::StringsByteAt => Some("mallang_std_strings_byte_at"),
+        StandardIntrinsic::StringsSlice => Some("mallang_std_strings_slice"),
         StandardIntrinsic::StringsScalarCount => Some("mallang_std_strings_scalar_count"),
         StandardIntrinsic::StringsContains => Some("mallang_std_strings_contains"),
         StandardIntrinsic::StringsFind => Some("mallang_std_strings_find"),
@@ -179,6 +181,17 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
     }
 
     let mut output = String::new();
+    let needs_string_error = [
+        StandardIntrinsic::StringsByteAt,
+        StandardIntrinsic::StringsSlice,
+        StandardIntrinsic::StringsParseInt,
+        StandardIntrinsic::StringsParseBool,
+    ]
+    .iter()
+    .any(|intrinsic| used.intrinsics.contains(intrinsic));
+    if needs_string_error {
+        output.push_str(&emit_error_helper(program)?);
+    }
     let needs_find = [
         StandardIntrinsic::StringsContains,
         StandardIntrinsic::StringsFind,
@@ -191,6 +204,44 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
     }
     if used.intrinsics.contains(&StandardIntrinsic::StringsByteLen) {
         output.push_str(BYTE_LEN_HELPER);
+    }
+    if used.intrinsics.contains(&StandardIntrinsic::StringsByteAt) {
+        let error = standard_error_type(program)?;
+        output.push_str(&render(
+            BYTE_AT_HELPER,
+            &[
+                (
+                    "<RESULT_INT_ERROR>",
+                    Type::Result(Box::new(Type::Int), Box::new(error)).c_name(),
+                ),
+                (
+                    "<INVALID_INPUT_TAG>",
+                    standard_error_kind_tag(program, "InvalidInput")?.to_string(),
+                ),
+                ("<FIELD_PAYLOAD>", c_field("payload")),
+                ("<FIELD_OK>", c_field("Ok")),
+                ("<FIELD_ERR>", c_field("Err")),
+            ],
+        ));
+    }
+    if used.intrinsics.contains(&StandardIntrinsic::StringsSlice) {
+        let error = standard_error_type(program)?;
+        output.push_str(&render(
+            STRING_SLICE_HELPER,
+            &[
+                (
+                    "<RESULT_STRING_ERROR>",
+                    Type::Result(Box::new(Type::String), Box::new(error)).c_name(),
+                ),
+                (
+                    "<INVALID_INPUT_TAG>",
+                    standard_error_kind_tag(program, "InvalidInput")?.to_string(),
+                ),
+                ("<FIELD_PAYLOAD>", c_field("payload")),
+                ("<FIELD_OK>", c_field("Ok")),
+                ("<FIELD_ERR>", c_field("Err")),
+            ],
+        ));
     }
     if used
         .intrinsics
@@ -254,15 +305,6 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
     if used
         .intrinsics
         .contains(&StandardIntrinsic::StringsParseInt)
-        || used
-            .intrinsics
-            .contains(&StandardIntrinsic::StringsParseBool)
-    {
-        output.push_str(&emit_error_helper(program)?);
-    }
-    if used
-        .intrinsics
-        .contains(&StandardIntrinsic::StringsParseInt)
     {
         let error = standard_error_type(program)?;
         output.push_str(&render(
@@ -275,6 +317,10 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
                 ("<FIELD_PAYLOAD>", c_field("payload")),
                 ("<FIELD_OK>", c_field("Ok")),
                 ("<FIELD_ERR>", c_field("Err")),
+                (
+                    "<INVALID_DATA_TAG>",
+                    standard_error_kind_tag(program, "InvalidData")?.to_string(),
+                ),
             ],
         ));
     }
@@ -293,6 +339,10 @@ pub(super) fn emit_standard_runtime(program: &IrProgram) -> Result<String, Compi
                 ("<FIELD_PAYLOAD>", c_field("payload")),
                 ("<FIELD_OK>", c_field("Ok")),
                 ("<FIELD_ERR>", c_field("Err")),
+                (
+                    "<INVALID_DATA_TAG>",
+                    standard_error_kind_tag(program, "InvalidData")?.to_string(),
+                ),
             ],
         ));
     }
@@ -373,24 +423,33 @@ fn emit_error_helper(program: &IrProgram) -> Result<String, CompileError> {
         .ok_or_else(|| {
             CompileError::new("IR invariant violation: standard errors.Kind type is missing")
         })?;
-    let invalid_data_tag = kind
-        .variants
-        .iter()
-        .position(|variant| variant.name == "InvalidData")
-        .ok_or_else(|| {
-            CompileError::new("IR invariant violation: errors.Kind.InvalidData is missing")
-        })?;
-
     Ok(render(
         ERROR_HELPER,
         &[
             ("<ERROR_TYPE>", Type::Struct(error.name.clone()).c_name()),
             ("<KIND_TYPE>", Type::Enum(kind.name.clone()).c_name()),
-            ("<INVALID_DATA_TAG>", invalid_data_tag.to_string()),
             ("<FIELD_KIND>", c_field("kind")),
             ("<FIELD_MESSAGE>", c_field("message")),
         ],
     ))
+}
+
+fn standard_error_kind_tag(program: &IrProgram, name: &str) -> Result<usize, CompileError> {
+    let kind = program
+        .enums
+        .iter()
+        .find(|declaration| declaration.intrinsic == Some(StandardType::ErrorKind))
+        .ok_or_else(|| {
+            CompileError::new("IR invariant violation: standard errors.Kind type is missing")
+        })?;
+    kind.variants
+        .iter()
+        .position(|variant| variant.name == name)
+        .ok_or_else(|| {
+            CompileError::new(format!(
+                "IR invariant violation: errors.Kind.{name} is missing"
+            ))
+        })
 }
 
 fn standard_error_type(program: &IrProgram) -> Result<Type, CompileError> {
@@ -1109,6 +1168,82 @@ const BYTE_LEN_HELPER: &str = r#"static int64_t MLG_UNUSED mallang_std_strings_b
 
 "#;
 
+const BYTE_AT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_std_strings_byte_at(
+    const mlg_String *mlg_text,
+    int64_t mlg_index
+) {
+    mallang_validate_string(*mlg_text);
+    if (mlg_index < 0 || (uint64_t)mlg_index >= (uint64_t)mlg_text->mlg_len) {
+        return (<RESULT_INT_ERROR>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_strings_error(
+                    <INVALID_INPUT_TAG>,
+                    "string byte index out of bounds"
+                )
+            }
+        };
+    }
+    unsigned char mlg_byte = (unsigned char)mlg_text->mlg_data[(size_t)mlg_index];
+    return (<RESULT_INT_ERROR>){
+        .tag = 0,
+        .<FIELD_PAYLOAD> = { .<FIELD_OK> = (int64_t)mlg_byte }
+    };
+}
+
+"#;
+
+const STRING_SLICE_HELPER: &str = r#"static <RESULT_STRING_ERROR> MLG_UNUSED mallang_std_strings_slice(
+    const mlg_String *mlg_text,
+    int64_t mlg_start,
+    int64_t mlg_end
+) {
+    mallang_validate_string(*mlg_text);
+    if (mlg_start < 0 ||
+        mlg_end < 0 ||
+        mlg_start > mlg_end ||
+        (uint64_t)mlg_end > (uint64_t)mlg_text->mlg_len) {
+        return (<RESULT_STRING_ERROR>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_strings_error(
+                    <INVALID_INPUT_TAG>,
+                    "string slice range is invalid"
+                )
+            }
+        };
+    }
+    size_t mlg_start_offset = (size_t)mlg_start;
+    size_t mlg_end_offset = (size_t)mlg_end;
+    bool mlg_start_is_boundary = mlg_start_offset == 0 ||
+        mlg_start_offset == mlg_text->mlg_len ||
+        (((unsigned char)mlg_text->mlg_data[mlg_start_offset] & 0xc0U) != 0x80U);
+    bool mlg_end_is_boundary = mlg_end_offset == 0 ||
+        mlg_end_offset == mlg_text->mlg_len ||
+        (((unsigned char)mlg_text->mlg_data[mlg_end_offset] & 0xc0U) != 0x80U);
+    if (!mlg_start_is_boundary || !mlg_end_is_boundary) {
+        return (<RESULT_STRING_ERROR>){
+            .tag = 1,
+            .<FIELD_PAYLOAD> = {
+                .<FIELD_ERR> = mallang_std_strings_error(
+                    <INVALID_INPUT_TAG>,
+                    "string slice boundary splits a UTF-8 scalar"
+                )
+            }
+        };
+    }
+    mlg_String mlg_result = mallang_string_owned_from_bytes(
+        mlg_text->mlg_data + mlg_start_offset,
+        mlg_end_offset - mlg_start_offset
+    );
+    return (<RESULT_STRING_ERROR>){
+        .tag = 0,
+        .<FIELD_PAYLOAD> = { .<FIELD_OK> = mlg_result }
+    };
+}
+
+"#;
+
 const SCALAR_COUNT_HELPER: &str = r#"static int64_t MLG_UNUSED mallang_std_strings_scalar_count(
     const mlg_String *mlg_text
 ) {
@@ -1352,11 +1487,12 @@ const FROM_BOOL_HELPER: &str = r#"static mlg_String MLG_UNUSED mallang_std_strin
 
 "#;
 
-const ERROR_HELPER: &str = r#"static <ERROR_TYPE> MLG_UNUSED mallang_std_invalid_data_error(
+const ERROR_HELPER: &str = r#"static <ERROR_TYPE> MLG_UNUSED mallang_std_strings_error(
+    int32_t mlg_kind,
     const char *mlg_message
 ) {
     return (<ERROR_TYPE>){
-        .<FIELD_KIND> = (<KIND_TYPE>){ .tag = <INVALID_DATA_TAG> },
+        .<FIELD_KIND> = (<KIND_TYPE>){ .tag = mlg_kind },
         .<FIELD_MESSAGE> = mallang_string_owned_from_bytes(
             mlg_message,
             strlen(mlg_message)
@@ -1374,7 +1510,7 @@ const PARSE_INT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_s
         return (<RESULT_INT_ERROR>){
             .tag = 1,
             .<FIELD_PAYLOAD> = {
-                .<FIELD_ERR> = mallang_std_invalid_data_error("invalid integer text")
+                .<FIELD_ERR> = mallang_std_strings_error(<INVALID_DATA_TAG>, "invalid integer text")
             }
         };
     }
@@ -1387,7 +1523,7 @@ const PARSE_INT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_s
             return (<RESULT_INT_ERROR>){
                 .tag = 1,
                 .<FIELD_PAYLOAD> = {
-                    .<FIELD_ERR> = mallang_std_invalid_data_error("invalid integer text")
+                    .<FIELD_ERR> = mallang_std_strings_error(<INVALID_DATA_TAG>, "invalid integer text")
                 }
             };
         }
@@ -1402,7 +1538,7 @@ const PARSE_INT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_s
             return (<RESULT_INT_ERROR>){
                 .tag = 1,
                 .<FIELD_PAYLOAD> = {
-                    .<FIELD_ERR> = mallang_std_invalid_data_error("invalid integer text")
+                    .<FIELD_ERR> = mallang_std_strings_error(<INVALID_DATA_TAG>, "invalid integer text")
                 }
             };
         }
@@ -1411,7 +1547,7 @@ const PARSE_INT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_s
             return (<RESULT_INT_ERROR>){
                 .tag = 1,
                 .<FIELD_PAYLOAD> = {
-                    .<FIELD_ERR> = mallang_std_invalid_data_error("integer value out of range")
+                    .<FIELD_ERR> = mallang_std_strings_error(<INVALID_DATA_TAG>, "integer value out of range")
                 }
             };
         }
@@ -1447,7 +1583,7 @@ const PARSE_BOOL_HELPER: &str = r#"static <RESULT_BOOL_ERROR> MLG_UNUSED mallang
         return (<RESULT_BOOL_ERROR>){
             .tag = 1,
             .<FIELD_PAYLOAD> = {
-                .<FIELD_ERR> = mallang_std_invalid_data_error("invalid boolean text")
+                .<FIELD_ERR> = mallang_std_strings_error(<INVALID_DATA_TAG>, "invalid boolean text")
             }
         };
     }

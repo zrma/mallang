@@ -1,0 +1,56 @@
+import "std/errors"
+import "std/strings"
+
+func printByte(result Result[int, errors.Error]) {
+    match result {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}
+
+func printSlice(result Result[string, errors.Error]) {
+    match result {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}
+
+func printSliceLen(result Result[string, errors.Error]) {
+    match result {
+        case Ok(value) {
+            print(strings.byteLen(con value))
+        }
+        case Err(error) {
+            print(error.kind)
+        }
+    }
+}
+
+func main() {
+    text := "A가Z"
+
+    printByte(strings.byteAt(con text, 0))
+    printByte(strings.byteAt(con text, 1))
+    printByte(strings.byteAt(con text, 3))
+    printByte(strings.byteAt(con text, 4))
+    printByte(strings.byteAt(con text, -1))
+    printByte(strings.byteAt(con text, 5))
+
+    printSlice(strings.slice(con text, 0, 1))
+    printSlice(strings.slice(con text, 1, 4))
+    printSlice(strings.slice(con text, 4, 5))
+    printSliceLen(strings.slice(con text, 1, 1))
+    printSlice(strings.slice(con text, 2, 4))
+    printSlice(strings.slice(con text, 1, 3))
+    printSlice(strings.slice(con text, 4, 1))
+    printSlice(strings.slice(con text, 0, 6))
+    printSlice(strings.slice(con text, -1, 1))
+}

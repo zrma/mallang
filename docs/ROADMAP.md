@@ -1663,3 +1663,21 @@ change.
 Exact bootstrap contract and current acceptance are owned by
 `docs/SELF_HOSTING.md` and `docs/todo-self-hosting-bootstrap/`. The next active
 slice is the B1 Mallang lexer/parser data model and Rust differential harness.
+
+## P175: B1 Self-Hosting Frontend
+
+상태: in progress (2026-07-17)
+
+- [x] UTF-8 byte cursor blocker와 1.x compatibility 분류
+- [x] `strings.byteAt`과 scalar-boundary 검증 `strings.slice`
+- [x] strict C, ASan/UBSan, allocation accounting과 failure injection gate
+- [ ] Mallang source/span/token model과 normalized differential schema
+- [ ] frozen v1 complete lexer와 Rust Stage0 token/diagnostic differential
+- [ ] syntax-only AST와 frozen v1 complete parser
+- [ ] positive/rejection/crash corpus AST/diagnostic differential
+- [ ] B1 canonical, publication과 supported-platform CI acceptance
+
+Exact scope and decisions are owned by `docs/todo-self-hosting-frontend/`.
+P175a adds only owned standard-library operations and no pointer, borrowed
+substring, mutable string or syntax change. The next slice is the Mallang
+source/span/token data model and lexer differential harness.

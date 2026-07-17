@@ -249,6 +249,15 @@ if [[ "$standard_strings_edge_output" != $'0\n-1\n0\n1\n|a||b|\n9223372036854775
   exit 1
 fi
 expect_warning_clean_generated_c "v06-standard-strings-edge" "target/mallang/edge-cases.c"
+self_hosting_cursor_fixture="tests/fixtures/self-hosting/string-cursor.mlg"
+"${CARGO[@]}" run --quiet --bin mlg -- check "$self_hosting_cursor_fixture" >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build "$self_hosting_cursor_fixture" -o target/mallang/self-hosting-string-cursor >/dev/null
+self_hosting_cursor_output="$(target/mallang/self-hosting-string-cursor)"
+if [[ "$self_hosting_cursor_output" != $'65\n234\n128\n90\nInvalidInput\nInvalidInput\nA\n가\nZ\n0\nInvalidInput\nInvalidInput\nInvalidInput\nInvalidInput\nInvalidInput' ]]; then
+  echo "self-hosting string cursor output mismatch: got '$self_hosting_cursor_output'" >&2
+  exit 1
+fi
+scripts/check-self-hosting-string-cursor.sh target/mallang/string-cursor.c
 "${CARGO[@]}" run --quiet --bin mlg -- check examples/process-io.mlg >/dev/null
 "${CARGO[@]}" run --quiet --bin mlg -- build examples/process-io.mlg -o target/mallang/process-io >/dev/null
 scripts/check-process-io-runtime.sh

@@ -35,6 +35,8 @@ pub enum StandardIntrinsic {
     OsEnv,
     OsExit,
     StringsByteLen,
+    StringsByteAt,
+    StringsSlice,
     StringsScalarCount,
     StringsContains,
     StringsFind,
@@ -63,6 +65,8 @@ pub const STANDARD_INTRINSICS: &[StandardIntrinsic] = &[
     StandardIntrinsic::OsEnv,
     StandardIntrinsic::OsExit,
     StandardIntrinsic::StringsByteLen,
+    StandardIntrinsic::StringsByteAt,
+    StandardIntrinsic::StringsSlice,
     StandardIntrinsic::StringsScalarCount,
     StandardIntrinsic::StringsContains,
     StandardIntrinsic::StringsFind,
@@ -87,6 +91,8 @@ impl StandardIntrinsic {
             Self::IoReadStdin | Self::IoWriteStdout | Self::IoWriteStderr => "std/io",
             Self::OsArgs | Self::OsEnv | Self::OsExit => "std/os",
             Self::StringsByteLen
+            | Self::StringsByteAt
+            | Self::StringsSlice
             | Self::StringsScalarCount
             | Self::StringsContains
             | Self::StringsFind
@@ -117,6 +123,8 @@ impl StandardIntrinsic {
             Self::OsEnv => "env",
             Self::OsExit => "exit",
             Self::StringsByteLen => "byteLen",
+            Self::StringsByteAt => "byteAt",
+            Self::StringsSlice => "slice",
             Self::StringsScalarCount => "scalarCount",
             Self::StringsContains => "contains",
             Self::StringsFind => "find",
@@ -165,6 +173,8 @@ pub fn package(path: &str, span: Span) -> Option<Package> {
         "std/strings" => function_declarations(
             &[
                 "byteLen",
+                "byteAt",
+                "slice",
                 "scalarCount",
                 "contains",
                 "find",
@@ -487,6 +497,33 @@ fn add_string_functions(program: &mut Program, span: Span) {
             span,
         );
     }
+    add_function(
+        program,
+        StandardIntrinsic::StringsByteAt,
+        &[],
+        vec![
+            param("text", ParamMode::Con, named_type("string", span), span),
+            param("index", ParamMode::Owned, named_type("int", span), span),
+        ],
+        Some(result_type(named_type("int", span), error_type(span), span)),
+        span,
+    );
+    add_function(
+        program,
+        StandardIntrinsic::StringsSlice,
+        &[],
+        vec![
+            param("text", ParamMode::Con, named_type("string", span), span),
+            param("start", ParamMode::Owned, named_type("int", span), span),
+            param("end", ParamMode::Owned, named_type("int", span), span),
+        ],
+        Some(result_type(
+            named_type("string", span),
+            error_type(span),
+            span,
+        )),
+        span,
+    );
     add_function(
         program,
         StandardIntrinsic::StringsContains,
@@ -827,7 +864,7 @@ mod tests {
             assert!(names.insert((intrinsic.package_path(), intrinsic.function_name())));
         }
 
-        assert_eq!(names.len(), 25);
+        assert_eq!(names.len(), 27);
     }
 
     #[test]

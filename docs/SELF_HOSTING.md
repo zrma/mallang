@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0 complete, B1 frontend next
+Status: active long-term program; B0 complete, B1 frontend in progress
 
 ## Objective
 
@@ -67,7 +67,9 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
-- `docs/todo-self-hosting-bootstrap/`: active stage contract and decisions.
+- `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
+- `docs/todo-self-hosting-frontend/`: active B1 work breakdown and decisions.
+- `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
 B1 will introduce the compiler's Mallang source root only after the frontend
 data model and differential output format are fixed.

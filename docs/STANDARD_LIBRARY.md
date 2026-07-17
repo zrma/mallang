@@ -52,6 +52,8 @@ Platform-specific numeric codes and native handles are not exposed.
 
 ```mlg
 strings.byteLen(con text string) int
+strings.byteAt(con text string, index int) Result[int, errors.Error]
+strings.slice(con text string, start int, end int) Result[string, errors.Error]
 strings.scalarCount(con text string) int
 strings.contains(con text string, con needle string) bool
 strings.find(con text string, con needle string) Option[int]
@@ -66,6 +68,11 @@ strings.parseBool(con text string) Result[bool, errors.Error]
 - `string` is immutable valid UTF-8 text.
 - `byteLen` counts bytes; `scalarCount` counts Unicode scalar values, not
   grapheme clusters.
+- `byteAt` uses a zero-based UTF-8 byte offset and returns the byte as an integer
+  in `0..255`. A negative or out-of-range offset returns `Err(InvalidInput)`.
+- `slice` copies the UTF-8 byte range `[start, end)` into a new owned string.
+  Both offsets must be in range and on Unicode scalar boundaries; an invalid
+  range or a boundary inside a scalar returns `Err(InvalidInput)`.
 - `find` returns the first byte offset. An empty needle returns `Some(0)`.
 - A non-empty split separator preserves leading, trailing, and consecutive
   empty fields. An empty separator splits by scalar value; empty input produces
