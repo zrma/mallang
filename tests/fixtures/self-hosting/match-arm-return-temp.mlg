@@ -1,0 +1,20 @@
+type Outcome enum {
+    Value(int)
+    Failure(string)
+}
+
+func choose(value Outcome) int {
+    label := "cleanup"
+    match value {
+        case Outcome.Value(inner) {
+            return inner
+        }
+        case Outcome.Failure(_) {
+            return 0
+        }
+    }
+}
+
+func main() {
+    print(choose(Outcome.Value(7)))
+}

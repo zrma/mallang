@@ -58,3 +58,38 @@ test RejectsLatePackageDeclaration() {
         }
     }
 }
+
+test ParsesCoreStatementsAndExpressionPrecedence() {
+    source := "func main() { mut value := 1 + 2 * 3; value = value - 1; print(value) }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(program) {
+                    root := ast.Root(con program)
+                    functionDecl := ast.Child(con program, root, 1)
+                    block := ast.Child(con program, functionDecl, ast.ChildCount(con program, functionDecl) - 1)
+                    assert(ast.Kind(con program, block) == "Block")
+                    assert(ast.ChildCount(con program, block) == 3)
+
+                    letStatement := ast.Child(con program, block, 0)
+                    assert(ast.Kind(con program, letStatement) == "Stmt.Let.Mutable")
+                    add := ast.Child(con program, letStatement, 0)
+                    assert(ast.Kind(con program, add) == "Expr.Binary.Add")
+                    multiply := ast.Child(con program, add, 1)
+                    assert(ast.Kind(con program, multiply) == "Expr.Binary.Multiply")
+
+                    assignStatement := ast.Child(con program, block, 1)
+                    assert(ast.Kind(con program, assignStatement) == "Stmt.Assign")
+                    expressionStatement := ast.Child(con program, block, 2)
+                    assert(ast.Kind(con program, expressionStatement) == "Stmt.Expr")
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

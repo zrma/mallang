@@ -17,6 +17,19 @@ type ParsedNode struct {
     index int
 }
 
+type BinaryInfo struct {
+    found bool
+    name string
+    precedence int
+}
+
+type StructLiteralParts struct {
+    found bool
+    name string
+    args []int
+    start source.Span
+}
+
 pub func Parse(tokens []token.Token) Result[ast.Program, []ast.ParseError] {
     mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, errors: []ast.ParseError{}, cursor: 0}
     root := parser.parseProgramRoot()
@@ -242,7 +255,7 @@ func (mut self Parser) parseFunctionDecl(visibility string, start source.Span) P
         returnSpan := ast.NodeSpan(con self.nodes[returnType])
         children = append(children, self.addNode("ReturnType", "", returnSpan, []int{returnType}))
     }
-    block := self.parseEmptyBlock()
+    block := self.parseBlock()
     children = append(children, block)
     end := ast.NodeSpan(con self.nodes[block])
     kind := strings.join(con []string{"FunctionDecl.", visibility}, con "")
@@ -255,7 +268,7 @@ func (mut self Parser) parseTestDecl(start source.Span) ParsedNode {
     name := self.expectIdent("expected test name")
     self.expect("LeftParen", "expected `(` after test name")
     self.expect("RightParen", "test declarations cannot take parameters")
-    block := self.parseEmptyBlock()
+    block := self.parseBlock()
     end := ast.NodeSpan(con self.nodes[block])
     index := self.addNode("TestDecl", name, source.Join(start, end), []int{block})
     return ParsedNode{category: "Test", index: index}
@@ -398,14 +411,504 @@ func (mut self Parser) parseArrayTypeRef() int {
     return self.addNode("Type.Array", strings.fromInt(length), source.Join(start, end), []int{element})
 }
 
-func (mut self Parser) parseEmptyBlock() int {
+func (mut self Parser) parseBlock() int {
     start := self.expect("LeftBrace", "expected `{`")
-    if !self.at("RightBrace") {
-        self.recordErrorHere("statement parsing is not available in this bootstrap slice")
-        return self.addNode("Block.Error", "", source.Copy(con start), []int{})
+    mut statements := []int{}
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        statements = append(statements, self.parseStatement())
+        for self.at("Semicolon") {
+            self.advance()
+        }
     }
     end := self.expect("RightBrace", "expected `}` after block")
-    return self.addNode("Block", "", source.Join(start, end), []int{})
+    return self.addNode("Block", "", source.Join(start, end), statements)
+}
+
+func (mut self Parser) parseStatement() int {
+    if self.at("Keyword.Return") {
+        return self.parseReturnStatement()
+    }
+    if self.at("Keyword.Mut") ||(self.at("Ident") && self.atOffset(1, "ColonEqual")) {
+        return self.parseLetStatement()
+    }
+    if self.at("Keyword.If") || self.at("Keyword.For") || self.at("Keyword.Match") || self.at("Keyword.Break") || self.at("Keyword.Continue") {
+        start := self.currentSpan()
+        self.recordErrorHere("control-flow statement parsing is not available in this bootstrap slice")
+        return self.addNode("Stmt.Error", "", start, []int{})
+    }
+
+    expression := self.parseExpression()
+    if self.at("Equal") {
+        return self.finishAssignStatement(expression)
+    }
+    span := self.nodeSpan(expression)
+    return self.addNode("Stmt.Expr", "", span, []int{expression})
+}
+
+func (mut self Parser) parseLetStatement() int {
+    start := self.currentSpan()
+    mut mutable := "Immutable"
+    if self.at("Keyword.Mut") {
+        mutable = "Mutable"
+        self.advance()
+    }
+    name := self.expectIdent("expected binding name")
+    self.expect("ColonEqual", "expected `:=` in binding")
+    expression := self.parseExpression()
+    end := self.nodeSpan(expression)
+    kind := strings.join(con []string{"Stmt.Let.", mutable}, con "")
+    return self.addNode(kind, name, source.Join(start, end), []int{expression})
+}
+
+func (mut self Parser) finishAssignStatement(target int) int {
+    start := self.nodeSpan(target)
+    self.expect("Equal", "expected `=` in assignment")
+    expression := self.parseExpression()
+    end := self.nodeSpan(expression)
+    kind := ast.NodeKind(con self.nodes[target])
+
+    if kind == "Expr.Var" {
+        name := ast.NodeValue(con self.nodes[target])
+        return self.addNode("Stmt.Assign", name, source.Join(source.Copy(con start), source.Copy(con end)), []int{expression})
+    }
+    if kind == "Expr.FieldAccess" {
+        field := ast.NodeValue(con self.nodes[target])
+        base := ast.NodeChild(con self.nodes[target], 0)
+        return self.addNode("Stmt.FieldAssign", field, source.Join(source.Copy(con start), source.Copy(con end)), []int{base, expression})
+    }
+    if kind == "Expr.Index" {
+        base := ast.NodeChild(con self.nodes[target], 0)
+        index := ast.NodeChild(con self.nodes[target], 1)
+        return self.addNode("Stmt.IndexAssign", "", source.Join(source.Copy(con start), source.Copy(con end)), []int{base, index, expression})
+    }
+
+    self.recordError("assignment target must be a variable, field access, or index expression", source.Copy(con start))
+    return self.addNode("Stmt.Error", "", source.Join(start, end), []int{})
+}
+
+func (mut self Parser) parseReturnStatement() int {
+    start := self.expect("Keyword.Return", "expected `return`")
+    expression := self.parseExpression()
+    end := self.nodeSpan(expression)
+    return self.addNode("Stmt.Return", "", source.Join(start, end), []int{expression})
+}
+
+func (mut self Parser) parseExpression() int {
+    return self.parsePrecedence(0)
+}
+
+func (mut self Parser) parsePrecedence(minPrecedence int) int {
+    mut left := self.parsePrefix()
+
+    for !self.failed() {
+        if self.at("LeftBrace") {
+            parts := self.structLiteralParts(left)
+            if parts.found {
+                left = self.finishStructLiteral(token.CopyText(con parts.name), copyIndexes(con parts.args), source.Copy(con parts.start))
+                continue
+            }
+        }
+        if self.at("LeftParen") {
+            left = self.finishCall(left)
+            continue
+        }
+        if self.at("LeftBracket") {
+            left = self.finishIndex(left)
+            continue
+        }
+        if self.at("Dot") {
+            left = self.finishFieldAccess(left)
+            continue
+        }
+        if self.at("PipeGreater") {
+            if minPrecedence > 0 {
+                break
+            }
+            left = self.finishPipeline(left)
+            continue
+        }
+
+        info := self.peekBinaryInfo()
+        if(!info.found) || info.precedence < minPrecedence {
+            break
+        }
+        self.advance()
+        right := self.parsePrecedence(info.precedence + 1)
+        span := source.Join(self.nodeSpan(left), self.nodeSpan(right))
+        kind := strings.join(con []string{"Expr.Binary.", token.CopyText(con info.name)}, con "")
+        left = self.addNode(kind, "", span, []int{left, right})
+    }
+    return left
+}
+
+func (mut self Parser) parsePrefix() int {
+    if self.at("LeftBracket") {
+        return self.parseArrayLiteral()
+    }
+
+    start := self.currentSpan()
+    if self.at("Int") {
+        text := token.Value(con self.tokens[self.cursor])
+        self.advance()
+        mut parsed := 0
+        mut valid := true
+        match strings.parseInt(con text) {
+            case Ok(value) {
+                parsed = value
+            }
+            case Err(_) {
+                valid = false
+            }
+        }
+        if !valid {
+            self.recordError("integer literal is out of range for `int`", source.Copy(con start))
+            return self.addNode("Expr.Error", "", source.Copy(con start), []int{})
+        }
+        return self.addNode("Expr.Int", strings.fromInt(parsed), source.Copy(con start), []int{})
+    }
+    if self.at("String") {
+        value := token.Value(con self.tokens[self.cursor])
+        self.advance()
+        return self.addNode("Expr.String", value, source.Copy(con start), []int{})
+    }
+    if self.at("Ident") {
+        name := token.Value(con self.tokens[self.cursor])
+        self.advance()
+        if self.at("Dot") && self.atOffset(1, "Ident") && self.atOffset(2, "LeftBrace") {
+            self.advance()
+            selected := self.expectIdent("expected struct type name after `.`")
+            qualified := strings.join(con []string{token.CopyText(con name), ".", selected}, con "")
+            return self.finishStructLiteral(qualified, []int{}, source.Copy(con start))
+        }
+        if self.at("LeftBrace") {
+            return self.finishStructLiteral(token.CopyText(con name), []int{}, source.Copy(con start))
+        }
+        return self.addNode("Expr.Var", token.CopyText(con name), source.Copy(con start), []int{})
+    }
+    if self.at("Keyword.True") {
+        self.advance()
+        return self.addNode("Expr.Bool", "true", source.Copy(con start), []int{})
+    }
+    if self.at("Keyword.False") {
+        self.advance()
+        return self.addNode("Expr.Bool", "false", source.Copy(con start), []int{})
+    }
+    if self.at("Keyword.Nil") {
+        self.advance()
+        return self.addNode("Expr.Nil", "", source.Copy(con start), []int{})
+    }
+    if self.at("Minus") {
+        self.advance()
+        expression := self.parsePrecedence(6)
+        return self.addNode("Expr.Unary.Negate", "", source.Join(source.Copy(con start), self.nodeSpan(expression)), []int{expression})
+    }
+    if self.at("Bang") {
+        self.advance()
+        expression := self.parsePrecedence(6)
+        return self.addNode("Expr.Unary.Not", "", source.Join(source.Copy(con start), self.nodeSpan(expression)), []int{expression})
+    }
+    if self.at("LeftParen") {
+        self.advance()
+        expression := self.parseExpression()
+        self.expect("RightParen", "expected `)` after expression")
+        return expression
+    }
+    if self.at("Keyword.Con") || self.at("Keyword.Mut") {
+        self.recordError("first-class borrow values are not supported; `con` and `mut` are only valid on direct call arguments", source.Copy(con start))
+        self.advance()
+        return self.addNode("Expr.Error", "", source.Copy(con start), []int{})
+    }
+
+    self.recordError("expected expression", source.Copy(con start))
+    self.advance()
+    return self.addNode("Expr.Error", "", source.Copy(con start), []int{})
+}
+
+func (mut self Parser) parseArrayLiteral() int {
+    ty := self.parseTypeRef()
+    start := self.nodeSpan(ty)
+    self.expect("LeftBrace", "expected `{` before array literal elements")
+    mut children := []int{ty}
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseExpression())
+        if !self.at("Comma") {
+            break
+        }
+        self.advance()
+    }
+    end := self.expect("RightBrace", "expected `}` after array literal elements")
+    return self.addNode("Expr.ArrayLiteral", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) finishStructLiteral(typeName string, typeArgs []int, start source.Span) int {
+    self.expect("LeftBrace", "expected `{` before struct literal fields")
+    mut children := typeArgs
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseFieldInit())
+        if !self.at("Comma") {
+            break
+        }
+        self.advance()
+    }
+    end := self.expect("RightBrace", "expected `}` after struct literal fields")
+    return self.addNode("Expr.StructLiteral", typeName, source.Join(start, end), children)
+}
+
+func (mut self Parser) parseFieldInit() int {
+    start := self.currentSpan()
+    name := self.expectIdent("expected struct literal field name")
+    self.expect("Colon", "expected `:` after struct literal field name")
+    expression := self.parseExpression()
+    return self.addNode("FieldInit", name, source.Join(start, self.nodeSpan(expression)), []int{expression})
+}
+
+func (mut self Parser) finishCall(callee int) int {
+    start := self.nodeSpan(callee)
+    self.expect("LeftParen", "expected `(` in call")
+    mut children := []int{callee}
+    if !self.at("RightParen") {
+        for !self.failed() {
+            children = append(children, self.parseArg())
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    end := self.expect("RightParen", "expected `)` after call arguments")
+    return self.addNode("Expr.Call", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) finishPipeline(input int) int {
+    start := self.nodeSpan(input)
+    self.expect("PipeGreater", "expected `|>` in pipeline expression")
+    callee := self.parsePrefix()
+    if !self.at("LeftParen") {
+        self.recordError("pipeline target must be a call like `value |> f(args...)`", self.nodeSpan(callee))
+        return self.addNode("Expr.Error", "", source.Join(source.Copy(con start), self.nodeSpan(callee)), []int{})
+    }
+    self.expect("LeftParen", "expected `(` in call")
+    leading := self.addNode("Arg.Owned", "", source.Copy(con start), []int{input})
+    mut children := []int{callee, leading}
+    if !self.at("RightParen") {
+        for !self.failed() {
+            children = append(children, self.parseArg())
+            if !self.at("Comma") {
+                break
+            }
+            self.advance()
+        }
+    }
+    end := self.expect("RightParen", "expected `)` after call arguments")
+    return self.addNode("Expr.Call", "", source.Join(source.Copy(con start), end), children)
+}
+
+func (mut self Parser) finishFieldAccess(base int) int {
+    start := self.nodeSpan(base)
+    self.expect("Dot", "expected `.` in field access")
+    end := self.currentSpan()
+    field := self.expectIdent("expected field name after `.`")
+    return self.addNode("Expr.FieldAccess", field, source.Join(start, end), []int{base})
+}
+
+func (mut self Parser) finishIndex(base int) int {
+    if self.bracketHasTopLevelComma() || self.bracketStartsUnambiguousTypeRef() {
+        return self.finishTypeApply(base)
+    }
+    start := self.nodeSpan(base)
+    self.expect("LeftBracket", "expected `[` in index expression")
+    index := self.parseExpression()
+    end := self.expect("RightBracket", "expected `]` after index expression")
+    return self.addNode("Expr.Index", "", source.Join(start, end), []int{base, index})
+}
+
+func (mut self Parser) finishTypeApply(base int) int {
+    start := self.nodeSpan(base)
+    self.expect("LeftBracket", "expected `[` before type arguments")
+    mut children := []int{base}
+    for !self.failed() {
+        children = append(children, self.parseTypeRef())
+        if !self.at("Comma") {
+            break
+        }
+        self.advance()
+    }
+    end := self.expect("RightBracket", "expected `]` after type arguments")
+    return self.addNode("Expr.TypeApply", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) parseArg() int {
+    start := self.currentSpan()
+    mut mode := "Owned"
+    if self.at("Keyword.Con") {
+        mode = "Con"
+        self.advance()
+    } else if self.at("Keyword.Mut") {
+        mode = "Mut"
+        self.advance()
+    }
+    expression := self.parseExpression()
+    kind := strings.join(con []string{"Arg.", mode}, con "")
+    return self.addNode(kind, "", source.Join(start, self.nodeSpan(expression)), []int{expression})
+}
+
+func (con self Parser) peekBinaryInfo() BinaryInfo {
+    if self.at("PipePipe") {
+        return BinaryInfo{found: true, name: "LogicalOr", precedence: 1}
+    }
+    if self.at("AmpAmp") {
+        return BinaryInfo{found: true, name: "LogicalAnd", precedence: 2}
+    }
+    if self.at("EqualEqual") {
+        return BinaryInfo{found: true, name: "Equal", precedence: 3}
+    }
+    if self.at("BangEqual") {
+        return BinaryInfo{found: true, name: "NotEqual", precedence: 3}
+    }
+    if self.at("Less") {
+        return BinaryInfo{found: true, name: "Less", precedence: 3}
+    }
+    if self.at("LessEqual") {
+        return BinaryInfo{found: true, name: "LessEqual", precedence: 3}
+    }
+    if self.at("Greater") {
+        return BinaryInfo{found: true, name: "Greater", precedence: 3}
+    }
+    if self.at("GreaterEqual") {
+        return BinaryInfo{found: true, name: "GreaterEqual", precedence: 3}
+    }
+    if self.at("Plus") {
+        return BinaryInfo{found: true, name: "Add", precedence: 4}
+    }
+    if self.at("Minus") {
+        return BinaryInfo{found: true, name: "Subtract", precedence: 4}
+    }
+    if self.at("Star") {
+        return BinaryInfo{found: true, name: "Multiply", precedence: 5}
+    }
+    if self.at("Slash") {
+        return BinaryInfo{found: true, name: "Divide", precedence: 5}
+    }
+    if self.at("Percent") {
+        return BinaryInfo{found: true, name: "Remainder", precedence: 5}
+    }
+    return BinaryInfo{found: false, name: "", precedence: -1}
+}
+
+func (con self Parser) bracketHasTopLevelComma() bool {
+    mut offset := 0
+    mut bracketDepth := 0
+    mut parenDepth := 0
+    for self.cursor + offset < len(self.tokens) {
+        if self.atOffset(offset, "LeftBracket") {
+            bracketDepth = bracketDepth + 1
+        } else if self.atOffset(offset, "RightBracket") {
+            if bracketDepth == 1 {
+                return false
+            }
+            if bracketDepth > 0 {
+                bracketDepth = bracketDepth - 1
+            }
+        } else if self.atOffset(offset, "LeftParen") {
+            parenDepth = parenDepth + 1
+        } else if self.atOffset(offset, "RightParen") {
+            if parenDepth > 0 {
+                parenDepth = parenDepth - 1
+            }
+        } else if self.atOffset(offset, "Comma") && bracketDepth == 1 && parenDepth == 0 {
+            return true
+        } else if self.atOffset(offset, "Eof") {
+            return false
+        }
+        offset = offset + 1
+    }
+    return false
+}
+
+func (con self Parser) bracketStartsUnambiguousTypeRef() bool {
+    return self.atOffset(1, "LeftBracket") || self.atOffset(1, "Keyword.Func")
+}
+
+func (mut self Parser) structLiteralParts(expression int) StructLiteralParts {
+    kind := ast.NodeKind(con self.nodes[expression])
+    if kind == "Expr.TypeApply" {
+        base := ast.NodeChild(con self.nodes[expression], 0)
+        name := self.expressionTypePath(base)
+        if name == "" {
+            return StructLiteralParts{found: false, name: "", args: []int{}, start: self.nodeSpan(expression)}
+        }
+        mut args := []int{}
+        for mut child := 1; child < ast.NodeChildCount(con self.nodes[expression]); child = child + 1 {
+            args = append(args, ast.NodeChild(con self.nodes[expression], child))
+        }
+        return StructLiteralParts{found: true, name: name, args: args, start: self.nodeSpan(expression)}
+    }
+    if kind == "Expr.Index" {
+        base := ast.NodeChild(con self.nodes[expression], 0)
+        argumentExpression := ast.NodeChild(con self.nodes[expression], 1)
+        name := self.expressionTypePath(base)
+        argument := self.expressionAsTypeRef(argumentExpression)
+        if name == "" || argument < 0 {
+            return StructLiteralParts{found: false, name: "", args: []int{}, start: self.nodeSpan(expression)}
+        }
+        return StructLiteralParts{found: true, name: name, args: []int{argument}, start: self.nodeSpan(expression)}
+    }
+    return StructLiteralParts{found: false, name: "", args: []int{}, start: self.nodeSpan(expression)}
+}
+
+func (mut self Parser) expressionTypePath(expression int) string {
+    kind := ast.NodeKind(con self.nodes[expression])
+    if kind == "Expr.Var" {
+        return ast.NodeValue(con self.nodes[expression])
+    }
+    if kind == "Expr.FieldAccess" {
+        base := ast.NodeChild(con self.nodes[expression], 0)
+        prefix := self.expressionTypePath(base)
+        if prefix == "" {
+            return ""
+        }
+        field := ast.NodeValue(con self.nodes[expression])
+        return strings.join(con []string{prefix, ".", field}, con "")
+    }
+    return ""
+}
+
+func (mut self Parser) expressionAsTypeRef(expression int) int {
+    kind := ast.NodeKind(con self.nodes[expression])
+    if kind == "Expr.Var" || kind == "Expr.FieldAccess" {
+        name := self.expressionTypePath(expression)
+        if name == "" {
+            return - 1
+        }
+        return self.addNode("Type.Named", name, self.nodeSpan(expression), []int{})
+    }
+    if kind == "Expr.Index" {
+        base := ast.NodeChild(con self.nodes[expression], 0)
+        argumentExpression := ast.NodeChild(con self.nodes[expression], 1)
+        name := self.expressionTypePath(base)
+        argument := self.expressionAsTypeRef(argumentExpression)
+        if name == "" || argument < 0 {
+            return - 1
+        }
+        return self.addNode("Type.Named", name, self.nodeSpan(expression), []int{argument})
+    }
+    if kind == "Expr.TypeApply" {
+        base := ast.NodeChild(con self.nodes[expression], 0)
+        name := self.expressionTypePath(base)
+        if name == "" {
+            return - 1
+        }
+        mut args := []int{}
+        for mut child := 1; child < ast.NodeChildCount(con self.nodes[expression]); child = child + 1 {
+            args = append(args, ast.NodeChild(con self.nodes[expression], child))
+        }
+        return self.addNode("Type.Named", name, self.nodeSpan(expression), args)
+    }
+    return - 1
+}
+
+func (con self Parser) nodeSpan(index int) source.Span {
+    return ast.NodeSpan(con self.nodes[index])
 }
 
 func (mut self Parser) addNode(kind string, value string, span source.Span, children []int) int {
@@ -455,6 +958,14 @@ func (mut self Parser) expectValue(kind string, message string) string {
 
 func (con self Parser) at(kind string) bool {
     return token.HasKind(con self.tokens[self.cursor], con kind)
+}
+
+func (con self Parser) atOffset(offset int, kind string) bool {
+    index := self.cursor + offset
+    if index < 0 || index >= len(self.tokens) {
+        return false
+    }
+    return token.HasKind(con self.tokens[index], con kind)
 }
 
 func (con self Parser) atIdent(expected string) bool {

@@ -3,8 +3,9 @@ use std::fs;
 use std::process::ExitCode;
 
 use mallang::ast::{
-    Block, EnumDecl, FieldDecl, Function, FunctionTypeParam, ImportDecl, PackageDecl, Param,
-    Program, SourceUnit, StructDecl, TestDecl, TypeParam, TypeRef, Visibility,
+    Arg, ArgMode, BinaryOp, Block, EnumDecl, Expr, ExprKind, FieldDecl, FieldInit, ForInit,
+    ForPost, Function, FunctionTypeParam, ImportDecl, MatchPattern, PackageDecl, Param, Program,
+    SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp, Visibility,
 };
 use mallang::{lex, parse_with_diagnostics, Keyword, LexError, Span, Token, TokenKind};
 
@@ -297,7 +298,395 @@ fn normalize_function_type_param(param: &FunctionTypeParam) -> NormalizedNode {
 }
 
 fn normalize_block(block: &Block) -> NormalizedNode {
-    NormalizedNode::new("Block", "", block.span, Vec::new())
+    NormalizedNode::new(
+        "Block",
+        "",
+        block.span,
+        block.statements.iter().map(normalize_stmt).collect(),
+    )
+}
+
+fn normalize_stmt(statement: &Stmt) -> NormalizedNode {
+    match &statement.kind {
+        StmtKind::Let {
+            mutable,
+            name,
+            expr,
+        } => NormalizedNode::new(
+            if *mutable {
+                "Stmt.Let.Mutable"
+            } else {
+                "Stmt.Let.Immutable"
+            },
+            name,
+            statement.span,
+            vec![normalize_expr(expr)],
+        ),
+        StmtKind::Assign { name, expr } => NormalizedNode::new(
+            "Stmt.Assign",
+            name,
+            statement.span,
+            vec![normalize_expr(expr)],
+        ),
+        StmtKind::FieldAssign { base, field, expr } => NormalizedNode::new(
+            "Stmt.FieldAssign",
+            field,
+            statement.span,
+            vec![normalize_expr(base), normalize_expr(expr)],
+        ),
+        StmtKind::IndexAssign { base, index, expr } => NormalizedNode::new(
+            "Stmt.IndexAssign",
+            "",
+            statement.span,
+            vec![
+                normalize_expr(base),
+                normalize_expr(index),
+                normalize_expr(expr),
+            ],
+        ),
+        StmtKind::Return { expr } => NormalizedNode::new(
+            "Stmt.Return",
+            "",
+            statement.span,
+            vec![normalize_expr(expr)],
+        ),
+        StmtKind::If {
+            condition,
+            then_block,
+            else_block,
+        } => {
+            let mut children = vec![normalize_expr(condition), normalize_block(then_block)];
+            children.extend(else_block.iter().map(normalize_block));
+            NormalizedNode::new("Stmt.If", "", statement.span, children)
+        }
+        StmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+        } => {
+            let mut children = init.iter().map(normalize_for_init).collect::<Vec<_>>();
+            children.extend(condition.iter().map(|condition| {
+                NormalizedNode::new(
+                    "ForCondition",
+                    "",
+                    condition.span,
+                    vec![normalize_expr(condition)],
+                )
+            }));
+            children.extend(post.iter().map(normalize_for_post));
+            children.push(normalize_block(body));
+            NormalizedNode::new("Stmt.For", "", statement.span, children)
+        }
+        StmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            body,
+        } => NormalizedNode::new(
+            "Stmt.RangeFor",
+            format!("{index_name},{value_name}"),
+            statement.span,
+            vec![normalize_expr(source), normalize_block(body)],
+        ),
+        StmtKind::Break => NormalizedNode::new("Stmt.Break", "", statement.span, Vec::new()),
+        StmtKind::Continue => {
+            NormalizedNode::new("Stmt.Continue", "", statement.span, Vec::new())
+        }
+        StmtKind::Match { scrutinee, arms } => {
+            let mut children = vec![normalize_expr(scrutinee)];
+            children.extend(arms.iter().map(|arm| {
+                NormalizedNode::new(
+                    "MatchBlockArm",
+                    "",
+                    arm.span,
+                    vec![
+                        normalize_pattern(&arm.pattern, arm.span),
+                        normalize_block(&arm.block),
+                    ],
+                )
+            }));
+            NormalizedNode::new("Stmt.Match", "", statement.span, children)
+        }
+        StmtKind::Assert { condition } => NormalizedNode::new(
+            "Stmt.Assert",
+            "",
+            statement.span,
+            vec![normalize_expr(condition)],
+        ),
+        StmtKind::Expr { expr } => NormalizedNode::new(
+            "Stmt.Expr",
+            "",
+            statement.span,
+            vec![normalize_expr(expr)],
+        ),
+    }
+}
+
+fn normalize_for_init(init: &ForInit) -> NormalizedNode {
+    match init {
+        ForInit::Let {
+            mutable,
+            name,
+            expr,
+        } => NormalizedNode::new(
+            if *mutable {
+                "ForInit.Let.Mutable"
+            } else {
+                "ForInit.Let.Immutable"
+            },
+            name,
+            expr.span,
+            vec![normalize_expr(expr)],
+        ),
+    }
+}
+
+fn normalize_for_post(post: &ForPost) -> NormalizedNode {
+    match post {
+        ForPost::Assign { target, expr } => NormalizedNode::new(
+            "ForPost.Assign",
+            "",
+            target.span.join(expr.span),
+            vec![normalize_expr(target), normalize_expr(expr)],
+        ),
+    }
+}
+
+fn normalize_expr(expression: &Expr) -> NormalizedNode {
+    match &expression.kind {
+        ExprKind::Int(value) => NormalizedNode::new(
+            "Expr.Int",
+            value.to_string(),
+            expression.span,
+            Vec::new(),
+        ),
+        ExprKind::String(value) => {
+            NormalizedNode::new("Expr.String", value, expression.span, Vec::new())
+        }
+        ExprKind::Bool(value) => NormalizedNode::new(
+            "Expr.Bool",
+            value.to_string(),
+            expression.span,
+            Vec::new(),
+        ),
+        ExprKind::Nil => NormalizedNode::new("Expr.Nil", "", expression.span, Vec::new()),
+        ExprKind::Var(name) => {
+            NormalizedNode::new("Expr.Var", name, expression.span, Vec::new())
+        }
+        ExprKind::FunctionLiteral(function) => {
+            let mut children = function
+                .params
+                .iter()
+                .map(|param| normalize_param(param, "Param"))
+                .collect::<Vec<_>>();
+            if let Some(return_type) = &function.return_type {
+                children.push(NormalizedNode::new(
+                    "ReturnType",
+                    "",
+                    return_type.span,
+                    vec![normalize_type_ref(return_type)],
+                ));
+            }
+            children.push(normalize_block(&function.body));
+            NormalizedNode::new(
+                if function.mutable {
+                    "Expr.FunctionLiteral.Mutable"
+                } else {
+                    "Expr.FunctionLiteral.Immutable"
+                },
+                "",
+                expression.span,
+                children,
+            )
+        }
+        ExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => NormalizedNode::new(
+            "Expr.If",
+            "",
+            expression.span,
+            vec![
+                normalize_expr(condition),
+                normalize_expr(then_branch),
+                normalize_expr(else_branch),
+            ],
+        ),
+        ExprKind::Match { scrutinee, arms } => {
+            let mut children = vec![normalize_expr(scrutinee)];
+            children.extend(arms.iter().map(|arm| {
+                NormalizedNode::new(
+                    "MatchArm",
+                    "",
+                    arm.span,
+                    vec![
+                        normalize_pattern(&arm.pattern, arm.span),
+                        normalize_expr(&arm.expr),
+                    ],
+                )
+            }));
+            NormalizedNode::new("Expr.Match", "", expression.span, children)
+        }
+        ExprKind::StructLiteral {
+            type_name,
+            type_args,
+            fields,
+        } => {
+            let mut children = type_args.iter().map(normalize_type_ref).collect::<Vec<_>>();
+            children.extend(fields.iter().map(normalize_field_init));
+            NormalizedNode::new(
+                "Expr.StructLiteral",
+                type_name,
+                expression.span,
+                children,
+            )
+        }
+        ExprKind::ArrayLiteral { ty, elements } => {
+            let mut children = vec![normalize_type_ref(ty)];
+            children.extend(elements.iter().map(normalize_expr));
+            NormalizedNode::new("Expr.ArrayLiteral", "", expression.span, children)
+        }
+        ExprKind::FieldAccess { base, field } => NormalizedNode::new(
+            "Expr.FieldAccess",
+            field,
+            expression.span,
+            vec![normalize_expr(base)],
+        ),
+        ExprKind::Index { base, index } => NormalizedNode::new(
+            "Expr.Index",
+            "",
+            expression.span,
+            vec![normalize_expr(base), normalize_expr(index)],
+        ),
+        ExprKind::TypeApply { base, args } => {
+            let mut children = vec![normalize_expr(base)];
+            children.extend(args.iter().map(normalize_type_ref));
+            NormalizedNode::new("Expr.TypeApply", "", expression.span, children)
+        }
+        ExprKind::EnumConstructor {
+            enum_name,
+            variant,
+            args,
+        } => NormalizedNode::new(
+            "Expr.EnumConstructor",
+            format!("{enum_name}.{variant}"),
+            expression.span,
+            args.iter()
+                .flatten()
+                .map(normalize_arg)
+                .collect::<Vec<_>>(),
+        ),
+        ExprKind::Call { callee, args } => {
+            let mut children = vec![normalize_expr(callee)];
+            children.extend(args.iter().map(normalize_arg));
+            NormalizedNode::new("Expr.Call", "", expression.span, children)
+        }
+        ExprKind::Unary { op, expr } => NormalizedNode::new(
+            format!("Expr.Unary.{}", unary_name(*op)),
+            "",
+            expression.span,
+            vec![normalize_expr(expr)],
+        ),
+        ExprKind::Binary { op, left, right } => NormalizedNode::new(
+            format!("Expr.Binary.{}", binary_name(*op)),
+            "",
+            expression.span,
+            vec![normalize_expr(left), normalize_expr(right)],
+        ),
+    }
+}
+
+fn normalize_field_init(field: &FieldInit) -> NormalizedNode {
+    NormalizedNode::new(
+        "FieldInit",
+        &field.name,
+        field.span,
+        vec![normalize_expr(&field.expr)],
+    )
+}
+
+fn normalize_arg(arg: &Arg) -> NormalizedNode {
+    NormalizedNode::new(
+        format!("Arg.{}", arg_mode_name(arg.mode)),
+        "",
+        arg.span,
+        vec![normalize_expr(&arg.expr)],
+    )
+}
+
+fn normalize_pattern(pattern: &MatchPattern, span: Span) -> NormalizedNode {
+    match pattern {
+        MatchPattern::Some(binding) => {
+            NormalizedNode::new("Pattern.Some", binding, span, Vec::new())
+        }
+        MatchPattern::None => NormalizedNode::new("Pattern.None", "", span, Vec::new()),
+        MatchPattern::Ok(binding) => {
+            NormalizedNode::new("Pattern.Ok", binding, span, Vec::new())
+        }
+        MatchPattern::Err(binding) => {
+            NormalizedNode::new("Pattern.Err", binding, span, Vec::new())
+        }
+        MatchPattern::Wildcard => {
+            NormalizedNode::new("Pattern.Wildcard", "", span, Vec::new())
+        }
+        MatchPattern::Binding(binding) => {
+            NormalizedNode::new("Pattern.Binding", binding, span, Vec::new())
+        }
+        MatchPattern::Variant {
+            type_name,
+            variant,
+            payloads,
+        } => NormalizedNode::new(
+            "Pattern.Variant",
+            format!("{type_name}.{variant}"),
+            span,
+            payloads
+                .iter()
+                .map(|payload| normalize_pattern(payload, span))
+                .collect(),
+        ),
+        MatchPattern::NestedBuiltin { variant, payload } => NormalizedNode::new(
+            "Pattern.NestedBuiltin",
+            variant,
+            span,
+            vec![normalize_pattern(payload, span)],
+        ),
+    }
+}
+
+fn arg_mode_name(mode: ArgMode) -> &'static str {
+    match mode {
+        ArgMode::Owned => "Owned",
+        ArgMode::Con => "Con",
+        ArgMode::Mut => "Mut",
+    }
+}
+
+fn unary_name(op: UnaryOp) -> &'static str {
+    match op {
+        UnaryOp::Negate => "Negate",
+        UnaryOp::Not => "Not",
+    }
+}
+
+fn binary_name(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "Add",
+        BinaryOp::Subtract => "Subtract",
+        BinaryOp::Multiply => "Multiply",
+        BinaryOp::Divide => "Divide",
+        BinaryOp::Remainder => "Remainder",
+        BinaryOp::Equal => "Equal",
+        BinaryOp::NotEqual => "NotEqual",
+        BinaryOp::LogicalAnd => "LogicalAnd",
+        BinaryOp::LogicalOr => "LogicalOr",
+        BinaryOp::Less => "Less",
+        BinaryOp::LessEqual => "LessEqual",
+        BinaryOp::Greater => "Greater",
+        BinaryOp::GreaterEqual => "GreaterEqual",
+    }
 }
 
 fn visibility_name(visibility: Visibility) -> &'static str {

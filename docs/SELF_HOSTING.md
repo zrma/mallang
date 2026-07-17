@@ -67,7 +67,8 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer, syntax arena and P175c1 declaration/type parser.
+  the complete lexer, syntax arena, declaration/type parser and P175c2a core
+  statement/expression parser.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   incremental parser differential, ownership accounting and sanitizer gate.
@@ -75,7 +76,7 @@ Mallang to specific 1.x versions.
 - `docs/todo-self-hosting-frontend/`: active B1 work breakdown and decisions.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
-B1 P175c1 has added the syntax arena and declaration/type parser after fixing an
-owned temporary string-equality cleanup bug exposed by parser lookahead. The
-active P175c2 slice is statement, expression and recovery parsing; no Stage1
-compiler claim is made yet.
+B1 P175c2a has added core statements and Pratt/postfix expression parsing after
+fixing owned string comparison cleanup and nested match-arm return cleanup bugs
+exposed by compiler code. The active P175c2b slice is control flow, function
+literals, match expressions and patterns; no Stage1 compiler claim is made yet.

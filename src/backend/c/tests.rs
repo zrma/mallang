@@ -2331,6 +2331,45 @@ func main() {
 }
 
 #[test]
+fn does_not_redeclare_pre_evaluated_match_arm_return_temporary() {
+    let program = parse(
+        r#"
+type Outcome enum {
+    Value(int)
+    Failure(string)
+}
+
+func choose(value Outcome) int {
+    label := "cleanup"
+    match value {
+        case Outcome.Value(inner) { return inner }
+        case Outcome.Failure(_) { return 0 }
+    }
+}
+
+func main() {
+    print(choose(Outcome.Value(7)))
+}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+    let declarations = c
+        .lines()
+        .filter(|line| line.contains("int64_t mlg_mallang_return_value_"))
+        .collect::<Vec<_>>();
+    let unique = declarations
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(declarations.len(), unique.len());
+    assert!(!declarations.is_empty());
+}
+
+#[test]
 fn generates_c_pointer_abi_for_mut_borrow_params() {
     let program = parse(
         r#"

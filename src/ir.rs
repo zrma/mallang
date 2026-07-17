@@ -2712,11 +2712,15 @@ fn insert_cleanup_drops(
         if let IrStmtKind::Return { expr } = &stmt.kind {
             let returned_roots = stmt_moved_roots;
             moved_in_body.extend(returned_roots.iter().cloned());
+            let already_pre_evaluated = matches!(
+                &expr.kind,
+                IrExprKind::Var(name) if name == &return_value_temp_name(stmt.span)
+            );
             let needs_pre_drop_evaluation = expr.ty != Type::Unit
                 && active
                     .iter()
                     .any(|binding| !returned_roots.contains(&binding.name));
-            if needs_pre_drop_evaluation {
+            if needs_pre_drop_evaluation && !already_pre_evaluated {
                 let temp_name = return_value_temp_name(stmt.span);
                 output.push(IrStmt {
                     kind: IrStmtKind::Let {

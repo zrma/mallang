@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175b and P175c1 complete, P175c2 parser body work next
+Status: active; P175a-P175c2a complete, P175c2b control-flow parser next
 
 ## Goal
 
@@ -15,8 +15,12 @@ and frontend diagnostic equivalence against the Rust Stage0 oracle.
   lexer with deterministic differential output
 - **P175c1**: define the flat syntax arena and implement package, import,
   declaration and type parsing with exact Rust-oracle normalization
-- **P175c2**: implement statement and expression parsing, then add bounded
-  recovery without changing the frozen grammar
+- **P175c2a**: implement core statements, Pratt expressions, postfix chains,
+  literals, calls, assignments and struct/array construction
+- **P175c2b**: implement control-flow statements, function literals, match
+  expressions and patterns
+- **P175c3**: add bounded statement/top-level recovery without changing the
+  frozen grammar
 - **P175d**: run the positive, rejection and crash corpus through both frontends
   and close B1 only when normalized tokens, ASTs and diagnostics agree
 
@@ -74,6 +78,19 @@ compatibility evidence.
   equality expressions. `string-equality-temporaries.mlg` now proves that the
   comparison happens before reverse-order cleanup under strict allocation
   accounting and ASan/UBSan.
+
+## P175c2a Evidence
+
+- The Mallang parser now builds normalized nodes for let, assignment, return
+  and expression statements; unary/binary precedence; calls and argument modes;
+  field/index/type-apply chains; pipelines; and struct/array literals.
+- `core-expressions.mlg` exercises the core body grammar against the Rust AST
+  oracle, including generic struct construction and pipeline desugaring.
+- The Rust oracle now owns the complete frozen statement/expression/pattern node
+  vocabulary so later slices extend coverage without changing prior output.
+- Nested cleanup passes now recognize an already pre-evaluated compiler return
+  temporary. `match-arm-return-temp.mlg` protects match payload cleanup plus an
+  outer owned local under strict C, allocation accounting and ASan/UBSan.
 
 ## Excluded
 

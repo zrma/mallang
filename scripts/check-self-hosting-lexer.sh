@@ -147,7 +147,7 @@ for fixture in "$PARSER_FIXTURES"/*.mlg; do
   fi
 done
 
-for regression in append-match append-match-loop string-equality-temporaries; do
+for regression in append-match append-match-loop match-arm-return-temp string-equality-temporaries; do
   fixture="tests/fixtures/self-hosting/$regression.mlg"
   binary="$WORK/$regression"
   "$STAGE0" build "$fixture" -o "$binary" >/dev/null
@@ -202,6 +202,7 @@ done
 
 if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   [[ "$(cat "$WORK/append-match-loop.stdout")" != "1" ]] || \
+  [[ "$(cat "$WORK/match-arm-return-temp.stdout")" != "7" ]] || \
   [[ "$(cat "$WORK/string-equality-temporaries.stdout")" != $'true\ntrue' ]]; then
   echo "self-hosting lexer cleanup regression output mismatch" >&2
   exit 1

@@ -1,0 +1,35 @@
+package demo
+
+type User struct {
+    name string
+    age int
+}
+
+func inspect(con value string) int {
+    return 1
+}
+
+func update(mut value string) int {
+    return 2
+}
+
+func transform(value int) int {
+    return value
+}
+
+func main() {
+    mut total := 1 + 2 * 3
+    total = total - 1
+    user := User{name: "kim", age: total}
+    user.name = "lee"
+    values := []int{1, 2, 3}
+    values[0] = -total
+    indexed := values[1]
+    read := inspect(con user.name)
+    changed := update(mut user.name)
+    compared := !false && (read + changed == 3)
+    pair := Pair[int, string]{first: 7, second: "mallang"}
+    maybe := nil
+    piped := total |> transform()
+    print(compared)
+}
