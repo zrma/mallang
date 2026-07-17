@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c3b2b1 complete
+Status: in progress; P176a-P176c3b2b2 complete
 
 ## Objective
 
@@ -59,7 +59,7 @@ agrees.
   persistent move state (complete)
 - P176c3b2b1: check field/index post targets through shared assignment places
   (complete)
-- P176c3b2b2: check range loop bindings and persistent move state
+- P176c3b2b2: check range loop bindings and persistent move state (complete)
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
@@ -263,6 +263,21 @@ specialization and function-body checking until later P176 slices.
 - Eighty semantic fixtures, six typed-IR fixtures and fifty-six Mallang project
   tests pass through Stage0, generated Stage1, strict accounting and ASan/UBSan.
   Range-loop binding and ownership checks remain P176c3b2b2.
+
+## P176c3b2b2 Evidence
+
+- Range sources are checked once as reads and remain reusable after the loop.
+  Index bindings are `int`; value bindings require Copy elements, while
+  index-only iteration accepts non-Copy array and slice elements.
+- Range bindings remain body-local. Duplicate or built-in binding names,
+  non-collection sources and assignment to an active direct range source
+  preserve Stage0's first diagnostic message and source span.
+- Outer non-Copy moves from a repeatable range body are rejected, while
+  iteration-local state is discarded at the loop boundary and outer move state
+  is merged conservatively.
+- Eighty-nine semantic fixtures, six typed-IR fixtures and sixty-four Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Receiver ownership modes remain the next P176c slice.
 
 ## B2 Completion Criteria
 

@@ -1,0 +1,8 @@
+func exercise(mut values [2]int) int {
+    for index := range values {
+        values = values
+    }
+    return 0
+}
+
+func main() {}

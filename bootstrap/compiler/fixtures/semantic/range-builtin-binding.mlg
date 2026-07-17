@@ -1,0 +1,8 @@
+func exercise(con values [2]int) int {
+    for len := range values {
+        return 0
+    }
+    return 0
+}
+
+func main() {}

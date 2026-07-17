@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func exercise(con users [2]User) int {
+    mut total := 0
+    for index := range users {
+        total = total + index
+    }
+    return total
+}
+
+func main() {}

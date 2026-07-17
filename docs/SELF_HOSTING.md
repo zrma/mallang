@@ -95,6 +95,8 @@ merges outer move state across statement and expression `if` branches. P176c3b1
 checks condition and conditionless loop scope, control depth and persistent
 condition/body moves. P176c3b2a adds loop-scoped init bindings, optional
 conditions and direct-binding post assignment ownership. P176c3b2b1 reuses the
-same assignment-place checks for field/index post targets. Range-loop ownership
-and deterministic drop insertion remain incomplete, so no complete semantic,
+same assignment-place checks for field/index post targets. P176c3b2b2 checks
+range source reads, Copy/index-only bindings, body scope, active-source
+assignment and persistent outer moves. Receiver ownership modes and
+deterministic drop insertion remain incomplete, so no complete semantic,
 typed-IR or Stage1 compiler claim is made.

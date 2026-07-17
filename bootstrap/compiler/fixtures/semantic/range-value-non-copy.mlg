@@ -1,0 +1,12 @@
+type User struct {
+    name string
+}
+
+func exercise(con users [2]User) int {
+    for index, user := range users {
+        return index
+    }
+    return 0
+}
+
+func main() {}

@@ -1,0 +1,13 @@
+func inspect(con values [2]int) int {
+    return values[0]
+}
+
+func exercise(con values [2]int) int {
+    mut total := 0
+    for index, value := range values {
+        total = total + index + value
+    }
+    return total + inspect(con values)
+}
+
+func main() {}

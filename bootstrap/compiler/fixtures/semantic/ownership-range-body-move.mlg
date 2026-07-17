@@ -1,0 +1,13 @@
+func consume(value string) int {
+    return 1
+}
+
+func exercise(con values [2]int) int {
+    text := "hello"
+    for index := range values {
+        current := consume(text)
+    }
+    return 0
+}
+
+func main() {}

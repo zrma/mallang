@@ -73,6 +73,7 @@ pub type Local struct {
     mutable bool
     borrowed bool
     moved bool
+    rangeSource bool
     ty ResolvedType
     function int
     scopeDepth int
@@ -83,6 +84,12 @@ pub type BorrowPlace struct {
     segments []string
     ty ResolvedType
     exclusive bool
+}
+
+type RangeBindings struct {
+    indexName string
+    valueName string
+    valid bool
 }
 
 pub type CheckedProgram struct {
@@ -600,7 +607,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if reference >= 0 {
                     function = self.functionReferences[reference].function
                 }
-                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", borrowed: false, moved: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
+                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", borrowed: false, moved: false, rangeSource: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
                 return Ok(false)
             }
             case Err(error) {
@@ -616,6 +623,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
         }
         if !self.locals[index].mutable {
             return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, statement)))
+        }
+        if self.locals[index].rangeSource {
+            return Err(newError(strings.join(con []string{"cannot assign to active range source `", token.CopyText(con name), "` in v0",}, con ""), ast.Span(con program, statement)))
         }
         expression := ast.Child(con program, statement, 0)
         match self.checkExpression(con program, expression) {
@@ -662,6 +672,9 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
     }
     if kind == "Stmt.For" {
         return self.checkForStatement(con program, statement, con returnType)
+    }
+    if kind == "Stmt.RangeFor" {
+        return self.checkRangeStatement(con program, statement, con returnType)
     }
     if kind == "Stmt.Break" || kind == "Stmt.Continue" {
         if self.loopDepth == 0 {
@@ -890,6 +903,101 @@ func (mut self CheckedProgram) checkForStatement(con program ast.Program, statem
     return Ok(false)
 }
 
+func (mut self CheckedProgram) checkRangeStatement(con program ast.Program, statement int, con returnType ResolvedType) Result[bool, SemanticError] {
+    if ast.ChildCount(con program, statement) != 2 {
+        return Err(newError("malformed range statement", ast.Span(con program, statement)))
+    }
+    bindings := parseRangeBindings(con ast.Value(con program, statement))
+    if !bindings.valid {
+        return Err(newError("malformed range bindings", ast.Span(con program, statement)))
+    }
+    if bindings.indexName != "_" && isBuiltinValueName(con bindings.indexName) {
+        return Err(newError(strings.join(con []string{"`", token.CopyText(con bindings.indexName), "` is a built-in value name",}, con ""), ast.Span(con program, statement)))
+    }
+    if bindings.valueName != "_" && isBuiltinValueName(con bindings.valueName) {
+        return Err(newError(strings.join(con []string{"`", token.CopyText(con bindings.valueName), "` is a built-in value name",}, con ""), ast.Span(con program, statement)))
+    }
+    if bindings.indexName != "_" && bindings.indexName == bindings.valueName {
+        return Err(newError("range index and value bindings must use different names", ast.Span(con program, statement)))
+    }
+
+    rangeSource := ast.Child(con program, statement, 0)
+    body := ast.Child(con program, statement, 1)
+    mut sourceType := unitType()
+    match self.checkExpressionUse(con program, rangeSource, con "read") {
+        case Ok(ty) {
+            sourceType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if sourceType.kind != "array" && sourceType.kind != "slice" {
+        message := strings.join(con []string{"range source must be a fixed-size array or slice, got `", token.CopyText(con sourceType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, rangeSource)))
+    }
+    mut elementType := unitType()
+    match self.typeArgument(con sourceType, 0) {
+        case Ok(ty) {
+            elementType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked range element type is missing", ast.Span(con program, rangeSource)))
+        }
+    }
+    if bindings.valueName != "_" && !elementType.copy {
+        message := strings.join(con []string{"range value binding requires a Copy element type in v0, got `", token.CopyText(con elementType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, rangeSource)))
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    baseDepth := self.scopeDepth
+    baseLoopDepth := self.loopDepth
+    rangeScopeDepth := baseDepth + 1
+    mut bodyLocals := copyLocals(con baseLocals)
+    if bindings.indexName != "_" {
+        bodyLocals = append(bodyLocals, Local{name: token.CopyText(con bindings.indexName), mutable: false, borrowed: false, moved: false, rangeSource: false, ty: intType(), function: -1, scopeDepth: rangeScopeDepth,})
+    }
+    if bindings.valueName != "_" {
+        bodyLocals = append(bodyLocals, Local{name: token.CopyText(con bindings.valueName), mutable: false, borrowed: false, moved: false, rangeSource: false, ty: copyType(con elementType), function: -1, scopeDepth: rangeScopeDepth,})
+    }
+    if ast.Kind(con program, rangeSource) == "Expr.Var" {
+        sourceName := ast.Value(con program, rangeSource)
+        sourceLocal := localIndex(con bodyLocals, con sourceName)
+        if sourceLocal >= 0 {
+            bodyLocals[sourceLocal].rangeSource = true
+        }
+    }
+
+    self.locals = bodyLocals
+    self.scopeDepth = rangeScopeDepth + 1
+    self.loopDepth = baseLoopDepth + 1
+    match self.checkBlock(con program, body, con returnType) {
+        case Ok(_) {}
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth
+            self.loopDepth = baseLoopDepth
+            return Err(error)
+        }
+    }
+    checkedBodyLocals := copyLocals(con self.locals)
+    match rejectLoopPersistentMoves(con baseLocals, con checkedBodyLocals, rangeScopeDepth, con ast.Span(con program, body)) {
+        case Ok(_) {}
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            self.scopeDepth = baseDepth
+            self.loopDepth = baseLoopDepth
+            return Err(error)
+        }
+    }
+
+    self.locals = mergeLoopMoves(con baseLocals, con checkedBodyLocals, con checkedBodyLocals)
+    self.scopeDepth = baseDepth
+    self.loopDepth = baseLoopDepth
+    return Ok(false)
+}
+
 func (mut self CheckedProgram) checkForInit(con program ast.Program, init int, con span source.Span) Result[bool, SemanticError] {
     name := ast.Value(con program, init)
     if isBuiltinValueName(con name) {
@@ -909,7 +1017,7 @@ func (mut self CheckedProgram) checkForInit(con program ast.Program, init int, c
                 function = self.functionReferences[reference].function
             }
             mutable := ast.Kind(con program, init) == "ForInit.Let.Mutable"
-            self.locals = append(self.locals, Local{name: name, mutable: mutable, borrowed: false, moved: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
+            self.locals = append(self.locals, Local{name: name, mutable: mutable, borrowed: false, moved: false, rangeSource: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
             return Ok(true)
         }
         case Err(error) {
@@ -941,6 +1049,9 @@ func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, c
     }
     if !self.locals[local].mutable {
         return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
+    }
+    if self.locals[local].rangeSource {
+        return Err(newError(strings.join(con []string{"cannot assign to active range source `", token.CopyText(con name), "` in v0",}, con ""), source.Copy(con span)))
     }
     match self.checkExpression(con program, value) {
         case Ok(valueType) {
@@ -2125,15 +2236,42 @@ func localIndex(con locals []Local, con name string) int {
 }
 
 func localFromParam(con param ParamSig) Local {
-    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", borrowed: param.mode != "owned", moved: false, ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
+    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", borrowed: param.mode != "owned", moved: false, rangeSource: false, ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
 }
 
 func copyLocals(con locals []Local) []Local {
     mut copied := []Local{}
     for mut index := 0; index < len(locals); index = index + 1 {
-        copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, borrowed: locals[index].borrowed, moved: locals[index].moved, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
+        copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, borrowed: locals[index].borrowed, moved: locals[index].moved, rangeSource: locals[index].rangeSource, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
     }
     return copied
+}
+
+func parseRangeBindings(con value string) RangeBindings {
+    separator := ","
+    mut result := RangeBindings{indexName: "", valueName: "", valid: false,}
+    match strings.find(con value, con separator) {
+        case Some(offset) {
+            mut indexName := ""
+            match strings.slice(con value, 0, offset) {
+                case Ok(text) {
+                    indexName = text
+                }
+                case Err(_) {}
+            }
+            mut valueName := ""
+            match strings.slice(con value, offset + 1, strings.byteLen(con value)) {
+                case Ok(text) {
+                    valueName = text
+                }
+                case Err(_) {}
+            }
+            valid := indexName != "" && valueName != ""
+            result = RangeBindings{indexName: indexName, valueName: valueName, valid: valid,}
+        }
+        case None {}
+    }
+    return result
 }
 
 func mergeBranchMoves(con baseLocals []Local, con thenLocals []Local, con elseLocals []Local) []Local {
