@@ -1,0 +1,14 @@
+type Chain enum {
+    End
+    Next(Chain)
+}
+
+func depth(value Chain) int {
+    return match value {
+        case Chain.End { 0 }
+        case Chain.Next(tail) { 1 }
+        case Chain.Next(Chain.End) { 2 }
+    }
+}
+
+func main() {}

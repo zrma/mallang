@@ -1,0 +1,32 @@
+type Status enum {
+    Idle
+    Busy(int)
+}
+
+type Event enum {
+    Missing
+    Changed(Status)
+}
+
+type Pairing enum {
+    Empty
+    Pair(int, Option[string])
+}
+
+func eventCode(value Event) int {
+    return match value {
+        case Event.Missing { 0 }
+        case Event.Changed(Status.Idle) { 1 }
+        case Event.Changed(Status.Busy(code)) { code }
+    }
+}
+
+func pairingCode(value Pairing) int {
+    return match value {
+        case Pairing.Empty { 0 }
+        case Pairing.Pair(left, Some(message)) { left }
+        case Pairing.Pair(_, None) { 0 }
+    }
+}
+
+func main() {}

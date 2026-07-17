@@ -1,0 +1,17 @@
+func unwrap(value Option[Result[int, string]]) int {
+    return match value {
+        case Some(Ok(item)) { item }
+        case Some(Err(message)) { 0 }
+        case None { 0 }
+    }
+}
+
+func inspect(value Option[Result[int, string]]) int {
+    match value {
+        case Some(Ok(item)) { return item }
+        case Some(Err(message)) { return 0 }
+        case None { return 0 }
+    }
+}
+
+func main() {}

@@ -1,0 +1,12 @@
+type Pairing enum {
+    Pair(int, Option[int])
+}
+
+func code(value Pairing) int {
+    return match value {
+        case Pairing.Pair(item, Some(item)) { item }
+        case Pairing.Pair(_, None) { 0 }
+    }
+}
+
+func main() {}

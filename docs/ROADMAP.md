@@ -1726,7 +1726,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] flat Option/Result expression match expected types, coverage와 move join
 - [x] flat Option/Result statement match return convergence와 move join
 - [x] flat non-generic user enum pattern, payload binding과 exhaustive coverage
-- [ ] nested built-in/user enum pattern semantics와 recursive coverage
+- [x] nested built-in/user enum pattern semantics와 recursive coverage
+- [ ] function literal, capture propagation과 closure ownership
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

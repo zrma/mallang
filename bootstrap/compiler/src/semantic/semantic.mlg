@@ -98,6 +98,22 @@ type PatternVariantParts struct {
     valid bool
 }
 
+type PatternBinding struct {
+    name string
+    ty ResolvedType
+}
+
+type PatternCoverage struct {
+    bindings []PatternBinding
+    leaves [][]string
+}
+
+type AdtPatternPayload struct {
+    kind string
+    node int
+    name string
+}
+
 pub type CheckedProgram struct {
     typeShapes []TypeShape
     structs []StructSig
@@ -1737,6 +1753,9 @@ func (mut self CheckedProgram) checkMatchExpression(con program ast.Program, exp
 }
 
 func (con self CheckedProgram) checkMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    if matchUsesRecursiveCoverage(con program, expression) {
+        return self.checkRecursiveMatchPatterns(con program, expression, con scrutineeType)
+    }
     if scrutineeType.kind == "enum" {
         return self.checkUserEnumMatchPatterns(con program, expression, con scrutineeType)
     }
@@ -1937,6 +1956,258 @@ func (con self CheckedProgram) validateUserEnumPattern(con program ast.Program, 
     return Ok(variantIndex)
 }
 
+func (con self CheckedProgram) checkRecursiveMatchPatterns(con program ast.Program, expression int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    mut all := [][]string{}
+    match self.coverageLeaves(con scrutineeType, []string {}
+    , ast.Span(con program, expression)){case Ok(leaves) {
+            all = leaves
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut seen := [][]string{}
+    for mut armIndex := 1; armIndex < ast.ChildCount(con program, expression); armIndex = armIndex + 1 {
+        arm := ast.Child(con program, expression, armIndex)
+        pattern := ast.Child(con program, arm, 0)
+        mut coverage := PatternCoverage{bindings: []PatternBinding{}, leaves: [][]string{},}
+        match self.patternCoverage(con program, pattern, con scrutineeType, arm, []string {}
+        ){case Ok(value) {
+                coverage = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        if coverageIsSubset(con coverage.leaves, con seen) {
+            return Err(newError("match pattern is duplicate or unreachable", ast.Span(con program, arm)))
+        }
+        seen = extendCoverage(seen, con coverage.leaves)
+    }
+
+    if coverageIsSubset(con all, con seen) {
+        return Ok(true)
+    }
+    mut missing := []string{}
+    for mut leaf := 0; leaf < len(all); leaf = leaf + 1 {
+        if !coveragePathIsCovered(con all[leaf], con seen) {
+            missing = append(missing, strings.join(con all[leaf], con " -> "))
+        }
+    }
+    sorted := sortTexts(missing)
+    message := strings.join(con []string{"match is not exhaustive; missing ", strings.join(con sorted, con ", "),}, con "")
+    return Err(newError(message, ast.Span(con program, expression)))
+}
+
+func (con self CheckedProgram) patternCoverage(con program ast.Program, pattern int, con expected ResolvedType, spanNode int, visiting []string) Result[PatternCoverage, SemanticError] {
+    kind := ast.Kind(con program, pattern)
+    if kind == "Pattern.Wildcard" {
+        return match self.coverageLeaves(con expected, copySegments(con visiting), ast.Span(con program, spanNode)) {
+            case Ok(leaves) {
+                Ok(PatternCoverage{bindings: []PatternBinding{}, leaves: leaves,})
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
+    if kind == "Pattern.Binding" {
+        name := ast.Value(con program, pattern)
+        if isBuiltinValueName(con name) {
+            message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con "")
+            return Err(newError(message, ast.Span(con program, spanNode)))
+        }
+        match self.coverageLeaves(con expected, copySegments(con visiting), ast.Span(con program, spanNode)) {
+            case Ok(leaves) {
+                return Ok(PatternCoverage{bindings: []PatternBinding{PatternBinding{name: name, ty: copyType(con expected),},}, leaves: leaves,})
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    mut sourceTypeName := ""
+    mut variantName := ""
+    mut hasSourceType := false
+    mut payloads := []AdtPatternPayload{}
+    if kind == "Pattern.Variant" {
+        parts := splitPatternVariant(con ast.Value(con program, pattern))
+        if !parts.valid {
+            return Err(newError("malformed user enum match pattern", ast.Span(con program, spanNode)))
+        }
+        if expected.kind != "enum" {
+            patternName := strings.join(con []string{token.CopyText(con parts.typeName), ".", token.CopyText(con parts.variantName),}, con "")
+            message := strings.join(con []string{"pattern `", patternName, "` requires an enum payload, got `", token.CopyText(con expected.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, spanNode)))
+        }
+        sourceTypeName = token.CopyText(con parts.typeName)
+        variantName = token.CopyText(con parts.variantName)
+        hasSourceType = true
+        for mut child := 0; child < ast.ChildCount(con program, pattern); child = child + 1 {
+            payloads = append(payloads, AdtPatternPayload{kind: "nested", node: ast.Child(con program, pattern, child), name: "",})
+        }
+    } else if kind == "Pattern.Some" || kind == "Pattern.Ok" || kind == "Pattern.Err" {
+        if kind == "Pattern.Some" {
+            variantName = "Some"
+        } else if kind == "Pattern.Ok" {
+            variantName = "Ok"
+        } else {
+            variantName = "Err"
+        }
+        payloads = append(payloads, AdtPatternPayload{kind: "binding", node: -1, name: ast.Value(con program, pattern),})
+    } else if kind == "Pattern.None" {
+        variantName = "None"
+    } else if kind == "Pattern.NestedBuiltin" {
+        variantName = ast.Value(con program, pattern)
+        if ast.ChildCount(con program, pattern) != 1 {
+            return Err(newError("malformed nested built-in match pattern", ast.Span(con program, spanNode)))
+        }
+        payloads = append(payloads, AdtPatternPayload{kind: "nested", node: ast.Child(con program, pattern, 0), name: "",})
+    } else {
+        return Err(newError("B2d1b2c2b2 semantic checker does not accept this match pattern", ast.Span(con program, spanNode)))
+    }
+
+    return self.adtVariantPatternCoverage(con program, con expected, con sourceTypeName, hasSourceType, con variantName, con payloads, spanNode, visiting)
+}
+
+func (con self CheckedProgram) adtVariantPatternCoverage(con program ast.Program, con expected ResolvedType, con sourceTypeName string, hasSourceType bool, con variantName string, con payloads []AdtPatternPayload, spanNode int, visiting []string) Result[PatternCoverage, SemanticError] {
+    variantCount := self.adtVariantCount(con expected)
+    if variantCount < 0 {
+        message := strings.join(con []string{"pattern `", token.CopyText(con variantName), "` does not match payload type `", token.CopyText(con expected.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+    patternName := self.adtPatternName(con expected)
+    if hasSourceType && sourceTypeName != patternName {
+        message := strings.join(con []string{"pattern type `", token.CopyText(con sourceTypeName), "` does not match `", token.CopyText(con patternName), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+    variantIndex := self.adtVariantIndex(con expected, con variantName)
+    if variantIndex < 0 {
+        if hasSourceType {
+            message := strings.join(con []string{"enum `", token.CopyText(con sourceTypeName), "` has no variant `", token.CopyText(con variantName), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, spanNode)))
+        }
+        message := strings.join(con []string{"pattern `", token.CopyText(con variantName), "` does not match payload type `", token.CopyText(con expected.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+
+    expectedCount := self.adtVariantPayloadCount(con expected, variantIndex)
+    actualCount := len(payloads)
+    prefix := strings.join(con []string{token.CopyText(con patternName), ".", token.CopyText(con variantName),}, con "")
+    if expectedCount == 0 && actualCount > 0 {
+        message := strings.join(con []string{"zero-payload variant `", token.CopyText(con prefix), "` cannot destructure a payload",}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+    if expectedCount == 1 && actualCount == 0 {
+        message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires a payload pattern",}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+    if expectedCount != actualCount {
+        message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires ", strings.fromInt(expectedCount), " payload patterns, got ", strings.fromInt(actualCount),}, con "")
+        return Err(newError(message, ast.Span(con program, spanNode)))
+    }
+
+    mut nestedVisiting := copySegments(con visiting)
+    if !containsText(con nestedVisiting, con expected.text) {
+        nestedVisiting = append(nestedVisiting, token.CopyText(con expected.text))
+    }
+    mut bindings := []PatternBinding{}
+    mut payloadCoverages := [][][]string{}
+    for mut payload := 0; payload < actualCount; payload = payload + 1 {
+        mut payloadType := unitType()
+        match self.adtVariantPayloadType(con expected, variantIndex, payload) {
+            case Ok(ty) {
+                payloadType = ty
+            }
+            case Err(_) {
+                return Err(newError("checked match payload type is missing", ast.Span(con program, spanNode)))
+            }
+        }
+        mut coverage := PatternCoverage{bindings: []PatternBinding{}, leaves: [][]string{},}
+        if payloads[payload].kind == "binding" {
+            name := token.CopyText(con payloads[payload].name)
+            if isBuiltinValueName(con name) {
+                message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con "")
+                return Err(newError(message, ast.Span(con program, spanNode)))
+            }
+            match self.coverageLeaves(con payloadType, copySegments(con nestedVisiting), ast.Span(con program, spanNode)) {
+                case Ok(leaves) {
+                    coverage = PatternCoverage{bindings: []PatternBinding{PatternBinding{name: name, ty: copyType(con payloadType),},}, leaves: leaves,}
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            match self.patternCoverage(con program, payloads[payload].node, con payloadType, spanNode, copySegments(con nestedVisiting)) {
+                case Ok(value) {
+                    coverage = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        for mut binding := 0; binding < len(coverage.bindings); binding = binding + 1 {
+            name := token.CopyText(con coverage.bindings[binding].name)
+            if containsPatternBinding(con bindings, con name) {
+                message := strings.join(con []string{"duplicate pattern binding `", token.CopyText(con name), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, spanNode)))
+            }
+            bindings = append(bindings, PatternBinding{name: name, ty: copyType(con coverage.bindings[binding].ty),})
+        }
+        payloadCoverages = append(payloadCoverages, copyCoverageSet(con coverage.leaves))
+    }
+    return Ok(PatternCoverage{bindings: bindings, leaves: variantCoverage(con prefix, payloadCoverages),})
+}
+
+func (con self CheckedProgram) coverageLeaves(con expected ResolvedType, visiting []string, span source.Span) Result[[][]string, SemanticError] {
+    if containsText(con visiting, con expected.text) {
+        mut name := self.adtPatternName(con expected)
+        if name == "" {
+            name = token.CopyText(con expected.text)
+        }
+        recursive := strings.join(con []string{"<recursive ", name, ">",}, con "")
+        return Ok([][]string{[]string{recursive,},})
+    }
+
+    variantCount := self.adtVariantCount(con expected)
+    if variantCount < 0 {
+        return Ok([][]string{[]string{},})
+    }
+    mut nestedVisiting := copySegments(con visiting)
+    nestedVisiting = append(nestedVisiting, token.CopyText(con expected.text))
+    mut leaves := [][]string{}
+    for mut variant := 0; variant < variantCount; variant = variant + 1 {
+        variantName := self.adtVariantName(con expected, variant)
+        prefix := strings.join(con []string{self.adtPatternName(con expected), ".", variantName,}, con "")
+        mut payloadCoverages := [][][]string{}
+        payloadCount := self.adtVariantPayloadCount(con expected, variant)
+        for mut payload := 0; payload < payloadCount; payload = payload + 1 {
+            match self.adtVariantPayloadType(con expected, variant, payload) {
+                case Ok(payloadType) {
+                    match self.coverageLeaves(con payloadType, copySegments(con nestedVisiting), source.Copy(con span)) {
+                        case Ok(coverage) {
+                            payloadCoverages = append(payloadCoverages, coverage)
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+                case Err(_) {
+                    return Err(newError("checked match payload type is missing", source.Copy(con span)))
+                }
+            }
+        }
+        variantLeaves := variantCoverage(con prefix, payloadCoverages)
+        leaves = extendCoverage(leaves, con variantLeaves)
+    }
+    return Ok(leaves)
+}
+
 func (con self CheckedProgram) flatMatchCoverage(con program ast.Program, pattern int, con scrutineeType ResolvedType) Result[int, SemanticError] {
     kind := ast.Kind(con program, pattern)
     if kind == "Pattern.Wildcard" {
@@ -1975,6 +2246,10 @@ func (con self CheckedProgram) flatMatchCoverage(con program ast.Program, patter
 }
 
 func (mut self CheckedProgram) addMatchBindings(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    pattern := ast.Child(con program, arm, 0)
+    if patternUsesRecursiveCoverage(con program, pattern) {
+        return self.addRecursiveMatchBindings(con program, arm, con scrutineeType)
+    }
     if scrutineeType.kind == "enum" {
         return self.addUserEnumMatchBindings(con program, arm, con scrutineeType)
     }
@@ -2034,6 +2309,21 @@ func (mut self CheckedProgram) addUserEnumMatchBindings(con program ast.Program,
         }
     }
     return Ok(added)
+}
+
+func (mut self CheckedProgram) addRecursiveMatchBindings(con program ast.Program, arm int, con scrutineeType ResolvedType) Result[bool, SemanticError] {
+    pattern := ast.Child(con program, arm, 0)
+    match self.patternCoverage(con program, pattern, con scrutineeType, arm, []string {}
+    ){case Ok(coverage) {
+            for mut binding := 0; binding < len(coverage.bindings); binding = binding + 1 {
+                self.locals = append(self.locals, Local{name: token.CopyText(con coverage.bindings[binding].name), mutable: false, borrowed: false, moved: false, rangeSource: false, ty: copyType(con coverage.bindings[binding].ty), function: -1, scopeDepth: self.scopeDepth,})
+            }
+            return Ok(len(coverage.bindings) > 0)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
 }
 
 func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
@@ -3117,6 +3407,108 @@ func (con self CheckedProgram) enumIndex(con name string) int {
     return - 1
 }
 
+func (con self CheckedProgram) adtPatternName(con ty ResolvedType) string {
+    if ty.kind == "option" {
+        return "Option"
+    }
+    if ty.kind == "result" {
+        return "Result"
+    }
+    if ty.kind == "enum" {
+        return token.CopyText(con ty.text)
+    }
+    return ""
+}
+
+func (con self CheckedProgram) adtVariantCount(con ty ResolvedType) int {
+    if ty.kind == "option" || ty.kind == "result" {
+        return 2
+    }
+    if ty.kind == "enum" {
+        index := self.enumIndex(con ty.text)
+        if index >= 0 {
+            return len(self.enums[index].variants)
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) adtVariantName(con ty ResolvedType, variant int) string {
+    if ty.kind == "option" {
+        if variant == 0 {
+            return "None"
+        }
+        if variant == 1 {
+            return "Some"
+        }
+    } else if ty.kind == "result" {
+        if variant == 0 {
+            return "Ok"
+        }
+        if variant == 1 {
+            return "Err"
+        }
+    } else if ty.kind == "enum" {
+        index := self.enumIndex(con ty.text)
+        if index >= 0 && variant >= 0 && variant < len(self.enums[index].variants) {
+            return token.CopyText(con self.enums[index].variants[variant].name)
+        }
+    }
+    return ""
+}
+
+func (con self CheckedProgram) adtVariantIndex(con ty ResolvedType, con name string) int {
+    count := self.adtVariantCount(con ty)
+    for mut variant := 0; variant < count; variant = variant + 1 {
+        if self.adtVariantName(con ty, variant) == name {
+            return variant
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) adtVariantPayloadCount(con ty ResolvedType, variant int) int {
+    if ty.kind == "option" {
+        if variant == 0 {
+            return 0
+        }
+        if variant == 1 {
+            return 1
+        }
+    } else if ty.kind == "result" {
+        if variant == 0 || variant == 1 {
+            return 1
+        }
+    } else if ty.kind == "enum" {
+        index := self.enumIndex(con ty.text)
+        if index >= 0 && variant >= 0 && variant < len(self.enums[index].variants) {
+            return len(self.enums[index].variants[variant].payloads)
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) adtVariantPayloadType(con ty ResolvedType, variant int, payload int) Result[ResolvedType, bool] {
+    if ty.kind == "option" && variant == 1 && payload == 0 {
+        return self.typeArgument(con ty, 0)
+    }
+    if ty.kind == "result" && payload == 0 {
+        if variant == 0 {
+            return self.typeArgument(con ty, 0)
+        }
+        if variant == 1 {
+            return self.typeArgument(con ty, 1)
+        }
+    }
+    if ty.kind == "enum" {
+        index := self.enumIndex(con ty.text)
+        if index >= 0 && variant >= 0 && variant < len(self.enums[index].variants) && payload >= 0 && payload < len(self.enums[index].variants[variant].payloads) {
+            return Ok(copyType(con self.enums[index].variants[variant].payloads[payload]))
+        }
+    }
+    return Err(false)
+}
+
 func (con self CheckedProgram) enumSelectionIndex(con program ast.Program, expression int) int {
     if ast.Kind(con program, expression) != "Expr.FieldAccess" {
         return - 1
@@ -3390,6 +3782,157 @@ func enumVariantIndex(con value EnumSig, con name string) int {
         }
     }
     return - 1
+}
+
+func matchUsesRecursiveCoverage(con program ast.Program, expression int) bool {
+    for mut arm := 1; arm < ast.ChildCount(con program, expression); arm = arm + 1 {
+        pattern := ast.Child(con program, ast.Child(con program, expression, arm), 0)
+        if patternUsesRecursiveCoverage(con program, pattern) {
+            return true
+        }
+    }
+    return false
+}
+
+func patternUsesRecursiveCoverage(con program ast.Program, pattern int) bool {
+    kind := ast.Kind(con program, pattern)
+    if kind == "Pattern.NestedBuiltin" {
+        return true
+    }
+    if kind != "Pattern.Variant" {
+        return false
+    }
+    for mut child := 0; child < ast.ChildCount(con program, pattern); child = child + 1 {
+        payload := ast.Child(con program, pattern, child)
+        payloadKind := ast.Kind(con program, payload)
+        if payloadKind != "Pattern.Binding" && payloadKind != "Pattern.Wildcard" {
+            return true
+        }
+        if patternUsesRecursiveCoverage(con program, payload) {
+            return true
+        }
+    }
+    return false
+}
+
+func containsPatternBinding(con bindings []PatternBinding, con name string) bool {
+    for mut index := 0; index < len(bindings); index = index + 1 {
+        if bindings[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func copyCoverageSet(con coverage [][]string) [][]string {
+    mut copied := [][]string{}
+    for mut leaf := 0; leaf < len(coverage); leaf = leaf + 1 {
+        copied = append(copied, copySegments(con coverage[leaf]))
+    }
+    return copied
+}
+
+func containsCoveragePath(con coverage [][]string, con expected []string) bool {
+    for mut leaf := 0; leaf < len(coverage); leaf = leaf + 1 {
+        if len(coverage[leaf]) == len(expected) {
+            mut equal := true
+            for mut segment := 0; segment < len(expected); segment = segment + 1 {
+                equal = equal && coverage[leaf][segment]== expected[segment]
+            }
+            if equal {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func extendCoverage(coverage [][]string, con additions [][]string) [][]string {
+    mut extended := coverage
+    for mut leaf := 0; leaf < len(additions); leaf = leaf + 1 {
+        if !containsCoveragePath(con extended, con additions[leaf]) {
+            extended = append(extended, copySegments(con additions[leaf]))
+        }
+    }
+    return extended
+}
+
+func variantCoverage(con prefix string, payloads [][][]string) [][]string {
+    if len(payloads) == 0 {
+        return [][]string{[]string{token.CopyText(con prefix),},}
+    }
+    if len(payloads) == 1 {
+        mut prefixed := [][]string{}
+        for mut leaf := 0; leaf < len(payloads[0]); leaf = leaf + 1 {
+            mut path := []string{token.CopyText(con prefix),}
+            for mut segment := 0; segment < len(payloads[0][leaf]); segment = segment + 1 {
+                path = append(path, token.CopyText(con payloads[0][leaf][segment]))
+            }
+            prefixed = extendCoverage(prefixed, con [][]string{path,})
+        }
+        return prefixed
+    }
+
+    mut combined := [][]string{[]string{token.CopyText(con prefix),},}
+    for mut payload := 0; payload < len(payloads); payload = payload + 1 {
+        mut next := [][]string{}
+        for mut pathIndex := 0; pathIndex < len(combined); pathIndex = pathIndex + 1 {
+            for mut leaf := 0; leaf < len(payloads[payload]); leaf = leaf + 1 {
+                mut joined := copySegments(con combined[pathIndex])
+                joined = append(joined, strings.join(con []string{"payload ", strings.fromInt(payload + 1),}, con ""))
+                for mut segment := 0; segment < len(payloads[payload][leaf]); segment = segment + 1 {
+                    joined = append(joined, token.CopyText(con payloads[payload][leaf][segment]))
+                }
+                next = extendCoverage(next, con [][]string{joined,})
+            }
+        }
+        combined = next
+    }
+    return combined
+}
+
+func coverageIsSubset(con required [][]string, con available [][]string) bool {
+    for mut leaf := 0; leaf < len(required); leaf = leaf + 1 {
+        if !coveragePathIsCovered(con required[leaf], con available) {
+            return false
+        }
+    }
+    return true
+}
+
+func coveragePathIsCovered(con path []string, con available [][]string) bool {
+    for mut candidate := 0; candidate < len(available); candidate = candidate + 1 {
+        if coveragePathCovers(con available[candidate], con path) {
+            return true
+        }
+    }
+    return false
+}
+
+func coveragePathCovers(con covering []string, con path []string) bool {
+    for mut segment := 0; segment < len(covering); segment = segment + 1 {
+        if segment >= len(path) {
+            return false
+        }
+        if isRecursiveCoverageSegment(con covering[segment]) {
+            return !isRecursiveCoverageSegment(con path[segment]) || covering[segment]== path[segment]
+        }
+        if covering[segment]!= path[segment] {
+            return false
+        }
+    }
+    return len(covering) == len(path)
+}
+
+func isRecursiveCoverageSegment(con value string) bool {
+    return match strings.find(con value, con "<recursive ") {
+        case Some(offset) {
+            offset == 0
+        }
+        case None {
+            false
+        }
+    }
 }
 
 func containsText(con values []string, con expected string) bool {

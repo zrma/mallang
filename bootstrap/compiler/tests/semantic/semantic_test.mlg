@@ -1759,3 +1759,63 @@ test MovesOwnedUserEnumMatchScrutinee() {
     source := "type Choice enum { Empty; Text(string) } func measure(value string) int { return 1 } func inspect(input Choice) int { selected := match input { case Choice.Empty { 0 } case Choice.Text(value) { measure(value) } }; moved := input; return selected } func main() {}"
     assert(checkTestSource(source) == "use of moved value `input`")
 }
+
+test ChecksNestedBuiltinMatchExpressionsAndStatements() {
+    source := "func unwrap(value Option[Result[int, string]]) int { return match value { case Some(Ok(item)) { item } case Some(Err(message)) { 0 } case None { 0 } } } func inspect(value Option[Result[int, string]]) int { match value { case Some(Ok(item)) { return item } case Some(Err(message)) { return 0 } case None { return 0 } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test ChecksNestedUserEnumAndMultiPayloadCoverage() {
+    source := "type Status enum { Idle; Busy(int) } type Event enum { Missing; Changed(Status) } type Pairing enum { Empty; Pair(int, Option[string]) } func eventCode(value Event) int { return match value { case Event.Missing { 0 } case Event.Changed(Status.Idle) { 1 } case Event.Changed(Status.Busy(code)) { code } } } func pairingCode(value Pairing) int { return match value { case Pairing.Empty { 0 } case Pairing.Pair(left, Some(message)) { left } case Pairing.Pair(_, None) { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsNonExhaustiveNestedBuiltinMatch() {
+    source := "func unwrap(value Option[Result[int, string]]) int { return match value { case Some(Ok(item)) { item } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "match is not exhaustive; missing Option.Some -> Result.Err")
+}
+
+test RejectsNonExhaustiveNestedMultiPayloadMatch() {
+    source := "type Pairing enum { Pair(int, Option[int]) } func code(value Pairing) int { return match value { case Pairing.Pair(_, Some(item)) { item } } } func main() {}"
+    assert(checkTestSource(source) == "match is not exhaustive; missing Pairing.Pair -> payload 1 -> payload 2 -> Option.None")
+}
+
+test RejectsDuplicateNestedPatternBinding() {
+    source := "type Pairing enum { Pair(int, Option[int]) } func code(value Pairing) int { return match value { case Pairing.Pair(item, Some(item)) { item } case Pairing.Pair(_, None) { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "duplicate pattern binding `item`")
+}
+
+test RejectsNestedBuiltinPayloadTypeMismatch() {
+    source := "func code(value Option[int]) int { return match value { case Some(Ok(item)) { item } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "pattern `Ok` does not match payload type `int`")
+}
+
+test RejectsNestedUserVariantOnNonEnumPayload() {
+    source := "type Choice enum { Empty } type Wrapper enum { Empty; Value(int) } func code(value Wrapper) int { return match value { case Wrapper.Empty { 0 } case Wrapper.Value(Choice.Empty) { 1 } } } func main() {}"
+    assert(checkTestSource(source) == "pattern `Choice.Empty` requires an enum payload, got `int`")
+}
+
+test RejectsDuplicateNestedMatchPattern() {
+    source := "func code(value Option[Result[int, string]]) int { return match value { case Some(Ok(item)) { item } case Some(Ok(other)) { other } case Some(Err(message)) { 0 } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test RejectsNestedPatternAfterPayloadWildcard() {
+    source := "func code(value Option[Result[int, string]]) int { return match value { case Some(_) { 0 } case Some(Ok(item)) { item } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test ChecksRecursiveEnumCoverageFinitely() {
+    source := "type Chain enum { End; Next(Chain) } func depth(value Chain) int { return match value { case Chain.End { 0 } case Chain.Next(Chain.End) { 1 } case Chain.Next(tail) { 2 } } } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsRecursiveEnumPatternAfterBindingCoverage() {
+    source := "type Chain enum { End; Next(Chain) } func depth(value Chain) int { return match value { case Chain.End { 0 } case Chain.Next(tail) { 1 } case Chain.Next(Chain.End) { 2 } } } func main() {}"
+    assert(checkTestSource(source) == "match pattern is duplicate or unreachable")
+}
+
+test RejectsBuiltinBindingInsideNestedPattern() {
+    source := "func code(value Option[Result[int, string]]) int { return match value { case Some(Ok(print)) { print } case Some(Err(message)) { 0 } case None { 0 } } } func main() {}"
+    assert(checkTestSource(source) == "`print` is a built-in value name")
+}

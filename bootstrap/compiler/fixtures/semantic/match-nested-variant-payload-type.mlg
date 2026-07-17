@@ -1,0 +1,17 @@
+type Choice enum {
+    Empty
+}
+
+type Wrapper enum {
+    Empty
+    Value(int)
+}
+
+func code(value Wrapper) int {
+    return match value {
+        case Wrapper.Empty { 0 }
+        case Wrapper.Value(Choice.Empty) { 1 }
+    }
+}
+
+func main() {}

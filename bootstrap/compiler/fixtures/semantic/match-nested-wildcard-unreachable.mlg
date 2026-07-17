@@ -1,0 +1,9 @@
+func code(value Option[Result[int, string]]) int {
+    return match value {
+        case Some(_) { 0 }
+        case Some(Ok(item)) { item }
+        case None { 0 }
+    }
+}
+
+func main() {}

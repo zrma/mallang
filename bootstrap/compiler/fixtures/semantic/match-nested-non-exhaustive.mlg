@@ -1,0 +1,8 @@
+func unwrap(value Option[Result[int, string]]) int {
+    return match value {
+        case Some(Ok(item)) { item }
+        case None { 0 }
+    }
+}
+
+func main() {}
