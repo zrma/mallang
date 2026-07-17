@@ -1,0 +1,12 @@
+func consume(value string) int {
+    return 1
+}
+
+func exercise() int {
+    for value := "hello"; true; {
+        current := consume(value)
+    }
+    return 0
+}
+
+func main() {}

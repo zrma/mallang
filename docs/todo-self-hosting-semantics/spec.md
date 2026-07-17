@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c3b1 complete
+Status: in progress; P176a-P176c3b2a complete
 
 ## Objective
 
@@ -55,7 +55,9 @@ agrees.
   (complete)
 - P176c3b1: check condition and conditionless loops, loop control and
   condition/body persistent move state (complete)
-- P176c3b2: check three-clause and range loop persistent move state
+- P176c3b2a: check three-clause init, optional condition and direct binding post
+  persistent move state (complete)
+- P176c3b2b: check field/index post targets and range loop persistent move state
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
@@ -234,6 +236,19 @@ specialization and function-body checking until later P176 slices.
 - Seventy-one semantic fixtures, six typed-IR fixtures and forty-eight Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan. Three-clause init/post and range-loop ownership remain P176c3b2.
+
+## P176c3b2a Evidence
+
+- Three-clause loops collect an optional loop-scoped init binding, optional
+  `bool` condition and direct mutable-binding post assignment in source order.
+- Init bindings do not leak. Move-only outer or init bindings cannot move from
+  the condition, body or post repeatable paths; Copy state and mutable post
+  updates remain valid.
+- Immutable post targets, leaked init bindings and persistent init/post moves
+  preserve Stage0's diagnostic message and source span.
+- Seventy-six semantic fixtures, six typed-IR fixtures and fifty-three Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Field/index post targets and range loops remain P176c3b2b.
 
 ## B2 Completion Criteria
 

@@ -1,0 +1,8 @@
+func exercise() int {
+    mut output := "initial"
+    value := "hello"
+    for ; false; output = value {}
+    return 0
+}
+
+func main() {}

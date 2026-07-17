@@ -772,12 +772,40 @@ func (mut self CheckedProgram) checkForStatement(con program ast.Program, statem
     baseLoopDepth := self.loopDepth
     loopScopeDepth := baseDepth + 1
     mut loopLocals := copyLocals(con baseLocals)
+    mut initNode := -1
+    mut conditionNode := -1
+    mut postNode := -1
 
-    if childCount > 1 {
-        conditionNode := ast.Child(con program, statement, 0)
-        if ast.Kind(con program, conditionNode) != "ForCondition" || childCount != 2 {
-            return Err(newError("B2c3b checker does not yet accept three-clause for statements", ast.Span(con program, statement)))
+    for mut childIndex := 0; childIndex < childCount - 1; childIndex = childIndex + 1 {
+        child := ast.Child(con program, statement, childIndex)
+        childKind := ast.Kind(con program, child)
+        if childKind == "ForInit.Let.Immutable" || childKind == "ForInit.Let.Mutable" {
+            initNode = child
+        } else if childKind == "ForCondition" {
+            conditionNode = child
+        } else if childKind == "ForPost.Assign" {
+            postNode = child
+        } else {
+            return Err(newError("malformed for statement child", ast.Span(con program, child)))
         }
+    }
+
+    if initNode >= 0 {
+        self.locals = copyLocals(con loopLocals)
+        self.scopeDepth = loopScopeDepth
+        match self.checkForInit(con program, initNode, con ast.Span(con program, statement)) {
+            case Ok(_) {
+                loopLocals = copyLocals(con self.locals)
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                return Err(error)
+            }
+        }
+    }
+
+    if conditionNode >= 0 {
         condition := ast.Child(con program, conditionNode, 0)
         self.locals = copyLocals(con loopLocals)
         match self.checkExpression(con program, condition) {
@@ -827,10 +855,101 @@ func (mut self CheckedProgram) checkForStatement(con program ast.Program, statem
         }
     }
 
-    self.locals = mergeLoopMoves(con baseLocals, con loopLocals, con bodyLocals)
+    mut postLocals := mergeLoopMoves(con loopLocals, con bodyLocals, con bodyLocals)
+    if postNode >= 0 {
+        postStartLocals := copyLocals(con postLocals)
+        self.locals = copyLocals(con postLocals)
+        self.scopeDepth = loopScopeDepth
+        match self.checkForPost(con program, postNode, con ast.Span(con program, statement)) {
+            case Ok(_) {}
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                self.loopDepth = baseLoopDepth
+                return Err(error)
+            }
+        }
+        checkedPostLocals := copyLocals(con self.locals)
+        match rejectLoopPersistentMoves(con postStartLocals, con checkedPostLocals, loopScopeDepth, con ast.Span(con program, statement)) {
+            case Ok(_) {
+                postLocals = checkedPostLocals
+            }
+            case Err(error) {
+                self.locals = copyLocals(con baseLocals)
+                self.scopeDepth = baseDepth
+                self.loopDepth = baseLoopDepth
+                return Err(error)
+            }
+        }
+    }
+
+    mergedLocals := mergeLoopMoves(con baseLocals, con loopLocals, con bodyLocals)
+    self.locals = mergeLoopMoves(con mergedLocals, con postLocals, con postLocals)
     self.scopeDepth = baseDepth
     self.loopDepth = baseLoopDepth
     return Ok(false)
+}
+
+func (mut self CheckedProgram) checkForInit(con program ast.Program, init int, con span source.Span) Result[bool, SemanticError] {
+    name := ast.Value(con program, init)
+    if isBuiltinValueName(con name) {
+        return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), source.Copy(con span)))
+    }
+    expression := ast.Child(con program, init, 0)
+    match self.checkExpression(con program, expression) {
+        case Ok(ty) {
+            existing := localIndex(con self.locals, con name)
+            if existing >= 0 && self.locals[existing].scopeDepth == self.scopeDepth {
+                message := strings.join(con []string{"binding `", token.CopyText(con name), "` already exists in this block",}, con "")
+                return Err(newError(message, source.Copy(con span)))
+            }
+            mut function := -1
+            reference := self.functionReferenceIndex(expression)
+            if reference >= 0 {
+                function = self.functionReferences[reference].function
+            }
+            mutable := ast.Kind(con program, init) == "ForInit.Let.Mutable"
+            self.locals = append(self.locals, Local{name: name, mutable: mutable, borrowed: false, moved: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
+            return Ok(true)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, con span source.Span) Result[bool, SemanticError] {
+    target := ast.Child(con program, post, 0)
+    if ast.Kind(con program, target) != "Expr.Var" {
+        return Err(newError("B2c3b checker does not yet accept field or index for-post targets", ast.Span(con program, target)))
+    }
+    name := ast.Value(con program, target)
+    local := localIndex(con self.locals, con name)
+    if local < 0 {
+        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
+    }
+    if !self.locals[local].mutable {
+        return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
+    }
+    value := ast.Child(con program, post, 1)
+    match self.checkExpression(con program, value) {
+        case Ok(valueType) {
+            if valueType.text != self.locals[local].ty.text {
+                message := strings.join(con []string{"assignment type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con self.locals[local].ty.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                return Err(newError(message, source.Copy(con span)))
+            }
+            self.locals[local].function = -1
+            reference := self.functionReferenceIndex(value)
+            if reference >= 0 {
+                self.locals[local].function = self.functionReferences[reference].function
+            }
+            self.locals[local].moved = false
+            return Ok(true)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
 }
 
 func (mut self CheckedProgram) checkFieldAssign(con program ast.Program, statement int) Result[bool, SemanticError] {

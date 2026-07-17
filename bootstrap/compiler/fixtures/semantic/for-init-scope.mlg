@@ -1,0 +1,6 @@
+func exercise() int {
+    for mut index := 0; index < 1; index = index + 1 {}
+    return index
+}
+
+func main() {}
