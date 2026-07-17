@@ -503,6 +503,7 @@ target/mallang/match-statement
 - `docs/todo-v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
 - `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
 - `docs/todo-v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
+- `docs/todo-naming-conventions/`: approved role-based casing debt, lint/fix plan and 2.0 migration boundary
 - `docs/SELF_HOSTING.md`: active B0-B5 self-hosting and fixed-point contract
 - `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract

@@ -1728,3 +1728,17 @@ the standard library. P176b1 adds primitive bodies and typed IR, and P176b2
 adds direct/indirect calls and named function values. P176b3-P176e extend
 places, nested scopes, ownership,
 specialization and typed IR in independently differential-tested slices.
+
+## Deferred 2.0 Naming Conventions
+
+- [x] keep visibility controlled only by explicit `pub`
+- [x] define role-based PascalCase, lowerCamelCase and lower_snake_case targets
+- [x] keep `mlg fmt` syntax-preserving and non-renaming
+- [ ] inventory current and ecosystem naming violations
+- [ ] add compatible `mlg lint` warnings and machine-readable rule IDs
+- [ ] add explicit resolver-backed `mlg fix --names`
+- [ ] publish migration evidence before 2.0 compiler errors
+
+The approved design and compatibility boundary are owned by
+`docs/todo-naming-conventions/`. This debt does not change the frozen v1 source
+contract or block the active B0-B5 self-hosting sequence.
