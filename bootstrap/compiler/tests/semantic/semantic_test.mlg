@@ -29,6 +29,31 @@ func checkTestSource(source string) string {
     }
 }
 
+func firstCaptureMutable(source string) bool {
+    return match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            len(checked.closures) > 0 && len(checked.closures[0].captures) > 0 && checked.closures[0].captures[0].mutable
+                        }
+                        case Err(_) {
+                            false
+                        }
+                    }
+                }
+                case Err(_) {
+                    false
+                }
+            }
+        }
+        case Err(_) {
+            false
+        }
+    }
+}
+
 test CollectsDeclarationSignatures() {
     source := "type User struct { name string; age int } type Choice enum { Empty; Score(int) } func describe(con value Option[string]) string { return \"ok\" } func (mut user User) rename(con name string) {} func main() {}"
     match lexer.Lex(source) {
@@ -1948,4 +1973,127 @@ test ClosureParametersShadowOuterBindings() {
 test MovesCapturedFunctionValues() {
     source := "func double(value int) int { return value * 2 } func run() int { transform := double; apply := func(value int) int { return transform(value) }; return transform(1) + apply(2) } func main() {}"
     assert(checkTestSource(source) == "use of moved value `transform`")
+}
+
+test ChecksMutableClosureCaptures() {
+    source := "func make() func mut(int) int { mut count := 0; return func mut(delta int) int { count = count + delta; return count } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            assert(len(checked.closures) == 1)
+                            assert(len(checked.closures[0].captures) == 1)
+                            assert(checked.closures[0].captures[0].name == "count")
+                            assert(checked.closures[0].captures[0].mutable)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test AllowsMutableClosuresToReadImmutableCaptures() {
+    source := "func run() int { offset := 10; mut add := func mut(value int) int { return value + offset }; return add(2) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsMutableClosureCaptureFromImmutableSource() {
+    source := "func run() int { count := 0; mut next := func mut() int { count = count + 1; return count }; return 0 } func main() {}"
+    assert(checkTestSource(source) == "mutable closure capture `count` requires a mutable source binding")
+}
+
+test TracksMutableArgumentCaptureAccess() {
+    source := "func increment(mut value int) { value = value + 1 } func make() func mut() int { mut count := 0; return func mut() int { increment(mut count); return count } } func main() {}"
+    assert(firstCaptureMutable(source))
+}
+
+test TracksMutableReceiverCaptureAccess() {
+    source := "type Counter struct { value int } func (mut counter Counter) add(delta int) { counter.value = counter.value + delta } func make() func mut(int) int { mut counter := Counter{value: 0}; return func mut(delta int) int { counter.add(delta); return counter.value } } func main() {}"
+    assert(firstCaptureMutable(source))
+}
+
+test PropagatesNestedClosureCaptures() {
+    source := "func make(offset int) func(int) func(int) int { return func(base int) func(int) int { return func(value int) int { return offset + base + value } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            assert(len(checked.closures) == 2)
+                            assert(len(checked.closures[0].captures) == 2)
+                            assert(checked.closures[0].captures[0].name == "offset")
+                            assert(checked.closures[0].captures[1].name == "base")
+                            assert(len(checked.closures[1].captures) == 1)
+                            assert(checked.closures[1].captures[0].name == "offset")
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsNestedBorrowedNonCopyCaptures() {
+    source := "func make(values []int) func() func() int { return func() func() int { return func() int { return values[0] } } } func main() {}"
+    assert(checkTestSource(source) == "cannot capture borrowed non-Copy value `values`")
+}
+
+test PropagatesNestedMutableCaptures() {
+    source := "func make() func mut() func mut() int { mut count := 0; return func mut() func mut() int { return func mut() int { count = count + 1; return count } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            assert(len(checked.closures) == 2)
+                            assert(checked.closures[0].captures[0].mutable)
+                            assert(checked.closures[1].captures[0].mutable)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsRecursiveClosureInitializers() {
+    source := "func run() int { recurse := func(value int) int { return recurse(value) }; return recurse(1) } func main() {}"
+    assert(checkTestSource(source) == "recursive closure `recurse` is not supported in v0.3")
+}
+
+test ClosureInitializersCaptureShadowedOuterBindings() {
+    source := "func double(value int) int { return value * 2 } func run() { transform := double; if true { transform := func(value int) int { return transform(value) }; result := transform(2) } } func main() {}"
+    assert(checkTestSource(source) == "")
 }

@@ -1,0 +1,13 @@
+func increment(mut value int) {
+    value = value + 1
+}
+
+func make() func mut() int {
+    mut count := 0
+    return func mut() int {
+        increment(mut count)
+        return count
+    }
+}
+
+func main() {}

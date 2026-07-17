@@ -1,0 +1,17 @@
+type Counter struct {
+    value int
+}
+
+func (mut counter Counter) add(delta int) {
+    counter.value = counter.value + delta
+}
+
+func make() func mut(int) int {
+    mut counter := Counter{value: 0}
+    return func mut(delta int) int {
+        counter.add(delta)
+        return counter.value
+    }
+}
+
+func main() {}

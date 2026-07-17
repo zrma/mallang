@@ -1,0 +1,11 @@
+func make() func mut() func mut() int {
+    mut count := 0
+    return func mut() func mut() int {
+        return func mut() int {
+            count = count + 1
+            return count
+        }
+    }
+}
+
+func main() {}

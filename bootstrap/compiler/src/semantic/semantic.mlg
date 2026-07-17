@@ -144,6 +144,9 @@ pub type CheckedProgram struct {
     functionReferences []FunctionReference
     closures []CheckedClosure
     captureUses []CaptureUse
+    closureMutable bool
+    closureNode int
+    recursiveBindings []string
     locals []Local
     scopeDepth int
     loopDepth int
@@ -155,7 +158,7 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
-    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, functionTypes: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, closures: []CheckedClosure{}, captureUses: []CaptureUse{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
+    mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, functionTypes: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, closures: []CheckedClosure{}, captureUses: []CaptureUse{}, closureMutable: false, closureNode: -1, recursiveBindings: []string{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
 
     match checked.collectEnumNames(con program) {
         case Ok(_) {}
@@ -639,8 +642,15 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
             return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, statement)))
         }
         expression := ast.Child(con program, statement, 0)
+        existingBefore := localIndex(con self.locals, con name)
+        outerRecursiveBindings := copyTexts(con self.recursiveBindings)
+        expressionKind := ast.Kind(con program, expression)
+        if(expressionKind == "Expr.FunctionLiteral.Immutable" || expressionKind == "Expr.FunctionLiteral.Mutable") && existingBefore < 0 {
+            self.recursiveBindings = append(self.recursiveBindings, token.CopyText(con name))
+        }
         match self.checkExpression(con program, expression) {
             case Ok(ty) {
+                self.recursiveBindings = copyTexts(con outerRecursiveBindings)
                 existing := localIndex(con self.locals, con name)
                 if existing >= 0 && self.locals[existing].scopeDepth == self.scopeDepth {
                     message := strings.join(con []string{"binding `", token.CopyText(con name), "` already exists in this block",}, con "")
@@ -658,6 +668,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 return Ok(false)
             }
             case Err(error) {
+                self.recursiveBindings = copyTexts(con outerRecursiveBindings)
                 return Err(error)
             }
         }
@@ -667,6 +678,12 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
         index := localIndex(con self.locals, con name)
         if index < 0 {
             return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, statement)))
+        }
+        match self.checkCaptureMutation(con program, index) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
         }
         if !self.locals[index].mutable {
             return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, statement)))
@@ -1162,6 +1179,12 @@ func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, c
     if local < 0 {
         return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
     }
+    match self.checkCaptureMutation(con program, local) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
     if !self.locals[local].mutable {
         return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
     }
@@ -1209,6 +1232,12 @@ func (mut self CheckedProgram) checkFieldPlaceAssign(con program ast.Program, ba
     local := localIndex(con self.locals, con root)
     if local < 0 {
         return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con root), "`",}, con ""), ast.Span(con program, base)))
+    }
+    match self.checkCaptureMutation(con program, local) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
     }
     if !self.locals[local].mutable {
         message := strings.join(con []string{"cannot assign field of immutable binding `", token.CopyText(con root), "`",}, con "")
@@ -1267,6 +1296,12 @@ func (mut self CheckedProgram) checkIndexPlaceAssign(con program ast.Program, ba
     local := localIndex(con self.locals, con root)
     if local < 0 {
         return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con root), "`",}, con ""), ast.Span(con program, base)))
+    }
+    match self.checkCaptureMutation(con program, local) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
     }
     if !self.locals[local].mutable {
         mut target := "binding"
@@ -1361,6 +1396,10 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
         }
         index := localIndex(con self.locals, con name)
         if index < 0 {
+            if containsText(con self.recursiveBindings, con name) {
+                message := strings.join(con []string{"recursive closure `", token.CopyText(con name), "` is not supported in v0.3",}, con "")
+                return Err(newError(message, ast.Span(con program, expression)))
+            }
             if name == "main" {
                 return Err(newError("`main` cannot be used as a function value", ast.Span(con program, expression)))
             }
@@ -1527,14 +1566,17 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
         return Err(newError("function literal body is missing", ast.Span(con program, expression)))
     }
 
+    mutable := ast.Kind(con program, expression) == "Expr.FunctionLiteral.Mutable"
     outerLocals := copyLocals(con self.locals)
     outerCaptureUses := copyCaptureUses(con self.captureUses)
+    outerClosureMutable := self.closureMutable
+    outerClosureNode := self.closureNode
     outerDepth := self.scopeDepth
     outerLoopDepth := self.loopDepth
     mut closureLocals := []Local{}
     for mut outer := 0; outer < len(outerLocals); outer = outer + 1 {
         if localIndex(con outerLocals, con outerLocals[outer].name) == outer {
-            closureLocals = append(closureLocals, Local{name: token.CopyText(con outerLocals[outer].name), mutable: false, borrowed: true, moved: false, rangeSource: false, capture: true, ty: copyType(con outerLocals[outer].ty), function: outerLocals[outer].function, scopeDepth: -1,})
+            closureLocals = append(closureLocals, Local{name: token.CopyText(con outerLocals[outer].name), mutable: mutable && outerLocals[outer].mutable, borrowed: true, moved: false, rangeSource: false, capture: true, ty: copyType(con outerLocals[outer].ty), function: outerLocals[outer].function, scopeDepth: -1,})
         }
     }
     for mut param := 0; param < len(params); param = param + 1 {
@@ -1543,6 +1585,8 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
         closureLocals = append(closureLocals, local)
     }
     self.captureUses = []CaptureUse{}
+    self.closureMutable = mutable
+    self.closureNode = expression
     self.locals = closureLocals
     self.scopeDepth = 0
     self.loopDepth = 0
@@ -1554,6 +1598,8 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
         case Err(error) {
             self.locals = copyLocals(con outerLocals)
             self.captureUses = copyCaptureUses(con outerCaptureUses)
+            self.closureMutable = outerClosureMutable
+            self.closureNode = outerClosureNode
             self.scopeDepth = outerDepth
             self.loopDepth = outerLoopDepth
             return Err(error)
@@ -1562,6 +1608,8 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
     closureCaptureUses := copyCaptureUses(con self.captureUses)
     self.locals = copyLocals(con outerLocals)
     self.captureUses = copyCaptureUses(con outerCaptureUses)
+    self.closureMutable = outerClosureMutable
+    self.closureNode = outerClosureNode
     self.scopeDepth = outerDepth
     self.loopDepth = outerLoopDepth
     if returnType.kind != "unit" && !returned {
@@ -1588,16 +1636,22 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
             message := strings.join(con []string{"cannot capture borrowed non-Copy value `", token.CopyText(con name), "`",}, con "")
             return Err(newError(message, ast.Span(con program, expression)))
         }
+        if mutable && closureCaptureUses[capture].mutable && !self.locals[outer].mutable {
+            message := strings.join(con []string{"mutable closure capture `", token.CopyText(con name), "` requires a mutable source binding",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
         captures = append(captures, ClosureCapture{name: token.CopyText(con name), ty: copyType(con self.locals[outer].ty), mutable: closureCaptureUses[capture].mutable,})
     }
     for mut capture := 0; capture < len(captures); capture = capture + 1 {
+        outer := localIndex(con self.locals, con captures[capture].name)
+        if self.locals[outer].capture {
+            self.markCapture(outer, captures[capture].mutable)
+        }
         if !captures[capture].ty.copy {
-            outer := localIndex(con self.locals, con captures[capture].name)
             self.locals[outer].moved = true
         }
     }
 
-    mutable := ast.Kind(con program, expression) == "Expr.FunctionLiteral.Mutable"
     syntheticName := strings.join(con []string{"__mlg_closure_", strings.fromInt(len(self.functionTypes)),}, con "")
     self.functionTypes = append(self.functionTypes, FunctionSig{name: syntheticName, mutable: mutable, params: copyParams(con params), returnType: copyType(con returnType),})
     function := encodeFunctionTypeIndex(len(self.functionTypes) - 1)
@@ -2732,7 +2786,16 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
         if function == -1 {
             return Err(newError("B2b semantic checker cannot yet resolve this function value signature", ast.Span(con program, expression)))
         }
-        self.markCapture(local, self.callableMutable(function))
+        if self.callableMutable(function) {
+            match self.checkCaptureMutation(con program, local) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            self.markCapture(local, false)
+        }
         if self.callableMutable(function) && !self.locals[local].mutable {
             message := strings.join(con []string{"mutable function value `", token.CopyText(con name), "` requires mutable access",}, con "")
             return Err(newError(message, ast.Span(con program, expression)))
@@ -2741,6 +2804,10 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
         self.recordType(callee, con calleeType)
         self.recordFunctionReference(callee, function, false)
     } else {
+        if containsText(con self.recursiveBindings, con name) {
+            message := strings.join(con []string{"recursive closure `", token.CopyText(con name), "` is not supported in v0.3",}, con "")
+            return Err(newError(message, ast.Span(con program, callee)))
+        }
         function = self.functionIndex(con name)
         if function < 0 {
             return Err(newError(strings.join(con []string{"unknown function `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, callee)))
@@ -3051,6 +3118,14 @@ func (mut self CheckedProgram) checkReceiverBorrow(con program ast.Program, rece
             if self.locals[local].moved {
                 return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, receiver)))
             }
+            if mutable {
+                match self.checkCaptureMutation(con program, local) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
             if mutable && !self.locals[local].mutable {
                 mut subject := ""
                 if hasIndexSegment(con place.segments) {
@@ -3263,6 +3338,14 @@ func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call
             if self.locals[local].moved {
                 return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, value)))
             }
+            if mutable {
+                match self.checkCaptureMutation(con program, local) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
             if mutable && !self.locals[local].mutable {
                 mut subject := ""
                 if hasIndexSegment(con place.segments) {
@@ -3397,6 +3480,14 @@ func copySegments(con segments []string) []string {
     mut copied := []string{}
     for mut index := 0; index < len(segments); index = index + 1 {
         copied = append(copied, token.CopyText(con segments[index]))
+    }
+    return copied
+}
+
+func copyTexts(con values []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, token.CopyText(con values[index]))
     }
     return copied
 }
@@ -3542,6 +3633,16 @@ func (mut self CheckedProgram) markCapture(local int, mutable bool) {
             self.captureUses = append(self.captureUses, CaptureUse{name: token.CopyText(con name), mutable: mutable,})
         }
     }
+}
+
+func (mut self CheckedProgram) checkCaptureMutation(con program ast.Program, local int) Result[bool, SemanticError] {
+    self.markCapture(local, true)
+    if local >= 0 && self.locals[local].capture && self.closureMutable && !self.locals[local].mutable {
+        name := token.CopyText(con self.locals[local].name)
+        message := strings.join(con []string{"mutable closure capture `", name, "` requires a mutable source binding",}, con "")
+        return Err(newError(message, ast.Span(con program, self.closureNode)))
+    }
+    return Ok(true)
 }
 
 func (con self CheckedProgram) functionReferenceIndex(node int) int {

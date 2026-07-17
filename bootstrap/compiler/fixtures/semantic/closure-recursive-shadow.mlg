@@ -1,0 +1,15 @@
+func double(value int) int {
+    return value * 2
+}
+
+func run() {
+    transform := double
+    if true {
+        transform := func(value int) int {
+            return transform(value)
+        }
+        result := transform(2)
+    }
+}
+
+func main() {}

@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d2a2 complete
+Status: in progress; P176a-P176d2a3 complete
 
 ## Objective
 
@@ -94,7 +94,7 @@ agrees.
 - P176d2a2: collect plain closure captures and enforce Copy/non-Copy capture
   ownership (complete)
 - P176d2a3: propagate mutable and nested captures through places, calls and
-  nested function literals
+  nested function literals (complete)
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -473,6 +473,22 @@ specialization and function-body checking until later P176 slices.
   Two hundred seventeen semantic fixtures, six typed-IR fixtures and one hundred
   ninety-one Mallang project tests pass through Stage0 and generated Stage1.
   Mutable access and nested capture propagation remain P176d2a3.
+
+## P176d2a3 Evidence
+
+- Mutable closures mark direct assignment, field/index mutation, mutable
+  function calls, `mut` arguments and mutable receivers as capture mutation.
+  The source binding must be mutable and the checked capture metadata preserves
+  the mutation effect.
+- Nested literals propagate Copy capture use and mutation to every enclosing
+  closure in first-use order. Moving a borrowed non-Copy outer capture into a
+  nested environment is rejected.
+- Recursive closure initializers are rejected without confusing a deliberately
+  shadowed outer function-value binding with recursion.
+- Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
+  Two hundred twenty-seven semantic fixtures, six typed-IR fixtures and two
+  hundred one Mallang project tests pass through Stage0 and generated Stage1.
+  Closure definition/value lowering remains part of P176e typed IR.
 
 ## B2 Completion Criteria
 

@@ -1,0 +1,8 @@
+func run() int {
+    recurse := func(value int) int {
+        return recurse(value)
+    }
+    return recurse(1)
+}
+
+func main() {}

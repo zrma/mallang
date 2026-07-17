@@ -1,0 +1,9 @@
+func make(values []int) func() func() int {
+    return func() func() int {
+        return func() int {
+            return values[0]
+        }
+    }
+}
+
+func main() {}

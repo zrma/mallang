@@ -120,6 +120,8 @@ literals, structural callable signatures and indirect mutable-call checks.
 P176d2a2 records plain closure captures in first-use order, preserves capture
 metadata, copies Copy captures and moves non-Copy captures at creation while
 rejecting moved, borrowed non-Copy and active range-source captures. Mutable and
-nested capture propagation, complete generic semantics and deterministic
-typed-IR drop insertion remain incomplete, so no complete semantic, typed-IR or
-Stage1 compiler claim is made.
+nested capture propagation is complete in P176d2a3, including direct mutation,
+`mut` arguments and receivers, nested Copy propagation, borrowed non-Copy
+rejection and recursive initializer diagnostics. Complete generic semantics,
+closure typed IR and deterministic drop insertion remain incomplete, so no
+complete semantic, typed-IR or Stage1 compiler claim is made.
