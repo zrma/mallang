@@ -75,7 +75,7 @@ Mallang to specific 1.x versions.
 - `docs/todo-self-hosting-frontend/`: active B1 work breakdown and decisions.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
-B1 P175c3 now covers the complete frozen v1 syntax plus bounded statement and
-top-level recovery with the same 32-error cap as Rust Stage0. The active P175d
-slice expands this into the full positive, rejection and crash differential
-corpus; no Stage1 compiler claim is made yet.
+B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
+bounded recovery, and 155 repository sources match Rust Stage0 through normal,
+strict-accounting and sanitizer execution. B2 semantic checking and typed IR is
+the next stage; no Stage1 compiler claim is made yet.

@@ -1,6 +1,6 @@
 # Open Questions: B1 Self-Hosting Frontend
 
-Status: initial B1 decisions resolved; later blockers must be recorded here
+Status: closed with B1; later frontend changes require a new decision record
 
 ## Q1. How does Mallang scan immutable source text?
 
@@ -40,3 +40,12 @@ language solely for compiler convenience. The Rust oracle maps its enum to the
 same harness-owned tag. A later typed compiler representation may change this
 private data structure without changing Mallang syntax or the differential
 contract.
+
+## Q7. Which sources form the final B1 corpus?
+
+All `.mlg` files under `bootstrap/compiler/src`, `bootstrap/compiler/tests`,
+`examples` and `tests/fixtures`, sorted by repository-relative path. This keeps
+valid programs, syntax and lexical rejection cases, semantic-only rejection
+cases and the hardening crash corpus under one deterministic frontend contract.
+The gate rejects an unexpectedly small corpus instead of silently accepting an
+empty or truncated discovery result.

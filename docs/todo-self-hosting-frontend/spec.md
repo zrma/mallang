@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175c3 complete, P175d full differential corpus next
+Status: complete; P175a-P175d accepted
 
 ## Goal
 
@@ -44,8 +44,8 @@ compatibility evidence.
 - [x] Mallang source/span/token model and stable byte-oriented normalization
 - [x] complete Mallang lexer and Rust token/diagnostic differential corpus
 - [x] Mallang frontend AST and complete success-path parser
-- [ ] normalized AST and diagnostic differential corpus
-- [ ] B1 canonical, publication and supported-platform CI gates
+- [x] normalized AST and diagnostic differential corpus
+- [x] B1 canonical, publication and supported-platform CI gates
 
 ## P175b Evidence
 
@@ -128,6 +128,19 @@ compatibility evidence.
   closures, missing block ends, receiver methods and the diagnostic cap. Their
   normalized errors match Rust Stage0 under strict C, allocation accounting and
   ASan/UBSan.
+
+## P175d Evidence
+
+- The differential gate discovers every `.mlg` file under compiler source and
+  tests, examples and test fixtures in stable lexical path order. The accepted
+  baseline contains 155 positive, semantic-rejection, parser-rejection,
+  lexical-rejection and hardening crash-corpus sources.
+- Every source is parsed by the Rust Stage0 oracle, the generated Stage1
+  frontend, the strict C allocation wrapper and the ASan/UBSan wrapper. AST or
+  diagnostic output must match byte-for-byte, stderr must remain empty and live
+  compiler-owned allocations must return to zero.
+- `scripts/check.sh`, both public-repository boundary gates and supported
+  Linux/macOS CI make this corpus part of the canonical B1 acceptance path.
 
 ## Excluded
 

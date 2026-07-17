@@ -1679,8 +1679,8 @@ slice is the B1 Mallang lexer/parser data model and Rust differential harness.
 - [x] function literal, if/match expression과 recursive pattern differential
 - [x] syntax-only AST와 frozen v1 success-path complete parser
 - [x] bounded statement/top-level recovery와 32-error cap differential
-- [ ] positive/rejection/crash corpus AST/diagnostic differential
-- [ ] B1 canonical, publication과 supported-platform CI acceptance
+- [x] 155-source positive/rejection/crash corpus AST/diagnostic differential
+- [x] B1 canonical, publication과 supported-platform CI acceptance
 
 Exact scope and decisions are owned by `docs/todo-self-hosting-frontend/`.
 P175a adds only owned standard-library operations and no pointer, borrowed
@@ -1692,4 +1692,6 @@ expressions and construction/call forms. P175c2b adds statement control flow,
 test assertions, function literals, if/match expressions and recursive
 patterns. P175c3 adds bounded statement/top-level recovery and the Rust Stage0
 diagnostic cap. The next slice is the full positive/rejection/crash differential
-corpus required to close B1.
+corpus required to close B1. P175d closes B1 with 155 discovered repository
+sources under Stage0, generated Stage1, strict-accounting and sanitizer parity;
+the next self-hosting stage is B2 semantic checking and typed IR.

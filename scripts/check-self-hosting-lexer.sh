@@ -121,8 +121,9 @@ for fixture in "$FIXTURES"/*.mlg; do
   fi
 done
 
-for fixture in "$PARSER_FIXTURES"/*.mlg; do
-  stem="parser-$(basename "$fixture" .mlg)"
+compare_parser_fixture() {
+  local fixture="$1"
+  local stem="$2"
   oracle_output="$WORK/$stem.oracle"
   stage1_output="$WORK/$stem.stage1"
   strict_output="$WORK/$stem.strict"
@@ -145,7 +146,31 @@ for fixture in "$PARSER_FIXTURES"/*.mlg; do
     cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
     exit 1
   fi
+}
+
+for fixture in "$PARSER_FIXTURES"/*.mlg; do
+  compare_parser_fixture "$fixture" "parser-$(basename "$fixture" .mlg)"
 done
+
+PARSER_CORPUS_LIST="$WORK/parser-corpus.list"
+find \
+  bootstrap/compiler/src \
+  bootstrap/compiler/tests \
+  examples \
+  tests/fixtures \
+  -type f -name '*.mlg' -print | LC_ALL=C sort >"$PARSER_CORPUS_LIST"
+
+parser_corpus_count=0
+while IFS= read -r fixture; do
+  stem="parser-corpus-$(printf '%04d' "$parser_corpus_count")"
+  compare_parser_fixture "$fixture" "$stem"
+  parser_corpus_count=$((parser_corpus_count + 1))
+done <"$PARSER_CORPUS_LIST"
+
+if ((parser_corpus_count < 150)); then
+  echo "self-hosting parser corpus unexpectedly small: $parser_corpus_count" >&2
+  exit 1
+fi
 
 for regression in append-match append-match-loop match-arm-return-temp string-equality-temporaries; do
   fixture="tests/fixtures/self-hosting/$regression.mlg"
@@ -208,4 +233,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B1 frontend differential, determinism, ownership, and sanitizer gate passed"
+echo "self-hosting B1 frontend differential, determinism, ownership, and sanitizer gate passed: parser-corpus=$parser_corpus_count"
