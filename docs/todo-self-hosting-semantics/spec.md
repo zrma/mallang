@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d1b2a complete
+Status: in progress; P176a-P176d1b2b complete
 
 ## Objective
 
@@ -78,7 +78,8 @@ agrees.
 - P176d1b2a: propagate expected types through `None`, `Some`, `Ok` and `Err`,
   including nested literal payloads and constructor context diagnostics
   (complete)
-- P176d1b2b: check user enum constructors and propagate their payload types
+- P176d1b2b: check zero, one and multiple-payload user enum constructors and
+  propagate expected payload types (complete)
 - P176d1b2c: propagate expected types through the remaining match expression
   contexts
 - arrays, slices, structs, enums, match coverage and recursive ADTs
@@ -363,6 +364,20 @@ specialization and function-body checking until later P176 slices.
   hundred fourteen Mallang project tests pass through Stage0 and generated
   Stage1. User enum constructors remain P176d1b2b, and match expression
   propagation remains P176d1b2c.
+
+## P176d1b2b Evidence
+
+- A known non-generic enum path is distinguished from ordinary field or method
+  selection before checking zero-payload selection or callable payload
+  variants. Stage0's constructor normalization takes priority over a same-name
+  local binding.
+- Expected enum type, variant existence, callability, payload arity, owned
+  argument mode and positional type diagnostics preserve Stage0 order and
+  spans. Payloads are checked left-to-right, including nested literal expected
+  types and non-Copy move reuse.
+- One hundred fifty-two semantic fixtures, six typed-IR fixtures and one
+  hundred twenty-five Mallang project tests pass through Stage0 and generated
+  Stage1. Match expression expected-type propagation remains P176d1b2c.
 
 ## B2 Completion Criteria
 

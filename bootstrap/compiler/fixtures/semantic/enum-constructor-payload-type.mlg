@@ -1,0 +1,9 @@
+type Choice enum {
+    Score(int)
+}
+
+func exercise() Choice {
+    return Choice.Score("bad")
+}
+
+func main() {}

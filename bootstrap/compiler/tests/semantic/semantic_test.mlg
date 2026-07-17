@@ -1539,3 +1539,58 @@ test RejectsSomeResultTypeMismatch() {
     source := "func exercise() Option[int] { return Some(\"bad\") } func main() {}"
     assert(checkTestSource(source) == "return type mismatch: expected `Option[int]`, got `Option[string]`")
 }
+
+test ChecksUserEnumConstructors() {
+    source := "type Choice enum { Empty; Score(int); Pair(int, string) } func empty() Choice { return Choice.Empty } func score(value int) Choice { return Choice.Score(value) } func pair(message string) Choice { return Choice.Pair(1, message) } func main() {}"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsEnumConstructorExpectedTypeMismatch() {
+    source := "type Choice enum { Score(int) } type Other enum { Score(int) } func exercise() Other { return Choice.Score(1) } func main() {}"
+    assert(checkTestSource(source) == "enum constructor type mismatch: expected `Other`, got `Choice`")
+}
+
+test RejectsMissingEnumConstructorVariant() {
+    source := "type Choice enum { Empty } func exercise() Choice { return Choice.Missing } func main() {}"
+    assert(checkTestSource(source) == "enum `Choice` has no variant `Missing`")
+}
+
+test RejectsCallingZeroPayloadEnumVariant() {
+    source := "type Choice enum { Empty } func exercise() Choice { return Choice.Empty() } func main() {}"
+    assert(checkTestSource(source) == "zero-payload variant `Choice.Empty` is not callable")
+}
+
+test RejectsUncalledPayloadEnumVariant() {
+    source := "type Choice enum { Score(int) } func exercise() Choice { return Choice.Score } func main() {}"
+    assert(checkTestSource(source) == "variant `Choice.Score` requires one payload argument")
+}
+
+test RejectsEnumConstructorArity() {
+    source := "type Choice enum { Pair(int, string) } func exercise() Choice { return Choice.Pair(1) } func main() {}"
+    assert(checkTestSource(source) == "variant `Choice.Pair` requires 2 payload arguments, got 1")
+}
+
+test RejectsEnumConstructorArgumentMode() {
+    source := "type Choice enum { Score(int) } func exercise(con value int) Choice { return Choice.Score(con value) } func main() {}"
+    assert(checkTestSource(source) == "payload argument 1 for `Choice.Score` must be owned")
+}
+
+test RejectsEnumConstructorPayloadTypeMismatch() {
+    source := "type Choice enum { Score(int) } func exercise() Choice { return Choice.Score(\"bad\") } func main() {}"
+    assert(checkTestSource(source) == "payload type mismatch for `Choice.Score`: expected `int`, got `string`")
+}
+
+test RejectsEnumConstructorNestedExpectedTypeMismatch() {
+    source := "type Choice enum { Values([2]int) } func exercise() Choice { return Choice.Values([1]int{1}) } func main() {}"
+    assert(checkTestSource(source) == "array literal type mismatch: expected `[2]int`, got `[1]int`")
+}
+
+test RejectsEnumConstructorPayloadReuseAfterMove() {
+    source := "type Choice enum { Pair(string, string) } func exercise(value string) Choice { return Choice.Pair(value, value) } func main() {}"
+    assert(checkTestSource(source) == "use of moved value `value`")
+}
+
+test TreatsKnownEnumPathBeforeLocalShadow() {
+    source := "type Choice enum { Empty } type Holder struct { Empty int } func exercise(Choice Holder) int { return Choice.Empty } func main() {}"
+    assert(checkTestSource(source) == "enum constructor type mismatch: expected `int`, got `Choice`")
+}

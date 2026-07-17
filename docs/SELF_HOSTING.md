@@ -105,7 +105,8 @@ checks explicit non-generic struct, fixed-size array and slice literals with
 owned element moves. P176d1b1 propagates expected types into those literals
 through calls, returns, assignments, nested fields/elements and if-expression
 branches. P176d1b2a checks `None`/`Some`/`Ok`/`Err` context, arity, owned
-arguments and nested expected payloads. User enum constructors, match
-propagation, complete ADT/closure/generic semantics and deterministic typed-IR
-drop insertion remain incomplete, so no complete semantic, typed-IR or Stage1
-compiler claim is made.
+arguments and nested expected payloads. P176d1b2b checks known non-generic user
+enum constructors with zero, one or multiple payloads, including expected
+payload types, owned modes and move order. Match propagation, complete
+ADT/closure/generic semantics and deterministic typed-IR drop insertion remain
+incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.

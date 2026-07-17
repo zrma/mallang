@@ -1,0 +1,9 @@
+type Choice enum {
+    Pair(int, string)
+}
+
+func exercise() Choice {
+    return Choice.Pair(1)
+}
+
+func main() {}

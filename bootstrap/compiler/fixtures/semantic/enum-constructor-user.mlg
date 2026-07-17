@@ -1,0 +1,19 @@
+type Choice enum {
+    Empty
+    Score(int)
+    Pair(int, string)
+}
+
+func empty() Choice {
+    return Choice.Empty
+}
+
+func score(value int) Choice {
+    return Choice.Score(value)
+}
+
+func pair(message string) Choice {
+    return Choice.Pair(1, message)
+}
+
+func main() {}

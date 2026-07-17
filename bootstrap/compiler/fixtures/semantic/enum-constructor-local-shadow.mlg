@@ -1,0 +1,13 @@
+type Choice enum {
+    Empty
+}
+
+type Holder struct {
+    Empty int
+}
+
+func exercise(Choice Holder) int {
+    return Choice.Empty
+}
+
+func main() {}

@@ -1285,6 +1285,10 @@ func (mut self CheckedProgram) checkExpressionExpected(con program ast.Program, 
         return self.checkArrayLiteral(con program, expression, con expectedType, hasExpected)
     }
     if kind == "Expr.FieldAccess" {
+        enumIndex := self.enumSelectionIndex(con program, expression)
+        if enumIndex >= 0 {
+            return self.checkEnumConstructor(con program, expression, expression, enumIndex, con expectedType, hasExpected, false)
+        }
         return self.checkFieldAccess(con program, expression, con valueUse)
     }
     if kind == "Expr.Index" {
@@ -1765,6 +1769,10 @@ func (con self CheckedProgram) resolveStructField(con baseType ResolvedType, con
 func (mut self CheckedProgram) checkCall(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
     callee := ast.Child(con program, expression, 0)
     if ast.Kind(con program, callee) == "Expr.FieldAccess" {
+        enumIndex := self.enumSelectionIndex(con program, callee)
+        if enumIndex >= 0 {
+            return self.checkEnumConstructor(con program, expression, callee, enumIndex, con expectedType, hasExpected, true)
+        }
         return self.checkMethodCall(con program, expression, callee)
     }
     if ast.Kind(con program, callee) != "Expr.Var" {
@@ -1924,6 +1932,72 @@ func (mut self CheckedProgram) checkResultConstructor(con program ast.Program, e
             return Err(error)
         }
     }
+}
+
+func (mut self CheckedProgram) checkEnumConstructor(con program ast.Program, expression int, selection int, enumIndex int, con expectedType ResolvedType, hasExpected bool, called bool) Result[ResolvedType, SemanticError] {
+    enumName := token.CopyText(con self.enums[enumIndex].name)
+    enumType := makeType(token.CopyText(con enumName), "enum", false, true)
+    if hasExpected && expectedType.text != enumType.text {
+        message := strings.join(con []string{"enum constructor type mismatch: expected `", token.CopyText(con expectedType.text), "`, got `", token.CopyText(con enumType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    variantName := ast.Value(con program, selection)
+    variantIndex := enumVariantIndex(con self.enums[enumIndex], con variantName)
+    if variantIndex < 0 {
+        message := strings.join(con []string{"enum `", token.CopyText(con enumName), "` has no variant `", token.CopyText(con variantName), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    payloadCount := len(self.enums[enumIndex].variants[variantIndex].payloads)
+    prefix := strings.join(con []string{token.CopyText(con enumName), ".", token.CopyText(con variantName)}, con "")
+    if !called {
+        if payloadCount == 1 {
+            message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires one payload argument",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
+        if payloadCount > 1 {
+            message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires ", strings.fromInt(payloadCount), " payload arguments",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
+        self.recordType(expression, con enumType)
+        return Ok(copyType(con enumType))
+    }
+
+    if payloadCount == 0 {
+        message := strings.join(con []string{"zero-payload variant `", token.CopyText(con prefix), "` is not callable",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    if argumentCount != payloadCount {
+        message := strings.join(con []string{"variant `", token.CopyText(con prefix), "` requires ", strings.fromInt(payloadCount), " payload arguments, got ", strings.fromInt(argumentCount),}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+
+    for mut index := 0; index < payloadCount; index = index + 1 {
+        argument := ast.Child(con program, expression, index + 1)
+        if argModeFromKind(con ast.Kind(con program, argument)) != "owned" {
+            message := strings.join(con []string{"payload argument ", strings.fromInt(index + 1), " for `", token.CopyText(con prefix), "` must be owned",}, con "")
+            return Err(newError(message, ast.Span(con program, argument)))
+        }
+        value := ast.Child(con program, argument, 0)
+        payloadType := copyType(con self.enums[enumIndex].variants[variantIndex].payloads[index])
+        match self.checkExpressionExpected(con program, value, con "owned", con payloadType, true) {
+            case Ok(actualType) {
+                if actualType.text != payloadType.text {
+                    mut message := strings.join(con []string{"payload type mismatch for `", token.CopyText(con prefix), "`: expected `", token.CopyText(con payloadType.text), "`, got `", token.CopyText(con actualType.text), "`",}, con "")
+                    if payloadCount > 1 {
+                        message = strings.join(con []string{"payload ", strings.fromInt(index + 1), " type mismatch for `", token.CopyText(con prefix), "`: expected `", token.CopyText(con payloadType.text), "`, got `", token.CopyText(con actualType.text), "`",}, con "")
+                    }
+                    return Err(newError(message, ast.Span(con program, argument)))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    self.recordType(expression, con enumType)
+    return Ok(enumType)
 }
 
 func (mut self CheckedProgram) checkMethodCall(con program ast.Program, expression int, callee int) Result[ResolvedType, SemanticError] {
@@ -2547,6 +2621,27 @@ func (con self CheckedProgram) structIndex(con name string) int {
     return - 1
 }
 
+func (con self CheckedProgram) enumIndex(con name string) int {
+    for mut index := 0; index < len(self.enums); index = index + 1 {
+        if self.enums[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) enumSelectionIndex(con program ast.Program, expression int) int {
+    if ast.Kind(con program, expression) != "Expr.FieldAccess" {
+        return - 1
+    }
+    base := ast.Child(con program, expression, 0)
+    if ast.Kind(con program, base) != "Expr.Var" {
+        return - 1
+    }
+    enumName := ast.Value(con program, base)
+    return self.enumIndex(con enumName)
+}
+
 func (con self CheckedProgram) functionIndexForType(con ty ResolvedType) int {
     if ty.kind != "function" {
         return - 1
@@ -2799,6 +2894,15 @@ func hasVariant(con value EnumSig, con name string) bool {
         }
     }
     return false
+}
+
+func enumVariantIndex(con value EnumSig, con name string) int {
+    for mut index := 0; index < len(value.variants); index = index + 1 {
+        if value.variants[index].name == name {
+            return index
+        }
+    }
+    return - 1
 }
 
 func hasParam(con params []ParamSig, con name string) bool {

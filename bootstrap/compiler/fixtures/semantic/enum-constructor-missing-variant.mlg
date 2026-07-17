@@ -1,0 +1,9 @@
+type Choice enum {
+    Empty
+}
+
+func exercise() Choice {
+    return Choice.Missing
+}
+
+func main() {}
