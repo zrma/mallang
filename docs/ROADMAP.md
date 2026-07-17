@@ -1661,12 +1661,12 @@ change.
 - [x] B1 frontend differential slice와 no-premature-language-change 경계
 
 Exact bootstrap contract and current acceptance are owned by
-`docs/SELF_HOSTING.md` and `docs/todo-self-hosting-bootstrap/`. The next active
-slice is the B1 Mallang lexer/parser data model and Rust differential harness.
+`docs/SELF_HOSTING.md` and `docs/todo-self-hosting-bootstrap/`. B1 subsequently
+closed the complete frontend differential contract.
 
 ## P175: B1 Self-Hosting Frontend
 
-상태: in progress (2026-07-17)
+상태: complete (2026-07-17)
 
 - [x] UTF-8 byte cursor blocker와 1.x compatibility 분류
 - [x] `strings.byteAt`과 scalar-boundary 검증 `strings.slice`
@@ -1691,7 +1691,25 @@ existing ownership model. P175c2a adds core statements, Pratt/postfix
 expressions and construction/call forms. P175c2b adds statement control flow,
 test assertions, function literals, if/match expressions and recursive
 patterns. P175c3 adds bounded statement/top-level recovery and the Rust Stage0
-diagnostic cap. The next slice is the full positive/rejection/crash differential
-corpus required to close B1. P175d closes B1 with 155 discovered repository
+diagnostic cap. P175d closes B1 with 155 discovered repository
 sources under Stage0, generated Stage1, strict-accounting and sanitizer parity;
 the next self-hosting stage is B2 semantic checking and typed IR.
+
+## P176: B2 Self-Hosting Semantics And Typed IR
+
+상태: in progress (2026-07-17)
+
+- [x] B2 checker/AST ownership boundary와 stable semantic normalization 계약
+- [x] 비제네릭 struct, enum, function, method declaration collection
+- [x] primitive, Option, Result, array, slice, nominal, function type resolution
+- [x] focused success/rejection Rust Stage0 differential fixtures
+- [ ] primitive expression, statement, local scope checking과 typed IR subset
+- [ ] owned/`con`/`mut` place state와 branch/loop ownership join
+- [ ] complete control flow, ADT, closure, generic specialization semantics
+- [ ] full typed IR, deterministic drop insertion과 complete differential corpus
+- [ ] B2 canonical, publication과 supported-platform CI acceptance
+
+Exact scope and decisions are owned by `docs/todo-self-hosting-semantics/`.
+P176a freezes declaration/type normalization without changing public syntax or
+the standard library. P176b-P176e extend body checking, ownership,
+specialization and typed IR in independently differential-tested slices.

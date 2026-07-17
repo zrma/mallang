@@ -1,0 +1,60 @@
+package semantic
+
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+
+test CollectsDeclarationSignatures() {
+    source := "type User struct { name string; age int } type Choice enum { Empty; Score(int) } func describe(con value Option[string]) string { return \"ok\" } func (mut user User) rename(con name string) {} func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(checked) {
+                            expected := "CHECKED|1|1|2|1\nSTRUCT|User|2\nFIELD|User|name|string\nFIELD|User|age|int\nENUM|Choice|2\nVARIANT|Choice|Empty|0\nVARIANT|Choice|Score|1|int\nFUNC|describe|string|1\nPARAM|describe|con|value|Option[string]\nFUNC|main|unit|0\nMETHOD|User|rename|mut|user|unit|1\nMPARAM|User|rename|con|name|string"
+                            actual := Normalize(con checked)
+                            assert(actual == expected)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUnknownTypes() {
+    source := "type User struct { value Missing } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            actual := ErrorMessage(con error)
+                            assert(actual == "unknown type `Missing`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

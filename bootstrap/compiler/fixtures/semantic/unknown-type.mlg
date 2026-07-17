@@ -1,0 +1,5 @@
+type User struct {
+    value Missing
+}
+
+func main() {}

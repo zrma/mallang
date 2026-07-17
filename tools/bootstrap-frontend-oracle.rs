@@ -4,29 +4,32 @@ use std::process::ExitCode;
 
 use mallang::ast::{
     Arg, ArgMode, BinaryOp, Block, EnumDecl, Expr, ExprKind, FieldDecl, FieldInit, ForInit,
-    ForPost, Function, FunctionTypeParam, ImportDecl, MatchPattern, PackageDecl, Param, Program,
-    SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp, Visibility,
+    ForPost, Function, FunctionTypeParam, ImportDecl, MatchPattern, PackageDecl, Param, ParamMode,
+    Program, SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp,
+    Visibility,
 };
-use mallang::{lex, parse_with_diagnostics, Keyword, LexError, Span, Token, TokenKind};
+use mallang::{
+    check, lex, parse_with_diagnostics, CheckedProgram, Keyword, LexError, Span, Token, TokenKind,
+};
 
 fn main() -> ExitCode {
     let mut args = env::args();
     let _program = args.next();
     let Some(first) = args.next() else {
-        eprintln!("usage: bootstrap-frontend-oracle [parse] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
         return ExitCode::from(2);
     };
-    let (mode, path) = if first == "parse" {
+    let (mode, path) = if first == "parse" || first == "check" {
         let Some(path) = args.next() else {
-            eprintln!("usage: bootstrap-frontend-oracle [parse] <source>");
+            eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
             return ExitCode::from(2);
         };
-        ("parse", path)
+        (first.as_str(), path)
     } else {
         ("lex", first)
     };
     if args.next().is_some() {
-        eprintln!("usage: bootstrap-frontend-oracle [parse] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check] <source>");
         return ExitCode::from(2);
     }
 
@@ -38,7 +41,31 @@ fn main() -> ExitCode {
         }
     };
 
-    if mode == "parse" {
+    if mode == "check" {
+        match parse_with_diagnostics(&source) {
+            Ok(program) => match check(&program) {
+                Ok(checked) => println!("{}", normalize_checked(&checked)),
+                Err(error) => println!(
+                    "SERR|{}|{}|{}|{}",
+                    error.span.source.index(),
+                    error.span.start,
+                    error.span.end,
+                    encode_bytes(&error.message)
+                ),
+            },
+            Err(errors) => {
+                for error in errors {
+                    println!(
+                        "PERR|{}|{}|{}|{}",
+                        error.span.source.index(),
+                        error.span.start,
+                        error.span.end,
+                        encode_bytes(&error.message)
+                    );
+                }
+            }
+        }
+    } else if mode == "parse" {
         match parse_with_diagnostics(&source) {
             Ok(program) => println!("{}", normalize_program(&program).normalize(0)),
             Err(errors) => {
@@ -65,6 +92,116 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+fn normalize_checked(checked: &CheckedProgram) -> String {
+    let mut lines = vec![format!(
+        "CHECKED|{}|{}|{}|{}",
+        checked.structs.len(),
+        checked.enums.len(),
+        checked.signatures.len(),
+        checked.methods.len()
+    )];
+
+    for declaration in &checked.program.structs {
+        let signature = &checked.structs[&declaration.name];
+        lines.push(format!(
+            "STRUCT|{}|{}",
+            declaration.name,
+            signature.fields.len()
+        ));
+        for field in &signature.fields {
+            lines.push(format!(
+                "FIELD|{}|{}|{}",
+                declaration.name,
+                field.name,
+                field.ty.source_name()
+            ));
+        }
+    }
+    for declaration in &checked.program.enums {
+        let signature = &checked.enums[&declaration.name];
+        lines.push(format!(
+            "ENUM|{}|{}",
+            declaration.name,
+            signature.variants.len()
+        ));
+        for variant in &signature.variants {
+            let mut line = format!(
+                "VARIANT|{}|{}|{}",
+                declaration.name,
+                variant.name,
+                variant.payloads.len()
+            );
+            for payload in &variant.payloads {
+                line.push('|');
+                line.push_str(&payload.source_name());
+            }
+            lines.push(line);
+        }
+    }
+    for declaration in &checked.program.functions {
+        if declaration.receiver.is_none() {
+            let signature = &checked.signatures[&declaration.name];
+            lines.push(format!(
+                "FUNC|{}|{}|{}",
+                declaration.name,
+                signature.return_type.source_name(),
+                signature.params.len()
+            ));
+            for param in &signature.params {
+                lines.push(format!(
+                    "PARAM|{}|{}|{}|{}",
+                    declaration.name,
+                    normalize_param_mode(param.mode),
+                    param.name,
+                    param.ty.source_name()
+                ));
+            }
+        }
+    }
+    for declaration in &checked.program.functions {
+        if let Some(receiver) = &declaration.receiver {
+            let (_, method) = checked
+                .methods
+                .iter()
+                .find(|(key, signature)| {
+                    key.name == declaration.name
+                        && key.receiver.source_name() == receiver.ty.name
+                        && signature.receiver.name == receiver.name
+                })
+                .expect("checked source method must have a signature");
+            lines.push(format!(
+                "METHOD|{}|{}|{}|{}|{}|{}",
+                method.receiver.ty.source_name(),
+                declaration.name,
+                normalize_param_mode(method.receiver.mode),
+                method.receiver.name,
+                method.function.return_type.source_name(),
+                method.function.params.len()
+            ));
+            for param in &method.function.params {
+                lines.push(format!(
+                    "MPARAM|{}|{}|{}|{}|{}",
+                    method.receiver.ty.source_name(),
+                    declaration.name,
+                    normalize_param_mode(param.mode),
+                    param.name,
+                    param.ty.source_name()
+                ));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn normalize_param_mode(mode: ParamMode) -> &'static str {
+    match mode {
+        ParamMode::Owned => "owned",
+        ParamMode::Con => "con",
+        ParamMode::Mut => "mut",
+    }
 }
 
 struct NormalizedNode {

@@ -1,0 +1,638 @@
+package semantic
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+pub type ResolvedType struct {
+    text string
+    kind string
+    copy bool
+    cleanup bool
+}
+
+pub type FieldSig struct {
+    name string
+    ty ResolvedType
+}
+
+pub type StructSig struct {
+    name string
+    fields []FieldSig
+}
+
+pub type EnumVariantSig struct {
+    name string
+    payloads []ResolvedType
+}
+
+pub type EnumSig struct {
+    name string
+    variants []EnumVariantSig
+}
+
+pub type ParamSig struct {
+    name string
+    mode string
+    ty ResolvedType
+}
+
+pub type FunctionSig struct {
+    name string
+    params []ParamSig
+    returnType ResolvedType
+}
+
+pub type MethodSig struct {
+    name string
+    receiver ParamSig
+    params []ParamSig
+    returnType ResolvedType
+}
+
+pub type CheckedProgram struct {
+    structs []StructSig
+    enums []EnumSig
+    functions []FunctionSig
+    methods []MethodSig
+}
+
+pub type SemanticError struct {
+    message string
+    span source.Span
+}
+
+pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
+    mut checked := CheckedProgram{structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, methods: []MethodSig{},}
+
+    match checked.collectEnumNames(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match checked.collectStructNames(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match checked.collectStructFields(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match checked.collectEnumVariants(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match checked.collectFunctionSignatures(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if !checked.hasFunction(con "main") {
+        root := ast.Root(con program)
+        return Err(newError("program must declare `func main()`", ast.Span(con program, root)))
+    }
+
+    return Ok(checked)
+}
+
+pub func ErrorMessage(con error SemanticError) string {
+    return token.CopyText(con error.message)
+}
+
+pub func ErrorSpan(con error SemanticError) source.Span {
+    return source.Copy(con error.span)
+}
+
+pub func NormalizeError(con error SemanticError) string {
+    span := source.Copy(con error.span)
+    parts := []string{"SERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
+
+pub func Normalize(con checked CheckedProgram) string {
+    lines := []string{strings.join(con []string{"CHECKED|", strings.fromInt(len(checked.structs)), "|", strings.fromInt(len(checked.enums)), "|", strings.fromInt(len(checked.functions)), "|", strings.fromInt(len(checked.methods)),}, con ""),}
+
+    mut output := lines
+    for mut structIndex := 0; structIndex < len(checked.structs); structIndex = structIndex + 1 {
+        output = append(output, strings.join(con []string{"STRUCT|", token.CopyText(con checked.structs[structIndex].name), "|", strings.fromInt(len(checked.structs[structIndex].fields)),}, con ""))
+        for mut fieldIndex := 0; fieldIndex < len(checked.structs[structIndex].fields); fieldIndex = fieldIndex + 1 {
+            output = append(output, strings.join(con []string{"FIELD|", token.CopyText(con checked.structs[structIndex].name), "|", token.CopyText(con checked.structs[structIndex].fields[fieldIndex].name), "|", token.CopyText(con checked.structs[structIndex].fields[fieldIndex].ty.text),}, con ""))
+        }
+    }
+    for mut enumIndex := 0; enumIndex < len(checked.enums); enumIndex = enumIndex + 1 {
+        output = append(output, strings.join(con []string{"ENUM|", token.CopyText(con checked.enums[enumIndex].name), "|", strings.fromInt(len(checked.enums[enumIndex].variants)),}, con ""))
+        for mut variantIndex := 0; variantIndex < len(checked.enums[enumIndex].variants); variantIndex = variantIndex + 1 {
+            mut line := strings.join(con []string{"VARIANT|", token.CopyText(con checked.enums[enumIndex].name), "|", token.CopyText(con checked.enums[enumIndex].variants[variantIndex].name), "|", strings.fromInt(len(checked.enums[enumIndex].variants[variantIndex].payloads)),}, con "")
+            for mut payloadIndex := 0; payloadIndex < len(checked.enums[enumIndex].variants[variantIndex].payloads); payloadIndex = payloadIndex + 1 {
+                line = strings.join(con []string{line, "|", token.CopyText(con checked.enums[enumIndex].variants[variantIndex].payloads[payloadIndex].text),}, con "")
+            }
+            output = append(output, line)
+        }
+    }
+    for mut functionIndex := 0; functionIndex < len(checked.functions); functionIndex = functionIndex + 1 {
+        output = append(output, strings.join(con []string{"FUNC|", token.CopyText(con checked.functions[functionIndex].name), "|", token.CopyText(con checked.functions[functionIndex].returnType.text), "|", strings.fromInt(len(checked.functions[functionIndex].params)),}, con ""))
+        for mut paramIndex := 0; paramIndex < len(checked.functions[functionIndex].params); paramIndex = paramIndex + 1 {
+            output = append(output, strings.join(con []string{"PARAM|", token.CopyText(con checked.functions[functionIndex].name), "|", token.CopyText(con checked.functions[functionIndex].params[paramIndex].mode), "|", token.CopyText(con checked.functions[functionIndex].params[paramIndex].name), "|", token.CopyText(con checked.functions[functionIndex].params[paramIndex].ty.text),}, con ""))
+        }
+    }
+    for mut methodIndex := 0; methodIndex < len(checked.methods); methodIndex = methodIndex + 1 {
+        output = append(output, strings.join(con []string{"METHOD|", token.CopyText(con checked.methods[methodIndex].receiver.ty.text), "|", token.CopyText(con checked.methods[methodIndex].name), "|", token.CopyText(con checked.methods[methodIndex].receiver.mode), "|", token.CopyText(con checked.methods[methodIndex].receiver.name), "|", token.CopyText(con checked.methods[methodIndex].returnType.text), "|", strings.fromInt(len(checked.methods[methodIndex].params)),}, con ""))
+        for mut paramIndex := 0; paramIndex < len(checked.methods[methodIndex].params); paramIndex = paramIndex + 1 {
+            output = append(output, strings.join(con []string{"MPARAM|", token.CopyText(con checked.methods[methodIndex].receiver.ty.text), "|", token.CopyText(con checked.methods[methodIndex].name), "|", token.CopyText(con checked.methods[methodIndex].params[paramIndex].mode), "|", token.CopyText(con checked.methods[methodIndex].params[paramIndex].name), "|", token.CopyText(con checked.methods[methodIndex].params[paramIndex].ty.text),}, con ""))
+        }
+    }
+
+    return strings.join(con output, con "\n")
+}
+
+func (mut self CheckedProgram) collectEnumNames(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isEnumKind(con kind) {
+            name := ast.Value(con program, declaration)
+            if isBuiltinTypeName(con name) {
+                return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in type name",}, con ""), ast.Span(con program, declaration)))
+            }
+            if isBuiltinValueName(con name) {
+                return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, declaration)))
+            }
+            if self.hasEnum(con name) {
+                return Err(newError(strings.join(con []string{"duplicate enum `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+            }
+            self.enums = append(self.enums, EnumSig{name: name, variants: []EnumVariantSig{}})
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) collectStructNames(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isStructKind(con kind) {
+            name := ast.Value(con program, declaration)
+            if isBuiltinTypeName(con name) {
+                return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in type name",}, con ""), ast.Span(con program, declaration)))
+            }
+            if isBuiltinValueName(con name) {
+                return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, declaration)))
+            }
+            if self.hasEnum(con name) {
+                return Err(newError(strings.join(con []string{"type `", token.CopyText(con name), "` is declared as both a struct and an enum",}, con ""), ast.Span(con program, declaration)))
+            }
+            if self.hasStruct(con name) {
+                return Err(newError(strings.join(con []string{"duplicate struct `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+            }
+            self.structs = append(self.structs, StructSig{name: name, fields: []FieldSig{}})
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) collectStructFields(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    mut structIndex := 0
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isStructKind(con kind) {
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                fieldNode := ast.Child(con program, declaration, item)
+                fieldKind := ast.Kind(con program, fieldNode)
+                if fieldKind == "TypeParam" {
+                    return Err(newError("B2a semantic checker does not yet accept generic declarations", ast.Span(con program, declaration)))
+                }
+                if fieldKind == "FieldDecl" {
+                    name := ast.Value(con program, fieldNode)
+                    if hasField(con self.structs[structIndex], con name) {
+                        message := strings.join(con []string{"duplicate field `", token.CopyText(con name), "` in `", token.CopyText(con self.structs[structIndex].name), "`",}, con "")
+                        return Err(newError(message, ast.Span(con program, fieldNode)))
+                    }
+                    typeNode := ast.Child(con program, fieldNode, 0)
+                    match self.resolveType(con program, typeNode) {
+                        case Ok(ty) {
+                            self.structs[structIndex].fields = append(self.structs[structIndex].fields, FieldSig{name: name, ty: ty})
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+            }
+            structIndex = structIndex + 1
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) collectEnumVariants(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    mut enumIndex := 0
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isEnumKind(con kind) {
+            mut variantCount := 0
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                variantNode := ast.Child(con program, declaration, item)
+                variantKind := ast.Kind(con program, variantNode)
+                if variantKind == "TypeParam" {
+                    return Err(newError("B2a semantic checker does not yet accept generic declarations", ast.Span(con program, declaration)))
+                }
+                if variantKind == "EnumVariant" {
+                    variantCount = variantCount + 1
+                    name := ast.Value(con program, variantNode)
+                    if hasVariant(con self.enums[enumIndex], con name) {
+                        message := strings.join(con []string{"duplicate variant `", token.CopyText(con name), "` in enum `", token.CopyText(con self.enums[enumIndex].name), "`",}, con "")
+                        return Err(newError(message, ast.Span(con program, variantNode)))
+                    }
+                    mut payloads := []ResolvedType{}
+                    for mut payload := 0; payload < ast.ChildCount(con program, variantNode); payload = payload + 1 {
+                        typeNode := ast.Child(con program, variantNode, payload)
+                        match self.resolveType(con program, typeNode) {
+                            case Ok(ty) {
+                                payloads = append(payloads, ty)
+                            }
+                            case Err(error) {
+                                return Err(error)
+                            }
+                        }
+                    }
+                    self.enums[enumIndex].variants = append(self.enums[enumIndex].variants, EnumVariantSig{name: name, payloads: payloads})
+                }
+            }
+            if variantCount == 0 {
+                message := strings.join(con []string{"enum `", token.CopyText(con self.enums[enumIndex].name), "` must declare at least one variant",}, con "")
+                return Err(newError(message, ast.Span(con program, declaration)))
+            }
+            enumIndex = enumIndex + 1
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) collectFunctionSignatures(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isFunctionKind(con kind) {
+            name := ast.Value(con program, declaration)
+            mut receiverNode := -1
+            mut returnNode := -1
+            mut paramNodes := []int{}
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                node := ast.Child(con program, declaration, item)
+                nodeKind := ast.Kind(con program, node)
+                if nodeKind == "TypeParam" {
+                    return Err(newError("B2a semantic checker does not yet accept generic declarations", ast.Span(con program, declaration)))
+                } else if nodeKind == "Receiver" {
+                    receiverNode = ast.Child(con program, node, 0)
+                } else if nodeKind == "ReturnType" {
+                    returnNode = ast.Child(con program, node, 0)
+                } else if isParamKind(con nodeKind) {
+                    paramNodes = append(paramNodes, node)
+                }
+            }
+
+            if name == "main" {
+                if receiverNode >= 0 {
+                    return Err(newError("`main` must not declare a method receiver", ast.Span(con program, declaration)))
+                }
+                if len(paramNodes) > 0 {
+                    return Err(newError("`main` must not take parameters", ast.Span(con program, paramNodes[0])))
+                }
+                if returnNode >= 0 {
+                    return Err(newError("`main` must not declare a return type in v0", ast.Span(con program, returnNode)))
+                }
+            }
+
+            mut params := []ParamSig{}
+            for mut paramIndex := 0; paramIndex < len(paramNodes); paramIndex = paramIndex + 1 {
+                match self.resolveParam(con program, paramNodes[paramIndex]) {
+                    case Ok(param) {
+                        if hasParam(con params, con param.name) {
+                            return Err(newError(strings.join(con []string{"duplicate parameter `", token.CopyText(con param.name), "`",}, con ""), ast.Span(con program, declaration)))
+                        }
+                        params = append(params, param)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+
+            mut returnType := unitType()
+            if returnNode >= 0 {
+                match self.resolveType(con program, returnNode) {
+                    case Ok(ty) {
+                        returnType = ty
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+
+            if receiverNode >= 0 {
+                match self.resolveParam(con program, receiverNode) {
+                    case Ok(receiver) {
+                        if receiver.ty.kind != "struct" {
+                            return Err(newError("method receiver must be a struct type in v0", ast.Span(con program, receiverNode)))
+                        }
+                        if self.hasMethod(con receiver.ty.text, con name) {
+                            return Err(newError(strings.join(con []string{"duplicate method `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+                        }
+                        self.methods = append(self.methods, MethodSig{name: name, receiver: receiver, params: params, returnType: returnType})
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            } else {
+                if isBuiltinTypeName(con name) {
+                    return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in type name",}, con ""), ast.Span(con program, declaration)))
+                }
+                if isBuiltinValueName(con name) {
+                    return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, declaration)))
+                }
+                if self.hasStruct(con name) {
+                    return Err(newError(strings.join(con []string{"top-level function `", token.CopyText(con name), "` conflicts with struct `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+                }
+                if self.hasEnum(con name) {
+                    return Err(newError(strings.join(con []string{"top-level function `", token.CopyText(con name), "` conflicts with enum `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+                }
+                if self.hasFunction(con name) {
+                    return Err(newError(strings.join(con []string{"duplicate function `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
+                }
+                self.functions = append(self.functions, FunctionSig{name: name, params: params, returnType: returnType})
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (con self CheckedProgram) resolveParam(con program ast.Program, node int) Result[ParamSig, SemanticError] {
+    name := ast.Value(con program, node)
+    if isBuiltinValueName(con name) {
+        return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is a built-in value name",}, con ""), ast.Span(con program, node)))
+    }
+    kind := ast.Kind(con program, node)
+    mode := modeFromKind(con kind)
+    typeNode := ast.Child(con program, node, 0)
+    return match self.resolveType(con program, typeNode) {
+        case Ok(ty) {
+            Ok(ParamSig{name: name, mode: mode, ty: ty})
+        }
+        case Err(error) {
+            Err(error)
+        }
+    }
+}
+
+func (con self CheckedProgram) resolveType(con program ast.Program, node int) Result[ResolvedType, SemanticError] {
+    kind := ast.Kind(con program, node)
+    name := ast.Value(con program, node)
+    span := ast.Span(con program, node)
+    childCount := ast.ChildCount(con program, node)
+
+    if kind == "Type.Slice" {
+        if childCount != 1 {
+            return Err(newError("malformed slice type reference", source.Copy(con span)))
+        }
+        return match self.resolveType(con program, ast.Child(con program, node, 0)) {
+            case Ok(element) {
+                Ok(ResolvedType{text: strings.join(con []string{"[]", token.CopyText(con element.text),}, con ""), kind: "slice", copy: false, cleanup: true,})
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
+    if kind == "Type.Array" {
+        if childCount != 1 {
+            return Err(newError("malformed fixed-size array type reference", source.Copy(con span)))
+        }
+        match self.resolveType(con program, ast.Child(con program, node, 0)) {
+            case Ok(element) {
+                return Ok(ResolvedType{text: strings.join(con []string{"[", token.CopyText(con name), "]", token.CopyText(con element.text),}, con ""), kind: "array", copy: false, cleanup: element.cleanup,})
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Type.Function.Immutable" || kind == "Type.Function.Mutable" {
+        if childCount == 0 {
+            return Err(newError("malformed function type reference", source.Copy(con span)))
+        }
+        mut params := []string{}
+        for mut child := 0; child < childCount - 1; child = child + 1 {
+            paramNode := ast.Child(con program, node, child)
+            paramKind := ast.Kind(con program, paramNode)
+            mode := modeFromKind(con paramKind)
+            match self.resolveType(con program, ast.Child(con program, paramNode, 0)) {
+                case Ok(paramType) {
+                    mut prefix := ""
+                    if mode != "owned" {
+                        prefix = strings.join(con []string{mode, " ",}, con "")
+                    }
+                    params = append(params, strings.join(con []string{prefix, token.CopyText(con paramType.text),}, con ""))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        returnWrapper := ast.Child(con program, node, childCount - 1)
+        returnNode := ast.Child(con program, returnWrapper, 0)
+        mut mutable := ""
+        if kind == "Type.Function.Mutable" {
+            mutable = " mut"
+        }
+        match self.resolveType(con program, returnNode) {
+            case Ok(returnType) {
+                return Ok(ResolvedType{text: strings.join(con []string{"func", mutable, "(", strings.join(con params, con ", "), ") ", token.CopyText(con returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,})
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind != "Type.Named" {
+        return Err(newError("malformed type reference", source.Copy(con span)))
+    }
+
+    if name == "int" || name == "bool" || name == "string" || name == "unit" {
+        if childCount != 0 {
+            return Err(newError(strings.join(con []string{"primitive type `", token.CopyText(con name), "` does not take type arguments",}, con ""), source.Copy(con span)))
+        }
+        if name == "string" {
+            return Ok(ResolvedType{text: token.CopyText(con name), kind: "string", copy: false, cleanup: true,})
+        }
+        return Ok(ResolvedType{text: token.CopyText(con name), kind: token.CopyText(con name), copy: true, cleanup: false,})
+    }
+    if name == "Option" {
+        if childCount != 1 {
+            return Err(newError("`Option` expects exactly 1 type argument", source.Copy(con span)))
+        }
+        return match self.resolveType(con program, ast.Child(con program, node, 0)) {
+            case Ok(inner) {
+                Ok(ResolvedType{text: strings.join(con []string{"Option[", token.CopyText(con inner.text), "]",}, con ""), kind: "option", copy: inner.copy, cleanup: inner.cleanup,})
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
+    if name == "Result" {
+        if childCount != 2 {
+            return Err(newError("`Result` expects exactly 2 type arguments", source.Copy(con span)))
+        }
+        match self.resolveType(con program, ast.Child(con program, node, 0)) {
+            case Ok(okType) {
+                match self.resolveType(con program, ast.Child(con program, node, 1)) {
+                    case Ok(errorType) {
+                        return Ok(ResolvedType{text: strings.join(con []string{"Result[", token.CopyText(con okType.text), ", ", token.CopyText(con errorType.text), "]",}, con ""), kind: "result", copy: okType.copy && errorType.copy, cleanup: okType.cleanup || errorType.cleanup,})
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if self.hasStruct(con name) {
+        if childCount != 0 {
+            return Err(newError(strings.join(con []string{"struct type `", token.CopyText(con name), "` does not take type arguments",}, con ""), source.Copy(con span)))
+        }
+        return Ok(ResolvedType{text: token.CopyText(con name), kind: "struct", copy: false, cleanup: true,})
+    }
+    if self.hasEnum(con name) {
+        if childCount != 0 {
+            return Err(newError(strings.join(con []string{"enum type `", token.CopyText(con name), "` does not take type arguments",}, con ""), source.Copy(con span)))
+        }
+        return Ok(ResolvedType{text: token.CopyText(con name), kind: "enum", copy: false, cleanup: true,})
+    }
+    return Err(newError(strings.join(con []string{"unknown type `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
+}
+
+func (con self CheckedProgram) hasStruct(con name string) bool {
+    for mut index := 0; index < len(self.structs); index = index + 1 {
+        if self.structs[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func (con self CheckedProgram) hasEnum(con name string) bool {
+    for mut index := 0; index < len(self.enums); index = index + 1 {
+        if self.enums[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func (con self CheckedProgram) hasFunction(con name string) bool {
+    for mut index := 0; index < len(self.functions); index = index + 1 {
+        if self.functions[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func (con self CheckedProgram) hasMethod(con receiver string, con name string) bool {
+    for mut index := 0; index < len(self.methods); index = index + 1 {
+        if self.methods[index].receiver.ty.text == receiver && self.methods[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func hasField(con value StructSig, con name string) bool {
+    for mut index := 0; index < len(value.fields); index = index + 1 {
+        if value.fields[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func hasVariant(con value EnumSig, con name string) bool {
+    for mut index := 0; index < len(value.variants); index = index + 1 {
+        if value.variants[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func hasParam(con params []ParamSig, con name string) bool {
+    for mut index := 0; index < len(params); index = index + 1 {
+        if params[index].name == name {
+            return true
+        }
+    }
+    return false
+}
+
+func isStructKind(con kind string) bool {
+    return kind == "StructDecl.Package" || kind == "StructDecl.Public"
+}
+
+func isEnumKind(con kind string) bool {
+    return kind == "EnumDecl.Package" || kind == "EnumDecl.Public"
+}
+
+func isFunctionKind(con kind string) bool {
+    return kind == "FunctionDecl.Package" || kind == "FunctionDecl.Public"
+}
+
+func isParamKind(con kind string) bool {
+    return kind == "Param.Owned" || kind == "Param.Con" || kind == "Param.Mut"
+}
+
+func modeFromKind(con kind string) string {
+    if kind == "Param.Con" || kind == "ReceiverParam.Con" || kind == "FunctionTypeParam.Con" {
+        return "con"
+    }
+    if kind == "Param.Mut" || kind == "ReceiverParam.Mut" || kind == "FunctionTypeParam.Mut" {
+        return "mut"
+    }
+    return "owned"
+}
+
+func isBuiltinTypeName(con name string) bool {
+    return name == "int" || name == "bool" || name == "string" || name == "unit" || name == "Option" || name == "Result" || name == "Slice"
+}
+
+func isBuiltinValueName(con name string) bool {
+    return name == "print" || name == "len" || name == "append" || name == "Some" || name == "None" || name == "Ok" || name == "Err"
+}
+
+func unitType() ResolvedType {
+    return ResolvedType{text: "unit", kind: "unit", copy: true, cleanup: false,}
+}
+
+func newError(message string, span source.Span) SemanticError {
+    return SemanticError{message: message, span: span}
+}

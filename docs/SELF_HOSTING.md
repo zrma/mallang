@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0 complete, B1 frontend in progress
+Status: active long-term program; B0-B1 complete, B2 semantics in progress
 
 ## Objective
 
@@ -67,15 +67,19 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer, syntax arena, frozen v1 parser and bounded recovery.
+  the complete lexer/parser plus the first declaration and resolved-type checker.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
-  incremental parser differential, ownership accounting and sanitizer gate.
+  parser differential plus incremental B2 semantic differential, ownership
+  accounting and sanitizer gate. The historical filename remains stable while
+  the compiler gate grows through B2.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
-- `docs/todo-self-hosting-frontend/`: active B1 work breakdown and decisions.
+- `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
+- `docs/todo-self-hosting-semantics/`: active B2 work breakdown and decisions.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
-bounded recovery, and 155 repository sources match Rust Stage0 through normal,
-strict-accounting and sanitizer execution. B2 semantic checking and typed IR is
-the next stage; no Stage1 compiler claim is made yet.
+bounded recovery, and the repository corpus matches Rust Stage0 through normal,
+strict-accounting and sanitizer execution. B2 is active: P176a provides the
+first declaration/type checker and focused semantic differential contract. No
+complete semantic, typed-IR or Stage1 compiler claim is made yet.

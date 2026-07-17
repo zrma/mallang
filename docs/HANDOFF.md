@@ -504,7 +504,9 @@ target/mallang/match-statement
 - `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
 - `docs/todo-v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
 - `docs/SELF_HOSTING.md`: active B0-B5 self-hosting and fixed-point contract
-- `docs/todo-self-hosting-bootstrap/`: active B0 bootstrap feasibility and decisions
+- `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
+- `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
+- `docs/todo-self-hosting-semantics/`: active B2 semantics and typed-IR contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
 - `SECURITY.md`: stable supported version과 private vulnerability reporting policy
 - `ROADMAP.md`: compiler milestone
@@ -524,9 +526,11 @@ target/mallang/match-statement
 Mallang probe를 format/check/test/build/run하고 same-input generated C identity를
 검증했다. B1은 frozen v1 frontend와 bounded recovery를 완성하고 155개 repository
 source를 Rust Stage0, generated Stage1, strict accounting, sanitizer 네 경로에서
-byte-for-byte differential 검증해 닫았다. 다음 활성 stage는 B2 semantic checker와
-typed IR이며, public language 또는 standard-library addition은 representative
-compiler blocker가 확인되기 전에는 포함하지 않는다.
+byte-for-byte differential 검증해 닫았다. 현재 B2 P176a는 비제네릭 선언과 resolved
+type signature를 Mallang으로 검사하고 focused success/rejection corpus를 Rust Stage0과
+비교한다. 다음 slice는 primitive expression, statement, local scope checking과 typed IR
+subset이다. public language 또는 standard-library addition은 representative compiler
+blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

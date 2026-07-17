@@ -36,6 +36,7 @@ PROJECT="bootstrap/compiler"
 GENERATED_C="$PROJECT/target/mallang/bootstrap_compiler.c"
 FIXTURES="$PROJECT/fixtures/lexer"
 PARSER_FIXTURES="$PROJECT/fixtures/parser"
+SEMANTIC_FIXTURES="$PROJECT/fixtures/semantic"
 mkdir -p "$WORK"
 
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
@@ -152,6 +153,37 @@ for fixture in "$PARSER_FIXTURES"/*.mlg; do
   compare_parser_fixture "$fixture" "parser-$(basename "$fixture" .mlg)"
 done
 
+compare_semantic_fixture() {
+  local fixture="$1"
+  local stem="$2"
+  oracle_output="$WORK/$stem.oracle"
+  stage1_output="$WORK/$stem.stage1"
+  strict_output="$WORK/$stem.strict"
+  sanitizer_output="$WORK/$stem.sanitizer"
+
+  "$ORACLE" check "$fixture" >"$oracle_output"
+  "$STAGE1" check "$fixture" >"$stage1_output"
+  "$WORK/accounting" check "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+  "$WORK/accounting-san" check "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+
+  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
+    if ! cmp -s "$oracle_output" "$actual"; then
+      echo "self-hosting semantic differential mismatch: $stem" >&2
+      diff -u "$oracle_output" "$actual" >&2 || true
+      exit 1
+    fi
+  done
+  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
+    echo "self-hosting semantic runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
+    exit 1
+  fi
+}
+
+for fixture in "$SEMANTIC_FIXTURES"/*.mlg; do
+  compare_semantic_fixture "$fixture" "semantic-$(basename "$fixture" .mlg)"
+done
+
 PARSER_CORPUS_LIST="$WORK/parser-corpus.list"
 find \
   bootstrap/compiler/src \
@@ -233,4 +265,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B1 frontend differential, determinism, ownership, and sanitizer gate passed: parser-corpus=$parser_corpus_count"
+echo "self-hosting B2a declaration semantic differential, B1 frontend, determinism, ownership, and sanitizer gate passed: parser-corpus=$parser_corpus_count"

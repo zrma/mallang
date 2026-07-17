@@ -1,0 +1,19 @@
+type User struct {
+    name string
+    age int
+}
+
+type Choice enum {
+    Empty
+    Score(int)
+}
+
+func describe(con value Option[Result[int, string]], transform func(con int) string, rows [2][]string) string {
+    return "ok"
+}
+
+func (mut user User) rename(con name string) {
+}
+
+func main() {
+}

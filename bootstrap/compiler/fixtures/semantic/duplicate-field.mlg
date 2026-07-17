@@ -1,0 +1,6 @@
+type User struct {
+    name string
+    name int
+}
+
+func main() {}

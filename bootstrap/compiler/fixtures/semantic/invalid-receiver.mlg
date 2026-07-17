@@ -1,0 +1,3 @@
+func (con value int) show() {}
+
+func main() {}

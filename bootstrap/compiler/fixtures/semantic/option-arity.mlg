@@ -1,0 +1,5 @@
+type User struct {
+    value Option
+}
+
+func main() {}
