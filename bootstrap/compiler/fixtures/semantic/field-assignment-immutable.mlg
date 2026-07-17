@@ -1,0 +1,9 @@
+type User struct {
+    age int
+}
+
+func update(con user User) {
+    user.age = 31
+}
+
+func main() {}

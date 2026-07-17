@@ -226,3 +226,55 @@ test RejectsArrayIndexOutOfBounds() {
         }
     }
 }
+
+test ChecksFieldAndIndexAssignments() {
+    source := "type User struct { age int } func updateUser(mut user User) int { user.age = 31; return user.age } func updateArray(mut values [2]int) int { values[1] = 7; return values[1] } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsImmutableFieldAssignment() {
+    source := "type User struct { age int } func update(con user User) { user.age = 31 } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "cannot assign field of immutable binding `user`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

@@ -1,0 +1,5 @@
+func update(mut value int) {
+    value[0] = 7
+}
+
+func main() {}

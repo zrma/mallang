@@ -1,0 +1,9 @@
+type User struct {
+    age int
+}
+
+func update(mut user User) {
+    user.age = "old"
+}
+
+func main() {}

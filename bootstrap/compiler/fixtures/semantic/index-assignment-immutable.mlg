@@ -1,0 +1,5 @@
+func update(con values [2]int) {
+    values[0] = 7
+}
+
+func main() {}

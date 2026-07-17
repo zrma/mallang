@@ -621,6 +621,26 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
             }
         }
     }
+    if kind == "Stmt.FieldAssign" {
+        return match self.checkFieldAssign(con program, statement) {
+            case Ok(_) {
+                Ok(false)
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
+    if kind == "Stmt.IndexAssign" {
+        return match self.checkIndexAssign(con program, statement) {
+            case Ok(_) {
+                Ok(false)
+            }
+            case Err(error) {
+                Err(error)
+            }
+        }
+    }
     if kind == "Stmt.Return" {
         expression := ast.Child(con program, statement, 0)
         match self.checkExpression(con program, expression) {
@@ -648,6 +668,137 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this statement", ast.Span(con program, statement)))
+}
+
+func (mut self CheckedProgram) checkFieldAssign(con program ast.Program, statement int) Result[bool, SemanticError] {
+    base := ast.Child(con program, statement, 0)
+    value := ast.Child(con program, statement, 1)
+    field := ast.Value(con program, statement)
+    mut root := ""
+    match assignmentRoot(con program, base) {
+        case Ok(name) {
+            root = name
+        }
+        case Err(_) {
+            return Err(newError("field assignment target must be a direct local variable, field, or indexed element in v0", ast.Span(con program, base)))
+        }
+    }
+    local := localIndex(con self.locals, con root)
+    if local < 0 {
+        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con root), "`",}, con ""), ast.Span(con program, base)))
+    }
+    if !self.locals[local].mutable {
+        message := strings.join(con []string{"cannot assign field of immutable binding `", token.CopyText(con root), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, base)))
+    }
+
+    mut baseType := unitType()
+    match self.resolveAssignmentPlaceType(con program, base) {
+        case Ok(ty) {
+            baseType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    mut fieldType := unitType()
+    match self.resolveStructField(con baseType, con field, ast.Span(con program, base), con "field assignment") {
+        case Ok(ty) {
+            fieldType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match self.checkExpression(con program, value) {
+        case Ok(valueType) {
+            if valueType.text != fieldType.text {
+                message := strings.join(con []string{"field `", token.CopyText(con field), "` assignment type mismatch: expected `", token.CopyText(con fieldType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, value)))
+            }
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self CheckedProgram) checkIndexAssign(con program ast.Program, statement int) Result[bool, SemanticError] {
+    base := ast.Child(con program, statement, 0)
+    index := ast.Child(con program, statement, 1)
+    value := ast.Child(con program, statement, 2)
+    mut root := ""
+    match assignmentRoot(con program, base) {
+        case Ok(name) {
+            root = name
+        }
+        case Err(_) {
+            return Err(newError("indexed assignment target must be a local-rooted mutable array or slice in v0", ast.Span(con program, base)))
+        }
+    }
+    local := localIndex(con self.locals, con root)
+    if local < 0 {
+        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con root), "`",}, con ""), ast.Span(con program, base)))
+    }
+    if !self.locals[local].mutable {
+        mut target := "binding"
+        if assignmentHasField(con program, base) {
+            target = "place of binding"
+        }
+        message := strings.join(con []string{"cannot assign through immutable indexed ", target, " `", token.CopyText(con root), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, base)))
+    }
+
+    mut baseType := unitType()
+    match self.resolveAssignmentPlaceType(con program, base) {
+        case Ok(ty) {
+            baseType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if baseType.kind != "array" && baseType.kind != "slice" {
+        message := strings.join(con []string{"indexed assignment target must be a fixed-size array or slice, got `", token.CopyText(con baseType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, base)))
+    }
+    mut indexType := unitType()
+    match self.checkExpression(con program, index) {
+        case Ok(ty) {
+            indexType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match self.validateIndex(con program, index, con indexType, con baseType) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    mut element := unitType()
+    match self.typeArgument(con baseType, 0) {
+        case Ok(ty) {
+            element = ty
+        }
+        case Err(_) {
+            return Err(newError("checked indexed assignment element type is missing", ast.Span(con program, statement)))
+        }
+    }
+    match self.checkExpression(con program, value) {
+        case Ok(valueType) {
+            if valueType.text != element.text {
+                message := strings.join(con []string{"indexed assignment type mismatch: expected `", token.CopyText(con element.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, statement)))
+            }
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return Ok(true)
 }
 
 func (mut self CheckedProgram) checkExpression(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
@@ -875,6 +1026,100 @@ func (con self CheckedProgram) validateIndex(con program ast.Program, index int,
         case Err(_) {}
     }
     return Ok(true)
+}
+
+func (mut self CheckedProgram) resolveAssignmentPlaceType(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, expression)
+        local := localIndex(con self.locals, con name)
+        if local < 0 {
+            return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+        }
+        ty := copyType(con self.locals[local].ty)
+        self.recordType(expression, con ty)
+        return Ok(ty)
+    }
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, expression, 0)
+        match self.resolveAssignmentPlaceType(con program, base) {
+            case Ok(baseType) {
+                field := ast.Value(con program, expression)
+                match self.resolveStructField(con baseType, con field, ast.Span(con program, expression), con "field assignment") {
+                    case Ok(ty) {
+                        self.recordType(expression, con ty)
+                        return Ok(ty)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Index" {
+        base := ast.Child(con program, expression, 0)
+        index := ast.Child(con program, expression, 1)
+        mut baseType := unitType()
+        match self.resolveAssignmentPlaceType(con program, base) {
+            case Ok(ty) {
+                baseType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        if baseType.kind != "array" && baseType.kind != "slice" {
+            message := strings.join(con []string{"indexed field assignment target must be a fixed-size array or slice, got `", token.CopyText(con baseType.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, base)))
+        }
+        mut indexType := unitType()
+        match self.checkExpression(con program, index) {
+            case Ok(ty) {
+                indexType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.validateIndex(con program, index, con indexType, con baseType) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.typeArgument(con baseType, 0) {
+            case Ok(ty) {
+                self.recordType(expression, con ty)
+                return Ok(ty)
+            }
+            case Err(_) {
+                return Err(newError("checked assignment place element type is missing", ast.Span(con program, expression)))
+            }
+        }
+    }
+    return Err(newError("field assignment target must be a direct local variable, field, or indexed element in v0", ast.Span(con program, expression)))
+}
+
+func (con self CheckedProgram) resolveStructField(con baseType ResolvedType, con field string, span source.Span, con context string) Result[ResolvedType, SemanticError] {
+    if baseType.kind != "struct" {
+        message := strings.join(con []string{token.CopyText(con context), " requires a struct value, got `", token.CopyText(con baseType.text), "`",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    structure := self.structIndex(con baseType.text)
+    if structure < 0 {
+        return Err(newError("checked struct signature is missing", source.Copy(con span)))
+    }
+    for mut index := 0; index < len(self.structs[structure].fields); index = index + 1 {
+        if self.structs[structure].fields[index].name == field {
+            return Ok(copyType(con self.structs[structure].fields[index].ty))
+        }
+    }
+    message := strings.join(con []string{"unknown field `", token.CopyText(con field), "` on `", token.CopyText(con baseType.text), "`",}, con "")
+    return Err(newError(message, source.Copy(con span)))
 }
 
 func (mut self CheckedProgram) checkCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
@@ -1354,6 +1599,28 @@ func constInt(con program ast.Program, expression int) Result[int, bool] {
         }
     }
     return Err(false)
+}
+
+func assignmentRoot(con program ast.Program, expression int) Result[string, bool] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Var" {
+        return Ok(ast.Value(con program, expression))
+    }
+    if kind == "Expr.FieldAccess" || kind == "Expr.Index" {
+        return assignmentRoot(con program, ast.Child(con program, expression, 0))
+    }
+    return Err(false)
+}
+
+func assignmentHasField(con program ast.Program, expression int) bool {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.FieldAccess" {
+        return true
+    }
+    if kind == "Expr.Index" {
+        return assignmentHasField(con program, ast.Child(con program, expression, 0))
+    }
+    return false
 }
 
 func isBinaryKind(con kind string) bool {

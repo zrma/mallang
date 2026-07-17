@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176b3a complete
+Status: in progress; P176a-P176b3 complete
 
 ## Objective
 
@@ -41,7 +41,7 @@ agrees.
   assignment and return types; lower that subset into typed IR
 - P176b2: type direct calls, arguments and named function values (complete)
 - P176b3a: type field/index reads and lower their typed IR (complete)
-- P176b3b: type mutable local-rooted field/index assignment places
+- P176b3b: type mutable local-rooted field/index assignment places (complete)
 - P176b4: enforce nested lexical scopes and branch type convergence
 
 ### P176c: Ownership And Places
@@ -133,6 +133,18 @@ specialization and function-body checking until later P176 slices.
 - `FieldAccess` and `Index` typed nodes preserve Stage0 result types, source
   spans, field names and child evaluation order through normal, strict
   accounting and ASan/UBSan execution.
+
+## P176b3b Evidence
+
+- Mutable local roots are resolved independently from nested field/index place
+  types; immutable roots, unknown fields, invalid indexes and RHS mismatches
+  retain Stage0's first diagnostic and span.
+- `FieldAssign` and `IndexAssign` typed statements preserve base, index and RHS
+  evaluation order without introducing cleanup or ownership behavior early.
+- Forty-two semantic fixtures and four typed-IR fixtures cover the cumulative
+  B2 subset. Twenty-five Mallang project tests pass through Stage0.
+- Generated Stage1, strict allocation accounting and ASan/UBSan agree with the
+  Rust oracle across the focused fixtures and 159-source parser corpus.
 
 ## B2 Completion Criteria
 

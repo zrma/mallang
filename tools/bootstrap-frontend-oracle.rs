@@ -303,6 +303,25 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             "unit".to_string(),
             vec![normalize_ir_expression(expr, depth + 1)],
         ),
+        IrStmtKind::FieldAssign { base, field, expr } => (
+            "Stmt.FieldAssign",
+            field.as_str(),
+            "unit".to_string(),
+            vec![
+                normalize_ir_expression(base, depth + 1),
+                normalize_ir_expression(expr, depth + 1),
+            ],
+        ),
+        IrStmtKind::IndexAssign { base, index, expr } => (
+            "Stmt.IndexAssign",
+            "",
+            "unit".to_string(),
+            vec![
+                normalize_ir_expression(base, depth + 1),
+                normalize_ir_expression(index, depth + 1),
+                normalize_ir_expression(expr, depth + 1),
+            ],
+        ),
         IrStmtKind::Drop { expr } => (
             "Stmt.Drop",
             "",

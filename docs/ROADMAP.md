@@ -1706,7 +1706,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] primitive expression, binding/assignment/return checking과 typed IR subset
 - [x] direct call, named function value, argument mode와 indirect call typed IR
 - [x] field/index read type checking과 typed IR
-- [ ] mutable field/index assignment place와 nested scope checking
+- [x] mutable field/index assignment place와 typed IR
+- [ ] nested lexical scope와 branch type convergence
 - [ ] owned/`con`/`mut` place state와 branch/loop ownership join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

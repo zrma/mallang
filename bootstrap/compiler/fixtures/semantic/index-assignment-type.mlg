@@ -1,0 +1,5 @@
+func update(mut values [2]int) {
+    values["zero"] = 7
+}
+
+func main() {}

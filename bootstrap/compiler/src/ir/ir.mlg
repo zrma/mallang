@@ -128,6 +128,43 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
 func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
     kind := ast.Kind(con syntax, statement)
     value := ast.Value(con syntax, statement)
+    if kind == "Stmt.FieldAssign" {
+        base := ast.Child(con syntax, statement, 0)
+        expression := ast.Child(con syntax, statement, 1)
+        mut children := []int{}
+        match self.lowerExpression(con syntax, base, con checked) {
+            case Ok(irBase) {
+                children = append(children, irBase)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.lowerExpression(con syntax, expression, con checked) {
+            case Ok(irExpression) {
+                children = append(children, irExpression)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        return Ok(self.addNode("S", token.CopyText(con kind), token.CopyText(con value), "unit", ast.Span(con syntax, statement), children))
+    }
+    if kind == "Stmt.IndexAssign" {
+        mut children := []int{}
+        for mut child := 0; child < ast.ChildCount(con syntax, statement); child = child + 1 {
+            syntaxChild := ast.Child(con syntax, statement, child)
+            match self.lowerExpression(con syntax, syntaxChild, con checked) {
+                case Ok(irChild) {
+                    children = append(children, irChild)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("S", token.CopyText(con kind), "", "unit", ast.Span(con syntax, statement), children))
+    }
     if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "Stmt.Assign" || kind == "Stmt.Return" || kind == "Stmt.Expr" {
         expression := ast.Child(con syntax, statement, 0)
         match self.lowerExpression(con syntax, expression, con checked) {

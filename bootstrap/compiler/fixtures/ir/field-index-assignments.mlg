@@ -1,0 +1,34 @@
+type User struct {
+    age int
+}
+
+type Bag struct {
+    values [2]int
+}
+
+func updateUser(mut user User) int {
+    user.age = 31
+    return user.age
+}
+
+func updateArray(mut values [2]int) int {
+    values[1] = 7
+    return values[1]
+}
+
+func updateSlice(mut values []int) int {
+    values[0] = 9
+    return values[0]
+}
+
+func updateBag(mut bag Bag) int {
+    bag.values[1] = 11
+    return 11
+}
+
+func updateIndexedUser(mut users [2]User) int {
+    users[0].age = 41
+    return 41
+}
+
+func main() {}
