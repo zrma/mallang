@@ -1,0 +1,51 @@
+package lexer
+
+import "bootstrap_compiler/frontend/token"
+
+test NormalizesKeywordsOperatorsAndPayloads() {
+    source := "func main() { value := \"가\\n\" && true }"
+    match Lex(source) {
+        case Ok(tokens) {
+            assert(len(tokens) == 12)
+            assert(tokens[0].kind == "Keyword.Func")
+            assert(tokens[1].kind == "Ident")
+            assert(tokens[5].kind == "Ident")
+            assert(tokens[7].kind == "String")
+            assert(token.Normalize(con tokens[7]) == "T|String|23|30|234,176,128,10")
+            assert(tokens[11].kind == "Eof")
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test ReportsReservedIdentifiers() {
+    source := "__mlg_hidden"
+    match Lex(source) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(error.start == 0)
+            assert(error.end == 12)
+            assert(error.message == "identifiers beginning with `__mlg_` are reserved for the compiler")
+        }
+    }
+}
+
+test SkipsUnicodeWhitespaceAndComments() {
+    source := "x // comment\n　y"
+    match Lex(source) {
+        case Ok(tokens) {
+            assert(len(tokens) == 3)
+            assert(tokens[0].kind == "Ident")
+            assert(tokens[0].start == 0)
+            assert(tokens[1].kind == "Ident")
+            assert(tokens[1].start == 17)
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

@@ -2772,7 +2772,11 @@ fn insert_cleanup_drops(
             .collect::<HashSet<_>>();
         let new_binding = cleanup_binding_from_stmt(&stmt);
         let assigned_binding = cleanup_assigned_binding_from_stmt(&stmt)
-            .filter(|binding| !external_roots.contains_key(&binding.name));
+            .filter(|binding| !external_roots.contains_key(&binding.name))
+            .filter(|binding| {
+                active.iter().any(|active| active.name == binding.name)
+                    || moved_in_body.contains(&binding.name)
+            });
         let reassigned_binding =
             cleanup_reassigned_active_binding(&stmt, &active, &moved_roots).cloned();
         let overwritten_place = cleanup_overwritten_place_from_stmt(&stmt)
@@ -2796,6 +2800,9 @@ fn insert_cleanup_drops(
             output.push(stmt);
         }
         moved_in_body.extend(moved_roots.iter().cloned());
+        if let Some(binding) = &assigned_binding {
+            moved_in_body.remove(&binding.name);
+        }
         active.retain(|binding| !moved_roots.contains(&binding.name));
         if let Some(binding) = new_binding {
             active.push(binding);
@@ -3158,6 +3165,9 @@ fn merged_cleanup_roots<'a>(
     let active_names = cleanup_binding_names(active);
     let mut moved_roots = HashSet::new();
     for insertion in insertions {
+        if !insertion.continues {
+            continue;
+        }
         moved_roots.extend(
             insertion
                 .moved_roots
@@ -4883,7 +4893,7 @@ func add(a int, b int) int {
 
         let body = insert_straight_line_cleanup_drops(body, &params, &[], test_span());
 
-        assert_eq!(body.len(), 1);
+        assert_eq!(body.len(), 2);
         let IrStmtKind::If {
             then_body,
             else_body,
@@ -4894,8 +4904,8 @@ func add(a int, b int) int {
         };
         assert_eq!(then_body.len(), 1);
         assert!(matches!(then_body[0].kind, IrStmtKind::Return { .. }));
-        assert_eq!(else_body.len(), 1);
-        assert_drop_of(&else_body[0], "values");
+        assert!(else_body.is_empty());
+        assert_drop_of(&body[1], "values");
     }
 
     #[test]
@@ -6386,6 +6396,90 @@ func main() {
         assert_eq!(item.ty, Type::Int);
 
         assert_drop_of(&ir.functions[0].body[4], "values");
+    }
+
+    #[test]
+    fn branch_merge_keeps_cleanup_root_reactivated_by_assignment() {
+        let program = parse(
+            r#"
+func nextValue(ok bool) Result[int, string] {
+    return if ok { Ok(7) } else { Err("missing") }
+}
+
+func main() {
+    mut values := []int{1}
+    match nextValue(false) {
+        case Ok(value) {
+            values = append(values, value)
+        }
+        case Err(_) {}
+    }
+    print(len(values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let IrStmtKind::Match { arms, .. } = &main.body[1].kind else {
+            panic!("expected match statement");
+        };
+
+        assert!(!arms.iter().any(|arm| {
+            arm.body.iter().any(
+                |stmt| matches!(&stmt.kind, IrStmtKind::Drop { expr } if matches!(&expr.kind, IrExprKind::Var(name) if name == "values")),
+            )
+        }));
+        assert_drop_of(main.body.last().unwrap(), "values");
+    }
+
+    #[test]
+    fn match_payload_cleanup_does_not_claim_reassigned_outer_root() {
+        let program = parse(
+            r#"
+type Token struct {
+    kind string
+}
+
+func nextValue() Result[Token, string] {
+    return Ok(Token{kind: "Ident"})
+}
+
+func main() {
+    mut values := []Token{}
+    match nextValue() {
+        case Ok(value) {
+            values = append(values, value)
+        }
+        case Err(_) {}
+    }
+    print(len(values))
+}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .unwrap();
+        let IrStmtKind::Match { arms, .. } = &main.body[1].kind else {
+            panic!("expected match statement");
+        };
+
+        assert!(!arms.iter().any(|arm| {
+            arm.body.iter().any(
+                |stmt| matches!(&stmt.kind, IrStmtKind::Drop { expr } if matches!(&expr.kind, IrExprKind::Var(name) if name == "values")),
+            )
+        }));
+        assert_drop_of(main.body.last().unwrap(), "values");
     }
 
     #[test]

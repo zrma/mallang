@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a string cursor prerequisite implemented
+Status: active; P175a-P175b complete, P175c parser implementation next
 
 ## Goal
 
@@ -33,11 +33,25 @@ compatibility evidence.
 
 - [x] safe byte read and UTF-8-boundary-checked owned slice operations
 - [x] strict C, ASan/UBSan, allocation accounting and failure injection evidence
-- [ ] Mallang source/span/token model
-- [ ] complete Mallang lexer and Rust differential corpus
+- [x] Mallang source/span/token model and stable byte-oriented normalization
+- [x] complete Mallang lexer and Rust token/diagnostic differential corpus
 - [ ] Mallang frontend AST and complete parser
 - [ ] normalized AST and diagnostic differential corpus
 - [ ] B1 canonical, publication and supported-platform CI gates
+
+## P175b Evidence
+
+- `bootstrap/compiler/src/frontend/token/token.mlg` owns byte spans, token
+  payloads and the `T|...` / `E|...` differential representation.
+- `bootstrap/compiler/src/frontend/lexer/lexer.mlg` implements the frozen v1
+  token and keyword set with zero-based UTF-8 byte offsets.
+- `tools/bootstrap-frontend-oracle.rs` adapts the Rust Stage0 lexer to the same
+  representation without exposing Rust `Debug` output as a contract.
+- `scripts/check-self-hosting-lexer.sh` verifies Stage0-generated C identity,
+  project tests, positive and rejection corpus equivalence, strict C,
+  ASan/UBSan and zero live compiler-owned allocations.
+- The cleanup regressions under `tests/fixtures/self-hosting/` protect owned
+  slice append reassignment through `match`, including cleanup-bearing values.
 
 ## Excluded
 

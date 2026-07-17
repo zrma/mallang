@@ -1,0 +1,35 @@
+type Token struct {
+    kind string
+}
+
+func nextValue() Result[Token, string] {
+    return Ok(Token{kind: "Ident"})
+}
+
+func collect() Result[[]Token, string] {
+    mut values := []Token{}
+    mut iteration := 0
+    for iteration < 1 {
+        iteration = iteration + 1
+        match nextValue() {
+            case Ok(value) {
+                values = append(values, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(values)
+}
+
+func main() {
+    match collect() {
+        case Ok(values) {
+            print(len(values))
+        }
+        case Err(_) {
+            print(-1)
+        }
+    }
+}

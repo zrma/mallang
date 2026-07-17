@@ -1,0 +1,412 @@
+package lexer
+
+import "std/strings"
+import "bootstrap_compiler/frontend/token"
+
+type Rune struct {
+    value int
+    width int
+}
+
+type Lexer struct {
+    source string
+    cursor int
+}
+
+pub func Lex(source string) Result[[]token.Token, token.LexError] {
+    mut lexer := Lexer{source: source, cursor: 0}
+    mut tokens := []token.Token{}
+
+    for !lexer.atEnd() {
+        lexer.skipIgnored()
+        if lexer.atEnd() {
+            break
+        }
+        match lexer.nextToken() {
+            case Ok(value) {
+                tokens = append(tokens, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    end := lexer.cursor
+    tokens = append(tokens, token.Token{kind: "Eof", start: end, end: end, value: ""})
+    return Ok(tokens)
+}
+
+func (mut self Lexer) nextToken() Result[token.Token, token.LexError] {
+    start := self.cursor
+    rune := self.advance()
+    code := rune.value
+
+    if code == 40 {
+        return Ok(self.makeToken("LeftParen", start, ""))
+    }
+    if code == 41 {
+        return Ok(self.makeToken("RightParen", start, ""))
+    }
+    if code == 123 {
+        return Ok(self.makeToken("LeftBrace", start, ""))
+    }
+    if code == 125 {
+        return Ok(self.makeToken("RightBrace", start, ""))
+    }
+    if code == 91 {
+        return Ok(self.makeToken("LeftBracket", start, ""))
+    }
+    if code == 93 {
+        return Ok(self.makeToken("RightBracket", start, ""))
+    }
+    if code == 44 {
+        return Ok(self.makeToken("Comma", start, ""))
+    }
+    if code == 46 {
+        return Ok(self.makeToken("Dot", start, ""))
+    }
+    if code == 59 {
+        return Ok(self.makeToken("Semicolon", start, ""))
+    }
+    if code == 43 {
+        return Ok(self.makeToken("Plus", start, ""))
+    }
+    if code == 42 {
+        return Ok(self.makeToken("Star", start, ""))
+    }
+    if code == 37 {
+        return Ok(self.makeToken("Percent", start, ""))
+    }
+    if code == 58 {
+        if self.matchCode(61) {
+            return Ok(self.makeToken("ColonEqual", start, ""))
+        }
+        return Ok(self.makeToken("Colon", start, ""))
+    }
+    if code == 45 {
+        if self.matchCode(62) {
+            return Ok(self.makeToken("Arrow", start, ""))
+        }
+        return Ok(self.makeToken("Minus", start, ""))
+    }
+    if code == 47 {
+        return Ok(self.makeToken("Slash", start, ""))
+    }
+    if code == 61 {
+        if self.matchCode(61) {
+            return Ok(self.makeToken("EqualEqual", start, ""))
+        }
+        return Ok(self.makeToken("Equal", start, ""))
+    }
+    if code == 33 {
+        if self.matchCode(61) {
+            return Ok(self.makeToken("BangEqual", start, ""))
+        }
+        return Ok(self.makeToken("Bang", start, ""))
+    }
+    if code == 38 && self.matchCode(38) {
+        return Ok(self.makeToken("AmpAmp", start, ""))
+    }
+    if code == 60 {
+        if self.matchCode(61) {
+            return Ok(self.makeToken("LessEqual", start, ""))
+        }
+        return Ok(self.makeToken("Less", start, ""))
+    }
+    if code == 62 {
+        if self.matchCode(61) {
+            return Ok(self.makeToken("GreaterEqual", start, ""))
+        }
+        return Ok(self.makeToken("Greater", start, ""))
+    }
+    if code == 124 {
+        if self.matchCode(124) {
+            return Ok(self.makeToken("PipePipe", start, ""))
+        }
+        if self.matchCode(62) {
+            return Ok(self.makeToken("PipeGreater", start, ""))
+        }
+    }
+    if code == 34 {
+        return self.stringToken(start)
+    }
+    if isAsciiDigit(code) {
+        return Ok(self.intToken(start))
+    }
+    if isIdentStart(code) {
+        return self.identOrKeyword(start)
+    }
+    return Err(self.unexpectedCharacter(start))
+}
+
+func (mut self Lexer) skipIgnored() {
+    for {
+        for(!self.atEnd()) && isWhitespace(self.peek().value) {
+            self.advance()
+        }
+
+        if(!self.atEnd()) && self.peek().value == 47 && self.peekNext().value == 47 {
+            for(!self.atEnd()) && self.peek().value != 10 {
+                self.advance()
+            }
+            continue
+        }
+        break
+    }
+}
+
+func (mut self Lexer) stringToken(start int) Result[token.Token, token.LexError] {
+    mut pieces := []string{}
+    mut segmentStart := self.cursor
+
+    for {
+        if self.atEnd() {
+            return Err(self.makeError(start, self.cursor, "unterminated string literal"))
+        }
+        rune := self.advance()
+        if rune.value == 34 {
+            segmentEnd := self.cursor - 1
+            if segmentEnd > segmentStart {
+                pieces = append(pieces, copyRange(con self.source, segmentStart, segmentEnd))
+            }
+            value := strings.join(con pieces, con "")
+            return Ok(self.makeToken("String", start, value))
+        }
+        if rune.value == 92 {
+            escapeStart := self.cursor - 1
+            if escapeStart > segmentStart {
+                pieces = append(pieces, copyRange(con self.source, segmentStart, escapeStart))
+            }
+            if self.atEnd() {
+                return Err(self.makeError(start, self.cursor, "unterminated escape sequence"))
+            }
+            escapedStart := self.cursor
+            escaped := self.advance()
+            if escaped.value == 110 {
+                pieces = append(pieces, "\n")
+            } else if escaped.value == 116 {
+                pieces = append(pieces, "\t")
+            } else if escaped.value == 34 {
+                pieces = append(pieces, "\"")
+            } else if escaped.value == 92 {
+                pieces = append(pieces, "\\")
+            } else {
+                escapedText := copyRange(con self.source, escapedStart, self.cursor)
+                messageParts := []string{"unsupported escape sequence `\\", escapedText, "`"}
+                message := strings.join(con messageParts, con "")
+                return Err(self.makeError(escapedStart, self.cursor, message))
+            }
+            segmentStart = self.cursor
+        }
+    }
+    return Err(self.makeError(start, self.cursor, "unterminated string literal"))
+}
+
+func (mut self Lexer) intToken(start int) token.Token {
+    for(!self.atEnd()) && isAsciiDigit(self.peek().value) {
+        self.advance()
+    }
+    value := copyRange(con self.source, start, self.cursor)
+    return self.makeToken("Int", start, value)
+}
+
+func (mut self Lexer) identOrKeyword(start int) Result[token.Token, token.LexError] {
+    for(!self.atEnd()) && isIdentContinue(self.peek().value) {
+        self.advance()
+    }
+    ident := copyRange(con self.source, start, self.cursor)
+    if startsWithCompilerPrefix(con ident) {
+        return Err(self.makeError(start, self.cursor, "identifiers beginning with `__mlg_` are reserved for the compiler"))
+    }
+    match keywordKind(con ident) {
+        case Some(kind) {
+            return Ok(self.makeToken(kind, start, ""))
+        }
+        case None {
+            return Ok(self.makeToken("Ident", start, ident))
+        }
+    }
+}
+
+func (con self Lexer) unexpectedCharacter(start int) token.LexError {
+    text := copyRange(con self.source, start, self.cursor)
+    parts := []string{"unexpected character `", text, "`"}
+    return self.makeError(start, self.cursor, strings.join(con parts, con ""))
+}
+
+func (con self Lexer) makeToken(kind string, start int, value string) token.Token {
+    return token.Token{kind: kind, start: start, end: self.cursor, value: value}
+}
+
+func (con self Lexer) makeError(start int, end int, message string) token.LexError {
+    return token.LexError{message: message, start: start, end: end}
+}
+
+func (mut self Lexer) matchCode(expected int) bool {
+    if(!self.atEnd()) && self.peek().value == expected {
+        self.advance()
+        return true
+    }
+    return false
+}
+
+func (mut self Lexer) advance() Rune {
+    rune := self.peek()
+    self.cursor = self.cursor + rune.width
+    return rune
+}
+
+func (con self Lexer) peek() Rune {
+    return decodeAt(con self.source, self.cursor)
+}
+
+func (con self Lexer) peekNext() Rune {
+    if self.atEnd() {
+        return Rune{value: -1, width: 0}
+    }
+    first := self.peek()
+    next := self.cursor + first.width
+    if next >= strings.byteLen(con self.source) {
+        return Rune{value: -1, width: 0}
+    }
+    return decodeAt(con self.source, next)
+}
+
+func (con self Lexer) atEnd() bool {
+    return self.cursor >= strings.byteLen(con self.source)
+}
+
+func decodeAt(con text string, index int) Rune {
+    first := byteAt(con text, index)
+    if first < 128 {
+        return Rune{value: first, width: 1}
+    }
+    if first < 224 {
+        second := byteAt(con text, index + 1)
+        return Rune{value:(first - 192) * 64 + second - 128, width: 2}
+    }
+    if first < 240 {
+        second := byteAt(con text, index + 1)
+        third := byteAt(con text, index + 2)
+        value :=(first - 224) * 4096 +(second - 128) * 64 + third - 128
+        return Rune{value: value, width: 3}
+    }
+    second := byteAt(con text, index + 1)
+    third := byteAt(con text, index + 2)
+    fourth := byteAt(con text, index + 3)
+    value :=(first - 240) * 262144 +(second - 128) * 4096 +(third - 128) * 64 + fourth - 128
+    return Rune{value: value, width: 4}
+}
+
+func byteAt(con text string, index int) int {
+    return match strings.byteAt(con text, index) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            0
+        }
+    }
+}
+
+func copyRange(con text string, start int, end int) string {
+    return match strings.slice(con text, start, end) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+func isAsciiDigit(value int) bool {
+    return value >= 48 && value <= 57
+}
+
+func isIdentStart(value int) bool {
+    return(value >= 65 && value <= 90) ||(value >= 97 && value <= 122) || value == 95
+}
+
+func isIdentContinue(value int) bool {
+    return isIdentStart(value) || isAsciiDigit(value)
+}
+
+func isWhitespace(value int) bool {
+    return(value >= 9 && value <= 13) || value == 32 || value == 133 || value == 160 || value == 5760 ||(value >= 8192 && value <= 8202) || value == 8232 || value == 8233 || value == 8239 || value == 8287 || value == 12288
+}
+
+func startsWithCompilerPrefix(con text string) bool {
+    if strings.byteLen(con text) < 6 {
+        return false
+    }
+    return byteAt(con text, 0) == 95 && byteAt(con text, 1) == 95 && byteAt(con text, 2) == 109 && byteAt(con text, 3) == 108 && byteAt(con text, 4) == 103 && byteAt(con text, 5) == 95
+}
+
+func keywordKind(con ident string) Option[string] {
+    if ident == "package" {
+        return Some("Keyword.Package")
+    }
+    if ident == "import" {
+        return Some("Keyword.Import")
+    }
+    if ident == "pub" {
+        return Some("Keyword.Pub")
+    }
+    if ident == "func" {
+        return Some("Keyword.Func")
+    }
+    if ident == "return" {
+        return Some("Keyword.Return")
+    }
+    if ident == "if" {
+        return Some("Keyword.If")
+    }
+    if ident == "else" {
+        return Some("Keyword.Else")
+    }
+    if ident == "for" {
+        return Some("Keyword.For")
+    }
+    if ident == "break" {
+        return Some("Keyword.Break")
+    }
+    if ident == "continue" {
+        return Some("Keyword.Continue")
+    }
+    if ident == "range" {
+        return Some("Keyword.Range")
+    }
+    if ident == "match" {
+        return Some("Keyword.Match")
+    }
+    if ident == "case" {
+        return Some("Keyword.Case")
+    }
+    if ident == "mut" {
+        return Some("Keyword.Mut")
+    }
+    if ident == "con" {
+        return Some("Keyword.Con")
+    }
+    if ident == "true" {
+        return Some("Keyword.True")
+    }
+    if ident == "false" {
+        return Some("Keyword.False")
+    }
+    if ident == "struct" {
+        return Some("Keyword.Struct")
+    }
+    if ident == "enum" {
+        return Some("Keyword.Enum")
+    }
+    if ident == "type" {
+        return Some("Keyword.Type")
+    }
+    if ident == "nil" {
+        return Some("Keyword.Nil")
+    }
+    return None
+}

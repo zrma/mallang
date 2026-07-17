@@ -1,0 +1,20 @@
+func nextValue(ok bool) Result[int, string] {
+    return if ok { Ok(7) } else { Err("missing") }
+}
+
+func main() {
+    mut values := []int{1}
+    match nextValue(true) {
+        case Ok(value) {
+            values = append(values, value)
+        }
+        case Err(_) {}
+    }
+    match nextValue(false) {
+        case Ok(value) {
+            values = append(values, value)
+        }
+        case Err(_) {}
+    }
+    print(len(values))
+}

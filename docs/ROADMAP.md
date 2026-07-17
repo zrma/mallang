@@ -1671,13 +1671,14 @@ slice is the B1 Mallang lexer/parser data model and Rust differential harness.
 - [x] UTF-8 byte cursor blocker와 1.x compatibility 분류
 - [x] `strings.byteAt`과 scalar-boundary 검증 `strings.slice`
 - [x] strict C, ASan/UBSan, allocation accounting과 failure injection gate
-- [ ] Mallang source/span/token model과 normalized differential schema
-- [ ] frozen v1 complete lexer와 Rust Stage0 token/diagnostic differential
+- [x] Mallang source/span/token model과 normalized differential schema
+- [x] frozen v1 complete lexer와 Rust Stage0 token/diagnostic differential
 - [ ] syntax-only AST와 frozen v1 complete parser
 - [ ] positive/rejection/crash corpus AST/diagnostic differential
 - [ ] B1 canonical, publication과 supported-platform CI acceptance
 
 Exact scope and decisions are owned by `docs/todo-self-hosting-frontend/`.
 P175a adds only owned standard-library operations and no pointer, borrowed
-substring, mutable string or syntax change. The next slice is the Mallang
-source/span/token data model and lexer differential harness.
+substring, mutable string or syntax change. P175b adds the tracked Mallang
+compiler source root, complete lexer and deterministic Rust differential gate.
+The next slice is the syntax-only AST and frozen v1 parser.

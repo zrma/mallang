@@ -29,3 +29,14 @@ specialization belong to B2 and later stages.
 
 Implementation may land in tested slices, but B1 is not complete until the
 entire frozen v1 grammar and frontend rejection corpus agree with Stage0.
+
+## Q6. Why is the bootstrap token kind a string tag rather than an enum?
+
+The current ownership model treats user-defined enums as move-only values, so a
+read-only token normalizer cannot inspect an enum field through `con` without
+either copying or moving it. P175b uses a private stable string tag such as
+`Keyword.Func` inside the bootstrap compiler instead of expanding the public
+language solely for compiler convenience. The Rust oracle maps its enum to the
+same harness-owned tag. A later typed compiler representation may change this
+private data structure without changing Mallang syntax or the differential
+contract.

@@ -472,6 +472,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
 - `docs/SELF_HOSTING.md`: active B0-B5 staged self-hosting and fixed-point contract.
 - `bootstrap/probe/`: Stage0-built B0 Mallang bootstrap capability probe.
+- `bootstrap/compiler/`: active Mallang compiler source, beginning with the B1
+  token model and lexer.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
 - `docs/releases/`: v0.1.0 through v1.1.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.

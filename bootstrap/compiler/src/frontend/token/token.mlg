@@ -1,0 +1,52 @@
+package token
+
+import "std/strings"
+
+pub type Token struct {
+    kind string
+    start int
+    end int
+    value string
+}
+
+pub type LexError struct {
+    message string
+    start int
+    end int
+}
+
+pub func CopyText(con text string) string {
+    return match strings.slice(con text, 0, strings.byteLen(con text)) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+pub func EncodeBytes(con text string) string {
+    mut parts := []string{}
+    for mut index := 0; index < strings.byteLen(con text); index = index + 1 {
+        match strings.byteAt(con text, index) {
+            case Ok(value) {
+                parts = append(parts, strings.fromInt(value))
+            }
+            case Err(_) {
+                parts = append(parts, "invalid")
+            }
+        }
+    }
+    return strings.join(con parts, con ",")
+}
+
+pub func Normalize(con value Token) string {
+    parts := []string{"T|", CopyText(con value.kind), "|", strings.fromInt(value.start), "|", strings.fromInt(value.end), "|", EncodeBytes(con value.value),}
+    return strings.join(con parts, con "")
+}
+
+pub func NormalizeError(con error LexError) string {
+    parts := []string{"E|", strings.fromInt(error.start), "|", strings.fromInt(error.end), "|", EncodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
