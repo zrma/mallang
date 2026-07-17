@@ -1710,6 +1710,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] nested lexical scope와 if-statement return convergence
 - [x] if-expression branch type convergence
 - [x] non-Copy local move와 direct local `con`/`mut` call borrow
+- [x] nested field/index borrow place와 same-call overlap
 - [ ] owned/`con`/`mut` place state와 branch/loop ownership join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

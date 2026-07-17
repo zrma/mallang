@@ -78,6 +78,13 @@ pub type Local struct {
     scopeDepth int
 }
 
+pub type BorrowPlace struct {
+    root string
+    segments []string
+    ty ResolvedType
+    exclusive bool
+}
+
 pub type CheckedProgram struct {
     typeShapes []TypeShape
     structs []StructSig
@@ -1331,7 +1338,7 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         value := ast.Child(con program, argument, 0)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
-            match self.checkBorrowArgument(con program, argument, argumentMode == "mut") {
+            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut") {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -1358,28 +1365,186 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
     return Ok(true)
 }
 
-func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, argument int, mutable bool) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call int, argumentIndex int, mutable bool) Result[ResolvedType, SemanticError] {
+    argument := ast.Child(con program, call, argumentIndex + 1)
     value := ast.Child(con program, argument, 0)
-    if ast.Kind(con program, value) != "Expr.Var" {
-        return Err(newError("P176c1 borrow arguments require a direct local variable", ast.Span(con program, value)))
+    match self.resolveBorrowPlace(con program, value) {
+        case Ok(place) {
+            local := localIndex(con self.locals, con place.root)
+            if local < 0 {
+                return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, value)))
+            }
+            if self.locals[local].moved {
+                return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con place.root), "`",}, con ""), ast.Span(con program, value)))
+            }
+            if mutable && !self.locals[local].mutable {
+                mut subject := ""
+                if hasIndexSegment(con place.segments) {
+                    subject = "place of"
+                } else if len(place.segments) > 0 {
+                    subject = "field of"
+                }
+                mut separator := ""
+                if subject != "" {
+                    separator = " "
+                }
+                message := strings.join(con []string{"cannot mutably borrow ", subject, separator, "immutable binding `", token.CopyText(con place.root), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, argument)))
+            }
+
+            current := BorrowPlace{root: token.CopyText(con place.root), segments: copySegments(con place.segments), ty: copyType(con place.ty), exclusive: mutable,}
+            for mut index := 0; index < argumentIndex; index = index + 1 {
+                previousArgument := ast.Child(con program, call, index + 1)
+                previousMode := argModeFromKind(con ast.Kind(con program, previousArgument))
+                if previousMode == "con" || previousMode == "mut" {
+                    previousValue := ast.Child(con program, previousArgument, 0)
+                    match self.resolveBorrowPlace(con program, previousValue) {
+                        case Ok(previousPlace) {
+                            previous := BorrowPlace{root: token.CopyText(con previousPlace.root), segments: copySegments(con previousPlace.segments), ty: copyType(con previousPlace.ty), exclusive: previousMode == "mut",}
+                            if borrowPlacesOverlap(con current, con previous) &&(current.exclusive || previous.exclusive) {
+                                message := strings.join(con []string{"borrow of `", borrowPlaceText(con current), "` overlaps with an active borrow in this call",}, con "")
+                                return Err(newError(message, ast.Span(con program, argument)))
+                            }
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+            }
+            ty := copyType(con current.ty)
+            return Ok(ty)
+        }
+        case Err(error) {
+            return Err(error)
+        }
     }
-    name := ast.Value(con program, value)
-    local := localIndex(con self.locals, con name)
-    if local < 0 {
-        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, value)))
+}
+
+func (mut self CheckedProgram) resolveBorrowPlace(con program ast.Program, expression int) Result[BorrowPlace, SemanticError] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, expression)
+        local := localIndex(con self.locals, con name)
+        if local < 0 {
+            return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+        }
+        ty := copyType(con self.locals[local].ty)
+        self.recordType(expression, con ty)
+        if ty.kind == "function" {
+            self.recordFunctionReference(expression, self.locals[local].function, false)
+        }
+        return Ok(BorrowPlace{root: name, segments: []string{}, ty: ty, exclusive: false,})
     }
-    if self.locals[local].moved {
-        return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, value)))
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, expression, 0)
+        match self.resolveBorrowPlace(con program, base) {
+            case Ok(place) {
+                field := ast.Value(con program, expression)
+                match self.resolveStructField(con place.ty, con field, ast.Span(con program, expression), con "field borrow") {
+                    case Ok(ty) {
+                        mut segments := copySegments(con place.segments)
+                        segments = append(segments, token.CopyText(con field))
+                        self.recordType(expression, con ty)
+                        return Ok(BorrowPlace{root: token.CopyText(con place.root), segments: segments, ty: ty, exclusive: false,})
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
-    if mutable && !self.locals[local].mutable {
-        return Err(newError(strings.join(con []string{"cannot mutably borrow immutable binding `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, argument)))
+    if kind == "Expr.Index" {
+        base := ast.Child(con program, expression, 0)
+        index := ast.Child(con program, expression, 1)
+        match self.resolveBorrowPlace(con program, base) {
+            case Ok(place) {
+                if place.ty.kind != "array" && place.ty.kind != "slice" {
+                    message := strings.join(con []string{"element borrow target must be a fixed-size array or slice, got `", token.CopyText(con place.ty.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, base)))
+                }
+                mut indexType := unitType()
+                match self.checkExpression(con program, index) {
+                    case Ok(ty) {
+                        indexType = ty
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match self.validateIndex(con program, index, con indexType, con place.ty) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match self.typeArgument(con place.ty, 0) {
+                    case Ok(ty) {
+                        mut segments := copySegments(con place.segments)
+                        segments = append(segments, "?")
+                        self.recordType(expression, con ty)
+                        return Ok(BorrowPlace{root: token.CopyText(con place.root), segments: segments, ty: ty, exclusive: false,})
+                    }
+                    case Err(_) {
+                        return Err(newError("checked borrow place element type is missing", ast.Span(con program, expression)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
-    ty := copyType(con self.locals[local].ty)
-    self.recordType(value, con ty)
-    if ty.kind == "function" {
-        self.recordFunctionReference(value, self.locals[local].function, false)
+    return Err(newError("direct borrow arguments must use a stable local variable, field, or array/slice element", ast.Span(con program, expression)))
+}
+
+func copySegments(con segments []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(segments); index = index + 1 {
+        copied = append(copied, token.CopyText(con segments[index]))
     }
-    return Ok(ty)
+    return copied
+}
+
+func hasIndexSegment(con segments []string) bool {
+    for mut index := 0; index < len(segments); index = index + 1 {
+        if segments[index]== "?" {
+            return true
+        }
+    }
+    return false
+}
+
+func borrowPlacesOverlap(con left BorrowPlace, con right BorrowPlace) bool {
+    if left.root != right.root {
+        return false
+    }
+    mut common := len(left.segments)
+    if len(right.segments) < common {
+        common = len(right.segments)
+    }
+    for mut index := 0; index < common; index = index + 1 {
+        if left.segments[index]!= right.segments[index] {
+            return false
+        }
+    }
+    return true
+}
+
+func borrowPlaceText(con place BorrowPlace) string {
+    mut output := token.CopyText(con place.root)
+    for mut index := 0; index < len(place.segments); index = index + 1 {
+        if place.segments[index]== "?" {
+            output = strings.join(con []string{output, "[?]",}, con "")
+        } else {
+            output = strings.join(con []string{output, ".", token.CopyText(con place.segments[index]),}, con "")
+        }
+    }
+    return output
 }
 
 func (mut self CheckedProgram) recordType(node int, con ty ResolvedType) {

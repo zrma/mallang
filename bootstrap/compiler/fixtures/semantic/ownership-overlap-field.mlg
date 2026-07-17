@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func conflict(con left string, mut right string) int {
+    return 1
+}
+
+func exercise(mut user User) int {
+    return conflict(con user.name, mut user.name)
+}
+
+func main() {}

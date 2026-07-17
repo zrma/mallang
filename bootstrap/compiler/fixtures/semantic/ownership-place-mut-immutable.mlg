@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func rename(mut value string) int {
+    return 1
+}
+
+func exercise(con users [2]User) int {
+    return rename(mut users[0].name)
+}
+
+func main() {}

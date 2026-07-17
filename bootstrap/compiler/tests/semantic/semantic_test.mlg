@@ -486,3 +486,107 @@ test RejectsMovingBorrowedLocal() {
         }
     }
 }
+
+test ChecksFieldAndIndexBorrowPlaces() {
+    source := "type User struct { name string; age int } type Profile struct { user User } func inspectName(con value string) int { return 1 } func rename(mut value string) int { return 2 } func updatePair(mut name string, mut age int) int { return 3 } func compare(con left string, con right string) int { return 4 } func exercise(mut profile Profile, mut users [2]User, con readonly [2]User) int { first := inspectName(con profile.user.name); second := rename(mut profile.user.name); third := inspectName(con readonly[0].name); fourth := rename(mut users[1].name); fifth := updatePair(mut profile.user.name, mut profile.user.age); sixth := compare(con profile.user.name, con profile.user.name); return first + second + third + fourth + fifth + sixth } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsOverlappingFieldBorrows() {
+    source := "type User struct { name string } func conflict(con left string, mut right string) int { return 1 } func exercise(mut user User) int { return conflict(con user.name, mut user.name) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "borrow of `user.name` overlaps with an active borrow in this call")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsMutableBorrowOfImmutableIndexPlace() {
+    source := "type User struct { name string } func rename(mut value string) int { return 1 } func exercise(con users [2]User) int { return rename(mut users[0].name) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "cannot mutably borrow place of immutable binding `users`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsBorrowPlaceWithMovedRoot() {
+    source := "type User struct { name string } func consume(user User) int { return 1 } func inspect(con name string) int { return 2 } func exercise(user User) int { first := consume(user); return first + inspect(con user.name) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "borrow of moved value `user`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

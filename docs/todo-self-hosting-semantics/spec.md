@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c1 complete
+Status: in progress; P176a-P176c2 complete
 
 ## Objective
 
@@ -50,7 +50,7 @@ agrees.
 
 - P176c1: model local available/moved state, borrowed parameters and direct
   owned/`con`/`mut` call arguments (complete)
-- P176c2: validate field/index borrow places and same-call overlap
+- P176c2: validate field/index borrow places and same-call overlap (complete)
 - P176c3: merge move state across branches and loops
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
@@ -191,6 +191,18 @@ specialization and function-body checking until later P176 slices.
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan. Field/index borrow places and control-flow state joins remain
   explicit follow-up work.
+
+## P176c2 Evidence
+
+- Borrow places use a compiler-private root plus field/index segment path;
+  nested fields and array/slice elements remain call-scoped syntax, not values.
+- Root move and mutability checks preserve Stage0's binding, field and indexed
+  place diagnostics. Repeated shared borrows and disjoint fields are accepted.
+- Same-call overlap rejects shared/exclusive and exclusive/exclusive prefix
+  paths with deterministic `root.field` and `root[?].field` diagnostics.
+- Sixty-two semantic fixtures, six typed-IR fixtures and thirty-nine Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Control-flow ownership joins remain P176c3 work.
 
 ## B2 Completion Criteria
 

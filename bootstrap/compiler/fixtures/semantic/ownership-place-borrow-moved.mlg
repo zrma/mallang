@@ -1,0 +1,18 @@
+type User struct {
+    name string
+}
+
+func consume(user User) int {
+    return 1
+}
+
+func inspect(con name string) int {
+    return 2
+}
+
+func exercise(user User) int {
+    first := consume(user)
+    return first + inspect(con user.name)
+}
+
+func main() {}
