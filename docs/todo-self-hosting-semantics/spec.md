@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c2 complete
+Status: in progress; P176a-P176c3a complete
 
 ## Objective
 
@@ -51,7 +51,9 @@ agrees.
 - P176c1: model local available/moved state, borrowed parameters and direct
   owned/`con`/`mut` call arguments (complete)
 - P176c2: validate field/index borrow places and same-call overlap (complete)
-- P176c3: merge move state across branches and loops
+- P176c3a: merge move state across statement and expression branches
+  (complete)
+- P176c3b: merge move state across loops
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
@@ -203,6 +205,20 @@ specialization and function-body checking until later P176 slices.
 - Sixty-two semantic fixtures, six typed-IR fixtures and thirty-nine Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan. Control-flow ownership joins remain P176c3 work.
+
+## P176c3a Evidence
+
+- Statement and expression `if` branches start from independent local-state
+  snapshots and conservatively merge an outer binding as moved when either
+  branch moves it.
+- Missing statement `else` branches retain the pre-branch state. Branch-local
+  bindings remain excluded from the outer merge, and call-scoped `con` borrows
+  do not persist past their call.
+- Use-after-branch-move diagnostics agree with Stage0 for statement and
+  expression forms, including the original source span and message.
+- Sixty-five semantic fixtures, six typed-IR fixtures and forty-two Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Loop-persistent move-state joins remain P176c3b work.
 
 ## B2 Completion Criteria
 

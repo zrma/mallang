@@ -1,0 +1,13 @@
+func consume(value string) int {
+    return 1
+}
+
+func exercise(flag bool) int {
+    value := "hello"
+    if flag {
+        first := consume(value)
+    }
+    return consume(value)
+}
+
+func main() {}

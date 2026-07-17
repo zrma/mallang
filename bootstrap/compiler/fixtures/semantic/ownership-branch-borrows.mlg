@@ -1,0 +1,19 @@
+func inspect(con value string) int {
+    return 1
+}
+
+func consume(value string) int {
+    return 2
+}
+
+func exercise(flag bool) int {
+    value := "hello"
+    if flag {
+        first := inspect(con value)
+    } else {
+        second := inspect(con value)
+    }
+    return consume(value)
+}
+
+func main() {}

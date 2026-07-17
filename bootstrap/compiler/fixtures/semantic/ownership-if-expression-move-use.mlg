@@ -1,0 +1,7 @@
+func exercise(flag bool) string {
+    value := "hello"
+    picked := if flag { value } else { "fallback" }
+    return value
+}
+
+func main() {}

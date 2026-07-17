@@ -590,3 +590,81 @@ test RejectsBorrowPlaceWithMovedRoot() {
         }
     }
 }
+
+test ChecksBranchLocalBorrowsDoNotMoveOuterLocal() {
+    source := "func inspect(con value string) int { return 1 } func consume(value string) int { return 2 } func exercise(flag bool) int { value := \"hello\"; if flag { first := inspect(con value) } else { second := inspect(con value) }; return consume(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUseAfterMoveFromIfStatementBranch() {
+    source := "func consume(value string) int { return 1 } func exercise(flag bool) int { value := \"hello\"; if flag { first := consume(value) }; return consume(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "use of moved value `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUseAfterMoveFromIfExpressionBranch() {
+    source := "func exercise(flag bool) string { value := \"hello\"; picked := if flag { value } else { \"fallback\" }; return value } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "use of moved value `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

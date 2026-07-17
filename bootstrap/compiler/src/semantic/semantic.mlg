@@ -715,10 +715,12 @@ func (mut self CheckedProgram) checkIfStatement(con program ast.Program, stateme
             return Err(error)
         }
     }
+    thenLocals := copyLocals(con self.locals)
 
     self.locals = copyLocals(con baseLocals)
     self.scopeDepth = baseDepth
     mut elseReturns := false
+    mut elseLocals := copyLocals(con baseLocals)
     if ast.ChildCount(con program, statement) > 2 {
         elseBlock := ast.Child(con program, statement, 2)
         self.scopeDepth = baseDepth + 1
@@ -732,8 +734,9 @@ func (mut self CheckedProgram) checkIfStatement(con program ast.Program, stateme
                 return Err(error)
             }
         }
+        elseLocals = copyLocals(con self.locals)
     }
-    self.locals = baseLocals
+    self.locals = mergeBranchMoves(con baseLocals, con thenLocals, con elseLocals)
     self.scopeDepth = baseDepth
     return Ok(thenReturns && elseReturns)
 }
@@ -1031,6 +1034,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
             return Err(error)
         }
     }
+    thenLocals := copyLocals(con self.locals)
 
     self.locals = copyLocals(con baseLocals)
     elseBranch := ast.Child(con program, expression, 2)
@@ -1044,6 +1048,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
             return Err(error)
         }
     }
+    elseLocals := copyLocals(con self.locals)
     self.locals = baseLocals
 
     if thenType.text != elseType.text {
@@ -1053,6 +1058,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     if thenType.kind == "unit" {
         return Err(newError("if expression branches must produce a value in v0", ast.Span(con program, expression)))
     }
+    self.locals = mergeBranchMoves(con self.locals, con thenLocals, con elseLocals)
     self.recordType(expression, con thenType)
     return Ok(thenType)
 }
@@ -1899,6 +1905,16 @@ func copyLocals(con locals []Local) []Local {
         copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, borrowed: locals[index].borrowed, moved: locals[index].moved, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
     }
     return copied
+}
+
+func mergeBranchMoves(con baseLocals []Local, con thenLocals []Local, con elseLocals []Local) []Local {
+    mut merged := copyLocals(con baseLocals)
+    for mut index := 0; index < len(merged); index = index + 1 {
+        movedInThen := index < len(thenLocals) && thenLocals[index].moved
+        movedInElse := index < len(elseLocals) && elseLocals[index].moved
+        merged[index].moved = merged[index].moved || movedInThen || movedInElse
+    }
+    return merged
 }
 
 func copyType(con ty ResolvedType) ResolvedType {
