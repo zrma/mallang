@@ -1,6 +1,6 @@
 # Spec: B1 Self-Hosting Frontend
 
-Status: active; P175a-P175c2a complete, P175c2b control-flow parser next
+Status: active; P175a-P175c2b1 complete, P175c2b2 expression parser next
 
 ## Goal
 
@@ -17,8 +17,10 @@ and frontend diagnostic equivalence against the Rust Stage0 oracle.
   declaration and type parsing with exact Rust-oracle normalization
 - **P175c2a**: implement core statements, Pratt expressions, postfix chains,
   literals, calls, assignments and struct/array construction
-- **P175c2b**: implement control-flow statements, function literals, match
-  expressions and patterns
+- **P175c2b1**: implement control-flow statements, test assertions and match
+  statement patterns
+- **P175c2b2**: implement function literals, if/match expressions and complete
+  recursive pattern coverage
 - **P175c3**: add bounded statement/top-level recovery without changing the
   frozen grammar
 - **P175d**: run the positive, rejection and crash corpus through both frontends
@@ -91,6 +93,17 @@ compatibility evidence.
 - Nested cleanup passes now recognize an already pre-evaluated compiler return
   temporary. `match-arm-return-temp.mlg` protects match payload cleanup plus an
   outer owned local under strict C, allocation accounting and ASan/UBSan.
+
+## P175c2b1 Evidence
+
+- Statement parsing now covers if/else-if, infinite/conditional/C-style/range
+  loops, break/continue, block match arms and test-only assertions.
+- Match patterns use a pending flat arena and are materialized with the complete
+  arm span, preserving exact Rust oracle normalization without recursive owned
+  syntax values.
+- `control-flow.mlg` differentially covers loop header variants, built-in and
+  qualified multi-payload patterns, nested blocks and assertions under strict
+  C, zero-allocation accounting and ASan/UBSan.
 
 ## Excluded
 

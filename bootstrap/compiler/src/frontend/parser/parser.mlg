@@ -8,8 +8,11 @@ import "bootstrap_compiler/frontend/token"
 type Parser struct {
     tokens []token.Token
     nodes []ast.Node
+    patterns []PendingPattern
     errors []ast.ParseError
     cursor int
+    allowStructLiterals bool
+    inTestDeclaration bool
 }
 
 type ParsedNode struct {
@@ -30,8 +33,14 @@ type StructLiteralParts struct {
     start source.Span
 }
 
+type PendingPattern struct {
+    kind string
+    value string
+    children []int
+}
+
 pub func Parse(tokens []token.Token) Result[ast.Program, []ast.ParseError] {
-    mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, errors: []ast.ParseError{}, cursor: 0}
+    mut parser := Parser{tokens: tokens, nodes: []ast.Node{}, patterns: []PendingPattern{}, errors: []ast.ParseError{}, cursor: 0, allowStructLiterals: true, inTestDeclaration: false,}
     root := parser.parseProgramRoot()
     if parser.failed() {
         return Err(parser.errors)
@@ -268,7 +277,10 @@ func (mut self Parser) parseTestDecl(start source.Span) ParsedNode {
     name := self.expectIdent("expected test name")
     self.expect("LeftParen", "expected `(` after test name")
     self.expect("RightParen", "test declarations cannot take parameters")
+    previous := self.inTestDeclaration
+    self.inTestDeclaration = true
     block := self.parseBlock()
+    self.inTestDeclaration = previous
     end := ast.NodeSpan(con self.nodes[block])
     index := self.addNode("TestDecl", name, source.Join(start, end), []int{block})
     return ParsedNode{category: "Test", index: index}
@@ -425,16 +437,29 @@ func (mut self Parser) parseBlock() int {
 }
 
 func (mut self Parser) parseStatement() int {
+    if self.inTestDeclaration && self.atIdent("assert") && self.atOffset(1, "LeftParen") {
+        return self.parseAssertStatement()
+    }
     if self.at("Keyword.Return") {
         return self.parseReturnStatement()
     }
+    if self.at("Keyword.If") {
+        return self.parseIfStatement()
+    }
+    if self.at("Keyword.For") {
+        return self.parseForStatement()
+    }
+    if self.at("Keyword.Break") {
+        return self.parseBreakStatement()
+    }
+    if self.at("Keyword.Continue") {
+        return self.parseContinueStatement()
+    }
+    if self.at("Keyword.Match") {
+        return self.parseMatchStatement()
+    }
     if self.at("Keyword.Mut") ||(self.at("Ident") && self.atOffset(1, "ColonEqual")) {
         return self.parseLetStatement()
-    }
-    if self.at("Keyword.If") || self.at("Keyword.For") || self.at("Keyword.Match") || self.at("Keyword.Break") || self.at("Keyword.Continue") {
-        start := self.currentSpan()
-        self.recordErrorHere("control-flow statement parsing is not available in this bootstrap slice")
-        return self.addNode("Stmt.Error", "", start, []int{})
     }
 
     expression := self.parseExpression()
@@ -443,6 +468,15 @@ func (mut self Parser) parseStatement() int {
     }
     span := self.nodeSpan(expression)
     return self.addNode("Stmt.Expr", "", span, []int{expression})
+}
+
+func (mut self Parser) parseAssertStatement() int {
+    start := self.currentSpan()
+    self.expectIdentNamed("assert", "expected `assert`")
+    self.expect("LeftParen", "expected `(` after `assert`")
+    condition := self.parseExpression()
+    end := self.expect("RightParen", "expected `)` after assertion condition")
+    return self.addNode("Stmt.Assert", "", source.Join(start, end), []int{condition})
 }
 
 func (mut self Parser) parseLetStatement() int {
@@ -493,15 +527,276 @@ func (mut self Parser) parseReturnStatement() int {
     return self.addNode("Stmt.Return", "", source.Join(start, end), []int{expression})
 }
 
+func (mut self Parser) parseIfStatement() int {
+    start := self.expect("Keyword.If", "expected `if`")
+    condition := self.parseExpressionWithoutStructLiterals()
+    thenBlock := self.parseBlock()
+    mut children := []int{condition, thenBlock}
+    mut end := self.nodeSpan(thenBlock)
+
+    if self.at("Keyword.Else") {
+        elseStart := self.currentSpan()
+        self.advance()
+        if self.at("Keyword.If") {
+            nested := self.parseIfStatement()
+            nestedSpan := self.nodeSpan(nested)
+            elseBlock := self.addNode("Block", "", source.Join(elseStart, source.Copy(con nestedSpan)), []int{nested})
+            children = append(children, elseBlock)
+            end = nestedSpan
+        } else {
+            elseBlock := self.parseBlock()
+            end = self.nodeSpan(elseBlock)
+            children = append(children, elseBlock)
+        }
+    }
+
+    return self.addNode("Stmt.If", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) parseForStatement() int {
+    start := self.expect("Keyword.For", "expected `for`")
+
+    if self.at("LeftBrace") {
+        body := self.parseBlock()
+        return self.addNode("Stmt.For", "", source.Join(source.Copy(con start), self.nodeSpan(body)), []int{body})
+    }
+
+    if self.startsRangeHeader() {
+        indexName := self.expectIdent("expected range index binding name")
+        mut valueName := "_"
+        if self.at("Comma") {
+            self.advance()
+            if self.at("Keyword.Con") {
+                self.recordErrorHere("by-reference range value bindings are not supported; use index-only range and indexed `con` call access")
+            } else if self.at("Keyword.Mut") {
+                self.recordErrorHere("mutable range value bindings are not supported; use indexed assignment or indexed `mut` call access")
+            } else {
+                valueName = self.expectIdent("expected range value binding name")
+            }
+        }
+        self.expect("ColonEqual", "expected `:=` in range loop")
+        self.expect("Keyword.Range", "expected `range` in range loop")
+        rangeSource := self.parseExpressionWithoutStructLiterals()
+        body := self.parseBlock()
+        value := strings.join(con []string{indexName, ",", valueName}, con "")
+        return self.addNode("Stmt.RangeFor", value, source.Join(source.Copy(con start), self.nodeSpan(body)), []int{rangeSource, body})
+    }
+
+    if self.at("Semicolon") || self.startsForClauseHeader() {
+        mut children := []int{}
+        if self.at("Semicolon") {
+            self.advance()
+        } else {
+            children = append(children, self.parseForInit())
+            self.expect("Semicolon", "expected `;` after for init")
+        }
+        if !self.at("Semicolon") {
+            condition := self.parseExpressionWithoutStructLiterals()
+            children = append(children, self.addNode("ForCondition", "", self.nodeSpan(condition), []int{condition}))
+        }
+        self.expect("Semicolon", "expected `;` after for condition")
+        if !self.at("LeftBrace") {
+            children = append(children, self.parseForPost())
+        }
+        body := self.parseBlock()
+        children = append(children, body)
+        return self.addNode("Stmt.For", "", source.Join(source.Copy(con start), self.nodeSpan(body)), children)
+    }
+
+    condition := self.parseExpressionWithoutStructLiterals()
+    conditionNode := self.addNode("ForCondition", "", self.nodeSpan(condition), []int{condition})
+    body := self.parseBlock()
+    return self.addNode("Stmt.For", "", source.Join(source.Copy(con start), self.nodeSpan(body)), []int{conditionNode, body})
+}
+
+func (con self Parser) startsRangeHeader() bool {
+    return self.at("Ident") &&(self.atOffset(1, "Comma") ||(self.atOffset(1, "ColonEqual") && self.atOffset(2, "Keyword.Range")
+    ))
+}
+
+func (con self Parser) startsForClauseHeader() bool {
+    return self.at("Keyword.Mut") ||(self.at("Ident") && self.atOffset(1, "ColonEqual")
+    )
+}
+
+func (mut self Parser) parseForInit() int {
+    mut mutable := "Immutable"
+    if self.at("Keyword.Mut") {
+        mutable = "Mutable"
+        self.advance()
+    }
+    name := self.expectIdent("expected for init binding name")
+    self.expect("ColonEqual", "expected `:=` in for init")
+    expression := self.parseExpression()
+    kind := strings.join(con []string{"ForInit.Let.", mutable}, con "")
+    return self.addNode(kind, name, self.nodeSpan(expression), []int{expression})
+}
+
+func (mut self Parser) parseForPost() int {
+    target := self.parseExpression()
+    start := self.nodeSpan(target)
+    self.expect("Equal", "expected `=` in for post")
+    expression := self.parseExpressionWithoutStructLiterals()
+    end := self.nodeSpan(expression)
+    kind := ast.NodeKind(con self.nodes[target])
+    if kind != "Expr.Var" && kind != "Expr.FieldAccess" && kind != "Expr.Index" {
+        self.recordError("for post target must be a variable, field access, or index expression", source.Copy(con start))
+    }
+    return self.addNode("ForPost.Assign", "", source.Join(start, end), []int{target, expression})
+}
+
+func (mut self Parser) parseBreakStatement() int {
+    span := self.expect("Keyword.Break", "expected `break`")
+    return self.addNode("Stmt.Break", "", span, []int{})
+}
+
+func (mut self Parser) parseContinueStatement() int {
+    span := self.expect("Keyword.Continue", "expected `continue`")
+    return self.addNode("Stmt.Continue", "", span, []int{})
+}
+
+func (mut self Parser) parseMatchStatement() int {
+    start := self.expect("Keyword.Match", "expected `match`")
+    scrutinee := self.parseExpressionWithoutStructLiterals()
+    self.expect("LeftBrace", "expected `{` before match arms")
+    mut children := []int{scrutinee}
+    for(!self.at("RightBrace")) &&(!self.at("Eof")) &&(!self.failed()) {
+        children = append(children, self.parseMatchBlockArm())
+    }
+    end := self.expect("RightBrace", "expected `}` after match arms")
+    return self.addNode("Stmt.Match", "", source.Join(start, end), children)
+}
+
+func (mut self Parser) parseMatchBlockArm() int {
+    start := self.expect("Keyword.Case", "expected `case` in match")
+    pattern := self.parseMatchPattern()
+    block := self.parseBlock()
+    span := source.Join(start, self.nodeSpan(block))
+    normalizedPattern := self.materializePattern(pattern, source.Copy(con span))
+    return self.addNode("MatchBlockArm", "", span, []int{normalizedPattern, block})
+}
+
+func (mut self Parser) parseMatchPattern() int {
+    return self.parsePatternNode(false)
+}
+
+func (mut self Parser) parsePatternNode(allowBinding bool) int {
+    start := self.currentSpan()
+    first := self.expectIdent("expected match pattern")
+    if first == "_" {
+        return self.addPendingPattern("Pattern.Wildcard", "", []int{})
+    }
+
+    mut segments := []string{first}
+    for self.at("Dot") &&(!self.failed()) {
+        self.advance()
+        segments = append(segments, self.expectIdent("expected variant name after `.`"))
+    }
+
+    if len(segments) > 1 {
+        mut typeSegments := []string{}
+        for mut index := 0; index < len(segments) - 1; index = index + 1 {
+            typeSegments = append(typeSegments, token.CopyText(con segments[index]))
+        }
+        typeName := strings.join(con typeSegments, con ".")
+        variant := token.CopyText(con segments[len(segments) - 1])
+        value := strings.join(con []string{typeName, ".", variant}, con "")
+        payloads := self.parseOptionalPatternPayloads()
+        return self.addPendingPattern("Pattern.Variant", value, payloads)
+    }
+
+    name := token.CopyText(con segments[0])
+    if name == "None" {
+        return self.addPendingPattern("Pattern.None", "", []int{})
+    }
+    if name == "Some" || name == "Ok" || name == "Err" {
+        payload := self.parseRequiredPatternPayload(token.CopyText(con name))
+        payloadKind := self.pendingPatternKind(payload)
+        if payloadKind == "Pattern.Binding" {
+            binding := self.pendingPatternValue(payload)
+            kind := strings.join(con []string{"Pattern.", token.CopyText(con name)}, con "")
+            return self.addPendingPattern(kind, binding, []int{})
+        }
+        return self.addPendingPattern("Pattern.NestedBuiltin", token.CopyText(con name), []int{payload})
+    }
+    if allowBinding {
+        return self.addPendingPattern("Pattern.Binding", name, []int{})
+    }
+
+    self.recordError("expected qualified enum variant, `Some`, `None`, `Ok`, `Err`, or `_` pattern", start)
+    return self.addPendingPattern("Pattern.Error", "", []int{})
+}
+
+func (mut self Parser) parseOptionalPatternPayloads() []int {
+    if !self.at("LeftParen") {
+        return []int{}
+    }
+    self.advance()
+    mut payloads := []int{self.parsePatternNode(true)}
+    for self.at("Comma") &&(!self.failed()) {
+        self.advance()
+        payloads = append(payloads, self.parsePatternNode(true))
+    }
+    self.expect("RightParen", "expected `)` after payload patterns")
+    return payloads
+}
+
+func (mut self Parser) parseRequiredPatternPayload(constructor string) int {
+    self.expect("LeftParen", "expected `(` in payload pattern")
+    payload := self.parsePatternNode(true)
+    self.expect("RightParen", "expected `)` after payload pattern")
+    if self.pendingPatternKind(payload) == "Pattern.Binding" {
+        binding := self.pendingPatternValue(payload)
+        if binding == "Some" || binding == "None" || binding == "Ok" || binding == "Err" {
+            message := strings.join(con []string{"built-in variant cannot be used as a `", constructor, "` payload binding"}, con "")
+            self.recordErrorHere(message)
+        }
+    }
+    return payload
+}
+
+func (mut self Parser) addPendingPattern(kind string, value string, children []int) int {
+    index := len(self.patterns)
+    self.patterns = append(self.patterns, PendingPattern{kind: kind, value: value, children: children})
+    return index
+}
+
+func (con self Parser) pendingPatternKind(index int) string {
+    return token.CopyText(con self.patterns[index].kind)
+}
+
+func (con self Parser) pendingPatternValue(index int) string {
+    return token.CopyText(con self.patterns[index].value)
+}
+
+func (mut self Parser) materializePattern(index int, span source.Span) int {
+    kind := self.pendingPatternKind(index)
+    value := self.pendingPatternValue(index)
+    pendingChildren := copyIndexes(con self.patterns[index].children)
+    mut children := []int{}
+    for mut child := 0; child < len(pendingChildren); child = child + 1 {
+        children = append(children, self.materializePattern(pendingChildren[child], source.Copy(con span)))
+    }
+    return self.addNode(kind, value, span, children)
+}
+
 func (mut self Parser) parseExpression() int {
     return self.parsePrecedence(0)
+}
+
+func (mut self Parser) parseExpressionWithoutStructLiterals() int {
+    previous := self.allowStructLiterals
+    self.allowStructLiterals = false
+    expression := self.parseExpression()
+    self.allowStructLiterals = previous
+    return expression
 }
 
 func (mut self Parser) parsePrecedence(minPrecedence int) int {
     mut left := self.parsePrefix()
 
     for !self.failed() {
-        if self.at("LeftBrace") {
+        if self.allowStructLiterals && self.at("LeftBrace") {
             parts := self.structLiteralParts(left)
             if parts.found {
                 left = self.finishStructLiteral(token.CopyText(con parts.name), copyIndexes(con parts.args), source.Copy(con parts.start))
@@ -574,13 +869,13 @@ func (mut self Parser) parsePrefix() int {
     if self.at("Ident") {
         name := token.Value(con self.tokens[self.cursor])
         self.advance()
-        if self.at("Dot") && self.atOffset(1, "Ident") && self.atOffset(2, "LeftBrace") {
+        if self.allowStructLiterals && self.at("Dot") && self.atOffset(1, "Ident") && self.atOffset(2, "LeftBrace") {
             self.advance()
             selected := self.expectIdent("expected struct type name after `.`")
             qualified := strings.join(con []string{token.CopyText(con name), ".", selected}, con "")
             return self.finishStructLiteral(qualified, []int{}, source.Copy(con start))
         }
-        if self.at("LeftBrace") {
+        if self.allowStructLiterals && self.at("LeftBrace") {
             return self.finishStructLiteral(token.CopyText(con name), []int{}, source.Copy(con start))
         }
         return self.addNode("Expr.Var", token.CopyText(con name), source.Copy(con start), []int{})
