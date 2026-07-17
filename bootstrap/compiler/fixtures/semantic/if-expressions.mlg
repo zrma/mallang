@@ -1,0 +1,5 @@
+func choose(flag bool, nested bool) int {
+    return if flag { 1 } else if nested { 2 } else { 3 }
+}
+
+func main() {}

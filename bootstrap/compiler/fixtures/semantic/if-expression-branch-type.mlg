@@ -1,0 +1,5 @@
+func choose() int {
+    return if true { 1 } else { false }
+}
+
+func main() {}

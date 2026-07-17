@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176b4a complete
+Status: in progress; P176a-P176b4 complete
 
 ## Objective
 
@@ -44,7 +44,7 @@ agrees.
 - P176b3b: type mutable local-rooted field/index assignment places (complete)
 - P176b4a: enforce nested lexical scopes and if-statement return convergence
   (complete)
-- P176b4b: type if expressions and enforce branch type convergence
+- P176b4b: type if expressions and enforce branch type convergence (complete)
 
 ### P176c: Ownership And Places
 
@@ -159,6 +159,21 @@ specialization and function-body checking until later P176 slices.
 - Forty-seven semantic fixtures, five typed-IR fixtures and twenty-eight
   Mallang project tests cover the cumulative B2 subset through Stage0,
   generated Stage1, strict accounting and ASan/UBSan.
+
+## P176b4b Evidence
+
+- If expressions check a bool condition and independent branches before
+  requiring one non-unit result type, including recursively nested else-if
+  expressions.
+- Condition, branch mismatch and unit-branch diagnostics preserve Stage0's
+  first span and message without introducing expected-type or ownership rules
+  before their representative constructs are supported.
+- Typed IR preserves deterministic condition, then-expression and
+  else-expression child order, with ownership cleanup explicitly excluded from
+  this slice.
+- Fifty-one semantic fixtures, six typed-IR fixtures and thirty-one Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan.
 
 ## B2 Completion Criteria
 

@@ -908,6 +908,9 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
     if kind == "Expr.Index" {
         return self.checkIndexAccess(con program, expression)
     }
+    if kind == "Expr.If" {
+        return self.checkIfExpression(con program, expression)
+    }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
         match self.checkExpression(con program, operand) {
@@ -974,6 +977,57 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
+}
+
+func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    condition := ast.Child(con program, expression, 0)
+    match self.checkExpression(con program, condition) {
+        case Ok(conditionType) {
+            if conditionType.kind != "bool" {
+                return Err(newError("if condition must have type `bool`", ast.Span(con program, condition)))
+            }
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    baseLocals := copyLocals(con self.locals)
+    thenBranch := ast.Child(con program, expression, 1)
+    mut thenType := unitType()
+    match self.checkExpression(con program, thenBranch) {
+        case Ok(ty) {
+            thenType = ty
+        }
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            return Err(error)
+        }
+    }
+
+    self.locals = copyLocals(con baseLocals)
+    elseBranch := ast.Child(con program, expression, 2)
+    mut elseType := unitType()
+    match self.checkExpression(con program, elseBranch) {
+        case Ok(ty) {
+            elseType = ty
+        }
+        case Err(error) {
+            self.locals = copyLocals(con baseLocals)
+            return Err(error)
+        }
+    }
+    self.locals = baseLocals
+
+    if thenType.text != elseType.text {
+        message := strings.join(con []string{"if branches must have the same type: got `", token.CopyText(con thenType.text), "` and `", token.CopyText(con elseType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, expression)))
+    }
+    if thenType.kind == "unit" {
+        return Err(newError("if expression branches must produce a value in v0", ast.Span(con program, expression)))
+    }
+    self.recordType(expression, con thenType)
+    return Ok(thenType)
 }
 
 func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {

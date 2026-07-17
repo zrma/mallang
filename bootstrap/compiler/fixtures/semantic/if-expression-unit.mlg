@@ -1,0 +1,5 @@
+func touch() {}
+
+func main() {
+    value := if true { touch() } else { touch() }
+}
