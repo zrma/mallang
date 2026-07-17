@@ -100,6 +100,8 @@ range source reads, Copy/index-only bindings, body scope, active-source
 assignment and persistent outer moves. P176c4a checks owned/`con`/`mut` direct
 local method receivers, method arguments and receiver/argument borrow overlap.
 P176c4b extends the same ownership rules to local-rooted field/index receivers
-and temporary/computed bases without evaluating receiver inputs twice. Complete
-ADT/closure/generic semantics and deterministic typed-IR drop insertion remain
-incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.
+and temporary/computed bases without evaluating receiver inputs twice. P176d1a
+checks explicit non-generic struct, fixed-size array and slice literals with
+owned element moves. Expected-type propagation, complete ADT/closure/generic
+semantics and deterministic typed-IR drop insertion remain incomplete, so no
+complete semantic, typed-IR or Stage1 compiler claim is made.

@@ -1,0 +1,5 @@
+func exercise(value string) [2]string {
+    return [2]string{value, value}
+}
+
+func main() {}

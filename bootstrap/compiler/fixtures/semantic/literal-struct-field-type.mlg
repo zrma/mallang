@@ -1,0 +1,9 @@
+type User struct {
+    age int
+}
+
+func exercise() User {
+    return User{age: "old"}
+}
+
+func main() {}

@@ -1718,6 +1718,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] range loop binding과 persistent ownership state join
 - [x] direct local owned/`con`/`mut` method receiver와 argument overlap
 - [x] field/index/temporary method receiver ownership
+- [x] explicit struct/array/slice composite literal semantics
+- [ ] expected-type propagation through literals, constructors and calls
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

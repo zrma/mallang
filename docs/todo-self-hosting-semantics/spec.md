@@ -69,6 +69,11 @@ agrees.
 
 ### P176d: Complete Semantic Surface
 
+- P176d1a: check explicit non-generic struct, fixed-size array and slice literals,
+  including field completeness, element counts, types and owned element moves
+  (complete)
+- P176d1b: propagate expected types through literals, constructors, calls,
+  returns and branch expressions while preserving Stage0 diagnostic priority
 - arrays, slices, structs, enums, match coverage and recursive ADTs
 - closures, captures, function values and indirect calls
 - generic validation, specialization and standard intrinsic identity
@@ -311,6 +316,19 @@ specialization and function-body checking until later P176 slices.
   Mallang project tests pass through Stage0, generated Stage1, strict
   allocation accounting and ASan/UBSan. Complete ADT, closure, generic and
   typed-IR coverage remains P176d-P176e.
+
+## P176d1a Evidence
+
+- Explicit struct literals reject duplicate, unknown and missing fields before
+  recording their resolved struct type. Field expressions are checked in source
+  order as owned values, preserving move state and Stage0 field diagnostics.
+- Fixed-size array literals enforce their declared length; array and slice
+  literals check owned elements in source order and preserve zero-based element
+  mismatch diagnostics.
+- One hundred twenty-one semantic fixtures, six typed-IR fixtures and
+  ninety-four Mallang project tests pass through Stage0, generated Stage1,
+  strict allocation accounting and ASan/UBSan. Expected-type propagation and
+  constructors remain P176d1b.
 
 ## B2 Completion Criteria
 

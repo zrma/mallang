@@ -1,0 +1,5 @@
+func exercise() [2]int {
+    return [2]int{1, "bad"}
+}
+
+func main() {}

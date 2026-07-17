@@ -531,7 +531,7 @@ byte-for-byte differential 검증해 닫았다. 현재 B2는 비제네릭 선언
 signature, primitive function body, named function value와 direct/indirect call을
 Mallang으로 검사하고 field/index read까지 incremental typed IR을 Rust Stage0과
 비교하며 mutable field/index assignment place도 검사한다. integrated gate는 159개
-repository source와 113개 semantic fixture, 6개 IR fixture를
+repository source와 121개 semantic fixture, 6개 IR fixture를
 normal/strict/sanitizer 경로에서 검증한다. nested lexical scope, if-statement
 return convergence와 if-expression branch type convergence까지 구현됐으며
 non-Copy local move, nested field/index `con`/`mut` borrow와 same-call overlap도
@@ -541,8 +541,10 @@ loop-scoped init, optional condition과 direct/field/index post도 검사한다.
 source read와 Copy/index-only binding, body scope, active-source assignment 및
 persistent outer move도 검사한다. method receiver의 owned move, `con` read,
 `mut` mutability와 receiver/argument borrow overlap을 direct local, local-rooted
-field/index 및 temporary/computed base에서 검사하며 86개 Mallang compiler project
-test가 이를 고정한다. 다음 slice는 P176d complete semantic surface다. public language
+field/index 및 temporary/computed base에서 검사한다. explicit struct/array/slice
+literal의 completeness, length, type과 owned element move도 검사하며 94개 Mallang
+compiler project test가 이를 고정한다. 다음 slice는 P176d1b expected-type
+propagation이다. public language
 또는 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 

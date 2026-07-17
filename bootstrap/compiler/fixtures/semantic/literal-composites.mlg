@@ -1,0 +1,13 @@
+type User struct {
+    name string
+    age int
+}
+
+func exercise(name string) int {
+    user := User{name: name, age: 30}
+    values := [2]int{user.age, 2}
+    items := []int{values[0], values[1]}
+    return items[0]
+}
+
+func main() {}

@@ -1,0 +1,9 @@
+type User struct {
+    name string
+}
+
+func exercise() User {
+    return User{name: "kim", name: "lee"}
+}
+
+func main() {}

@@ -1268,6 +1268,12 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
     if kind == "Expr.Call" {
         return self.checkCall(con program, expression)
     }
+    if kind == "Expr.StructLiteral" {
+        return self.checkStructLiteral(con program, expression)
+    }
+    if kind == "Expr.ArrayLiteral" {
+        return self.checkArrayLiteral(con program, expression)
+    }
     if kind == "Expr.FieldAccess" {
         return self.checkFieldAccess(con program, expression, con valueUse)
     }
@@ -1347,6 +1353,124 @@ func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expre
         }
     }
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
+}
+
+func (mut self CheckedProgram) checkStructLiteral(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    typeName := ast.Value(con program, expression)
+    structure := self.structIndex(con typeName)
+    if structure < 0 {
+        return Err(newError(strings.join(con []string{"unknown struct `", token.CopyText(con typeName), "`",}, con ""), ast.Span(con program, expression)))
+    }
+
+    for mut child := 0; child < ast.ChildCount(con program, expression); child = child + 1 {
+        field := ast.Child(con program, expression, child)
+        if ast.Kind(con program, field) != "FieldInit" {
+            return Err(newError("generic struct literals require v0.4 specialization", ast.Span(con program, expression)))
+        }
+        fieldName := ast.Value(con program, field)
+        for mut previous := 0; previous < child; previous = previous + 1 {
+            previousField := ast.Child(con program, expression, previous)
+            if ast.Kind(con program, previousField) == "FieldInit" && ast.Value(con program, previousField) == fieldName {
+                message := strings.join(con []string{"duplicate field `", token.CopyText(con fieldName), "` in `", token.CopyText(con typeName), "` literal",}, con "")
+                return Err(newError(message, ast.Span(con program, field)))
+            }
+        }
+
+        mut signatureField := -1
+        for mut index := 0; index < len(self.structs[structure].fields); index = index + 1 {
+            if self.structs[structure].fields[index].name == fieldName {
+                signatureField = index
+            }
+        }
+        if signatureField < 0 {
+            message := strings.join(con []string{"unknown field `", token.CopyText(con fieldName), "` in `", token.CopyText(con typeName), "` literal",}, con "")
+            return Err(newError(message, ast.Span(con program, field)))
+        }
+
+        value := ast.Child(con program, field, 0)
+        match self.checkExpression(con program, value) {
+            case Ok(valueType) {
+                expectedType := copyType(con self.structs[structure].fields[signatureField].ty)
+                if valueType.text != expectedType.text {
+                    message := strings.join(con []string{"field `", token.CopyText(con fieldName), "` type mismatch: expected `", token.CopyText(con expectedType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, field)))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    for mut field := 0; field < len(self.structs[structure].fields); field = field + 1 {
+        mut found := false
+        for mut child := 0; child < ast.ChildCount(con program, expression); child = child + 1 {
+            fieldNode := ast.Child(con program, expression, child)
+            if ast.Kind(con program, fieldNode) == "FieldInit" && ast.Value(con program, fieldNode) == self.structs[structure].fields[field].name {
+                found = true
+            }
+        }
+        if !found {
+            message := strings.join(con []string{"missing field `", token.CopyText(con self.structs[structure].fields[field].name), "` in `", token.CopyText(con typeName), "` literal",}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
+    }
+
+    ty := ResolvedType{text: token.CopyText(con typeName), kind: "struct", copy: false, cleanup: true,}
+    self.recordType(expression, con ty)
+    return Ok(ty)
+}
+
+func (mut self CheckedProgram) checkArrayLiteral(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    typeNode := ast.Child(con program, expression, 0)
+    mut collectionType := unitType()
+    match self.resolveType(con program, typeNode) {
+        case Ok(ty) {
+            collectionType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if collectionType.kind != "array" && collectionType.kind != "slice" {
+        return Err(newError("array literal requires a fixed-size array or slice type", ast.Span(con program, typeNode)))
+    }
+
+    elementCount := ast.ChildCount(con program, expression) - 1
+    if collectionType.kind == "array" {
+        expectedLength := self.arrayLength(con collectionType)
+        if elementCount != expectedLength {
+            message := strings.join(con []string{"array literal length mismatch: expected ", strings.fromInt(expectedLength), " elements, got ", strings.fromInt(elementCount),}, con "")
+            return Err(newError(message, ast.Span(con program, expression)))
+        }
+    }
+
+    mut elementType := unitType()
+    match self.typeArgument(con collectionType, 0) {
+        case Ok(ty) {
+            elementType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked array literal element type is missing", ast.Span(con program, expression)))
+        }
+    }
+    for mut index := 0; index < elementCount; index = index + 1 {
+        value := ast.Child(con program, expression, index + 1)
+        match self.checkExpression(con program, value) {
+            case Ok(valueType) {
+                if valueType.text != elementType.text {
+                    message := strings.join(con []string{"array literal element ", strings.fromInt(index), " type mismatch: expected `", token.CopyText(con elementType.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, value)))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    self.recordType(expression, con collectionType)
+    return Ok(collectionType)
 }
 
 func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
