@@ -1,0 +1,9 @@
+func consume(value string) int {
+    return 1
+}
+
+func leak(con value string) int {
+    return consume(value)
+}
+
+func main() {}

@@ -1,0 +1,10 @@
+func touch(mut value string) int {
+    return 1
+}
+
+func exercise() int {
+    value := "hello"
+    return touch(mut value)
+}
+
+func main() {}

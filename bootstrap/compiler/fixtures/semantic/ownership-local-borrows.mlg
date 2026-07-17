@@ -1,0 +1,26 @@
+func inspect(con value string) int {
+    return 1
+}
+
+func touch(mut value string) int {
+    return 2
+}
+
+func copyValue(value int) int {
+    return value
+}
+
+func exercise() int {
+    text := "hello"
+    first := inspect(con text)
+    second := inspect(con text)
+    mut changed := "before"
+    third := touch(mut changed)
+    fourth := touch(mut changed)
+    number := 7
+    fifth := copyValue(number)
+    sixth := copyValue(number)
+    return first + second + third + fourth + fifth + sixth
+}
+
+func main() {}

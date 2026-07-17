@@ -71,6 +71,8 @@ pub type FunctionReference struct {
 pub type Local struct {
     name string
     mutable bool
+    borrowed bool
+    moved bool
     ty ResolvedType
     function int
     scopeDepth int
@@ -589,7 +591,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if reference >= 0 {
                     function = self.functionReferences[reference].function
                 }
-                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", ty: ty, function: function, scopeDepth: self.scopeDepth})
+                self.locals = append(self.locals, Local{name: name, mutable: kind == "Stmt.Let.Mutable", borrowed: false, moved: false, ty: ty, function: function, scopeDepth: self.scopeDepth})
                 return Ok(false)
             }
             case Err(error) {
@@ -618,6 +620,7 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
                 if reference >= 0 {
                     self.locals[index].function = self.functionReferences[reference].function
                 }
+                self.locals[index].moved = false
                 return Ok(false)
             }
             case Err(error) {
@@ -860,6 +863,10 @@ func (mut self CheckedProgram) checkIndexAssign(con program ast.Program, stateme
 }
 
 func (mut self CheckedProgram) checkExpression(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    return self.checkExpressionUse(con program, expression, con "owned")
+}
+
+func (mut self CheckedProgram) checkExpressionUse(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
     kind := ast.Kind(con program, expression)
     if kind == "Expr.Int" {
         ty := intType()
@@ -892,7 +899,16 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
             self.recordFunctionReference(expression, function, true)
             return Ok(ty)
         }
+        if self.locals[index].moved {
+            return Err(newError(strings.join(con []string{"use of moved value `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+        }
         ty := copyType(con self.locals[index].ty)
+        if valueUse == "owned" && !ty.copy {
+            if self.locals[index].borrowed {
+                return Err(newError(strings.join(con []string{"cannot move borrowed value `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, expression)))
+            }
+            self.locals[index].moved = true
+        }
         self.recordType(expression, con ty)
         if ty.kind == "function" {
             self.recordFunctionReference(expression, self.locals[index].function, false)
@@ -909,7 +925,7 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
         return self.checkIndexAccess(con program, expression)
     }
     if kind == "Expr.If" {
-        return self.checkIfExpression(con program, expression)
+        return self.checkIfExpression(con program, expression, con valueUse)
     }
     if kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" {
         operand := ast.Child(con program, expression, 0)
@@ -937,7 +953,11 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
         left := ast.Child(con program, expression, 0)
         right := ast.Child(con program, expression, 1)
         mut leftType := unitType()
-        match self.checkExpression(con program, left) {
+        mut operandUse := "owned"
+        if isEqualityKind(con kind) {
+            operandUse = "read"
+        }
+        match self.checkExpressionUse(con program, left, con operandUse) {
             case Ok(ty) {
                 leftType = ty
             }
@@ -945,7 +965,7 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
                 return Err(error)
             }
         }
-        match self.checkExpression(con program, right) {
+        match self.checkExpressionUse(con program, right, con operandUse) {
             case Ok(rightType) {
                 combinedSpan := source.Join(ast.Span(con program, left), ast.Span(con program, right))
                 if leftType.text != rightType.text {
@@ -979,7 +999,7 @@ func (mut self CheckedProgram) checkExpression(con program ast.Program, expressi
     return Err(newError("B2b semantic checker does not yet accept this expression", ast.Span(con program, expression)))
 }
 
-func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expression int, con valueUse string) Result[ResolvedType, SemanticError] {
     condition := ast.Child(con program, expression, 0)
     match self.checkExpression(con program, condition) {
         case Ok(conditionType) {
@@ -995,7 +1015,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     baseLocals := copyLocals(con self.locals)
     thenBranch := ast.Child(con program, expression, 1)
     mut thenType := unitType()
-    match self.checkExpression(con program, thenBranch) {
+    match self.checkExpressionUse(con program, thenBranch, con valueUse) {
         case Ok(ty) {
             thenType = ty
         }
@@ -1008,7 +1028,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
     self.locals = copyLocals(con baseLocals)
     elseBranch := ast.Child(con program, expression, 2)
     mut elseType := unitType()
-    match self.checkExpression(con program, elseBranch) {
+    match self.checkExpressionUse(con program, elseBranch, con valueUse) {
         case Ok(ty) {
             elseType = ty
         }
@@ -1032,7 +1052,7 @@ func (mut self CheckedProgram) checkIfExpression(con program ast.Program, expres
 
 func (mut self CheckedProgram) checkFieldAccess(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
     base := ast.Child(con program, expression, 0)
-    match self.checkExpression(con program, base) {
+    match self.checkExpressionUse(con program, base, con "read") {
         case Ok(baseType) {
             if baseType.kind != "struct" {
                 message := strings.join(con []string{"field access requires a struct value, got `", token.CopyText(con baseType.text), "`",}, con "")
@@ -1063,7 +1083,7 @@ func (mut self CheckedProgram) checkIndexAccess(con program ast.Program, express
     base := ast.Child(con program, expression, 0)
     index := ast.Child(con program, expression, 1)
     mut baseType := unitType()
-    match self.checkExpression(con program, base) {
+    match self.checkExpressionUse(con program, base, con "read") {
         case Ok(ty) {
             baseType = ty
         }
@@ -1248,6 +1268,9 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
         if self.locals[local].ty.kind != "function" {
             return Err(newError(strings.join(con []string{"`", token.CopyText(con name), "` is not callable",}, con ""), ast.Span(con program, expression)))
         }
+        if self.locals[local].moved {
+            return Err(newError(strings.join(con []string{"use of moved value `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, callee)))
+        }
         function = self.locals[local].function
         indirect = true
         if function < 0 {
@@ -1306,20 +1329,57 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         }
 
         value := ast.Child(con program, argument, 0)
-        match self.checkExpression(con program, value) {
-            case Ok(argumentType) {
-                parameterType := copyType(con self.functions[function].params[index].ty)
-                if argumentType.text != parameterType.text {
-                    message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
-                    return Err(newError(message, ast.Span(con program, argument)))
+        mut argumentType := unitType()
+        if argumentMode == "con" || argumentMode == "mut" {
+            match self.checkBorrowArgument(con program, argument, argumentMode == "mut") {
+                case Ok(ty) {
+                    argumentType = ty
+                }
+                case Err(error) {
+                    return Err(error)
                 }
             }
-            case Err(error) {
-                return Err(error)
+        } else {
+            match self.checkExpression(con program, value) {
+                case Ok(ty) {
+                    argumentType = ty
+                }
+                case Err(error) {
+                    return Err(error)
+                }
             }
+        }
+        parameterType := copyType(con self.functions[function].params[index].ty)
+        if argumentType.text != parameterType.text {
+            message := strings.join(con []string{"argument type mismatch for `", token.CopyText(con name), "`: expected `", token.CopyText(con parameterType.text), "`, got `", token.CopyText(con argumentType.text), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, argument)))
         }
     }
     return Ok(true)
+}
+
+func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, argument int, mutable bool) Result[ResolvedType, SemanticError] {
+    value := ast.Child(con program, argument, 0)
+    if ast.Kind(con program, value) != "Expr.Var" {
+        return Err(newError("P176c1 borrow arguments require a direct local variable", ast.Span(con program, value)))
+    }
+    name := ast.Value(con program, value)
+    local := localIndex(con self.locals, con name)
+    if local < 0 {
+        return Err(newError(strings.join(con []string{"unknown variable `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, value)))
+    }
+    if self.locals[local].moved {
+        return Err(newError(strings.join(con []string{"borrow of moved value `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, value)))
+    }
+    if mutable && !self.locals[local].mutable {
+        return Err(newError(strings.join(con []string{"cannot mutably borrow immutable binding `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, argument)))
+    }
+    ty := copyType(con self.locals[local].ty)
+    self.recordType(value, con ty)
+    if ty.kind == "function" {
+        self.recordFunctionReference(value, self.locals[local].function, false)
+    }
+    return Ok(ty)
 }
 
 func (mut self CheckedProgram) recordType(node int, con ty ResolvedType) {
@@ -1665,13 +1725,13 @@ func localIndex(con locals []Local, con name string) int {
 }
 
 func localFromParam(con param ParamSig) Local {
-    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
+    return Local{name: token.CopyText(con param.name), mutable: param.mode == "mut", borrowed: param.mode != "owned", moved: false, ty: copyType(con param.ty), function: -1, scopeDepth: 0,}
 }
 
 func copyLocals(con locals []Local) []Local {
     mut copied := []Local{}
     for mut index := 0; index < len(locals); index = index + 1 {
-        copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
+        copied = append(copied, Local{name: token.CopyText(con locals[index].name), mutable: locals[index].mutable, borrowed: locals[index].borrowed, moved: locals[index].moved, ty: copyType(con locals[index].ty), function: locals[index].function, scopeDepth: locals[index].scopeDepth,})
     }
     return copied
 }

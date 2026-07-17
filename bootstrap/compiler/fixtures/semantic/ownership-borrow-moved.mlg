@@ -1,0 +1,15 @@
+func consume(value string) int {
+    return 1
+}
+
+func inspect(con value string) int {
+    return 2
+}
+
+func exercise() int {
+    value := "hello"
+    first := consume(value)
+    return first + inspect(con value)
+}
+
+func main() {}

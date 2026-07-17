@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176b4 complete
+Status: in progress; P176a-P176c1 complete
 
 ## Objective
 
@@ -48,8 +48,11 @@ agrees.
 
 ### P176c: Ownership And Places
 
-- model available, moved, immutably borrowed and mutably borrowed local states
-- distinguish owned, `con` and `mut` call arguments and method receivers
+- P176c1: model local available/moved state, borrowed parameters and direct
+  owned/`con`/`mut` call arguments (complete)
+- P176c2: validate field/index borrow places and same-call overlap
+- P176c3: merge move state across branches and loops
+- distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
 
@@ -174,6 +177,20 @@ specialization and function-body checking until later P176 slices.
 - Fifty-one semantic fixtures, six typed-IR fixtures and thirty-one Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan.
+
+## P176c1 Evidence
+
+- Locals record whether they originate from borrowed parameters and whether an
+  owned non-Copy use has moved them; Copy values remain reusable.
+- Direct local `con` and `mut` call arguments are call-scoped reads rather than
+  first-class borrow values. Mutable borrows require a mutable root and all
+  borrows reject moved roots.
+- Moving a borrowed non-Copy parameter and using or borrowing a moved local
+  preserve Stage0's first diagnostic message and source span.
+- Fifty-seven semantic fixtures, six typed-IR fixtures and thirty-five Mallang
+  project tests pass through Stage0, generated Stage1, strict accounting and
+  ASan/UBSan. Field/index borrow places and control-flow state joins remain
+  explicit follow-up work.
 
 ## B2 Completion Criteria
 

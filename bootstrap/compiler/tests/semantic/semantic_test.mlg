@@ -382,3 +382,107 @@ test RejectsIfExpressionBranchTypeMismatch() {
         }
     }
 }
+
+test ChecksLocalMoveAndBorrowStates() {
+    source := "func inspect(con value string) int { return 1 } func touch(mut value string) int { return 2 } func copyValue(value int) int { return value } func exercise() int { text := \"hello\"; first := inspect(con text); second := inspect(con text); mut changed := \"before\"; third := touch(mut changed); fourth := touch(mut changed); number := 7; fifth := copyValue(number); sixth := copyValue(number); return first + second + third + fourth + fifth + sixth } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(true)
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUseAfterMove() {
+    source := "func consume(value string) int { return 1 } func exercise() int { value := \"hello\"; first := consume(value); return first + consume(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "use of moved value `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsMutableBorrowOfImmutableLocal() {
+    source := "func touch(mut value string) int { return 1 } func exercise() int { value := \"hello\"; return touch(mut value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "cannot mutably borrow immutable binding `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsMovingBorrowedLocal() {
+    source := "func consume(value string) int { return 1 } func leak(con value string) int { return consume(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "cannot move borrowed value `value`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
