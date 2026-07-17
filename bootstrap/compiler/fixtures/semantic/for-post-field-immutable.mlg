@@ -1,0 +1,10 @@
+type Counter struct {
+    value int
+}
+
+func exercise(counter Counter) int {
+    for ; false; counter.value = 1 {}
+    return 0
+}
+
+func main() {}

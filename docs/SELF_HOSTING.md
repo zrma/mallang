@@ -94,6 +94,7 @@ field/index places with same-call overlap checking. P176c3a conservatively
 merges outer move state across statement and expression `if` branches. P176c3b1
 checks condition and conditionless loop scope, control depth and persistent
 condition/body moves. P176c3b2a adds loop-scoped init bindings, optional
-conditions and direct-binding post assignment ownership. Field/index post
-targets, range-loop ownership and deterministic drop insertion remain
-incomplete, so no complete semantic, typed-IR or Stage1 compiler claim is made.
+conditions and direct-binding post assignment ownership. P176c3b2b1 reuses the
+same assignment-place checks for field/index post targets. Range-loop ownership
+and deterministic drop insertion remain incomplete, so no complete semantic,
+typed-IR or Stage1 compiler claim is made.

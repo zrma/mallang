@@ -1,0 +1,6 @@
+func exercise(mut values [2]int, index int) int {
+    for ; false; values[index] = 1 {}
+    return values[0]
+}
+
+func main() {}

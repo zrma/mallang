@@ -920,8 +920,19 @@ func (mut self CheckedProgram) checkForInit(con program ast.Program, init int, c
 
 func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, con span source.Span) Result[bool, SemanticError] {
     target := ast.Child(con program, post, 0)
-    if ast.Kind(con program, target) != "Expr.Var" {
-        return Err(newError("B2c3b checker does not yet accept field or index for-post targets", ast.Span(con program, target)))
+    value := ast.Child(con program, post, 1)
+    targetKind := ast.Kind(con program, target)
+    if targetKind == "Expr.FieldAccess" {
+        base := ast.Child(con program, target, 0)
+        return self.checkFieldPlaceAssign(con program, base, con ast.Value(con program, target), value)
+    }
+    if targetKind == "Expr.Index" {
+        base := ast.Child(con program, target, 0)
+        index := ast.Child(con program, target, 1)
+        return self.checkIndexPlaceAssign(con program, base, index, value, con span)
+    }
+    if targetKind != "Expr.Var" {
+        return Err(newError("for post target must be a variable, field access, or index expression", ast.Span(con program, target)))
     }
     name := ast.Value(con program, target)
     local := localIndex(con self.locals, con name)
@@ -931,7 +942,6 @@ func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, c
     if !self.locals[local].mutable {
         return Err(newError(strings.join(con []string{"cannot assign to immutable binding `", token.CopyText(con name), "`",}, con ""), source.Copy(con span)))
     }
-    value := ast.Child(con program, post, 1)
     match self.checkExpression(con program, value) {
         case Ok(valueType) {
             if valueType.text != self.locals[local].ty.text {
@@ -956,6 +966,10 @@ func (mut self CheckedProgram) checkFieldAssign(con program ast.Program, stateme
     base := ast.Child(con program, statement, 0)
     value := ast.Child(con program, statement, 1)
     field := ast.Value(con program, statement)
+    return self.checkFieldPlaceAssign(con program, base, con field, value)
+}
+
+func (mut self CheckedProgram) checkFieldPlaceAssign(con program ast.Program, base int, con field string, value int) Result[bool, SemanticError] {
     mut root := ""
     match assignmentRoot(con program, base) {
         case Ok(name) {
@@ -1010,6 +1024,10 @@ func (mut self CheckedProgram) checkIndexAssign(con program ast.Program, stateme
     base := ast.Child(con program, statement, 0)
     index := ast.Child(con program, statement, 1)
     value := ast.Child(con program, statement, 2)
+    return self.checkIndexPlaceAssign(con program, base, index, value, con ast.Span(con program, statement))
+}
+
+func (mut self CheckedProgram) checkIndexPlaceAssign(con program ast.Program, base int, index int, value int, con span source.Span) Result[bool, SemanticError] {
     mut root := ""
     match assignmentRoot(con program, base) {
         case Ok(name) {
@@ -1066,14 +1084,14 @@ func (mut self CheckedProgram) checkIndexAssign(con program ast.Program, stateme
             element = ty
         }
         case Err(_) {
-            return Err(newError("checked indexed assignment element type is missing", ast.Span(con program, statement)))
+            return Err(newError("checked indexed assignment element type is missing", source.Copy(con span)))
         }
     }
     match self.checkExpression(con program, value) {
         case Ok(valueType) {
             if valueType.text != element.text {
                 message := strings.join(con []string{"indexed assignment type mismatch: expected `", token.CopyText(con element.text), "`, got `", token.CopyText(con valueType.text), "`",}, con "")
-                return Err(newError(message, ast.Span(con program, statement)))
+                return Err(newError(message, source.Copy(con span)))
             }
         }
         case Err(error) {

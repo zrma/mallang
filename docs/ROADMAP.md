@@ -1714,7 +1714,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] statement/expression `if` branch ownership state join
 - [x] condition/conditionless loop persistent ownership state와 loop control
 - [x] three-clause init/condition/direct post persistent ownership state
-- [ ] field/index post와 range loop persistent ownership state join
+- [x] field/index for-post assignment place
+- [ ] range loop binding과 persistent ownership state join
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

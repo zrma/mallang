@@ -1,0 +1,10 @@
+type Counter struct {
+    value int
+}
+
+func exercise(mut counter Counter) int {
+    for ; false; counter.value = counter.value + 1 {}
+    return counter.value
+}
+
+func main() {}

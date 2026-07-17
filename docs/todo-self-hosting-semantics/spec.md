@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176c3b2a complete
+Status: in progress; P176a-P176c3b2b1 complete
 
 ## Objective
 
@@ -57,7 +57,9 @@ agrees.
   condition/body persistent move state (complete)
 - P176c3b2a: check three-clause init, optional condition and direct binding post
   persistent move state (complete)
-- P176c3b2b: check field/index post targets and range loop persistent move state
+- P176c3b2b1: check field/index post targets through shared assignment places
+  (complete)
+- P176c3b2b2: check range loop bindings and persistent move state
 - distinguish owned, `con` and `mut` method receivers
 - validate assignment places, field/index borrows and branch/loop state joins
 - preserve cleanup obligations without exposing pointers or first-class borrows
@@ -249,6 +251,18 @@ specialization and function-body checking until later P176 slices.
 - Seventy-six semantic fixtures, six typed-IR fixtures and fifty-three Mallang
   project tests pass through Stage0, generated Stage1, strict accounting and
   ASan/UBSan. Field/index post targets and range loops remain P176c3b2b.
+
+## P176c3b2b1 Evidence
+
+- Statement and for-post field/index assignments share one local-rooted place
+  checker for mutability, nested field resolution, index validation and value
+  type convergence.
+- Mutable struct fields and array/slice elements are accepted as repeatable
+  post targets. Immutable roots preserve Stage0's field/index diagnostics and
+  source spans.
+- Eighty semantic fixtures, six typed-IR fixtures and fifty-six Mallang project
+  tests pass through Stage0, generated Stage1, strict accounting and ASan/UBSan.
+  Range-loop binding and ownership checks remain P176c3b2b2.
 
 ## B2 Completion Criteria
 

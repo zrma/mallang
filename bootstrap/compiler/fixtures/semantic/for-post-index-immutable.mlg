@@ -1,0 +1,6 @@
+func exercise(values [2]int) int {
+    for ; false; values[0] = 1 {}
+    return 0
+}
+
+func main() {}
