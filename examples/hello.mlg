@@ -1,9 +1,9 @@
 func main() {
     name := "kim"
-    msg := greet(con name)
-    print(msg)
+    greet(con name)
 }
 
-func greet(con name string) string {
-    return "hello " + name
+func greet(con name string) {
+    print("hello")
+    print(name)
 }

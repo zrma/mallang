@@ -291,6 +291,13 @@ scripts/check-reference-cli.sh \
   target/mallang/textstats \
   tests/fixtures/v06-reference-cli/input.txt
 "${CARGO[@]}" run --bin mlg -- lex examples/hello.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- check examples/hello.mlg >/dev/null
+"${CARGO[@]}" run --quiet --bin mlg -- build examples/hello.mlg -o target/mallang/hello >/dev/null
+hello_output="$(target/mallang/hello)"
+if [[ "$hello_output" != $'hello\nkim' ]]; then
+  echo "hello native build smoke failed: expected hello and kim, got '$hello_output'" >&2
+  exit 1
+fi
 "${CARGO[@]}" run --bin mlg -- parse examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- check examples/first.mlg >/dev/null
 "${CARGO[@]}" run --bin mlg -- build examples/first.mlg -o target/mallang/first >/dev/null
