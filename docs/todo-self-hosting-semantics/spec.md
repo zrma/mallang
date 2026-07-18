@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3t complete
+Status: in progress; P176a-P176e2c3u complete
 
 ## Objective
 
@@ -166,6 +166,8 @@ agrees.
 - P176e2c3s: insert owned for-init exit cleanup and loop/range body-local
   cleanup at normal tails and before `break` or `continue` (complete)
 - P176e2c3t: lower index-only non-Copy ranges and indexed `con` element borrows
+- P176e2c3u: lower method declarations and direct local owned, `con` and `mut`
+  receiver calls
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -596,9 +598,12 @@ specialization and function-body checking until later P176 slices.
   owned range-source cleanup after the loop. P176e2c3s inserts owned for-init
   exit cleanup and loop/range body-local cleanup at normal tails and before
   `break` or `continue`. P176e2c3t lowers index-only non-Copy ranges and indexed
-  `con` element borrows. Thirty-five typed-IR fixtures and two hundred thirty-five
-  Mallang project tests cover the expanded boundary. Method, generic and
-  intrinsic IR, remaining full-expression cases and checked
+  `con` element borrows. P176e2c3u lowers method declarations as
+  `ReceiverType.method` functions and preserves direct local owned, `con` and
+  `mut` receivers as the first call argument. Thirty-six typed-IR fixtures and
+  two hundred thirty-six Mallang project tests cover the expanded boundary.
+  Field, index and temporary method receivers, generic and intrinsic IR,
+  remaining full-expression cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

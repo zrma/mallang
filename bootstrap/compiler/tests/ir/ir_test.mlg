@@ -1702,6 +1702,64 @@ test LowersIndexOnlyNonCopyRangeBorrows() {
     }
 }
 
+test LowersDirectMethodReceiverModes() {
+    source := "type Counter struct { value int } type User struct { name string } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) incrementBy(amount int) { self.value = self.value + amount } func (self User) consume() int { print(self.name); return 1 } func exercise(mut counter Counter, user User) int { counter.incrementBy(2); value := counter.valueOf(); return value + user.consume() } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions) == 5)
+                                    assert(lowered.functions[0].name == "Counter.valueOf")
+                                    assert(lowered.functions[0].params[0].mode == "con")
+                                    assert(lowered.functions[1].name == "Counter.incrementBy")
+                                    assert(lowered.functions[1].params[0].mode == "mut")
+                                    assert(lowered.functions[2].name == "User.consume")
+                                    assert(lowered.functions[2].params[0].mode == "owned")
+
+                                    mut conCalls := 0
+                                    mut mutCalls := 0
+                                    mut ownedCalls := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Expr.Call" && lowered.nodes[node].value != "print" {
+                                            receiverArgument := lowered.nodes[node].children[0]
+                                            if lowered.nodes[receiverArgument].kind == "Arg.Con" {
+                                                conCalls = conCalls + 1
+                                            } else if lowered.nodes[receiverArgument].kind == "Arg.Mut" {
+                                                mutCalls = mutCalls + 1
+                                            } else if lowered.nodes[receiverArgument].kind == "Arg.Owned" {
+                                                ownedCalls = ownedCalls + 1
+                                            }
+                                        }
+                                    }
+                                    assert(conCalls == 1)
+                                    assert(mutCalls == 1)
+                                    assert(ownedCalls == 1)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

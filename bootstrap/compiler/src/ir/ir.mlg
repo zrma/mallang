@@ -204,36 +204,67 @@ pub func NormalizeError(con error Error) string {
 func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, con checked semantic.CheckedProgram) Result[bool, Error] {
     name := ast.Value(con syntax, declaration)
     mut block := -1
+    mut receiverNode := -1
     for mut child := 0; child < ast.ChildCount(con syntax, declaration); child = child + 1 {
         node := ast.Child(con syntax, declaration, child)
         kind := ast.Kind(con syntax, node)
         if kind == "Receiver" {
-            return Err(newError("B2b typed IR does not yet accept methods", ast.Span(con syntax, declaration)))
+            receiverNode = ast.Child(con syntax, node, 0)
         }
         if kind == "Block" {
             block = node
         }
     }
 
+    mut irName := token.CopyText(con name)
     mut returnType := ""
-    match semantic.FunctionReturnType(con checked, con name) {
-        case Ok(ty) {
-            returnType = ty
+    mut params := []Param{}
+    mut paramCleanup := []bool{}
+    if receiverNode >= 0 {
+        receiverTypeNode := ast.Child(con syntax, receiverNode, 0)
+        receiverType := ast.Value(con syntax, receiverTypeNode)
+        if !semantic.MethodExists(con checked, con receiverType, con name) {
+            return Err(newError("checked method signature is missing", ast.Span(con syntax, declaration)))
         }
-        case Err(_) {
-            return Err(newError("checked function return type is missing", ast.Span(con syntax, declaration)))
+        irName = strings.join(con []string{token.CopyText(con receiverType), ".", token.CopyText(con name),}, con "")
+        match semantic.MethodReturnType(con checked, con receiverType, con name) {
+            case Ok(ty) {
+                returnType = ty
+            }
+            case Err(_) {
+                return Err(newError("checked method return type is missing", ast.Span(con syntax, declaration)))
+            }
+        }
+        params = append(params, Param{name: semantic.MethodReceiverName(con checked, con receiverType, con name), mode: semantic.MethodReceiverMode(con checked, con receiverType, con name), ty: semantic.MethodReceiverType(con checked, con receiverType, con name),})
+        paramCleanup = append(paramCleanup, semantic.MethodReceiverNeedsCleanup(con checked, con receiverType, con name))
+        paramCount := semantic.MethodParamCount(con checked, con receiverType, con name)
+        for mut param := 0; param < paramCount; param = param + 1 {
+            params = append(params, Param{name: semantic.MethodParamName(con checked, con receiverType, con name, param), mode: semantic.MethodParamMode(con checked, con receiverType, con name, param), ty: semantic.MethodParamType(con checked, con receiverType, con name, param),})
+            paramCleanup = append(paramCleanup, semantic.MethodParamNeedsCleanup(con checked, con receiverType, con name, param))
+        }
+    } else {
+        match semantic.FunctionReturnType(con checked, con name) {
+            case Ok(ty) {
+                returnType = ty
+            }
+            case Err(_) {
+                return Err(newError("checked function return type is missing", ast.Span(con syntax, declaration)))
+            }
+        }
+        paramCount := semantic.FunctionParamCount(con checked, con name)
+        for mut param := 0; param < paramCount; param = param + 1 {
+            params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
+            paramCleanup = append(paramCleanup, semantic.FunctionParamNeedsCleanup(con checked, con name, param))
         }
     }
-    paramCount := semantic.FunctionParamCount(con checked, con name)
-    mut params := []Param{}
+
     mut cleanupParams := []CleanupBinding{}
     mut externalCleanupParams := []CleanupBinding{}
-    for mut param := 0; param < paramCount; param = param + 1 {
-        params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
-        if params[param].mode == "owned" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
+    for mut param := 0; param < len(params); param = param + 1 {
+        if params[param].mode == "owned" && paramCleanup[param] {
             cleanupParams = append(cleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
-        if params[param].mode == "mut" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
+        if params[param].mode == "mut" && paramCleanup[param] {
             externalCleanupParams = append(externalCleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
     }
@@ -251,7 +282,7 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
         }
     }
     body = self.insertStraightLineCleanupDrops(con body, cleanupParams, externalCleanupParams, ast.Span(con syntax, block))
-    self.functions = append(self.functions, Function{name: name, params: params, returnType: returnType, body: body})
+    self.functions = append(self.functions, Function{name: irName, params: params, returnType: returnType, body: body})
     return Ok(true)
 }
 
@@ -658,6 +689,60 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
                     }
                     return Ok(self.addNode("E", variantConstructorKind(con storage), token.CopyText(con variantName), token.CopyText(con ty), ast.Span(con syntax, expression), payloads, cleanup))
                 }
+            }
+
+            mut receiverType := ""
+            match semantic.NodeType(con checked, enumBase) {
+                case Ok(resolved) {
+                    receiverType = resolved
+                }
+                case Err(_) {}
+            }
+            methodName := ast.Value(con syntax, callee)
+            if receiverType != "" && semantic.MethodExists(con checked, con receiverType, con methodName) {
+                receiverMode := semantic.MethodReceiverMode(con checked, con receiverType, con methodName)
+                mut loweredReceiver := -1
+                if receiverMode == "owned" {
+                    match self.lowerExpression(con syntax, enumBase, con checked) {
+                        case Ok(value) {
+                            loweredReceiver = value
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                } else {
+                    match self.lowerReadExpression(con syntax, enumBase, con checked) {
+                        case Ok(value) {
+                            loweredReceiver = value
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+
+                mut receiverArgumentKind := "Arg.Owned"
+                if receiverMode == "con" {
+                    receiverArgumentKind = "Arg.Con"
+                } else if receiverMode == "mut" {
+                    receiverArgumentKind = "Arg.Mut"
+                }
+                receiverArgument := self.addNode("A", receiverArgumentKind, "", token.CopyText(con receiverType), ast.Span(con syntax, enumBase), []int{loweredReceiver}, false)
+                mut methodChildren := []int{receiverArgument,}
+                for mut argumentIndex := 1; argumentIndex < ast.ChildCount(con syntax, expression); argumentIndex = argumentIndex + 1 {
+                    argument := ast.Child(con syntax, expression, argumentIndex)
+                    match self.lowerArgument(con syntax, argument, con checked) {
+                        case Ok(loweredArgument) {
+                            methodChildren = append(methodChildren, loweredArgument)
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+                methodIrName := strings.join(con []string{token.CopyText(con receiverType), ".", token.CopyText(con methodName),}, con "")
+                return Ok(self.addNode("E", "Expr.Call", methodIrName, token.CopyText(con ty), ast.Span(con syntax, expression), methodChildren, cleanup))
             }
         }
         if ast.Kind(con syntax, callee) == "Expr.Var" &&(ast.Value(con syntax, callee) == "Some" || ast.Value(con syntax, callee) == "Ok" || ast.Value(con syntax, callee) == "Err") {

@@ -405,6 +405,66 @@ pub func FunctionParamNeedsCleanup(con checked CheckedProgram, con name string, 
     return checked.functions[index].params[param].ty.cleanup
 }
 
+pub func MethodExists(con checked CheckedProgram, con receiver string, con name string) bool {
+    return checked.methodIndex(con receiver, con name) >= 0
+}
+
+pub func MethodReturnType(con checked CheckedProgram, con receiver string, con name string) Result[string, bool] {
+    index := checked.methodIndex(con receiver, con name)
+    if index < 0 {
+        return Err(false)
+    }
+    return Ok(token.CopyText(con checked.methods[index].returnType.text))
+}
+
+pub func MethodReceiverName(con checked CheckedProgram, con receiver string, con name string) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].receiver.name)
+}
+
+pub func MethodReceiverMode(con checked CheckedProgram, con receiver string, con name string) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].receiver.mode)
+}
+
+pub func MethodReceiverType(con checked CheckedProgram, con receiver string, con name string) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].receiver.ty.text)
+}
+
+pub func MethodReceiverNeedsCleanup(con checked CheckedProgram, con receiver string, con name string) bool {
+    index := checked.methodIndex(con receiver, con name)
+    return checked.methods[index].receiver.ty.cleanup
+}
+
+pub func MethodParamCount(con checked CheckedProgram, con receiver string, con name string) int {
+    index := checked.methodIndex(con receiver, con name)
+    if index < 0 {
+        return - 1
+    }
+    return len(checked.methods[index].params)
+}
+
+pub func MethodParamName(con checked CheckedProgram, con receiver string, con name string, param int) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].params[param].name)
+}
+
+pub func MethodParamMode(con checked CheckedProgram, con receiver string, con name string, param int) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].params[param].mode)
+}
+
+pub func MethodParamType(con checked CheckedProgram, con receiver string, con name string, param int) string {
+    index := checked.methodIndex(con receiver, con name)
+    return token.CopyText(con checked.methods[index].params[param].ty.text)
+}
+
+pub func MethodParamNeedsCleanup(con checked CheckedProgram, con receiver string, con name string, param int) bool {
+    index := checked.methodIndex(con receiver, con name)
+    return checked.methods[index].params[param].ty.cleanup
+}
+
 pub func FunctionReferenceName(con checked CheckedProgram, node int) Result[string, bool] {
     index := checked.functionReferenceIndex(node)
     if index < 0 || checked.functionReferences[index].function < 0 {

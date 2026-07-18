@@ -1,0 +1,28 @@
+type Counter struct {
+    value int
+}
+
+type User struct {
+    name string
+}
+
+func (con self Counter) valueOf() int {
+    return self.value
+}
+
+func (mut self Counter) incrementBy(amount int) {
+    self.value = self.value + amount
+}
+
+func (self User) consume() int {
+    print(self.name)
+    return 1
+}
+
+func exercise(mut counter Counter, user User) int {
+    counter.incrementBy(2)
+    value := counter.valueOf()
+    return value + user.consume()
+}
+
+func main() {}
