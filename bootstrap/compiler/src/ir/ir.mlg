@@ -1351,6 +1351,7 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
     mut output := []int{}
     for mut statementIndex := 0; statementIndex < len(body); statementIndex = statementIndex + 1 {
         statement := body[statementIndex]
+        self.insertStatementExpressionBranchCleanup(statement, con active)
         if self.nodes[statement].kind == "Stmt.If" {
             condition := self.nodes[statement].children[0]
             conditionMoved := self.movedCleanupRoots(condition, con active)
@@ -1540,6 +1541,79 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
     }
     droppable := cleanupBindingsExcluding(con active, con tailExcluded)
     return self.pushCleanupDrops(output, con droppable, con fallback)
+}
+
+func (mut self Lowerer) insertStatementExpressionBranchCleanup(statement int, con active []CleanupBinding) bool {
+    kind := token.CopyText(con self.nodes[statement].kind)
+    if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "Stmt.Assign" || kind == "Stmt.Return" || kind == "Stmt.Expr" || kind == "Stmt.Assert" || kind == "Stmt.If" || kind == "Stmt.Match" {
+        if len(self.nodes[statement].children) > 0 {
+            self.insertExpressionBranchCleanup(self.nodes[statement].children[0], con active)
+        }
+        return true
+    }
+    if kind == "Stmt.FieldAssign" && len(self.nodes[statement].children) == 2 {
+        self.insertExpressionBranchCleanup(self.nodes[statement].children[1], con active)
+        return true
+    }
+    if kind == "Stmt.IndexAssign" && len(self.nodes[statement].children) == 3 {
+        self.insertExpressionBranchCleanup(self.nodes[statement].children[2], con active)
+        return true
+    }
+    if kind == "Stmt.RangeFor" && len(self.nodes[statement].children) == 4 {
+        self.insertExpressionBranchCleanup(self.nodes[statement].children[1], con active)
+    }
+    return true
+}
+
+func (mut self Lowerer) insertExpressionBranchCleanup(node int, con active []CleanupBinding) bool {
+    if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Match" {
+        if len(self.nodes[node].children) < 2 {
+            return true
+        }
+        scrutinee := self.nodes[node].children[0]
+        self.insertExpressionBranchCleanup(scrutinee, con active)
+        scrutineeMoved := self.movedCleanupRoots(scrutinee, con active)
+        armActive := removeCleanupRoots(copyCleanupBindings(con active), con scrutineeMoved)
+        for mut child := 1; child < len(self.nodes[node].children); child = child + 1 {
+            arm := self.nodes[node].children[child]
+            if self.nodes[arm].kind == "Match.Arm" && len(self.nodes[arm].children) >= 2 {
+                self.insertExpressionBranchCleanup(self.nodes[arm].children[1], con armActive)
+            }
+        }
+        return true
+    }
+    if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.If" {
+        if len(self.nodes[node].children) != 3 {
+            return true
+        }
+        condition := self.nodes[node].children[0]
+        thenBranch := self.nodes[node].children[1]
+        elseBranch := self.nodes[node].children[2]
+        self.insertExpressionBranchCleanup(condition, con active)
+        conditionMoved := self.movedCleanupRoots(condition, con active)
+        branchActive := removeCleanupRoots(copyCleanupBindings(con active), con conditionMoved)
+        self.insertExpressionBranchCleanup(thenBranch, con branchActive)
+        self.insertExpressionBranchCleanup(elseBranch, con branchActive)
+        thenMoved := self.movedCleanupRoots(thenBranch, con branchActive)
+        elseMoved := self.movedCleanupRoots(elseBranch, con branchActive)
+        mergedMoved := appendUniqueTexts(copyTexts(con thenMoved), con elseMoved)
+        thenCleanup := expressionBranchCleanupBindings(con branchActive, con mergedMoved, con thenMoved)
+        elseCleanup := expressionBranchCleanupBindings(con branchActive, con mergedMoved, con elseMoved)
+        branchSpan := source.Copy(con self.nodes[node].span)
+        thenBlock := self.addNode("B", "Block.IfThenCleanup", "", "unit", source.Copy(con branchSpan), self.pushCleanupDrops([]int{}, con thenCleanup, con branchSpan), false)
+        elseBlock := self.addNode("B", "Block.IfElseCleanup", "", "unit", source.Copy(con branchSpan), self.pushCleanupDrops([]int{}, con elseCleanup, con branchSpan), false)
+        self.nodes[node].children = []int{condition, thenBranch, thenBlock, elseBranch, elseBlock,}
+        return true
+    }
+
+    mut current := copyCleanupBindings(con active)
+    for mut child := 0; child < len(self.nodes[node].children); child = child + 1 {
+        nested := self.nodes[node].children[child]
+        self.insertExpressionBranchCleanup(nested, con current)
+        moved := self.movedCleanupRoots(nested, con current)
+        current = removeCleanupRoots(current, con moved)
+    }
+    return true
 }
 
 func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
@@ -1837,6 +1911,16 @@ func persistentMatchMoves(con active []CleanupBinding, con flows []CleanupFlow) 
         }
     }
     return moved
+}
+
+func expressionBranchCleanupBindings(con active []CleanupBinding, con mergedMoved []string, con branchMoved []string) []CleanupBinding {
+    mut cleanup := []CleanupBinding{}
+    for mut binding := 0; binding < len(active); binding = binding + 1 {
+        if textIndex(con mergedMoved, con active[binding].key) >= 0 && textIndex(con branchMoved, con active[binding].key) < 0 {
+            cleanup = append(cleanup, copyCleanupBinding(con active[binding]))
+        }
+    }
+    return cleanup
 }
 
 func newCleanupBinding(con name string, con ty string, span source.Span) CleanupBinding {

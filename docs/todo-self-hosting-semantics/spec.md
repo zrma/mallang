@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3x complete
+Status: in progress; P176a-P176e2c3y complete
 
 ## Objective
 
@@ -178,6 +178,9 @@ agrees.
   (complete)
 - P176e2c3x: retain inline and projected range temporary owners through loop
   exit and control-flow cleanup while preserving source moves
+  (complete)
+- P176e2c3y: normalize expression-form `if` branch moves with explicit then and
+  else cleanup blocks
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -619,7 +622,10 @@ specialization and function-body checking until later P176 slices.
   that boundary. P176e2c3x retains inline and projected range source owners as
   loop-local cleanup bindings and removes consumed source roots from tail
   cleanup. Thirty-eight typed-IR fixtures and two hundred thirty-nine Mallang
-  project tests cover
+  project tests cover that boundary. P176e2c3y records expression-form `if`
+  branch cleanup in explicit then/else blocks and extends the Rust oracle to the
+  same deterministic schema. Thirty-nine typed-IR fixtures and two hundred forty
+  Mallang project tests cover
   the expanded boundary. Generic and intrinsic IR, remaining full-expression
   cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity

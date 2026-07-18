@@ -2073,6 +2073,56 @@ test LowersNestedIfStatements() {
     }
 }
 
+test NormalizesIfExpressionBranchCleanup() {
+    source := "func choose(flag bool, values []int, replacement []int) []int { result := if flag { values } else { replacement }; return result } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    result := lowered.functions[0].body[0]
+                                    expression := lowered.nodes[result].children[0]
+                                    assert(lowered.nodes[expression].kind == "Expr.If")
+                                    assert(len(lowered.nodes[expression].children) == 5)
+                                    thenCleanup := lowered.nodes[expression].children[2]
+                                    assert(lowered.nodes[thenCleanup].kind == "Block.IfThenCleanup")
+                                    assert(len(lowered.nodes[thenCleanup].children) == 1)
+                                    thenDrop := lowered.nodes[thenCleanup].children[0]
+                                    assert(lowered.nodes[thenDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[thenDrop].children[0]].value == "replacement")
+                                    elseCleanup := lowered.nodes[expression].children[4]
+                                    assert(lowered.nodes[elseCleanup].kind == "Block.IfElseCleanup")
+                                    assert(len(lowered.nodes[elseCleanup].children) == 1)
+                                    elseDrop := lowered.nodes[elseCleanup].children[0]
+                                    assert(lowered.nodes[elseDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[elseDrop].children[0]].value == "values")
+                                    assert(len(lowered.functions[0].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[0].body[1]].kind == "Stmt.Return")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersNestedIfExpressions() {
     source := "func choose(flag bool, nested bool) int { return if flag { 1 } else if nested { 2 } else { 3 } } func main() {}"
     match lexer.Lex(source) {

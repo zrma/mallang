@@ -1,0 +1,6 @@
+func choose(flag bool, values []int, replacement []int) []int {
+    result := if flag { values } else { replacement }
+    return result
+}
+
+func main() {}

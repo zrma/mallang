@@ -655,21 +655,27 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
             then_cleanup,
             else_branch,
             else_cleanup,
-        } => {
-            assert!(
-                then_cleanup.is_empty() && else_cleanup.is_empty(),
-                "P176b4b oracle does not normalize ownership cleanup yet"
-            );
-            (
-                "Expr.If",
-                String::new(),
-                vec![
-                    normalize_ir_expression(condition, depth + 1),
-                    normalize_ir_expression(then_branch, depth + 1),
-                    normalize_ir_expression(else_branch, depth + 1),
-                ],
-            )
-        }
+        } => (
+            "Expr.If",
+            String::new(),
+            vec![
+                normalize_ir_expression(condition, depth + 1),
+                normalize_ir_expression(then_branch, depth + 1),
+                normalize_ir_block(
+                    "Block.IfThenCleanup",
+                    then_cleanup,
+                    expression.span,
+                    depth + 1,
+                ),
+                normalize_ir_expression(else_branch, depth + 1),
+                normalize_ir_block(
+                    "Block.IfElseCleanup",
+                    else_cleanup,
+                    expression.span,
+                    depth + 1,
+                ),
+            ],
+        ),
         IrExprKind::Unary { op, expr } => (
             match op {
                 UnaryOp::Negate => "Expr.Unary.Negate",

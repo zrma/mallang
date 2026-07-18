@@ -211,6 +211,9 @@ owners. Thirty-seven focused IR fixtures and 238 Mallang compiler project tests
 cover that boundary. P176e2c3x retains inline and projected range temporary
 owners through normal loop exit and early control flow while preserving source
 moves. Thirty-eight focused IR fixtures and 239 Mallang compiler project tests
-cover the expanded boundary. Generic and intrinsic IR plus remaining
+cover that boundary. P176e2c3y normalizes expression-form `if` branch moves into
+explicit then/else cleanup blocks shared by Stage0 and Stage1. Thirty-nine
+focused IR fixtures and 240 Mallang compiler project tests cover the expanded
+boundary. Generic and intrinsic IR plus remaining
 full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.
