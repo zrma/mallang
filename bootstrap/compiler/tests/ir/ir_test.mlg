@@ -87,6 +87,118 @@ test LowersFunctionValuesAndCalls() {
     }
 }
 
+test LowersClosureDefinitionsAndCaptureValues() {
+    source := "func make(offset int) func(int) int { return func(value int) int { return value + offset } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.closures) == 1)
+                                    assert(!lowered.closures[0].mutable)
+                                    assert(len(lowered.closures[0].captures) == 1)
+                                    assert(lowered.closures[0].captures[0].name == "offset")
+                                    assert(lowered.closures[0].captures[0].ty == "int")
+                                    assert(!lowered.closures[0].captures[0].mutable)
+                                    assert(len(lowered.closures[0].params) == 1)
+                                    assert(lowered.closures[0].params[0].name == "value")
+                                    assert(lowered.closures[0].params[0].mode == "owned")
+                                    assert(lowered.closures[0].params[0].ty == "int")
+                                    assert(lowered.closures[0].returnType == "int")
+                                    assert(len(lowered.closures[0].body) == 1)
+
+                                    mut closureValues := 0
+                                    mut captureValues := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Expr.ClosureValue" {
+                                            closureValues = closureValues + 1
+                                            assert(lowered.nodes[node].value == lowered.closures[0].name)
+                                        } else if lowered.nodes[node].kind == "Closure.Capture" {
+                                            captureValues = captureValues + 1
+                                            assert(lowered.nodes[node].value == "offset")
+                                            assert(lowered.nodes[node].ty == "int")
+                                        }
+                                    }
+                                    assert(closureValues == 1)
+                                    assert(captureValues == 1)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test LowersMutableNestedClosureMetadata() {
+    source := "func make() func mut() func mut() int { mut count := 0; return func mut() func mut() int { return func mut() int { count = count + 1; return count } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.closures) == 2)
+                                    assert(lowered.closures[0].mutable)
+                                    assert(lowered.closures[1].mutable)
+                                    assert(len(lowered.closures[0].captures) == 1)
+                                    assert(len(lowered.closures[1].captures) == 1)
+                                    assert(lowered.closures[0].captures[0].name == "count")
+                                    assert(lowered.closures[1].captures[0].name == "count")
+                                    assert(lowered.closures[0].captures[0].mutable)
+                                    assert(lowered.closures[1].captures[0].mutable)
+
+                                    mut closureValues := 0
+                                    mut captureValues := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Expr.ClosureValue" {
+                                            closureValues = closureValues + 1
+                                        } else if lowered.nodes[node].kind == "Closure.Capture" {
+                                            captureValues = captureValues + 1
+                                        }
+                                    }
+                                    assert(closureValues == 2)
+                                    assert(captureValues == 2)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

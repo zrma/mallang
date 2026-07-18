@@ -123,5 +123,9 @@ rejecting moved, borrowed non-Copy and active range-source captures. Mutable and
 nested capture propagation is complete in P176d2a3, including direct mutation,
 `mut` arguments and receivers, nested Copy propagation, borrowed non-Copy
 rejection and recursive initializer diagnostics. Complete generic semantics,
-closure typed IR and deterministic drop insertion remain incomplete, so no
-complete semantic, typed-IR or Stage1 compiler claim is made.
+deterministic drop insertion and the remaining typed IR remain incomplete.
+P176e1 lowers plain, mutable and nested closure definitions, parameters,
+ordered capture metadata, closure values and capture expressions into typed IR.
+Nine focused IR fixtures now compare the Rust Stage0 oracle and generated
+Stage1 byte-for-byte, but no complete semantic, typed-IR or Stage1 compiler
+claim is made.

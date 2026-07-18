@@ -28,9 +28,25 @@ pub type Function struct {
     body []int
 }
 
+pub type Capture struct {
+    name string
+    ty string
+    mutable bool
+}
+
+pub type Closure struct {
+    name string
+    mutable bool
+    captures []Capture
+    params []Param
+    returnType string
+    body []int
+}
+
 pub type Program struct {
     nodes []Node
     functions []Function
+    closures []Closure
 }
 
 pub type Error struct {
@@ -41,10 +57,11 @@ pub type Error struct {
 type Lowerer struct {
     nodes []Node
     functions []Function
+    closures []Closure
 }
 
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
-    mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{},}
+    mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
     root := ast.Root(con syntax)
     for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
         declaration := ast.Child(con syntax, root, child)
@@ -58,7 +75,15 @@ pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Resu
             }
         }
     }
-    return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions})
+    for mut closure := 0; closure < semantic.ClosureCount(con checked); closure = closure + 1 {
+        match lowerer.lowerClosure(con syntax, closure, con checked) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
 }
 
 pub func Normalize(con program Program) string {
@@ -70,6 +95,27 @@ pub func Normalize(con program Program) string {
         }
         for mut statementIndex := 0; statementIndex < len(program.functions[functionIndex].body); statementIndex = statementIndex + 1 {
             lines = append(lines, normalizeNode(con program, program.functions[functionIndex].body[statementIndex], 0))
+        }
+    }
+    lines = append(lines, strings.join(con []string{"CLOSURES|", strings.fromInt(len(program.closures)),}, con ""))
+    for mut closureIndex := 0; closureIndex < len(program.closures); closureIndex = closureIndex + 1 {
+        mut mutable := "false"
+        if program.closures[closureIndex].mutable {
+            mutable = "true"
+        }
+        lines = append(lines, strings.join(con []string{"CLOSURE|", token.CopyText(con program.closures[closureIndex].name), "|", mutable, "|", token.CopyText(con program.closures[closureIndex].returnType), "|", strings.fromInt(len(program.closures[closureIndex].params)), "|", strings.fromInt(len(program.closures[closureIndex].captures)), "|", strings.fromInt(len(program.closures[closureIndex].body)),}, con ""))
+        for mut captureIndex := 0; captureIndex < len(program.closures[closureIndex].captures); captureIndex = captureIndex + 1 {
+            mut captureMutable := "false"
+            if program.closures[closureIndex].captures[captureIndex].mutable {
+                captureMutable = "true"
+            }
+            lines = append(lines, strings.join(con []string{"CCAPTURE|", token.CopyText(con program.closures[closureIndex].name), "|", captureMutable, "|", token.CopyText(con program.closures[closureIndex].captures[captureIndex].name), "|", token.CopyText(con program.closures[closureIndex].captures[captureIndex].ty),}, con ""))
+        }
+        for mut paramIndex := 0; paramIndex < len(program.closures[closureIndex].params); paramIndex = paramIndex + 1 {
+            lines = append(lines, strings.join(con []string{"CPARAM|", token.CopyText(con program.closures[closureIndex].name), "|", token.CopyText(con program.closures[closureIndex].params[paramIndex].mode), "|", token.CopyText(con program.closures[closureIndex].params[paramIndex].name), "|", token.CopyText(con program.closures[closureIndex].params[paramIndex].ty),}, con ""))
+        }
+        for mut statementIndex := 0; statementIndex < len(program.closures[closureIndex].body); statementIndex = statementIndex + 1 {
+            lines = append(lines, normalizeNode(con program, program.closures[closureIndex].body[statementIndex], 0))
         }
     }
     return strings.join(con lines, con "\n")
@@ -123,6 +169,38 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
     }
     self.functions = append(self.functions, Function{name: name, params: params, returnType: returnType, body: body})
     return Ok(true)
+}
+
+func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con checked semantic.CheckedProgram) Result[bool, Error] {
+    node := semantic.ClosureNode(con checked, closure)
+    mut block := -1
+    for mut child := 0; child < ast.ChildCount(con syntax, node); child = child + 1 {
+        syntaxChild := ast.Child(con syntax, node, child)
+        if ast.Kind(con syntax, syntaxChild) == "Block" {
+            block = syntaxChild
+        }
+    }
+    if block < 0 {
+        return Err(newError("checked closure body is missing", ast.Span(con syntax, node)))
+    }
+
+    mut captures := []Capture{}
+    for mut capture := 0; capture < semantic.ClosureCaptureCount(con checked, closure); capture = capture + 1 {
+        captures = append(captures, Capture{name: semantic.ClosureCaptureName(con checked, closure, capture), ty: semantic.ClosureCaptureType(con checked, closure, capture), mutable: semantic.ClosureCaptureMutable(con checked, closure, capture),})
+    }
+    mut params := []Param{}
+    for mut param := 0; param < semantic.ClosureParamCount(con checked, closure); param = param + 1 {
+        params = append(params, Param{name: semantic.ClosureParamName(con checked, closure, param), mode: semantic.ClosureParamMode(con checked, closure, param), ty: semantic.ClosureParamType(con checked, closure, param),})
+    }
+    match self.lowerBlock(con syntax, block, con checked) {
+        case Ok(body) {
+            self.closures = append(self.closures, Closure{name: closureName(ast.Span(con syntax, node)), mutable: semantic.ClosureMutable(con checked, closure), captures: captures, params: params, returnType: semantic.ClosureReturnType(con checked, closure), body: body,})
+            return Ok(true)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
 }
 
 func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
@@ -256,6 +334,22 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         }
     }
 
+    if kind == "Expr.FunctionLiteral.Immutable" || kind == "Expr.FunctionLiteral.Mutable" {
+        closure := semantic.ClosureIndexForNode(con checked, expression)
+        if closure < 0 {
+            return Err(newError("checked closure metadata is missing", ast.Span(con syntax, expression)))
+        }
+        mut captures := []int{}
+        for mut capture := 0; capture < semantic.ClosureCaptureCount(con checked, closure); capture = capture + 1 {
+            name := semantic.ClosureCaptureName(con checked, closure, capture)
+            captureType := semantic.ClosureCaptureType(con checked, closure, capture)
+            variable := self.addNode("E", "Expr.Var", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{})
+            captureValue := self.addNode("C", "Closure.Capture", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{variable})
+            captures = append(captures, captureValue)
+        }
+        return Ok(self.addNode("E", "Expr.ClosureValue", closureName(ast.Span(con syntax, expression)), token.CopyText(con ty), ast.Span(con syntax, expression), captures))
+    }
+
     if kind == "Expr.Call" {
         callee := ast.Child(con syntax, expression, 0)
         mut children := []int{}
@@ -355,6 +449,10 @@ func normalizeNode(con program Program, node int, depth int) string {
         output = strings.join(con []string{output, "\n", normalizeNode(con program, program.nodes[node].children[child], depth + 1),}, con "")
     }
     return output
+}
+
+func closureName(span source.Span) string {
+    return strings.join(con []string{"closure_", strings.fromInt(source.Source(con span)), "_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
 }
 
 func newError(message string, span source.Span) Error {

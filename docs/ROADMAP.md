@@ -1730,6 +1730,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] capture-free plain/mutable function literal과 structural callable signature
 - [x] plain closure capture와 Copy/non-Copy move ownership
 - [x] mutable/nested capture propagation과 closure ownership
+- [x] plain/mutable/nested closure definition과 capture value typed IR
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

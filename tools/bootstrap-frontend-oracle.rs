@@ -8,7 +8,9 @@ use mallang::ast::{
     Program, SourceUnit, Stmt, StmtKind, StructDecl, TestDecl, TypeParam, TypeRef, UnaryOp,
     Visibility,
 };
-use mallang::ir::{IrArg, IrExpr, IrExprKind, IrStmt, IrStmtKind};
+use mallang::ir::{
+    IrArg, IrClosureCaptureValue, IrExpr, IrExprKind, IrStmt, IrStmtKind,
+};
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
     Token, TokenKind,
@@ -262,6 +264,42 @@ fn normalize_ir(program: &IrProgram) -> String {
             function
                 .body
                 .iter()
+            .map(|statement| normalize_ir_statement(statement, 0)),
+        );
+    }
+    lines.push(format!("CLOSURES|{}", program.closures.len()));
+    for closure in &program.closures {
+        lines.push(format!(
+            "CLOSURE|{}|{}|{}|{}|{}|{}",
+            closure.name,
+            closure.mutable,
+            closure.return_type.source_name(),
+            closure.params.len(),
+            closure.captures.len(),
+            closure.body.len()
+        ));
+        for capture in &closure.captures {
+            lines.push(format!(
+                "CCAPTURE|{}|{}|{}|{}",
+                closure.name,
+                capture.mutable,
+                capture.name,
+                capture.ty.source_name()
+            ));
+        }
+        for param in &closure.params {
+            lines.push(format!(
+                "CPARAM|{}|{}|{}|{}",
+                closure.name,
+                normalize_param_mode(param.mode),
+                param.name,
+                param.ty.source_name()
+            ));
+        }
+        lines.extend(
+            closure
+                .body
+                .iter()
                 .map(|statement| normalize_ir_statement(statement, 0)),
         );
     }
@@ -372,6 +410,14 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         IrExprKind::FunctionValue { function } => {
             ("Expr.FunctionValue", function.clone(), Vec::new())
         }
+        IrExprKind::ClosureValue { closure, captures } => (
+            "Expr.ClosureValue",
+            closure.clone(),
+            captures
+                .iter()
+                .map(|capture| normalize_ir_capture(capture, depth + 1))
+                .collect(),
+        ),
         IrExprKind::Call { callee, args } => (
             "Expr.Call",
             callee.clone(),
@@ -461,6 +507,18 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         &value,
         &expression.ty.source_name(),
         &children,
+    )
+}
+
+fn normalize_ir_capture(capture: &IrClosureCaptureValue, depth: usize) -> String {
+    normalize_ir_line(
+        depth,
+        "C",
+        "Closure.Capture",
+        capture.expr.span,
+        &capture.name,
+        &capture.expr.ty.source_name(),
+        &[normalize_ir_expression(&capture.expr, depth + 1)],
     )
 }
 

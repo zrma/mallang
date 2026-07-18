@@ -569,9 +569,11 @@ Moved value, borrowed non-Copy와 active range source capture를 거부하고 sh
 binding/parameter 경계를 전체 191개 project test로 고정한다. P176d2a3에서
 mutable capture의 direct assignment, `mut` argument/receiver,
 immutable source rejection과 nested Copy/mutable propagation을 구현하고 recursive
-initializer를 거부하며 전체 201개 project test로 고정한다. 다음 slice는 closure
-metadata를 typed IR로 내리는 P176e closure lowering이다. public language 또는
-standard-library addition은
+initializer를 거부하며 전체 201개 project test로 고정한다. P176e1은 plain,
+mutable, nested closure definition과 parameter, capture metadata, closure value를
+typed IR에 보존하며 9개 IR fixture와 전체 203개 project test로 고정한다. 다음
+slice는 deterministic ownership drop과 full-expression temporary를 typed IR에
+삽입한다. public language 또는 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification

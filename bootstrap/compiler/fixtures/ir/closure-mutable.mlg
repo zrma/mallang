@@ -1,0 +1,9 @@
+func make() func mut(int) int {
+    mut count := 0
+    return func mut(delta int) int {
+        count = count + delta
+        return count
+    }
+}
+
+func main() {}

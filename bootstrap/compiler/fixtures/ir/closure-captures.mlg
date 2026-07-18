@@ -1,0 +1,7 @@
+func make(offset int) func(int) int {
+    return func(value int) int {
+        return value + offset
+    }
+}
+
+func main() {}

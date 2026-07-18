@@ -259,6 +259,65 @@ pub func FunctionReferenceDirect(con checked CheckedProgram, node int) bool {
     return index >= 0 && checked.functionReferences[index].direct
 }
 
+pub func ClosureCount(con checked CheckedProgram) int {
+    return len(checked.closures)
+}
+
+pub func ClosureIndexForNode(con checked CheckedProgram, node int) int {
+    for mut index := 0; index < len(checked.closures); index = index + 1 {
+        if checked.closures[index].node == node {
+            return index
+        }
+    }
+    return - 1
+}
+
+pub func ClosureNode(con checked CheckedProgram, closure int) int {
+    return checked.closures[closure].node
+}
+
+pub func ClosureMutable(con checked CheckedProgram, closure int) bool {
+    return checked.callableMutable(checked.closures[closure].function)
+}
+
+pub func ClosureParamCount(con checked CheckedProgram, closure int) int {
+    return checked.callableParamCount(checked.closures[closure].function)
+}
+
+pub func ClosureParamName(con checked CheckedProgram, closure int, param int) string {
+    return checked.callableParamName(checked.closures[closure].function, param)
+}
+
+pub func ClosureParamMode(con checked CheckedProgram, closure int, param int) string {
+    return checked.callableParamMode(checked.closures[closure].function, param)
+}
+
+pub func ClosureParamType(con checked CheckedProgram, closure int, param int) string {
+    ty := checked.callableParamType(checked.closures[closure].function, param)
+    return token.CopyText(con ty.text)
+}
+
+pub func ClosureReturnType(con checked CheckedProgram, closure int) string {
+    ty := checked.callableReturnType(checked.closures[closure].function)
+    return token.CopyText(con ty.text)
+}
+
+pub func ClosureCaptureCount(con checked CheckedProgram, closure int) int {
+    return len(checked.closures[closure].captures)
+}
+
+pub func ClosureCaptureName(con checked CheckedProgram, closure int, capture int) string {
+    return token.CopyText(con checked.closures[closure].captures[capture].name)
+}
+
+pub func ClosureCaptureType(con checked CheckedProgram, closure int, capture int) string {
+    return token.CopyText(con checked.closures[closure].captures[capture].ty.text)
+}
+
+pub func ClosureCaptureMutable(con checked CheckedProgram, closure int, capture int) bool {
+    return checked.closures[closure].captures[capture].mutable
+}
+
 pub func ErrorMessage(con error SemanticError) string {
     return token.CopyText(con error.message)
 }
