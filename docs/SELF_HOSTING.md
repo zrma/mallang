@@ -169,7 +169,11 @@ drops their owned direct or field owner at function tail. P176e2c3f lowers
 struct literal fields in declaration order as `Field.Value` nodes and consumes
 owned field sources exactly once. P176e2c3g lowers fixed-array and slice
 literals as `Expr.ArrayLiteral` and consumes owned elements exactly once.
-Twenty-two focused IR fixtures and 220 Mallang compiler project tests cover the
-expanded boundary. ADT constructor typed IR, remaining full-expression cases
-and the rest of the typed IR are incomplete, so no complete semantic, typed-IR
-or Stage1 compiler claim is made.
+P176e2c3h lowers `None`, `Some`, `Ok` and `Err` as inline
+`Expr.VariantConstructor` values and consumes owned payloads exactly once.
+P176e2c3i lowers user enum constructors with graph-derived inline or owned
+storage and consumes zero, one and multiple payloads exactly once. Twenty-four
+focused IR fixtures and 222 Mallang compiler project tests cover the expanded
+boundary. Match typed IR, remaining full-expression cases and the rest of the
+typed IR are incomplete, so no complete semantic, typed-IR or Stage1 compiler
+claim is made.

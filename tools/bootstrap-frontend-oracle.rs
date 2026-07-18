@@ -9,7 +9,8 @@ use mallang::ast::{
     Visibility,
 };
 use mallang::ir::{
-    IrArg, IrClosureCaptureValue, IrExpr, IrExprKind, IrFieldValue, IrStmt, IrStmtKind,
+    IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrStmt,
+    IrStmtKind,
 };
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
@@ -456,6 +457,21 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
             elements
                 .iter()
                 .map(|element| normalize_ir_expression(element, depth + 1))
+                .collect(),
+        ),
+        IrExprKind::VariantConstructor {
+            variant,
+            storage,
+            payloads,
+        } => (
+            match storage {
+                IrEnumStorage::Inline => "Expr.VariantConstructor.Inline",
+                IrEnumStorage::Owned => "Expr.VariantConstructor.Owned",
+            },
+            variant.clone(),
+            payloads
+                .iter()
+                .map(|payload| normalize_ir_expression(payload, depth + 1))
                 .collect(),
         ),
         IrExprKind::FieldAccess { base, field } => (

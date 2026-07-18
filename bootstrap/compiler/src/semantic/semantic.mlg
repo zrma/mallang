@@ -238,6 +238,28 @@ pub func StructFieldName(con checked CheckedProgram, con name string, field int)
     return token.CopyText(con checked.structs[structure].fields[field].name)
 }
 
+pub func EnumVariantPayloadCount(con checked CheckedProgram, con name string, con variant string) int {
+    enumeration := checked.enumIndex(con name)
+    if enumeration < 0 {
+        return - 1
+    }
+    variantIndex := enumVariantIndex(con checked.enums[enumeration], con variant)
+    if variantIndex < 0 {
+        return - 1
+    }
+    return len(checked.enums[enumeration].variants[variantIndex].payloads)
+}
+
+pub func EnumStorage(con checked CheckedProgram, con name string) string {
+    if checked.enumIndex(con name) < 0 {
+        return ""
+    }
+    if checked.enumNeedsOwnedStorage(con name) {
+        return "owned"
+    }
+    return "inline"
+}
+
 pub func FunctionReturnType(con checked CheckedProgram, con name string) Result[string, bool] {
     for mut index := 0; index < len(checked.functions); index = index + 1 {
         if checked.functions[index].name == name {
@@ -3919,6 +3941,67 @@ func (con self CheckedProgram) enumIndex(con name string) int {
         }
     }
     return - 1
+}
+
+func (con self CheckedProgram) enumNeedsOwnedStorage(con name string) bool {
+    enumeration := self.enumIndex(con name)
+    if enumeration < 0 {
+        return false
+    }
+    for mut variant := 0; variant < len(self.enums[enumeration].variants); variant = variant + 1 {
+        for mut payload := 0; payload < len(self.enums[enumeration].variants[variant].payloads); payload = payload + 1 {
+            visited := []string{token.CopyText(con name)}
+            if self.typeReachesEnum(con self.enums[enumeration].variants[variant].payloads[payload], con name, con visited) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func (con self CheckedProgram) typeReachesEnum(con ty ResolvedType, con target string, con visiting []string) bool {
+    if ty.kind == "enum" || ty.kind == "struct" {
+        if ty.text == target {
+            return true
+        }
+        if containsText(con visiting, con ty.text) {
+            return false
+        }
+        mut nestedVisiting := copyTexts(con visiting)
+        nestedVisiting = append(nestedVisiting, token.CopyText(con ty.text))
+        if ty.kind == "enum" {
+            enumeration := self.enumIndex(con ty.text)
+            if enumeration >= 0 {
+                for mut variant := 0; variant < len(self.enums[enumeration].variants); variant = variant + 1 {
+                    for mut payload := 0; payload < len(self.enums[enumeration].variants[variant].payloads); payload = payload + 1 {
+                        if self.typeReachesEnum(con self.enums[enumeration].variants[variant].payloads[payload], con target, con nestedVisiting) {
+                            return true
+                        }
+                    }
+                }
+            }
+        } else {
+            structure := self.structIndex(con ty.text)
+            if structure >= 0 {
+                for mut field := 0; field < len(self.structs[structure].fields); field = field + 1 {
+                    if self.typeReachesEnum(con self.structs[structure].fields[field].ty, con target, con nestedVisiting) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    shape := self.typeShapeIndex(con ty)
+    if shape >= 0 {
+        for mut argument := 0; argument < len(self.typeShapes[shape].arguments); argument = argument + 1 {
+            if self.typeReachesEnum(con self.typeShapes[shape].arguments[argument], con target, con visiting) {
+                return true
+            }
+        }
+    }
+    return false
 }
 
 func (con self CheckedProgram) adtPatternName(con ty ResolvedType) string {

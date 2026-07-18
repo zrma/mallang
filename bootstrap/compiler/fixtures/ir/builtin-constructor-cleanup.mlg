@@ -1,0 +1,21 @@
+func some(value string, unused string) Option[string] {
+    return Some(value)
+}
+
+func none(unused string) Option[string] {
+    return None
+}
+
+func ok(value string, unused string) Result[string, string] {
+    return Ok(value)
+}
+
+func err(value string) Result[int, string] {
+    return Err(value)
+}
+
+func discard(value string) {
+    option := Some(value)
+}
+
+func main() {}

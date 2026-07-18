@@ -913,6 +913,150 @@ test LowersArrayLiteralCleanup() {
     }
 }
 
+test LowersBuiltinConstructorCleanup() {
+    source := "func some(value string, unused string) Option[string] { return Some(value) } func none(unused string) Option[string] { return None } func ok(value string, unused string) Result[string, string] { return Ok(value) } func err(value string) Result[int, string] { return Err(value) } func discard(value string) { option := Some(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    someTemp := lowered.functions[0].body[0]
+                                    someConstructor := lowered.nodes[someTemp].children[0]
+                                    assert(lowered.nodes[someConstructor].kind == "Expr.VariantConstructor.Inline")
+                                    assert(lowered.nodes[someConstructor].value == "Some")
+                                    assert(lowered.nodes[someConstructor].ty == "Option[string]")
+                                    assert(lowered.nodes[lowered.nodes[someConstructor].children[0]].value == "value")
+                                    someDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[lowered.nodes[someDrop].children[0]].value == "unused")
+
+                                    assert(len(lowered.functions[1].body) == 3)
+                                    noneTemp := lowered.functions[1].body[0]
+                                    noneConstructor := lowered.nodes[noneTemp].children[0]
+                                    assert(lowered.nodes[noneConstructor].kind == "Expr.VariantConstructor.Inline")
+                                    assert(lowered.nodes[noneConstructor].value == "None")
+                                    assert(len(lowered.nodes[noneConstructor].children) == 0)
+                                    noneDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[lowered.nodes[noneDrop].children[0]].value == "unused")
+
+                                    okConstructor := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    assert(lowered.nodes[okConstructor].value == "Ok")
+                                    assert(lowered.nodes[okConstructor].ty == "Result[string, string]")
+                                    errConstructor := lowered.nodes[lowered.functions[3].body[0]].children[0]
+                                    assert(lowered.nodes[errConstructor].value == "Err")
+                                    assert(lowered.nodes[errConstructor].ty == "Result[int, string]")
+
+                                    assert(len(lowered.functions[4].body) == 2)
+                                    discardLet := lowered.functions[4].body[0]
+                                    discardConstructor := lowered.nodes[discardLet].children[0]
+                                    assert(lowered.nodes[discardConstructor].value == "Some")
+                                    discardDrop := lowered.functions[4].body[1]
+                                    assert(lowered.nodes[discardDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[discardDrop].children[0]].value == "option")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test LowersUserEnumConstructorStorageAndCleanup() {
+    source := "type Message enum { Quit Text(string) Pair(string, int) } type Chain enum { End Link(string, Chain) } type Wrapped enum { Empty More(Option[Wrapped]) } type Through struct { next ThroughEnum } type ThroughEnum enum { End Box(Through) } func quit(unused string) Message { return Message.Quit } func text(value string, unused string) Message { return Message.Text(value) } func pair(value string) Message { return Message.Pair(value, 1) } func end(unused string) Chain { return Chain.End } func link(value string, tail Chain) Chain { return Chain.Link(value, tail) } func discard(value string) { chain := Chain.Link(value, Chain.End) } func wrappedEmpty(unused string) Wrapped { return Wrapped.Empty } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            assert(semantic.EnumStorage(con checked, con "Message") == "inline")
+                            assert(semantic.EnumStorage(con checked, con "Chain") == "owned")
+                            assert(semantic.EnumStorage(con checked, con "Wrapped") == "owned")
+                            assert(semantic.EnumStorage(con checked, con "ThroughEnum") == "owned")
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    quitConstructor := lowered.nodes[lowered.functions[0].body[0]].children[0]
+                                    assert(lowered.nodes[quitConstructor].kind == "Expr.VariantConstructor.Inline")
+                                    assert(lowered.nodes[quitConstructor].value == "Quit")
+                                    assert(len(lowered.nodes[quitConstructor].children) == 0)
+                                    quitDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[lowered.nodes[quitDrop].children[0]].value == "unused")
+
+                                    textConstructor := lowered.nodes[lowered.functions[1].body[0]].children[0]
+                                    assert(lowered.nodes[textConstructor].kind == "Expr.VariantConstructor.Inline")
+                                    assert(lowered.nodes[textConstructor].value == "Text")
+                                    assert(lowered.nodes[lowered.nodes[textConstructor].children[0]].value == "value")
+                                    textDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[lowered.nodes[textDrop].children[0]].value == "unused")
+
+                                    pairConstructor := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    assert(lowered.nodes[pairConstructor].value == "Pair")
+                                    assert(len(lowered.nodes[pairConstructor].children) == 2)
+
+                                    endConstructor := lowered.nodes[lowered.functions[3].body[0]].children[0]
+                                    assert(lowered.nodes[endConstructor].kind == "Expr.VariantConstructor.Owned")
+                                    assert(lowered.nodes[endConstructor].value == "End")
+                                    linkConstructor := lowered.nodes[lowered.functions[4].body[0]].children[0]
+                                    assert(lowered.nodes[linkConstructor].kind == "Expr.VariantConstructor.Owned")
+                                    assert(lowered.nodes[linkConstructor].value == "Link")
+                                    assert(len(lowered.nodes[linkConstructor].children) == 2)
+
+                                    assert(len(lowered.functions[5].body) == 2)
+                                    discardLet := lowered.functions[5].body[0]
+                                    discardConstructor := lowered.nodes[discardLet].children[0]
+                                    assert(lowered.nodes[discardConstructor].kind == "Expr.VariantConstructor.Owned")
+                                    nestedEnd := lowered.nodes[discardConstructor].children[1]
+                                    assert(lowered.nodes[nestedEnd].kind == "Expr.VariantConstructor.Owned")
+                                    discardDrop := lowered.functions[5].body[1]
+                                    assert(lowered.nodes[discardDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[discardDrop].children[0]].value == "chain")
+
+                                    assert(len(lowered.functions[6].body) == 3)
+                                    wrappedConstructor := lowered.nodes[lowered.functions[6].body[0]].children[0]
+                                    assert(lowered.nodes[wrappedConstructor].kind == "Expr.VariantConstructor.Owned")
+                                    assert(lowered.nodes[wrappedConstructor].value == "Empty")
+                                    wrappedDrop := lowered.functions[6].body[1]
+                                    assert(lowered.nodes[lowered.nodes[wrappedDrop].children[0]].value == "unused")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

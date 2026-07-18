@@ -1,0 +1,54 @@
+type Message enum {
+    Quit
+    Text(string)
+    Pair(string, int)
+}
+
+type Chain enum {
+    End
+    Link(string, Chain)
+}
+
+type Wrapped enum {
+    Empty
+    More(Option[Wrapped])
+}
+
+type Through struct {
+    next ThroughEnum
+}
+
+type ThroughEnum enum {
+    End
+    Box(Through)
+}
+
+func quit(unused string) Message {
+    return Message.Quit
+}
+
+func text(value string, unused string) Message {
+    return Message.Text(value)
+}
+
+func pair(value string) Message {
+    return Message.Pair(value, 1)
+}
+
+func end(unused string) Chain {
+    return Chain.End
+}
+
+func link(value string, tail Chain) Chain {
+    return Chain.Link(value, tail)
+}
+
+func discard(value string) {
+    chain := Chain.Link(value, Chain.End)
+}
+
+func wrappedEmpty(unused string) Wrapped {
+    return Wrapped.Empty
+}
+
+func main() {}

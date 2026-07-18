@@ -390,6 +390,56 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
 
     if kind == "Expr.Call" {
         callee := ast.Child(con syntax, expression, 0)
+        if ast.Kind(con syntax, callee) == "Expr.FieldAccess" && ast.ChildCount(con syntax, callee) == 1 {
+            enumBase := ast.Child(con syntax, callee, 0)
+            if ast.Kind(con syntax, enumBase) == "Expr.Var" {
+                enumName := ast.Value(con syntax, enumBase)
+                variantName := ast.Value(con syntax, callee)
+                payloadCount := semantic.EnumVariantPayloadCount(con checked, con enumName, con variantName)
+                if payloadCount >= 0 {
+                    if ast.ChildCount(con syntax, expression) != payloadCount + 1 {
+                        return Err(newError("checked enum constructor argument count is invalid", ast.Span(con syntax, expression)))
+                    }
+                    mut payloads := []int{}
+                    for mut payload := 0; payload < payloadCount; payload = payload + 1 {
+                        argument := ast.Child(con syntax, expression, payload + 1)
+                        if ast.Kind(con syntax, argument) != "Arg.Owned" || ast.ChildCount(con syntax, argument) != 1 {
+                            return Err(newError("checked enum constructor argument mode is invalid", ast.Span(con syntax, argument)))
+                        }
+                        match self.lowerExpression(con syntax, ast.Child(con syntax, argument, 0), con checked) {
+                            case Ok(loweredPayload) {
+                                payloads = append(payloads, loweredPayload)
+                            }
+                            case Err(error) {
+                                return Err(error)
+                            }
+                        }
+                    }
+                    storage := semantic.EnumStorage(con checked, con enumName)
+                    if storage == "" {
+                        return Err(newError("checked enum constructor storage is missing", ast.Span(con syntax, expression)))
+                    }
+                    return Ok(self.addNode("E", variantConstructorKind(con storage), token.CopyText(con variantName), token.CopyText(con ty), ast.Span(con syntax, expression), payloads, cleanup))
+                }
+            }
+        }
+        if ast.Kind(con syntax, callee) == "Expr.Var" &&(ast.Value(con syntax, callee) == "Some" || ast.Value(con syntax, callee) == "Ok" || ast.Value(con syntax, callee) == "Err") {
+            if ast.ChildCount(con syntax, expression) != 2 {
+                return Err(newError("checked built-in constructor argument count is invalid", ast.Span(con syntax, expression)))
+            }
+            argument := ast.Child(con syntax, expression, 1)
+            if ast.Kind(con syntax, argument) != "Arg.Owned" || ast.ChildCount(con syntax, argument) != 1 {
+                return Err(newError("checked built-in constructor argument mode is invalid", ast.Span(con syntax, argument)))
+            }
+            match self.lowerExpression(con syntax, ast.Child(con syntax, argument, 0), con checked) {
+                case Ok(payload) {
+                    return Ok(self.addNode("E", "Expr.VariantConstructor.Inline", ast.Value(con syntax, callee), token.CopyText(con ty), ast.Span(con syntax, expression), []int{payload}, cleanup))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
         if ast.Kind(con syntax, callee) == "Expr.Var" && ast.Value(con syntax, callee) == "print" {
             if ast.ChildCount(con syntax, expression) != 2 {
                 return Err(newError("checked print argument count is invalid", ast.Span(con syntax, expression)))
@@ -498,6 +548,25 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             }
         }
         return Ok(self.addNode("E", callKind, callValue, token.CopyText(con ty), ast.Span(con syntax, expression), children, cleanup))
+    }
+
+    if kind == "Expr.Var" && value == "None" {
+        return Ok(self.addNode("E", "Expr.VariantConstructor.Inline", "None", token.CopyText(con ty), ast.Span(con syntax, expression), []int{}, cleanup))
+    }
+
+    if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
+        enumBase := ast.Child(con syntax, expression, 0)
+        if ast.Kind(con syntax, enumBase) == "Expr.Var" {
+            enumName := ast.Value(con syntax, enumBase)
+            payloadCount := semantic.EnumVariantPayloadCount(con checked, con enumName, con value)
+            if payloadCount == 0 {
+                storage := semantic.EnumStorage(con checked, con enumName)
+                if storage == "" {
+                    return Err(newError("checked enum constructor storage is missing", ast.Span(con syntax, expression)))
+                }
+                return Ok(self.addNode("E", variantConstructorKind(con storage), token.CopyText(con value), token.CopyText(con ty), ast.Span(con syntax, expression), []int{}, cleanup))
+            }
+        }
     }
 
     if kind == "Expr.Var" && semantic.FunctionReferenceDirect(con checked, expression) {
@@ -1021,6 +1090,13 @@ func returnValueTempName(con span source.Span) string {
 
 func cleanupAssignmentRhsTempName(con span source.Span) string {
     return strings.join(con []string{"mallang_cleanup_assign_rhs_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
+}
+
+func variantConstructorKind(con storage string) string {
+    if storage == "owned" {
+        return "Expr.VariantConstructor.Owned"
+    }
+    return "Expr.VariantConstructor.Inline"
 }
 
 func newError(message string, span source.Span) Error {
