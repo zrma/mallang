@@ -254,6 +254,30 @@ pub func NodeTypeArgumentNeedsCleanup(con checked CheckedProgram, node int, argu
     return false
 }
 
+pub func TypeArgument(con checked CheckedProgram, con name string, argument int) Result[string, bool] {
+    for mut shape := 0; shape < len(checked.typeShapes); shape = shape + 1 {
+        if checked.typeShapes[shape].text == name {
+            if argument < 0 || argument >= len(checked.typeShapes[shape].arguments) {
+                return Err(false)
+            }
+            return Ok(token.CopyText(con checked.typeShapes[shape].arguments[argument].text))
+        }
+    }
+    return Err(false)
+}
+
+pub func TypeArgumentNeedsCleanup(con checked CheckedProgram, con name string, argument int) bool {
+    for mut shape := 0; shape < len(checked.typeShapes); shape = shape + 1 {
+        if checked.typeShapes[shape].text == name {
+            if argument < 0 || argument >= len(checked.typeShapes[shape].arguments) {
+                return false
+            }
+            return checked.typeShapes[shape].arguments[argument].cleanup
+        }
+    }
+    return false
+}
+
 pub func StructFieldCount(con checked CheckedProgram, con name string) int {
     structure := checked.structIndex(con name)
     if structure < 0 {

@@ -76,6 +76,7 @@ type CleanupFlow struct {
 type LoweredMatchPattern struct {
     node int
     cleanup []CleanupBinding
+    nextDiscard int
 }
 
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
@@ -661,7 +662,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             }
             pattern := ast.Child(con syntax, arm, 0)
             branch := ast.Child(con syntax, arm, 1)
-            mut loweredPattern := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}}
+            mut loweredPattern := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}, nextDiscard: 0,}
             match self.lowerMatchPattern(con syntax, pattern, scrutinee, ast.Span(con syntax, branch), ast.Span(con syntax, arm), con checked) {
                 case Ok(value) {
                     loweredPattern = value
@@ -807,107 +808,141 @@ func (mut self Lowerer) lowerMatchPattern(con syntax ast.Program, pattern int, s
             return Err(newError("checked match scrutinee type is missing", source.Copy(con span)))
         }
     }
-    kind := ast.Kind(con syntax, pattern)
-    if kind == "Pattern.Variant" {
-        return self.lowerUserEnumMatchPattern(con syntax, pattern, con scrutineeType, source.Copy(con span), source.Copy(con discardSpan), con checked)
-    }
-    if kind == "Pattern.Wildcard" {
-        if semantic.NodeNeedsCleanup(con checked, scrutinee) {
-            name := matchDiscardName(con discardSpan, 0)
-            node := self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
-            return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{newCleanupBinding(con name, con scrutineeType, source.Copy(con span))}})
-        }
-        node := self.addNode("P", "Pattern.Wildcard", "", token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
-        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}})
-    }
-    if kind == "Pattern.None" {
-        node := self.addNode("P", "Pattern.Variant.Inline", "None", token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
-        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}})
-    }
-    mut argument := -1
-    mut variant := ""
-    if kind == "Pattern.Some" {
-        argument = 0
-        variant = "Some"
-    } else if kind == "Pattern.Ok" {
-        argument = 0
-        variant = "Ok"
-    } else if kind == "Pattern.Err" {
-        argument = 1
-        variant = "Err"
-    } else {
-        return Err(newError("B2e typed IR only accepts flat built-in match patterns", source.Copy(con span)))
-    }
-    mut payloadType := ""
-    match semantic.NodeTypeArgument(con checked, scrutinee, argument) {
-        case Ok(resolved) {
-            payloadType = resolved
-        }
-        case Err(_) {
-            return Err(newError("checked match payload type is missing", source.Copy(con span)))
-        }
-    }
-    bindingName := ast.Value(con syntax, pattern)
-    binding := self.addNode("P", "Pattern.Binding", token.CopyText(con bindingName), token.CopyText(con payloadType), source.Copy(con span), []int{}, false)
-    node := self.addNode("P", "Pattern.Variant.Inline", variant, token.CopyText(con scrutineeType), source.Copy(con span), []int{binding}, false)
-    mut cleanupBindings := []CleanupBinding{}
-    if semantic.NodeTypeArgumentNeedsCleanup(con checked, scrutinee, argument) {
-        cleanupBindings = append(cleanupBindings, newCleanupBinding(con bindingName, con payloadType, source.Copy(con span)))
-    }
-    return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings})
+    cleanup := semantic.NodeNeedsCleanup(con checked, scrutinee)
+    return self.lowerMatchPatternForType(con syntax, pattern, con scrutineeType, cleanup, span, discardSpan, 0, con checked)
 }
 
-func (mut self Lowerer) lowerUserEnumMatchPattern(con syntax ast.Program, pattern int, con scrutineeType string, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
-    enumName := semantic.PatternVariantTypeName(con syntax, pattern)
-    variantName := semantic.PatternVariantName(con syntax, pattern)
-    if enumName == "" || variantName == "" {
-        return Err(newError("checked user enum match pattern is malformed", source.Copy(con span)))
+func (mut self Lowerer) lowerMatchPatternForType(con syntax ast.Program, pattern int, con expectedType string, expectedCleanup bool, span source.Span, discardSpan source.Span, discardIndex int, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
+    kind := ast.Kind(con syntax, pattern)
+    if kind == "Pattern.Wildcard" {
+        if expectedCleanup {
+            name := matchDiscardName(con discardSpan, discardIndex)
+            node := self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con expectedType), source.Copy(con span), []int{}, false)
+            return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{newCleanupBinding(con name, con expectedType, source.Copy(con span))}, nextDiscard: discardIndex + 1,})
+        }
+        node := self.addNode("P", "Pattern.Wildcard", "", token.CopyText(con expectedType), source.Copy(con span), []int{}, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}, nextDiscard: discardIndex,})
     }
-    payloadCount := semantic.EnumVariantPayloadCount(con checked, con enumName, con variantName)
-    if payloadCount < 0 || ast.ChildCount(con syntax, pattern) != payloadCount {
-        return Err(newError("checked user enum match payload count is invalid", source.Copy(con span)))
+    if kind == "Pattern.Binding" {
+        name := ast.Value(con syntax, pattern)
+        node := self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con expectedType), source.Copy(con span), []int{}, false)
+        mut cleanupBindings := []CleanupBinding{}
+        if expectedCleanup {
+            cleanupBindings = append(cleanupBindings, newCleanupBinding(con name, con expectedType, source.Copy(con span)))
+        }
+        return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings, nextDiscard: discardIndex,})
     }
-    storage := semantic.EnumStorage(con checked, con enumName)
-    if storage == "" {
-        return Err(newError("checked user enum match storage is missing", source.Copy(con span)))
+    if kind == "Pattern.None" {
+        node := self.addNode("P", "Pattern.Variant.Inline", "None", token.CopyText(con expectedType), source.Copy(con span), []int{}, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}, nextDiscard: discardIndex,})
     }
-    mut payloads := []int{}
-    mut cleanupBindings := []CleanupBinding{}
-    mut discardIndex := 0
-    for mut payload := 0; payload < payloadCount; payload = payload + 1 {
-        payloadPattern := ast.Child(con syntax, pattern, payload)
+    if kind == "Pattern.Some" || kind == "Pattern.Ok" || kind == "Pattern.Err" {
+        mut argument := 0
+        mut variant := "Some"
+        if kind == "Pattern.Ok" {
+            variant = "Ok"
+        } else if kind == "Pattern.Err" {
+            argument = 1
+            variant = "Err"
+        }
         mut payloadType := ""
-        match semantic.EnumVariantPayloadType(con checked, con enumName, con variantName, payload) {
+        match semantic.TypeArgument(con checked, con expectedType, argument) {
             case Ok(resolved) {
                 payloadType = resolved
             }
             case Err(_) {
-                return Err(newError("checked user enum match payload type is missing", source.Copy(con span)))
+                return Err(newError("checked built-in match payload type is missing", source.Copy(con span)))
             }
         }
-        payloadCleanup := semantic.EnumVariantPayloadNeedsCleanup(con checked, con enumName, con variantName, payload)
-        payloadKind := ast.Kind(con syntax, payloadPattern)
-        if payloadKind == "Pattern.Binding" {
-            name := ast.Value(con syntax, payloadPattern)
-            payloads = append(payloads, self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
-            if payloadCleanup {
-                cleanupBindings = append(cleanupBindings, newCleanupBinding(con name, con payloadType, source.Copy(con span)))
-            }
-        } else if payloadKind == "Pattern.Wildcard" {
-            if payloadCleanup {
-                name := matchDiscardName(con discardSpan, discardIndex)
-                discardIndex = discardIndex + 1
-                payloads = append(payloads, self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
-                cleanupBindings = append(cleanupBindings, newCleanupBinding(con name, con payloadType, source.Copy(con span)))
-            } else {
-                payloads = append(payloads, self.addNode("P", "Pattern.Wildcard", "", token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
-            }
-        } else {
-            return Err(newError("B2e typed IR only accepts flat user enum match payloads", source.Copy(con span)))
+        bindingName := ast.Value(con syntax, pattern)
+        binding := self.addNode("P", "Pattern.Binding", token.CopyText(con bindingName), token.CopyText(con payloadType), source.Copy(con span), []int{}, false)
+        node := self.addNode("P", "Pattern.Variant.Inline", variant, token.CopyText(con expectedType), source.Copy(con span), []int{binding}, false)
+        mut cleanupBindings := []CleanupBinding{}
+        if semantic.TypeArgumentNeedsCleanup(con checked, con expectedType, argument) {
+            cleanupBindings = append(cleanupBindings, newCleanupBinding(con bindingName, con payloadType, source.Copy(con span)))
         }
+        return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings, nextDiscard: discardIndex,})
     }
-    node := self.addNode("P", variantPatternKind(con storage), variantName, token.CopyText(con scrutineeType), source.Copy(con span), payloads, false)
-    return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings})
+    if kind == "Pattern.NestedBuiltin" {
+        variant := ast.Value(con syntax, pattern)
+        mut argument := 0
+        if variant == "Err" {
+            argument = 1
+        } else if variant != "Some" && variant != "Ok" {
+            return Err(newError("checked nested built-in match variant is invalid", source.Copy(con span)))
+        }
+        if ast.ChildCount(con syntax, pattern) != 1 {
+            return Err(newError("checked nested built-in match payload count is invalid", source.Copy(con span)))
+        }
+        mut payloadType := ""
+        match semantic.TypeArgument(con checked, con expectedType, argument) {
+            case Ok(resolved) {
+                payloadType = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked nested built-in match payload type is missing", source.Copy(con span)))
+            }
+        }
+        payloadCleanup := semantic.TypeArgumentNeedsCleanup(con checked, con expectedType, argument)
+        mut loweredPayload := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}, nextDiscard: discardIndex,}
+        match self.lowerMatchPatternForType(con syntax, ast.Child(con syntax, pattern, 0), con payloadType, payloadCleanup, source.Copy(con span), source.Copy(con discardSpan), discardIndex, con checked) {
+            case Ok(value) {
+                loweredPayload = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        node := self.addNode("P", "Pattern.Variant.Inline", variant, token.CopyText(con expectedType), source.Copy(con span), []int{loweredPayload.node}, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: copyCleanupBindings(con loweredPayload.cleanup), nextDiscard: loweredPayload.nextDiscard,})
+    }
+    if kind == "Pattern.Variant" {
+        enumName := semantic.PatternVariantTypeName(con syntax, pattern)
+        variantName := semantic.PatternVariantName(con syntax, pattern)
+        if enumName == "" || variantName == "" {
+            return Err(newError("checked user enum match pattern is malformed", source.Copy(con span)))
+        }
+        payloadCount := semantic.EnumVariantPayloadCount(con checked, con enumName, con variantName)
+        if payloadCount < 0 || ast.ChildCount(con syntax, pattern) != payloadCount {
+            return Err(newError("checked user enum match payload count is invalid", source.Copy(con span)))
+        }
+        storage := semantic.EnumStorage(con checked, con enumName)
+        if storage == "" {
+            return Err(newError("checked user enum match storage is missing", source.Copy(con span)))
+        }
+        mut payloads := []int{}
+        mut cleanupBindings := []CleanupBinding{}
+        mut nextDiscard := discardIndex
+        for mut payload := 0; payload < payloadCount; payload = payload + 1 {
+            mut payloadType := ""
+            match semantic.EnumVariantPayloadType(con checked, con enumName, con variantName, payload) {
+                case Ok(resolved) {
+                    payloadType = resolved
+                }
+                case Err(_) {
+                    return Err(newError("checked user enum match payload type is missing", source.Copy(con span)))
+                }
+            }
+            payloadCleanup := semantic.EnumVariantPayloadNeedsCleanup(con checked, con enumName, con variantName, payload)
+            mut loweredPayload := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}, nextDiscard: nextDiscard,}
+            match self.lowerMatchPatternForType(con syntax, ast.Child(con syntax, pattern, payload), con payloadType, payloadCleanup, source.Copy(con span), source.Copy(con discardSpan), nextDiscard, con checked) {
+                case Ok(value) {
+                    loweredPayload = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            payloads = append(payloads, loweredPayload.node)
+            for mut binding := 0; binding < len(loweredPayload.cleanup); binding = binding + 1 {
+                cleanupBindings = append(cleanupBindings, copyCleanupBinding(con loweredPayload.cleanup[binding]))
+            }
+            nextDiscard = loweredPayload.nextDiscard
+        }
+        node := self.addNode("P", variantPatternKind(con storage), variantName, token.CopyText(con expectedType), source.Copy(con span), payloads, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings, nextDiscard: nextDiscard,})
+    }
+    return Err(newError("B2e typed IR does not accept this match pattern", source.Copy(con span)))
 }
 
 func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span) []int {

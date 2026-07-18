@@ -1253,6 +1253,83 @@ test LowersFlatUserEnumMatchExpressions() {
     }
 }
 
+test LowersNestedMatchPatterns() {
+    source := "type Status enum { Idle Busy(int) } type Event enum { Missing Changed(Status) } type Pairing enum { Empty Pair(int, Option[string]) } type Chain enum { End Next(Chain) } func eventCode(input Event) int { return match input { case Event.Missing { 0 } case Event.Changed(Status.Idle) { 1 } case Event.Changed(Status.Busy(code)) { code } } } func pairCode(input Pairing) int { return match input { case Pairing.Empty { 0 } case Pairing.Pair(_, Some(_)) { 1 } case Pairing.Pair(_, None) { 2 } } } func chainCode(input Chain) int { return match input { case Chain.End { 0 } case Chain.Next(Chain.End) { 1 } case Chain.Next(tail) { 2 } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    eventMatch := lowered.nodes[lowered.functions[0].body[0]].children[0]
+                                    changedIdleArm := lowered.nodes[eventMatch].children[2]
+                                    changedIdle := lowered.nodes[changedIdleArm].children[0]
+                                    assert(lowered.nodes[changedIdle].kind == "Pattern.Variant.Inline")
+                                    idle := lowered.nodes[changedIdle].children[0]
+                                    assert(lowered.nodes[idle].kind == "Pattern.Variant.Inline")
+                                    assert(lowered.nodes[idle].value == "Idle")
+                                    changedBusyArm := lowered.nodes[eventMatch].children[3]
+                                    changedBusy := lowered.nodes[changedBusyArm].children[0]
+                                    busy := lowered.nodes[changedBusy].children[0]
+                                    code := lowered.nodes[busy].children[0]
+                                    assert(lowered.nodes[code].kind == "Pattern.Binding")
+                                    assert(lowered.nodes[code].value == "code")
+
+                                    pairMatch := lowered.nodes[lowered.functions[1].body[0]].children[0]
+                                    pairSomeArm := lowered.nodes[pairMatch].children[2]
+                                    assert(len(lowered.nodes[pairSomeArm].children) == 3)
+                                    pairSome := lowered.nodes[pairSomeArm].children[0]
+                                    some := lowered.nodes[pairSome].children[1]
+                                    assert(lowered.nodes[some].kind == "Pattern.Variant.Inline")
+                                    someDiscard := lowered.nodes[some].children[0]
+                                    assert(lowered.nodes[someDiscard].kind == "Pattern.Binding")
+                                    pairSomeDrop := lowered.nodes[pairSomeArm].children[2]
+                                    assert(lowered.nodes[lowered.nodes[pairSomeDrop].children[0]].value == lowered.nodes[someDiscard].value)
+                                    pairNoneArm := lowered.nodes[pairMatch].children[3]
+                                    pairNone := lowered.nodes[pairNoneArm].children[0]
+                                    none := lowered.nodes[pairNone].children[1]
+                                    assert(lowered.nodes[none].kind == "Pattern.Variant.Inline")
+                                    assert(lowered.nodes[none].value == "None")
+
+                                    chainMatch := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    chainNestedArm := lowered.nodes[chainMatch].children[2]
+                                    assert(len(lowered.nodes[chainNestedArm].children) == 2)
+                                    outerNext := lowered.nodes[chainNestedArm].children[0]
+                                    assert(lowered.nodes[outerNext].kind == "Pattern.Variant.Owned")
+                                    nestedEnd := lowered.nodes[outerNext].children[0]
+                                    assert(lowered.nodes[nestedEnd].kind == "Pattern.Variant.Owned")
+                                    assert(lowered.nodes[nestedEnd].value == "End")
+                                    chainTailArm := lowered.nodes[chainMatch].children[3]
+                                    assert(len(lowered.nodes[chainTailArm].children) == 3)
+                                    tailNext := lowered.nodes[chainTailArm].children[0]
+                                    tail := lowered.nodes[tailNext].children[0]
+                                    assert(lowered.nodes[tail].value == "tail")
+                                    tailDrop := lowered.nodes[chainTailArm].children[2]
+                                    assert(lowered.nodes[lowered.nodes[tailDrop].children[0]].value == "tail")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

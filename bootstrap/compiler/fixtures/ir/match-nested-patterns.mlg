@@ -1,0 +1,45 @@
+type Status enum {
+    Idle
+    Busy(int)
+}
+
+type Event enum {
+    Missing
+    Changed(Status)
+}
+
+type Pairing enum {
+    Empty
+    Pair(int, Option[string])
+}
+
+type Chain enum {
+    End
+    Next(Chain)
+}
+
+func eventCode(input Event) int {
+    return match input {
+        case Event.Missing { 0 }
+        case Event.Changed(Status.Idle) { 1 }
+        case Event.Changed(Status.Busy(code)) { code }
+    }
+}
+
+func pairCode(input Pairing) int {
+    return match input {
+        case Pairing.Empty { 0 }
+        case Pairing.Pair(_, Some(_)) { 1 }
+        case Pairing.Pair(_, None) { 2 }
+    }
+}
+
+func chainCode(input Chain) int {
+    return match input {
+        case Chain.End { 0 }
+        case Chain.Next(Chain.End) { 1 }
+        case Chain.Next(tail) { 2 }
+    }
+}
+
+func main() {}

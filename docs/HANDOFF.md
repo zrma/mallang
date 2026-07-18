@@ -619,8 +619,11 @@ arm-local drop, cleanup wildcard 합성 binding과 string read full-expression
 temporary까지 확장한다. 26개 IR fixture와 전체 224개 project test가 이를
 고정한다. P176e2c3l은 flat user-enum expression match를 graph-derived
 `Inline`/`Owned` pattern storage, multiple payload binding과 cleanup wildcard로
-낮춘다. 27개 IR fixture와 전체 225개 project test가 이를 고정한다. 다음 slice는
-nested와 statement-form match typed IR이다. public language 또는
+낮춘다. 27개 IR fixture와 전체 225개 project test가 이를 고정한다. P176e2c3m은
+nested built-in/user-enum pattern과 recursive owned enum을 재귀적으로
+낮추고 arm-wide cleanup wildcard 번호를 유지한다. 28개 IR fixture와 전체 226개
+project test가 이를 고정한다. 다음 slice는 statement-form match typed IR이다.
+public language 또는
 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
@@ -628,7 +631,7 @@ B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 225개 project test와
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 226개 project test와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
 
