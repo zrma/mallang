@@ -157,5 +157,9 @@ boundary. P176e2c3a models mutable cleanup parameters and captures as externally
 owned overwrite roots: replacement RHS values are evaluated first, while the
 caller/environment-owned root receives no tail drop. Sixteen focused IR
 fixtures and 210 Mallang compiler project tests cover this boundary.
-Self-consuming aggregate overwrite and the remaining typed IR are incomplete,
-so no complete semantic, typed-IR or Stage1 compiler claim is made.
+P176e2c3b lowers field-source `append` calls as `Expr.SliceAppend`, preserves
+direct and indexed same-field assignments without overwrite, and retains
+RHS-first overwrite for a distinct source path. Seventeen focused IR fixtures
+and 212 Mallang compiler project tests cover this boundary. Remaining
+append/move cases and the rest of the typed IR are incomplete, so no complete
+semantic, typed-IR or Stage1 compiler claim is made.

@@ -455,6 +455,14 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
                 normalize_ir_expression(index, depth + 1),
             ],
         ),
+        IrExprKind::SliceAppend { slice, item } => (
+            "Expr.SliceAppend",
+            String::new(),
+            vec![
+                normalize_ir_expression(slice, depth + 1),
+                normalize_ir_expression(item, depth + 1),
+            ],
+        ),
         IrExprKind::If {
             condition,
             then_branch,

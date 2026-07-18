@@ -574,6 +574,61 @@ test InsertsMutableExternalCleanupOverwrite() {
     }
 }
 
+test PreservesSelfConsumingFieldAppendAssignments() {
+    source := "type Bag struct { values []int } type Store struct { bags []Bag } func grow(mut bag Bag, item int) { bag.values = append(bag.values, item) } func growIndexed(mut store Store, index int, item int) { store.bags[index].values = append(store.bags[index].values, item) } func replaceFrom(mut target Bag, con source Bag, item int) { target.values = append(source.values, item) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 1)
+                                    direct := lowered.functions[0].body[0]
+                                    assert(lowered.nodes[direct].kind == "Stmt.FieldAssign")
+                                    directAppend := lowered.nodes[direct].children[1]
+                                    assert(lowered.nodes[directAppend].kind == "Expr.SliceAppend")
+                                    assert(lowered.nodes[lowered.nodes[directAppend].children[0]].kind == "Expr.FieldAccess")
+
+                                    assert(len(lowered.functions[1].body) == 1)
+                                    indexed := lowered.functions[1].body[0]
+                                    assert(lowered.nodes[indexed].kind == "Stmt.FieldAssign")
+                                    indexedBase := lowered.nodes[indexed].children[0]
+                                    assert(lowered.nodes[indexedBase].kind == "Expr.Index")
+                                    indexedAppend := lowered.nodes[indexed].children[1]
+                                    assert(lowered.nodes[indexedAppend].kind == "Expr.SliceAppend")
+
+                                    assert(len(lowered.functions[2].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[2].body[0]].kind == "Stmt.Let.Immutable")
+                                    replace := lowered.functions[2].body[1]
+                                    assert(lowered.nodes[replace].kind == "Stmt.Overwrite")
+                                    replaceTarget := lowered.nodes[replace].children[0]
+                                    assert(lowered.nodes[replaceTarget].kind == "Expr.FieldAccess")
+                                    replaceValue := lowered.nodes[replace].children[1]
+                                    assert(lowered.nodes[replaceValue].kind == "Expr.Var")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

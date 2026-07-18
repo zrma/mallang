@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3a complete
+Status: in progress; P176a-P176e2c3b complete
 
 ## Objective
 
@@ -124,6 +124,9 @@ agrees.
 - P176e2c3a: treat mutable cleanup parameters and captures as externally owned
   overwrite roots, preserving RHS-first replacement without tail drops
   (complete)
+- P176e2c3b: lower field-source `append` as `Expr.SliceAppend`, preserve
+  direct/indexed same-field assignment without overwrite, and retain
+  RHS-first overwrite for distinct source paths (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -507,8 +510,8 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, fifteen typed-IR fixtures and
-  two hundred nine Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, seventeen typed-IR fixtures and
+  two hundred twelve Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
   compares focused fixtures against Rust Stage0. P176e2a adds straight-line
   cleanup drops, moved-root exclusion and deterministic return temporaries.
@@ -519,9 +522,11 @@ specialization and function-body checking until later P176 slices.
   non-self-consuming field/index overwrite without consuming aggregate bases.
   P176e2c3a keeps mutable cleanup parameters and captures externally owned,
   evaluates replacement values before overwrite and emits no tail drop for the
-  caller/environment-owned root. Sixteen typed-IR fixtures and two hundred ten
-  Mallang project tests cover this boundary. Self-consuming aggregate overwrite
-  and remaining checked constructs continue in P176e.
+  caller/environment-owned root. P176e2c3b adds the `append` semantic and typed
+  IR contract, preserves self-consuming direct/indexed field assignment and
+  retains RHS-first overwrite for a distinct source path. Seventeen typed-IR
+  fixtures and two hundred twelve Mallang project tests cover this boundary.
+  Remaining append/move and checked constructs continue in P176e.
 
 ## B2 Completion Criteria
 

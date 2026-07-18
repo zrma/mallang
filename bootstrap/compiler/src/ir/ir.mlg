@@ -390,6 +390,34 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
 
     if kind == "Expr.Call" {
         callee := ast.Child(con syntax, expression, 0)
+        if ast.Kind(con syntax, callee) == "Expr.Var" && ast.Value(con syntax, callee) == "append" {
+            if ast.ChildCount(con syntax, expression) != 3 {
+                return Err(newError("checked append argument count is invalid", ast.Span(con syntax, expression)))
+            }
+            sliceArgument := ast.Child(con syntax, expression, 1)
+            itemArgument := ast.Child(con syntax, expression, 2)
+            if ast.Kind(con syntax, sliceArgument) != "Arg.Owned" || ast.Kind(con syntax, itemArgument) != "Arg.Owned" {
+                return Err(newError("checked append argument mode is invalid", ast.Span(con syntax, expression)))
+            }
+            mut appendChildren := []int{}
+            match self.lowerExpression(con syntax, ast.Child(con syntax, sliceArgument, 0), con checked) {
+                case Ok(slice) {
+                    appendChildren = append(appendChildren, slice)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match self.lowerExpression(con syntax, ast.Child(con syntax, itemArgument, 0), con checked) {
+                case Ok(item) {
+                    appendChildren = append(appendChildren, item)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            return Ok(self.addNode("E", "Expr.SliceAppend", "", token.CopyText(con ty), ast.Span(con syntax, expression), appendChildren, cleanup))
+        }
         mut children := []int{}
         mut callKind := "Expr.IndirectCall"
         mut callValue := ""
@@ -542,7 +570,7 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
         }
         if self.nodes[statement].kind == "Stmt.FieldAssign" && len(self.nodes[statement].children) == 2 {
             expression := self.nodes[statement].children[1]
-            if self.nodes[expression].cleanup {
+            if self.nodes[expression].cleanup && !self.fieldAssignmentConsumesOverwrittenPlace(statement) {
                 base := self.nodes[statement].children[0]
                 target := self.addNode("E", "Expr.FieldAccess", token.CopyText(con self.nodes[statement].value), token.CopyText(con self.nodes[expression].ty), source.Copy(con self.nodes[statement].span), []int{base}, true)
                 output = self.pushCleanupOverwrite(output, statement, target, expression)
@@ -653,6 +681,15 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.IndexAssign" {
         return self.movedCleanupRoots(self.nodes[node].children[2], con active)
     }
+    if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.SliceAppend" && len(self.nodes[node].children) == 2 {
+        slice := self.nodes[node].children[0]
+        item := self.nodes[node].children[1]
+        mut roots := self.movedCleanupRoots(item, con active)
+        if self.nodes[slice].kind != "Expr.FieldAccess" {
+            roots = appendUniqueTexts(roots, con self.movedCleanupRoots(slice, con active))
+        }
+        return roots
+    }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
         binding := cleanupBindingIndex(con active, con self.nodes[node].value)
         if binding >= 0 {
@@ -680,6 +717,59 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
         }
     }
     return roots
+}
+
+func (con self Lowerer) fieldAssignmentConsumesOverwrittenPlace(statement int) bool {
+    if self.nodes[statement].kind != "Stmt.FieldAssign" || len(self.nodes[statement].children) != 2 {
+        return false
+    }
+    base := self.nodes[statement].children[0]
+    expression := self.nodes[statement].children[1]
+    if self.nodes[expression].kind != "Expr.SliceAppend" || len(self.nodes[expression].children) != 2 {
+        return false
+    }
+    slice := self.nodes[expression].children[0]
+    if self.nodes[slice].kind != "Expr.FieldAccess" || len(self.nodes[slice].children) != 1 {
+        return false
+    }
+    if self.nodes[slice].value != self.nodes[statement].value {
+        return false
+    }
+    return self.sameDirectFieldPath(base, self.nodes[slice].children[0])
+}
+
+func (con self Lowerer) sameDirectFieldPath(left int, right int) bool {
+    if self.nodes[left].kind != self.nodes[right].kind {
+        return false
+    }
+    kind := token.CopyText(con self.nodes[left].kind)
+    if kind == "Expr.Var" {
+        return self.nodes[left].value == self.nodes[right].value
+    }
+    if kind == "Expr.FieldAccess" && len(self.nodes[left].children) == 1 && len(self.nodes[right].children) == 1 {
+        return self.nodes[left].value == self.nodes[right].value && self.sameDirectFieldPath(self.nodes[left].children[0], self.nodes[right].children[0])
+    }
+    if kind == "Expr.Index" && len(self.nodes[left].children) == 2 && len(self.nodes[right].children) == 2 {
+        return self.sameDirectFieldPath(self.nodes[left].children[0], self.nodes[right].children[0]) && self.sameStableExpression(self.nodes[left].children[1], self.nodes[right].children[1])
+    }
+    return false
+}
+
+func (con self Lowerer) sameStableExpression(left int, right int) bool {
+    if self.nodes[left].kind != self.nodes[right].kind || self.nodes[left].value != self.nodes[right].value || len(self.nodes[left].children) != len(self.nodes[right].children) {
+        return false
+    }
+    kind := token.CopyText(con self.nodes[left].kind)
+    stable := kind == "Expr.Int" || kind == "Expr.String" || kind == "Expr.Bool" || kind == "Expr.Var" || kind == "Expr.Unary.Negate" || kind == "Expr.Unary.Not" || kind == "Expr.Binary.Add" || kind == "Expr.Binary.Subtract" || kind == "Expr.Binary.Multiply" || kind == "Expr.Binary.Divide" || kind == "Expr.Binary.Remainder" || kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual" || kind == "Expr.Binary.LogicalAnd" || kind == "Expr.Binary.LogicalOr" || kind == "Expr.Binary.Less" || kind == "Expr.Binary.LessEqual" || kind == "Expr.Binary.Greater" || kind == "Expr.Binary.GreaterEqual" || kind == "Expr.FieldAccess" || kind == "Expr.Index"
+    if !stable {
+        return false
+    }
+    for mut child := 0; child < len(self.nodes[left].children); child = child + 1 {
+        if !self.sameStableExpression(self.nodes[left].children[child], self.nodes[right].children[child]) {
+            return false
+        }
+    }
+    return true
 }
 
 func (mut self Lowerer) pushCleanupDrops(output []int, con active []CleanupBinding, con span source.Span) []int {

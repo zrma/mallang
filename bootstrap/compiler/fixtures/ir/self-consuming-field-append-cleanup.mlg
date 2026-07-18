@@ -1,0 +1,21 @@
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func grow(mut bag Bag, item int) {
+    bag.values = append(bag.values, item)
+}
+
+func growIndexed(mut store Store, index int, item int) {
+    store.bags[index].values = append(store.bags[index].values, item)
+}
+
+func replaceFrom(mut target Bag, con source Bag, item int) {
+    target.values = append(source.values, item)
+}
+
+func main() {}

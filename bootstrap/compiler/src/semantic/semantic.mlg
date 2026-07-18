@@ -2853,6 +2853,9 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
     if name == "Err" {
         return self.checkResultConstructor(con program, expression, con expectedType, hasExpected, false)
     }
+    if name == "append" {
+        return self.checkAppendCall(con program, expression)
+    }
     local := localIndex(con self.locals, con name)
     mut function := -1
     mut indirect := false
@@ -2909,6 +2912,69 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
             return Err(error)
         }
     }
+}
+
+func (mut self CheckedProgram) checkAppendCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    if argumentCount != 2 {
+        return Err(newError("`append` expects exactly two arguments", ast.Span(con program, expression)))
+    }
+    sliceArgument := ast.Child(con program, expression, 1)
+    itemArgument := ast.Child(con program, expression, 2)
+    if argModeFromKind(con ast.Kind(con program, sliceArgument)) != "owned" || argModeFromKind(con ast.Kind(con program, itemArgument)) != "owned" {
+        return Err(newError("`append` arguments do not take `con` or `mut` mode markers", ast.Span(con program, expression)))
+    }
+
+    sliceExpression := ast.Child(con program, sliceArgument, 0)
+    mut sliceType := unitType()
+    if ast.Kind(con program, sliceExpression) == "Expr.FieldAccess" && isDirectBorrowExpression(con program, sliceExpression) {
+        match self.checkExpressionUse(con program, sliceExpression, con "read") {
+            case Ok(ty) {
+                sliceType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    } else {
+        match self.checkExpression(con program, sliceExpression) {
+            case Ok(ty) {
+                sliceType = ty
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if sliceType.kind != "slice" {
+        message := strings.join(con []string{"`append` first argument must be a slice, got `", token.CopyText(con sliceType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, sliceArgument)))
+    }
+
+    mut elementType := unitType()
+    match self.typeArgument(con sliceType, 0) {
+        case Ok(ty) {
+            elementType = ty
+        }
+        case Err(_) {
+            return Err(newError("checked append element type is missing", ast.Span(con program, sliceArgument)))
+        }
+    }
+    itemExpression := ast.Child(con program, itemArgument, 0)
+    match self.checkExpressionExpected(con program, itemExpression, con "owned", con elementType, true) {
+        case Ok(itemType) {
+            if itemType.text != elementType.text {
+                message := strings.join(con []string{"`append` item type mismatch: expected `", token.CopyText(con elementType.text), "`, got `", token.CopyText(con itemType.text), "`",}, con "")
+                return Err(newError(message, ast.Span(con program, itemArgument)))
+            }
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    self.recordType(expression, con sliceType)
+    return Ok(sliceType)
 }
 
 func (mut self CheckedProgram) checkNoneConstructor(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {

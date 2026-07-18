@@ -1895,6 +1895,14 @@ test RejectsFunctionLiteralCallArgumentType() {
     assert(checkTestSource(source) == "argument type mismatch for `transform`: expected `int`, got `bool`")
 }
 
+test ChecksSelfConsumingFieldAppend() {
+    accepted := "type Bag struct { values []int } type Store struct { bags []Bag } func grow(mut bag Bag, item int) { bag.values = append(bag.values, item) } func growIndexed(mut store Store, index int, item int) { store.bags[index].values = append(store.bags[index].values, item) } func main() {}"
+    assert(checkTestSource(accepted) == "")
+
+    rejected := "type Bag struct { values []int } func grow(mut bag Bag) { bag.values = append(bag.values) } func main() {}"
+    assert(checkTestSource(rejected) == "`append` expects exactly two arguments")
+}
+
 test ChecksCopyClosureCaptures() {
     source := "func run() int { offset := 10; add := func(value int) int { return value + offset }; return offset + add(2) } func main() {}"
     assert(checkTestSource(source) == "")
