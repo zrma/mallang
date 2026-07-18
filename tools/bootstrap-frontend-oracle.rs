@@ -13,8 +13,9 @@ use mallang::ir::{
     IrForPost, IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
-    check, lex, lower, lower_test, parse_sources_with_diagnostics, parse_with_diagnostics,
-    CheckedProgram, IrProgram, Keyword, LexError, SourceMap, Span, Token, TokenKind,
+    build_package_graph, check, discover_project, lex, lower, lower_test,
+    parse_sources_with_diagnostics, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
+    LexError, SourceMap, Span, Token, TokenKind,
 };
 
 fn main() -> ExitCode {
@@ -57,6 +58,96 @@ fn main() -> ExitCode {
                     } else {
                         println!("PERR|-1|0|0|{}", encode_bytes(&error.message));
                     }
+                }
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+    if first == "package-layout" {
+        let Some(_project_name) = args.next() else {
+            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+            return ExitCode::from(2);
+        };
+        let Some(source_root) = args.next() else {
+            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+            return ExitCode::from(2);
+        };
+        let paths = args.collect::<Vec<_>>();
+        if paths.is_empty() {
+            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+            return ExitCode::from(2);
+        }
+        let project = match discover_project(&source_root) {
+            Ok(project) => project,
+            Err(_) => {
+                eprintln!("bootstrap frontend oracle could not discover project");
+                return ExitCode::from(2);
+            }
+        };
+        let mut sources = SourceMap::new();
+        let mut source_ids = Vec::with_capacity(paths.len());
+        for path in paths {
+            let canonical_path = match fs::canonicalize(&path) {
+                Ok(path) => path,
+                Err(_) => {
+                    eprintln!("bootstrap frontend oracle could not read source");
+                    return ExitCode::from(2);
+                }
+            };
+            let source = match fs::read_to_string(&canonical_path) {
+                Ok(source) => source,
+                Err(_) => {
+                    eprintln!("bootstrap frontend oracle could not read source");
+                    return ExitCode::from(2);
+                }
+            };
+            source_ids.push(sources.add_file(canonical_path, source));
+        }
+        let program = match parse_sources_with_diagnostics(&sources, &source_ids) {
+            Ok(program) => program,
+            Err(errors) => {
+                for error in errors {
+                    if let Some(span) = error.span {
+                        println!(
+                            "PERR|{}|{}|{}|{}",
+                            span.source.index(),
+                            span.start,
+                            span.end,
+                            encode_bytes(&error.message)
+                        );
+                    } else {
+                        println!("PERR|-1|0|0|{}", encode_bytes(&error.message));
+                    }
+                }
+                return ExitCode::SUCCESS;
+            }
+        };
+        match build_package_graph(&project, &sources, &program) {
+            Ok(graph) => {
+                println!("LAYOUT|{}", source_ids.len());
+                for source_id in source_ids {
+                    let package = graph
+                        .package_for_source(source_id)
+                        .expect("package graph contains every parsed source");
+                    println!(
+                        "SOURCE|{}|{}|{}",
+                        source_id.index(),
+                        package.path,
+                        package.name
+                    );
+                }
+            }
+            Err(error) => {
+                if let Some(span) = error.span {
+                    println!(
+                        "KERR|{}|{}|{}|{}",
+                        span.source.index(),
+                        span.start,
+                        span.end,
+                        encode_bytes(&error.message)
+                    );
+                } else {
+                    println!("KERR|-1|0|0|{}", encode_bytes(&error.message));
                 }
             }
         }

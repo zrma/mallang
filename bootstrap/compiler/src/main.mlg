@@ -9,6 +9,7 @@ import "bootstrap_compiler/frontend/parser"
 import "bootstrap_compiler/frontend/source"
 import "bootstrap_compiler/frontend/token"
 import "bootstrap_compiler/ir"
+import "bootstrap_compiler/packages"
 import "bootstrap_compiler/semantic"
 import "bootstrap_compiler/specialize"
 
@@ -83,7 +84,7 @@ func runParse(text string) {
     }
 }
 
-func runParseSources(con args []string, start int) {
+func parseSourcePaths(con args []string, start int) Result[ast.Program, []ast.ParseError] {
     mut programs := []ast.Program{}
     mut errors := []ast.ParseError{}
     for mut index := start; index < len(args); index = index + 1 {
@@ -116,16 +117,51 @@ func runParseSources(con args []string, start int) {
     }
 
     if len(errors) > 0 {
-        for mut index := 0; index < len(errors); index = index + 1 {
-            print(ast.NormalizeError(con errors[index]))
+        return Err(errors)
+    }
+    match ast.MergePrograms(programs) {
+        case Ok(program) {
+            return Ok(program)
         }
-    } else {
-        match ast.MergePrograms(programs) {
-            case Ok(program) {
-                print(ast.Normalize(con program))
+        case Err(message) {
+            fail(con message)
+        }
+    }
+    return Err([]ast.ParseError{})
+}
+
+func runParseSources(con args []string, start int) {
+    match parseSourcePaths(con args, start) {
+        case Ok(program) {
+            print(ast.Normalize(con program))
+        }
+        case Err(errors) {
+            for mut index := 0; index < len(errors); index = index + 1 {
+                print(ast.NormalizeError(con errors[index]))
             }
-            case Err(message) {
-                fail(con message)
+        }
+    }
+}
+
+func runPackageLayout(con args []string) {
+    match parseSourcePaths(con args, 4) {
+        case Ok(program) {
+            mut paths := []string{}
+            for mut index := 4; index < len(args); index = index + 1 {
+                paths = append(paths, token.CopyText(con args[index]))
+            }
+            match packages.Build(con program, con args[2], con args[3], con paths) {
+                case Ok(layout) {
+                    print(packages.Normalize(con layout))
+                }
+                case Err(error) {
+                    print(packages.NormalizeError(con error))
+                }
+            }
+        }
+        case Err(errors) {
+            for mut index := 0; index < len(errors); index = index + 1 {
+                print(ast.NormalizeError(con errors[index]))
             }
         }
     }
@@ -276,6 +312,13 @@ func runMode(con mode string, text string) {
 func main() {
     match os.args() {
         case Ok(args) {
+            if len(args) >= 2 && args[1]== "package-layout" {
+                if len(args) < 5 {
+                    fail(con "usage: bootstrap-frontend package-layout <project-name> <source-root> <source>...\n")
+                }
+                runPackageLayout(con args)
+                os.exit(0)
+            }
             if len(args) >= 2 && args[1]== "parse-sources" {
                 if len(args) < 3 {
                     fail(con "usage: bootstrap-frontend parse-sources <source>...\n")

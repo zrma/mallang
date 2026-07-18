@@ -667,8 +667,13 @@ Rust oracle의 declaration order, stage, span과 message에 바이트 단위로 
 diagnostic에 source ID를 보존하고 parser arena를 source-unit/struct/enum/function/test
 group 순서로 deterministic merge한다. `parse-sources` mode의 valid/rejection source set
 2개가 Rust `parse_sources_with_diagnostics`와 바이트 단위로 일치하며 전체 246개 project
-test가 source span과 declaration ordering을 고정한다. 다음 slice는 package graph,
-visibility/link rewrite와 standard intrinsic specialization이다. public language 또는
+test가 source span과 declaration ordering을 고정한다. P176e4b1은 deterministic project
+name, source root와 ordered source path에서 source ID별 canonical package path/name을
+계산하고 missing/mismatched `package` declaration을 Rust `build_package_graph`와 같은
+stage, span, message로 거부한다. 세 package-layout fixture set, 163개 parser corpus source와
+전체 248개 project test가 이 package identity boundary를 고정한다. 다음 slice는 import와
+declaration inventory를 포함한 package graph, visibility/link rewrite와 standard intrinsic
+specialization이다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
@@ -677,7 +682,7 @@ B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 246개 project test와
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 248개 project test와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
 

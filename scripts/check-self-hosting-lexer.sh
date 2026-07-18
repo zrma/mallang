@@ -49,6 +49,7 @@ SEMANTIC_FIXTURES="$PROJECT/fixtures/semantic"
 IR_FIXTURES="$PROJECT/fixtures/ir"
 IR_TEST_FIXTURES="$PROJECT/fixtures/ir-test"
 MULTI_SOURCE_FIXTURES="$PROJECT/fixtures/multi-source"
+PACKAGE_LAYOUT_FIXTURES="$PROJECT/fixtures/package-layout"
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -73,6 +74,7 @@ else
     bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/frontend/parser::MergesSourceAwareProgramsByDeclarationGroup \
+    bootstrap_compiler/packages::BuildsSourcePackageIdentity \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
@@ -260,6 +262,52 @@ compare_source_set() {
   fi
 }
 
+compare_package_layout() {
+  local stem="$1"
+  local profile="$2"
+  local project_name="$3"
+  local source_root="$4"
+  shift 4
+  local -a fixtures=("$@")
+  local -a actual_outputs=()
+  oracle_output="$WORK/$stem.oracle"
+  stage1_output="$WORK/$stem.stage1"
+  strict_output="$WORK/$stem.strict"
+  sanitizer_output="$WORK/$stem.sanitizer"
+
+  "$ORACLE" package-layout "$project_name" "$source_root" "${fixtures[@]}" >"$oracle_output"
+  "$STAGE1" package-layout "$project_name" "$source_root" "${fixtures[@]}" >"$stage1_output"
+  actual_outputs+=("$stage1_output")
+  if [[ "$profile" != "stage1" ]]; then
+    "$WORK/accounting" package-layout "$project_name" "$source_root" "${fixtures[@]}" \
+      >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+    actual_outputs+=("$strict_output")
+  fi
+  if [[ "$profile" == "full" ]]; then
+    "$WORK/accounting-san" package-layout "$project_name" "$source_root" "${fixtures[@]}" \
+      >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+    actual_outputs+=("$sanitizer_output")
+  fi
+
+  for actual in "${actual_outputs[@]}"; do
+    if ! cmp -s "$oracle_output" "$actual"; then
+      echo "self-hosting package layout differential mismatch: $stem" >&2
+      diff -u "$oracle_output" "$actual" >&2 || true
+      exit 1
+    fi
+  done
+  if [[ "$profile" != "stage1" && -s "$WORK/$stem.strict.stderr" ]]; then
+    echo "self-hosting package layout runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.strict.stderr" >&2
+    exit 1
+  fi
+  if [[ "$profile" == "full" && -s "$WORK/$stem.sanitizer.stderr" ]]; then
+    echo "self-hosting package layout runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.sanitizer.stderr" >&2
+    exit 1
+  fi
+}
+
 fixture_profile="full"
 corpus_profile="full"
 if [[ "$MODE" == "fast" ]]; then
@@ -297,6 +345,26 @@ compare_source_set \
   "$fixture_profile" \
   "$MULTI_SOURCE_FIXTURES/errors/main.mlg" \
   "$MULTI_SOURCE_FIXTURES/errors/broken.mlg"
+
+compare_package_layout \
+  package-layout-valid \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/valid/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/valid/src/main.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/valid/src/greet/greet.mlg"
+compare_package_layout \
+  package-layout-missing \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/missing/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/missing/src/main.mlg"
+compare_package_layout \
+  package-layout-mismatch \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/mismatch/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/mismatch/src/main.mlg"
 
 if [[ "$MODE" == "fast" ]]; then
   compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
@@ -384,4 +452,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4a $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4b1 $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

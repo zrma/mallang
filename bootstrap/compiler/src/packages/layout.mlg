@@ -1,0 +1,176 @@
+package packages
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+pub type SourcePackage struct {
+    source int
+    path string
+    name string
+}
+
+pub type Layout struct {
+    sources []SourcePackage
+}
+
+pub type LayoutError struct {
+    message string
+    span source.Span
+}
+
+type PackageIdentity struct {
+    path string
+    name string
+}
+
+pub func Build(con program ast.Program, con projectName string, con sourceRoot string, con paths []string) Result[Layout, LayoutError] {
+    if len(paths) == 0 {
+        return Err(newError("cannot build a package layout without source files", source.NewSpan(0, 0, 0)))
+    }
+    mut packages := []SourcePackage{}
+    for mut sourceId := 0; sourceId < len(paths); sourceId = sourceId + 1 {
+        sourceUnit := findSourceUnit(con program, sourceId)
+        if sourceUnit < 0 {
+            message := strings.join(con []string{"source ID ", strings.fromInt(sourceId), " has no parsed source unit",}, con "")
+            return Err(newError(message, source.NewSpan(sourceId, 0, 0)))
+        }
+        unitSpan := ast.Span(con program, sourceUnit)
+        mut identity := PackageIdentity{path: "", name: ""}
+        match packageIdentity(con projectName, con sourceRoot, con paths[sourceId], source.Copy(con unitSpan)) {
+            case Ok(value) {
+                identity = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+
+        packageDecl := findPackageDecl(con program, sourceUnit)
+        if packageDecl < 0 {
+            message := strings.join(con []string{"source in package `", token.CopyText(con identity.path), "` must declare `package ", token.CopyText(con identity.name), "`",}, con "")
+            return Err(newError(message, unitSpan))
+        }
+        declared := ast.Value(con program, packageDecl)
+        if declared != identity.name {
+            message := strings.join(con []string{"package `", declared, "` does not match source directory package `", token.CopyText(con identity.name), "`",}, con "")
+            return Err(newError(message, ast.Span(con program, packageDecl)))
+        }
+        packages = append(packages, SourcePackage{source: sourceId, path: token.CopyText(con identity.path), name: token.CopyText(con identity.name)})
+    }
+    return Ok(Layout{sources: packages,})
+}
+
+pub func Normalize(con layout Layout) string {
+    mut lines := []string{strings.join(con []string{"LAYOUT|", strings.fromInt(len(layout.sources)),}, con ""),}
+    for mut index := 0; index < len(layout.sources); index = index + 1 {
+        lines = append(lines, strings.join(con []string{"SOURCE|", strings.fromInt(layout.sources[index].source), "|", token.CopyText(con layout.sources[index].path), "|", token.CopyText(con layout.sources[index].name),}, con ""))
+    }
+    return strings.join(con lines, con "\n")
+}
+
+pub func NormalizeError(con error LayoutError) string {
+    parts := []string{"KERR|", strings.fromInt(source.Source(con error.span)), "|", strings.fromInt(source.Start(con error.span)), "|", strings.fromInt(source.End(con error.span)), "|", token.EncodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
+
+pub func ErrorMessage(con error LayoutError) string {
+    return token.CopyText(con error.message)
+}
+
+func packageIdentity(con projectName string, con sourceRoot string, con path string, span source.Span) Result[PackageIdentity, LayoutError] {
+    prefix := strings.join(con []string{token.CopyText(con sourceRoot), "/",}, con "")
+    if !startsWith(con path, con prefix) {
+        message := strings.join(con []string{token.CopyText(con path), ": source is outside the project source directory",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    mut relative := ""
+    match strings.slice(con path, strings.byteLen(con prefix), strings.byteLen(con path)) {
+        case Ok(value) {
+            relative = value
+        }
+        case Err(_) {
+            return Err(newError("cannot derive package identity from source path", source.Copy(con span)))
+        }
+    }
+    fileSeparator := lastSlash(con relative)
+    if fileSeparator < 0 {
+        return Ok(PackageIdentity{path: token.CopyText(con projectName), name: "main"})
+    }
+    mut directory := ""
+    match strings.slice(con relative, 0, fileSeparator) {
+        case Ok(value) {
+            directory = value
+        }
+        case Err(_) {
+            return Err(newError("cannot derive package directory from source path", source.Copy(con span)))
+        }
+    }
+    nameStart := lastSlash(con directory) + 1
+    mut name := ""
+    match strings.slice(con directory, nameStart, strings.byteLen(con directory)) {
+        case Ok(value) {
+            name = value
+        }
+        case Err(_) {
+            return Err(newError("cannot derive package name from source path", source.Copy(con span)))
+        }
+    }
+    packagePath := strings.join(con []string{token.CopyText(con projectName), "/", directory,}, con "")
+    return Ok(PackageIdentity{path: packagePath, name: name})
+}
+
+func findSourceUnit(con program ast.Program, sourceId int) int {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        node := ast.Child(con program, root, child)
+        if ast.Kind(con program, node) == "SourceUnit" && source.Source(con ast.Span(con program, node)) == sourceId {
+            return node
+        }
+    }
+    return - 1
+}
+
+func findPackageDecl(con program ast.Program, sourceUnit int) int {
+    for mut child := 0; child < ast.ChildCount(con program, sourceUnit); child = child + 1 {
+        node := ast.Child(con program, sourceUnit, child)
+        if ast.Kind(con program, node) == "PackageDecl" {
+            return node
+        }
+    }
+    return - 1
+}
+
+func startsWith(con value string, con prefix string) bool {
+    if strings.byteLen(con prefix) > strings.byteLen(con value) {
+        return false
+    }
+    match strings.slice(con value, 0, strings.byteLen(con prefix)) {
+        case Ok(candidate) {
+            return candidate == prefix
+        }
+        case Err(_) {
+            return false
+        }
+    }
+}
+
+func lastSlash(con value string) int {
+    mut result := -1
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        match strings.byteAt(con value, index) {
+            case Ok(byte) {
+                if byte == 47 {
+                    result = index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    return result
+}
+
+func newError(message string, span source.Span) LayoutError {
+    return LayoutError{message: message, span: span}
+}

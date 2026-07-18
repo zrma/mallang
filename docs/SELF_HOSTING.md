@@ -226,7 +226,12 @@ typed-IR fixtures and two hundred forty-four Mallang project tests cover this
 boundary. P176e4a preserves source IDs through tokens, lexical diagnostics and
 parser spans, then merges multiple syntax arenas in deterministic declaration
 groups. Two valid/rejection source sets and two hundred forty-six Mallang
-project tests fix the Rust `parse_sources_with_diagnostics` boundary. Package
-graph, visibility/link rewriting and standard-intrinsic specialization plus the remaining
+project tests fix the Rust `parse_sources_with_diagnostics` boundary. P176e4b1
+derives canonical source package identity from deterministic project and path
+inputs, then matches Rust package-declaration validation for valid, missing and
+mismatched layouts. Three package-layout sets, one hundred sixty-three parser
+corpus sources and two hundred forty-eight Mallang project tests cover this
+boundary. Import and declaration graph construction, visibility/link rewriting
+and standard-intrinsic specialization plus the remaining
 full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

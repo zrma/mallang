@@ -651,7 +651,12 @@ specialization and function-body checking until later P176 slices.
   through tokens, lexical diagnostics and parser spans, then merges source
   arenas in source-unit/struct/enum/function/test order. Two valid/rejection
   source sets and two hundred forty-six Mallang project tests match Rust
-  `parse_sources_with_diagnostics`. Package graph, visibility/link rewriting and
+  `parse_sources_with_diagnostics`. P176e4b1 derives canonical source package
+  identity from deterministic project/path input and validates missing or
+  mismatched package declarations against Rust `build_package_graph`. Three
+  package-layout sets, one hundred sixty-three parser corpus sources and two
+  hundred forty-eight Mallang project tests cover this boundary. Import and
+  declaration graph construction, visibility/link rewriting and
   standard-intrinsic specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
