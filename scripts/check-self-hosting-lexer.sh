@@ -129,7 +129,7 @@ compare_fixture() {
   local stem="$3"
   local profile="$4"
   local label
-  local -a command=()
+  local command=""
   local -a actual_outputs=()
   case "$kind" in
     lexer)
@@ -137,15 +137,15 @@ compare_fixture() {
       ;;
     parser)
       label="parser"
-      command=(parse)
+      command="parse"
       ;;
     semantic)
       label="semantic"
-      command=(check)
+      command="check"
       ;;
     ir)
       label="typed IR"
-      command=(ir)
+      command="ir"
       ;;
     *)
       echo "unknown self-hosting differential kind: $kind" >&2
@@ -158,17 +158,32 @@ compare_fixture() {
   strict_output="$WORK/$stem.strict"
   sanitizer_output="$WORK/$stem.sanitizer"
 
-  "$ORACLE" "${command[@]}" "$fixture" >"$oracle_output"
-  "$STAGE1" "${command[@]}" "$fixture" >"$stage1_output"
+  if [[ -n "$command" ]]; then
+    "$ORACLE" "$command" "$fixture" >"$oracle_output"
+    "$STAGE1" "$command" "$fixture" >"$stage1_output"
+  else
+    "$ORACLE" "$fixture" >"$oracle_output"
+    "$STAGE1" "$fixture" >"$stage1_output"
+  fi
   actual_outputs+=("$stage1_output")
   if [[ "$profile" != "stage1" ]]; then
-    "$WORK/accounting" "${command[@]}" "$fixture" \
-      >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+    if [[ -n "$command" ]]; then
+      "$WORK/accounting" "$command" "$fixture" \
+        >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+    else
+      "$WORK/accounting" "$fixture" \
+        >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+    fi
     actual_outputs+=("$strict_output")
   fi
   if [[ "$profile" == "full" ]]; then
-    "$WORK/accounting-san" "${command[@]}" "$fixture" \
-      >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+    if [[ -n "$command" ]]; then
+      "$WORK/accounting-san" "$command" "$fixture" \
+        >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+    else
+      "$WORK/accounting-san" "$fixture" \
+        >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+    fi
     actual_outputs+=("$sanitizer_output")
   fi
 
