@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3o complete
+Status: in progress; P176a-P176e2c3p complete
 
 ## Objective
 
@@ -156,6 +156,8 @@ agrees.
   scrutinee moves and outer branch move compensation (complete)
 - P176e2c3o: check test declaration bodies and lower `assert(bool)` plus the
   selected test body as a synthetic `main` (complete)
+- P176e2c3p: lower condition and conditionless `for`, `break` and `continue`
+  with explicit body and cleanup blocks (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -578,8 +580,10 @@ specialization and function-body checking until later P176 slices.
   wildcard numbering. P176e2c3n adds statement-form match blocks, arm-local
   payload cleanup and outer branch move compensation. P176e2c3o checks test
   declaration bodies and lowers `assert(bool)` plus the selected test body as a
-  synthetic `main`. Thirty typed-IR fixtures and two hundred thirty Mallang
-  project tests cover the expanded boundary. Loop, range, remaining
+  synthetic `main`. P176e2c3p lowers condition and conditionless `for`, `break`
+  and `continue` with explicit body and cleanup blocks. Thirty-one typed-IR
+  fixtures and two hundred thirty-one Mallang project tests cover the expanded
+  boundary. Three-clause loops, range, cleanup-bearing loops, remaining
   full-expression cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity
   remains tracked separately in

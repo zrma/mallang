@@ -9,8 +9,8 @@ use mallang::ast::{
     Visibility,
 };
 use mallang::ir::{
-    IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrMatchArm,
-    IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
+    IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrForInit,
+    IrForPost, IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
     check, lex, lower, lower_test, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
@@ -355,6 +355,49 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
                 normalize_ir_block("Block.Else", else_body, statement.span, depth + 1),
             ],
         ),
+        IrStmtKind::For {
+            init,
+            condition,
+            post,
+            body,
+            cleanup,
+        } => {
+            let mut children = Vec::new();
+            children.extend(
+                init.iter()
+                    .map(|init| normalize_ir_for_init(init, depth + 1)),
+            );
+            children.extend(condition.iter().map(|condition| {
+                normalize_ir_line(
+                    depth + 1,
+                    "F",
+                    "ForCondition",
+                    condition.span,
+                    "",
+                    "bool",
+                    &[normalize_ir_expression(condition, depth + 2)],
+                )
+            }));
+            children.extend(
+                post.iter()
+                    .map(|post| normalize_ir_for_post(post, depth + 1)),
+            );
+            children.push(normalize_ir_block(
+                "Block.For",
+                body,
+                statement.span,
+                depth + 1,
+            ));
+            children.push(normalize_ir_block(
+                "Block.ForCleanup",
+                cleanup,
+                statement.span,
+                depth + 1,
+            ));
+            ("Stmt.For", "", "unit".to_string(), children)
+        }
+        IrStmtKind::Break => ("Stmt.Break", "", "unit".to_string(), Vec::new()),
+        IrStmtKind::Continue => ("Stmt.Continue", "", "unit".to_string(), Vec::new()),
         IrStmtKind::Match { scrutinee, arms } => {
             let mut children = vec![normalize_ir_expression(scrutinee, depth + 1)];
             children.extend(
@@ -428,6 +471,46 @@ fn normalize_ir_block(kind: &str, body: &[IrStmt], span: Span, depth: usize) -> 
         .map(|statement| normalize_ir_statement(statement, depth + 1))
         .collect::<Vec<_>>();
     normalize_ir_line(depth, "B", kind, span, "", "unit", &children)
+}
+
+fn normalize_ir_for_init(init: &IrForInit, depth: usize) -> String {
+    match init {
+        IrForInit::Let {
+            mutable,
+            name,
+            ty,
+            expr,
+        } => normalize_ir_line(
+            depth,
+            "F",
+            if *mutable {
+                "ForInit.Let.Mutable"
+            } else {
+                "ForInit.Let.Immutable"
+            },
+            expr.span,
+            name,
+            &ty.source_name(),
+            &[normalize_ir_expression(expr, depth + 1)],
+        ),
+    }
+}
+
+fn normalize_ir_for_post(post: &IrForPost, depth: usize) -> String {
+    match post {
+        IrForPost::Assign { target, expr } => normalize_ir_line(
+            depth,
+            "F",
+            "ForPost.Assign",
+            target.span.join(expr.span),
+            "",
+            "unit",
+            &[
+                normalize_ir_expression(target, depth + 1),
+                normalize_ir_expression(expr, depth + 1),
+            ],
+        ),
+    }
 }
 
 fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {

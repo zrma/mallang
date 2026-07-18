@@ -1438,6 +1438,61 @@ test LowersTestAssertions() {
     }
 }
 
+test LowersConditionAndConditionlessLoops() {
+    source := "func count(limit int) int { mut current := 0; for current < limit { current = current + 1; if current == 2 { continue } if current == 4 { break } }; for { break }; return current } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 4)
+                                    conditionLoop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[conditionLoop].kind == "Stmt.For")
+                                    assert(len(lowered.nodes[conditionLoop].children) == 3)
+                                    condition := lowered.nodes[conditionLoop].children[0]
+                                    assert(lowered.nodes[condition].kind == "ForCondition")
+                                    body := lowered.nodes[conditionLoop].children[1]
+                                    assert(lowered.nodes[body].kind == "Block.For")
+                                    assert(len(lowered.nodes[body].children) == 3)
+                                    continueIf := lowered.nodes[body].children[1]
+                                    continueBlock := lowered.nodes[continueIf].children[1]
+                                    assert(lowered.nodes[lowered.nodes[continueBlock].children[0]].kind == "Stmt.Continue")
+                                    breakIf := lowered.nodes[body].children[2]
+                                    breakBlock := lowered.nodes[breakIf].children[1]
+                                    assert(lowered.nodes[lowered.nodes[breakBlock].children[0]].kind == "Stmt.Break")
+                                    cleanup := lowered.nodes[conditionLoop].children[2]
+                                    assert(lowered.nodes[cleanup].kind == "Block.ForCleanup")
+                                    assert(len(lowered.nodes[cleanup].children) == 0)
+
+                                    conditionlessLoop := lowered.functions[0].body[2]
+                                    assert(len(lowered.nodes[conditionlessLoop].children) == 2)
+                                    conditionlessBody := lowered.nodes[conditionlessLoop].children[0]
+                                    assert(lowered.nodes[lowered.nodes[conditionlessBody].children[0]].kind == "Stmt.Break")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

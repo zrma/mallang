@@ -302,6 +302,45 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
 func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
     kind := ast.Kind(con syntax, statement)
     value := ast.Value(con syntax, statement)
+    if kind == "Stmt.Break" || kind == "Stmt.Continue" {
+        return Ok(self.addNode("S", token.CopyText(con kind), "", "unit", ast.Span(con syntax, statement), []int{}, false))
+    }
+    if kind == "Stmt.For" {
+        childCount := ast.ChildCount(con syntax, statement)
+        if childCount < 1 {
+            return Err(newError("checked for statement body is missing", ast.Span(con syntax, statement)))
+        }
+        body := ast.Child(con syntax, statement, childCount - 1)
+        if ast.Kind(con syntax, body) != "Block" {
+            return Err(newError("checked for statement body is malformed", ast.Span(con syntax, statement)))
+        }
+        mut children := []int{}
+        for mut child := 0; child < childCount - 1; child = child + 1 {
+            control := ast.Child(con syntax, statement, child)
+            if ast.Kind(con syntax, control) != "ForCondition" || ast.ChildCount(con syntax, control) != 1 {
+                return Err(newError("B2e typed IR does not yet accept three-clause for statements", ast.Span(con syntax, control)))
+            }
+            condition := ast.Child(con syntax, control, 0)
+            match self.lowerExpression(con syntax, condition, con checked) {
+                case Ok(loweredCondition) {
+                    children = append(children, self.addNode("F", "ForCondition", "", "bool", ast.Span(con syntax, condition), []int{loweredCondition}, false))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        match self.lowerBlock(con syntax, body, con checked) {
+            case Ok(loweredBody) {
+                children = append(children, self.addNode("B", "Block.For", "", "unit", ast.Span(con syntax, statement), loweredBody, false))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, self.addNode("B", "Block.ForCleanup", "", "unit", ast.Span(con syntax, statement), []int{}, false))
+        return Ok(self.addNode("S", "Stmt.For", "", "unit", ast.Span(con syntax, statement), children, false))
+    }
     if kind == "Stmt.If" {
         condition := ast.Child(con syntax, statement, 0)
         mut children := []int{}
