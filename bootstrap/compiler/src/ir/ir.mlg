@@ -662,7 +662,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             pattern := ast.Child(con syntax, arm, 0)
             branch := ast.Child(con syntax, arm, 1)
             mut loweredPattern := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}}
-            match self.lowerBuiltinMatchPattern(con syntax, pattern, scrutinee, ast.Span(con syntax, branch), ast.Span(con syntax, arm), con checked) {
+            match self.lowerMatchPattern(con syntax, pattern, scrutinee, ast.Span(con syntax, branch), ast.Span(con syntax, arm), con checked) {
                 case Ok(value) {
                     loweredPattern = value
                 }
@@ -797,7 +797,7 @@ func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression i
     return Ok(self.addNode("E", "Expr.FullExprTemporary", name, token.CopyText(con ty), source.Copy(con span), []int{lowered}, true))
 }
 
-func (mut self Lowerer) lowerBuiltinMatchPattern(con syntax ast.Program, pattern int, scrutinee int, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
+func (mut self Lowerer) lowerMatchPattern(con syntax ast.Program, pattern int, scrutinee int, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
     mut scrutineeType := ""
     match semantic.NodeType(con checked, scrutinee) {
         case Ok(resolved) {
@@ -808,6 +808,9 @@ func (mut self Lowerer) lowerBuiltinMatchPattern(con syntax ast.Program, pattern
         }
     }
     kind := ast.Kind(con syntax, pattern)
+    if kind == "Pattern.Variant" {
+        return self.lowerUserEnumMatchPattern(con syntax, pattern, con scrutineeType, source.Copy(con span), source.Copy(con discardSpan), con checked)
+    }
     if kind == "Pattern.Wildcard" {
         if semantic.NodeNeedsCleanup(con checked, scrutinee) {
             name := matchDiscardName(con discardSpan, 0)
@@ -851,6 +854,59 @@ func (mut self Lowerer) lowerBuiltinMatchPattern(con syntax ast.Program, pattern
     if semantic.NodeTypeArgumentNeedsCleanup(con checked, scrutinee, argument) {
         cleanupBindings = append(cleanupBindings, newCleanupBinding(con bindingName, con payloadType, source.Copy(con span)))
     }
+    return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings})
+}
+
+func (mut self Lowerer) lowerUserEnumMatchPattern(con syntax ast.Program, pattern int, con scrutineeType string, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
+    enumName := semantic.PatternVariantTypeName(con syntax, pattern)
+    variantName := semantic.PatternVariantName(con syntax, pattern)
+    if enumName == "" || variantName == "" {
+        return Err(newError("checked user enum match pattern is malformed", source.Copy(con span)))
+    }
+    payloadCount := semantic.EnumVariantPayloadCount(con checked, con enumName, con variantName)
+    if payloadCount < 0 || ast.ChildCount(con syntax, pattern) != payloadCount {
+        return Err(newError("checked user enum match payload count is invalid", source.Copy(con span)))
+    }
+    storage := semantic.EnumStorage(con checked, con enumName)
+    if storage == "" {
+        return Err(newError("checked user enum match storage is missing", source.Copy(con span)))
+    }
+    mut payloads := []int{}
+    mut cleanupBindings := []CleanupBinding{}
+    mut discardIndex := 0
+    for mut payload := 0; payload < payloadCount; payload = payload + 1 {
+        payloadPattern := ast.Child(con syntax, pattern, payload)
+        mut payloadType := ""
+        match semantic.EnumVariantPayloadType(con checked, con enumName, con variantName, payload) {
+            case Ok(resolved) {
+                payloadType = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked user enum match payload type is missing", source.Copy(con span)))
+            }
+        }
+        payloadCleanup := semantic.EnumVariantPayloadNeedsCleanup(con checked, con enumName, con variantName, payload)
+        payloadKind := ast.Kind(con syntax, payloadPattern)
+        if payloadKind == "Pattern.Binding" {
+            name := ast.Value(con syntax, payloadPattern)
+            payloads = append(payloads, self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
+            if payloadCleanup {
+                cleanupBindings = append(cleanupBindings, newCleanupBinding(con name, con payloadType, source.Copy(con span)))
+            }
+        } else if payloadKind == "Pattern.Wildcard" {
+            if payloadCleanup {
+                name := matchDiscardName(con discardSpan, discardIndex)
+                discardIndex = discardIndex + 1
+                payloads = append(payloads, self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
+                cleanupBindings = append(cleanupBindings, newCleanupBinding(con name, con payloadType, source.Copy(con span)))
+            } else {
+                payloads = append(payloads, self.addNode("P", "Pattern.Wildcard", "", token.CopyText(con payloadType), source.Copy(con span), []int{}, false))
+            }
+        } else {
+            return Err(newError("B2e typed IR only accepts flat user enum match payloads", source.Copy(con span)))
+        }
+    }
+    node := self.addNode("P", variantPatternKind(con storage), variantName, token.CopyText(con scrutineeType), source.Copy(con span), payloads, false)
     return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings})
 }
 
@@ -1280,6 +1336,13 @@ func variantConstructorKind(con storage string) string {
         return "Expr.VariantConstructor.Owned"
     }
     return "Expr.VariantConstructor.Inline"
+}
+
+func variantPatternKind(con storage string) string {
+    if storage == "owned" {
+        return "Pattern.Variant.Owned"
+    }
+    return "Pattern.Variant.Inline"
 }
 
 func matchDiscardName(con span source.Span, index int) string {

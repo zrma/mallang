@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3k complete
+Status: in progress; P176a-P176e2c3l complete
 
 ## Objective
 
@@ -146,6 +146,9 @@ agrees.
 - P176e2c3k: lower cleanup built-in expression matches with moved binding
   exclusion, arm-local drops, cleanup wildcard bindings and string-read
   full-expression temporaries (complete)
+- P176e2c3l: lower flat user-enum expression matches with graph-derived inline
+  or owned pattern storage, multiple payload bindings and cleanup wildcards
+  (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -561,11 +564,13 @@ specialization and function-body checking until later P176 slices.
   project tests cover that boundary. P176e2c3j adds flat Copy built-in
   expression match arms and patterns. P176e2c3k adds cleanup payload moves,
   arm-local drops, cleanup wildcard bindings and string-read full-expression
-  temporaries. Twenty-six typed-IR fixtures and two hundred twenty-four Mallang
-  project tests cover the expanded boundary. User-enum, nested and
-  statement-form match typed IR, remaining full-expression cases and checked
-  constructs continue in P176e. Stage0 match-arm shadow cleanup identity
-  remains tracked separately in
+  temporaries. P176e2c3l adds flat user-enum expression matches with
+  graph-derived inline or owned pattern storage, multiple payload bindings and
+  cleanup wildcards. Twenty-seven typed-IR fixtures and two hundred twenty-five
+  Mallang project tests cover the expanded boundary. Nested and statement-form
+  match typed IR, remaining full-expression cases and checked constructs
+  continue in P176e. Stage0 match-arm shadow cleanup identity remains tracked
+  separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 
 ## B2 Completion Criteria

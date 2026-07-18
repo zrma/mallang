@@ -282,6 +282,30 @@ pub func EnumVariantPayloadCount(con checked CheckedProgram, con name string, co
     return len(checked.enums[enumeration].variants[variantIndex].payloads)
 }
 
+pub func EnumVariantPayloadType(con checked CheckedProgram, con name string, con variant string, payload int) Result[string, bool] {
+    enumeration := checked.enumIndex(con name)
+    if enumeration < 0 {
+        return Err(false)
+    }
+    variantIndex := enumVariantIndex(con checked.enums[enumeration], con variant)
+    if variantIndex < 0 || payload < 0 || payload >= len(checked.enums[enumeration].variants[variantIndex].payloads) {
+        return Err(false)
+    }
+    return Ok(token.CopyText(con checked.enums[enumeration].variants[variantIndex].payloads[payload].text))
+}
+
+pub func EnumVariantPayloadNeedsCleanup(con checked CheckedProgram, con name string, con variant string, payload int) bool {
+    enumeration := checked.enumIndex(con name)
+    if enumeration < 0 {
+        return false
+    }
+    variantIndex := enumVariantIndex(con checked.enums[enumeration], con variant)
+    if variantIndex < 0 || payload < 0 || payload >= len(checked.enums[enumeration].variants[variantIndex].payloads) {
+        return false
+    }
+    return checked.enums[enumeration].variants[variantIndex].payloads[payload].cleanup
+}
+
 pub func EnumStorage(con checked CheckedProgram, con name string) string {
     if checked.enumIndex(con name) < 0 {
         return ""
@@ -290,6 +314,28 @@ pub func EnumStorage(con checked CheckedProgram, con name string) string {
         return "owned"
     }
     return "inline"
+}
+
+pub func PatternVariantTypeName(con program ast.Program, pattern int) string {
+    if ast.Kind(con program, pattern) != "Pattern.Variant" {
+        return ""
+    }
+    parts := splitPatternVariant(con ast.Value(con program, pattern))
+    if !parts.valid {
+        return ""
+    }
+    return token.CopyText(con parts.typeName)
+}
+
+pub func PatternVariantName(con program ast.Program, pattern int) string {
+    if ast.Kind(con program, pattern) != "Pattern.Variant" {
+        return ""
+    }
+    parts := splitPatternVariant(con ast.Value(con program, pattern))
+    if !parts.valid {
+        return ""
+    }
+    return token.CopyText(con parts.variantName)
 }
 
 pub func FunctionReturnType(con checked CheckedProgram, con name string) Result[string, bool] {

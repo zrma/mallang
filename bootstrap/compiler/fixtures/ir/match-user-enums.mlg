@@ -1,0 +1,37 @@
+type Choice enum {
+    Empty
+    Text(string)
+    Pair(int, string)
+}
+
+type Chain enum {
+    End
+    Next(Chain)
+    Label(string)
+}
+
+func choose(input Choice) string {
+    return match input {
+        case Choice.Empty { "empty" }
+        case Choice.Text(value) { value }
+        case Choice.Pair(_, message) { message }
+    }
+}
+
+func inspectChoice(input Choice) int {
+    return match input {
+        case Choice.Empty { 0 }
+        case Choice.Text(value) { if value == "" { 1 } else { 2 } }
+        case Choice.Pair(value, _) { value }
+    }
+}
+
+func peel(input Chain) Chain {
+    return match input {
+        case Chain.End { Chain.End }
+        case Chain.Next(tail) { tail }
+        case Chain.Label(_) { Chain.End }
+    }
+}
+
+func main() {}

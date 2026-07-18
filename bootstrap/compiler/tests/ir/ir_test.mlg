@@ -1183,6 +1183,76 @@ test LowersCleanupBuiltinMatchExpressions() {
     }
 }
 
+test LowersFlatUserEnumMatchExpressions() {
+    source := "type Choice enum { Empty Text(string) Pair(int, string) } type Chain enum { End Next(Chain) Label(string) } func choose(input Choice) string { return match input { case Choice.Empty { \"empty\" } case Choice.Text(value) { value } case Choice.Pair(_, message) { message } } } func inspectChoice(input Choice) int { return match input { case Choice.Empty { 0 } case Choice.Text(value) { if value == \"\" { 1 } else { 2 } } case Choice.Pair(value, _) { value } } } func peel(input Chain) Chain { return match input { case Chain.End { Chain.End } case Chain.Next(tail) { tail } case Chain.Label(_) { Chain.End } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    chooseMatch := lowered.nodes[lowered.functions[0].body[0]].children[0]
+                                    chooseTextArm := lowered.nodes[chooseMatch].children[2]
+                                    assert(len(lowered.nodes[chooseTextArm].children) == 2)
+                                    choosePairArm := lowered.nodes[chooseMatch].children[3]
+                                    choosePairPattern := lowered.nodes[choosePairArm].children[0]
+                                    assert(lowered.nodes[choosePairPattern].kind == "Pattern.Variant.Inline")
+                                    assert(lowered.nodes[choosePairPattern].value == "Pair")
+                                    choosePairWildcard := lowered.nodes[choosePairPattern].children[0]
+                                    assert(lowered.nodes[choosePairWildcard].kind == "Pattern.Wildcard")
+                                    assert(lowered.nodes[choosePairWildcard].ty == "int")
+                                    assert(len(lowered.nodes[choosePairArm].children) == 2)
+
+                                    inspectMatch := lowered.nodes[lowered.functions[1].body[0]].children[0]
+                                    inspectTextArm := lowered.nodes[inspectMatch].children[2]
+                                    assert(len(lowered.nodes[inspectTextArm].children) == 3)
+                                    inspectTextDrop := lowered.nodes[inspectTextArm].children[2]
+                                    assert(lowered.nodes[inspectTextDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[inspectTextDrop].children[0]].value == "value")
+                                    inspectPairArm := lowered.nodes[inspectMatch].children[3]
+                                    inspectPairPattern := lowered.nodes[inspectPairArm].children[0]
+                                    inspectPairWildcard := lowered.nodes[inspectPairPattern].children[1]
+                                    assert(lowered.nodes[inspectPairWildcard].kind == "Pattern.Binding")
+                                    inspectPairDrop := lowered.nodes[inspectPairArm].children[2]
+                                    assert(lowered.nodes[inspectPairDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[inspectPairDrop].children[0]].value == lowered.nodes[inspectPairWildcard].value)
+
+                                    peelMatch := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    peelEndPattern := lowered.nodes[lowered.nodes[peelMatch].children[1]].children[0]
+                                    assert(lowered.nodes[peelEndPattern].kind == "Pattern.Variant.Owned")
+                                    peelNextArm := lowered.nodes[peelMatch].children[2]
+                                    assert(len(lowered.nodes[peelNextArm].children) == 2)
+                                    peelLabelArm := lowered.nodes[peelMatch].children[3]
+                                    assert(len(lowered.nodes[peelLabelArm].children) == 3)
+                                    peelLabelPattern := lowered.nodes[peelLabelArm].children[0]
+                                    assert(lowered.nodes[peelLabelPattern].kind == "Pattern.Variant.Owned")
+                                    peelLabelBinding := lowered.nodes[peelLabelPattern].children[0]
+                                    peelLabelDrop := lowered.nodes[peelLabelArm].children[2]
+                                    assert(lowered.nodes[lowered.nodes[peelLabelDrop].children[0]].value == lowered.nodes[peelLabelBinding].value)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {
