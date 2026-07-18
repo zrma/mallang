@@ -1493,6 +1493,58 @@ test LowersConditionAndConditionlessLoops() {
     }
 }
 
+test LowersThreeClauseLoops() {
+    source := "func count(limit int) int { mut total := 0; for mut index := 0; index < limit; index = index + 1 { total = total + index }; for ; total < 10; total = total + 1 {}; return total } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    firstLoop := lowered.functions[0].body[1]
+                                    assert(len(lowered.nodes[firstLoop].children) == 5)
+                                    init := lowered.nodes[firstLoop].children[0]
+                                    assert(lowered.nodes[init].kind == "ForInit.Let.Mutable")
+                                    assert(lowered.nodes[init].value == "index")
+                                    assert(lowered.nodes[init].ty == "int")
+                                    condition := lowered.nodes[firstLoop].children[1]
+                                    assert(lowered.nodes[condition].kind == "ForCondition")
+                                    post := lowered.nodes[firstLoop].children[2]
+                                    assert(lowered.nodes[post].kind == "ForPost.Assign")
+                                    assert(len(lowered.nodes[post].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[post].children[0]].value == "index")
+                                    assert(lowered.nodes[lowered.nodes[post].children[1]].kind == "Expr.Binary.Add")
+                                    assert(lowered.nodes[lowered.nodes[firstLoop].children[3]].kind == "Block.For")
+                                    assert(lowered.nodes[lowered.nodes[firstLoop].children[4]].kind == "Block.ForCleanup")
+
+                                    secondLoop := lowered.functions[0].body[2]
+                                    assert(len(lowered.nodes[secondLoop].children) == 4)
+                                    assert(lowered.nodes[lowered.nodes[secondLoop].children[0]].kind == "ForCondition")
+                                    assert(lowered.nodes[lowered.nodes[secondLoop].children[1]].kind == "ForPost.Assign")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

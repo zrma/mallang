@@ -1469,6 +1469,7 @@ func (mut self CheckedProgram) checkForPost(con program ast.Program, post int, c
         return Err(newError(strings.join(con []string{"cannot assign to active range source `", token.CopyText(con name), "` in v0",}, con ""), source.Copy(con span)))
     }
     expectedType := copyType(con self.locals[local].ty)
+    self.recordType(target, con expectedType)
     match self.checkExpressionExpected(con program, value, con "owned", con expectedType, true) {
         case Ok(valueType) {
             if valueType.text != self.locals[local].ty.text {

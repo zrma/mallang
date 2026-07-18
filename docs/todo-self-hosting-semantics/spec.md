@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3p complete
+Status: in progress; P176a-P176e2c3q complete
 
 ## Objective
 
@@ -158,6 +158,8 @@ agrees.
   selected test body as a synthetic `main` (complete)
 - P176e2c3p: lower condition and conditionless `for`, `break` and `continue`
   with explicit body and cleanup blocks (complete)
+- P176e2c3q: lower three-clause `for` init, optional condition and post nodes
+  (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -581,9 +583,10 @@ specialization and function-body checking until later P176 slices.
   payload cleanup and outer branch move compensation. P176e2c3o checks test
   declaration bodies and lowers `assert(bool)` plus the selected test body as a
   synthetic `main`. P176e2c3p lowers condition and conditionless `for`, `break`
-  and `continue` with explicit body and cleanup blocks. Thirty-one typed-IR
-  fixtures and two hundred thirty-one Mallang project tests cover the expanded
-  boundary. Three-clause loops, range, cleanup-bearing loops, remaining
+  and `continue` with explicit body and cleanup blocks. P176e2c3q lowers
+  three-clause `for` init, optional condition and post nodes. Thirty-two typed-IR
+  fixtures and two hundred thirty-two Mallang project tests cover the expanded
+  boundary. Range, cleanup-bearing loops, remaining
   full-expression cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity
   remains tracked separately in

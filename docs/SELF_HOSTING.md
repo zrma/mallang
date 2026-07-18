@@ -187,7 +187,9 @@ checks test declaration bodies and lowers `assert(bool)` plus the selected test
 body as a synthetic `main`. Thirty focused IR fixtures and 230 Mallang compiler
 project tests cover that boundary. P176e2c3p lowers condition and conditionless
 `for`, `break` and `continue` with explicit body and cleanup blocks. Thirty-one
-focused IR fixtures and 231 Mallang compiler project tests cover the expanded
-boundary. Three-clause loops, range, cleanup-bearing loops and remaining
+focused IR fixtures and 231 Mallang compiler project tests cover that boundary.
+P176e2c3q lowers three-clause `for` init, optional condition and post nodes.
+Thirty-two focused IR fixtures and 232 Mallang compiler project tests cover the
+expanded boundary. Range, cleanup-bearing loops and remaining
 full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

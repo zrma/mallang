@@ -1,0 +1,10 @@
+func count(limit int) int {
+    mut total := 0
+    for mut index := 0; index < limit; index = index + 1 {
+        total = total + index
+    }
+    for ; total < 10; total = total + 1 {}
+    return total
+}
+
+func main() {}

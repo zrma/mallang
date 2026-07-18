@@ -317,17 +317,58 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         mut children := []int{}
         for mut child := 0; child < childCount - 1; child = child + 1 {
             control := ast.Child(con syntax, statement, child)
-            if ast.Kind(con syntax, control) != "ForCondition" || ast.ChildCount(con syntax, control) != 1 {
-                return Err(newError("B2e typed IR does not yet accept three-clause for statements", ast.Span(con syntax, control)))
-            }
-            condition := ast.Child(con syntax, control, 0)
-            match self.lowerExpression(con syntax, condition, con checked) {
-                case Ok(loweredCondition) {
-                    children = append(children, self.addNode("F", "ForCondition", "", "bool", ast.Span(con syntax, condition), []int{loweredCondition}, false))
+            controlKind := ast.Kind(con syntax, control)
+            if controlKind == "ForInit.Let.Immutable" || controlKind == "ForInit.Let.Mutable" {
+                if ast.ChildCount(con syntax, control) != 1 {
+                    return Err(newError("checked for init is malformed", ast.Span(con syntax, control)))
                 }
-                case Err(error) {
-                    return Err(error)
+                expression := ast.Child(con syntax, control, 0)
+                match self.lowerExpression(con syntax, expression, con checked) {
+                    case Ok(loweredExpression) {
+                        match semantic.NodeType(con checked, expression) {
+                            case Ok(expressionType) {
+                                children = append(children, self.addNode("F", token.CopyText(con controlKind), ast.Value(con syntax, control), expressionType, ast.Span(con syntax, expression), []int{loweredExpression}, semantic.NodeNeedsCleanup(con checked, expression)))
+                            }
+                            case Err(_) {
+                                return Err(newError("checked for init type is missing", ast.Span(con syntax, control)))
+                            }
+                        }
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
                 }
+            } else if controlKind == "ForCondition" {
+                if ast.ChildCount(con syntax, control) != 1 {
+                    return Err(newError("checked for condition is malformed", ast.Span(con syntax, control)))
+                }
+                condition := ast.Child(con syntax, control, 0)
+                match self.lowerExpression(con syntax, condition, con checked) {
+                    case Ok(loweredCondition) {
+                        children = append(children, self.addNode("F", "ForCondition", "", "bool", ast.Span(con syntax, condition), []int{loweredCondition}, false))
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            } else if controlKind == "ForPost.Assign" {
+                if ast.ChildCount(con syntax, control) != 2 {
+                    return Err(newError("checked for post is malformed", ast.Span(con syntax, control)))
+                }
+                mut postChildren := []int{}
+                for mut postChild := 0; postChild < 2; postChild = postChild + 1 {
+                    match self.lowerExpression(con syntax, ast.Child(con syntax, control, postChild), con checked) {
+                        case Ok(loweredPostChild) {
+                            postChildren = append(postChildren, loweredPostChild)
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
+                children = append(children, self.addNode("F", "ForPost.Assign", "", "unit", ast.Span(con syntax, control), postChildren, false))
+            } else {
+                return Err(newError("checked for control is malformed", ast.Span(con syntax, control)))
             }
         }
         match self.lowerBlock(con syntax, body, con checked) {
