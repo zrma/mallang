@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func replaceField(mut user User, replacement string) {
+    user.name = replacement
+}
+
+func replaceIndex(mut values [1]string, replacement string) {
+    values[0] = replacement
+}
+
+func main() {}

@@ -416,6 +416,112 @@ test KeepsShadowedCleanupBindingsDistinct() {
     }
 }
 
+test InsertsDirectCleanupOverwriteAndReactivation() {
+    source := "func identity(name string) string { return name } func replace() { mut name := \"kim\"; name = \"lee\" } func replaceFrom(replacement string) { mut name := \"kim\"; name = replacement } func reactivate() { mut name := \"kim\"; name = identity(name) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[1].body) == 4)
+                                    replaceTemp := lowered.functions[1].body[1]
+                                    replaceOverwrite := lowered.functions[1].body[2]
+                                    assert(lowered.nodes[replaceTemp].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[replaceTemp].value != "")
+                                    assert(lowered.nodes[replaceOverwrite].kind == "Stmt.Overwrite")
+                                    assert(len(lowered.nodes[replaceOverwrite].children) == 2)
+                                    replaceTarget := lowered.nodes[replaceOverwrite].children[0]
+                                    replaceValue := lowered.nodes[replaceOverwrite].children[1]
+                                    assert(lowered.nodes[replaceTarget].value == "name")
+                                    assert(lowered.nodes[replaceValue].value == lowered.nodes[replaceTemp].value)
+                                    assert(lowered.nodes[lowered.functions[1].body[3]].kind == "Stmt.Drop")
+
+                                    assert(len(lowered.functions[2].body) == 4)
+                                    assert(lowered.nodes[lowered.functions[2].body[1]].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[lowered.functions[2].body[2]].kind == "Stmt.Overwrite")
+                                    assert(lowered.nodes[lowered.functions[2].body[3]].kind == "Stmt.Drop")
+
+                                    assert(len(lowered.functions[3].body) == 3)
+                                    assert(lowered.nodes[lowered.functions[3].body[1]].kind == "Stmt.Assign")
+                                    assert(lowered.nodes[lowered.functions[3].body[2]].kind == "Stmt.Drop")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test InsertsFieldAndIndexCleanupOverwrite() {
+    source := "type User struct { name string } func replaceField(mut user User, replacement string) { user.name = replacement } func replaceIndex(mut values [1]string, replacement string) { values[0] = replacement } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 2)
+                                    fieldTemp := lowered.functions[0].body[0]
+                                    fieldOverwrite := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[fieldTemp].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[fieldOverwrite].kind == "Stmt.Overwrite")
+                                    fieldTarget := lowered.nodes[fieldOverwrite].children[0]
+                                    fieldValue := lowered.nodes[fieldOverwrite].children[1]
+                                    assert(lowered.nodes[fieldTarget].kind == "Expr.FieldAccess")
+                                    assert(lowered.nodes[fieldTarget].value == "name")
+                                    assert(lowered.nodes[fieldValue].value == lowered.nodes[fieldTemp].value)
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    indexTemp := lowered.functions[1].body[0]
+                                    indexOverwrite := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[indexTemp].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[indexOverwrite].kind == "Stmt.Overwrite")
+                                    indexTarget := lowered.nodes[indexOverwrite].children[0]
+                                    indexValue := lowered.nodes[indexOverwrite].children[1]
+                                    assert(lowered.nodes[indexTarget].kind == "Expr.Index")
+                                    assert(len(lowered.nodes[indexTarget].children) == 2)
+                                    assert(lowered.nodes[indexValue].value == lowered.nodes[indexTemp].value)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

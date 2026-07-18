@@ -582,8 +582,15 @@ move/both-side return과 nested join을 12개 IR fixture와 전체 206개 projec
 test로 고정한다. P176e2b3는 name과 declaration span으로 cleanup binding을
 식별해 branch-local shadow의 move/drop을 동명의 outer root와 분리하고 assignment
 reactivation은 원래 identity를 유지한다. Rust 582개, 13개 IR fixture와 전체
-207개 Mallang project test가 이를 고정한다. 다음 slice는 cleanup overwrite다.
-public language 또는
+207개 Mallang project test가 이를 고정한다. P176e2c1은 direct local cleanup
+assignment의 RHS를 stable temporary로 먼저 평가한 뒤 `Stmt.Overwrite`하고,
+self-consuming assignment는 같은 binding identity로 재활성화한다. 14개 IR
+fixture와 전체 208개 Mallang project test가 이를 고정한다. P176e2c2는
+non-self-consuming field/index cleanup assignment에도 같은
+RHS-before-overwrite 계약을 적용하고 aggregate base는 move하지 않는다. 15개 IR
+fixture와 전체 209개 Mallang project test가 이를 고정한다. 다음 slice는 `mut`
+direct parameter와 self-consuming aggregate cleanup overwrite다. public language
+또는
 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 

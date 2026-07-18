@@ -1735,6 +1735,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] `if` branch-local tail/return cleanup
 - [x] nested non-shadowing outer cleanup root branch join
 - [x] branch shadow cleanup binding identity와 assignment reactivation
+- [x] direct local cleanup overwrite RHS 선평가와 self-reassignment reactivation
+- [x] non-self-consuming field/index cleanup overwrite와 aggregate base 보존
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance

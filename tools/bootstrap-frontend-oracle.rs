@@ -374,6 +374,15 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
                 normalize_ir_expression(expr, depth + 1),
             ],
         ),
+        IrStmtKind::Overwrite { target, expr } => (
+            "Stmt.Overwrite",
+            "",
+            "unit".to_string(),
+            vec![
+                normalize_ir_expression(target, depth + 1),
+                normalize_ir_expression(expr, depth + 1),
+            ],
+        ),
         IrStmtKind::Drop { expr } => (
             "Stmt.Drop",
             "",

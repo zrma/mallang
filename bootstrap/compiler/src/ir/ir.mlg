@@ -500,7 +500,49 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
         }
 
         moved := self.movedCleanupRoots(statement, con active)
-        remaining := removeCleanupRoots(active, con moved)
+        remaining := removeCleanupRoots(copyCleanupBindings(con active), con moved)
+        if self.nodes[statement].kind == "Stmt.Assign" && len(self.nodes[statement].children) == 1 {
+            expression := self.nodes[statement].children[0]
+            if self.nodes[expression].cleanup {
+                binding := cleanupBindingIndex(con active, con self.nodes[statement].value)
+                if binding >= 0 {
+                    bindingKey := token.CopyText(con active[binding].key)
+                    if textIndex(con moved, con bindingKey) < 0 {
+                        target := self.addNode("E", "Expr.Var", token.CopyText(con active[binding].name), token.CopyText(con active[binding].ty), source.Copy(con active[binding].span), []int{}, true)
+                        output = self.pushCleanupOverwrite(output, statement, target, expression)
+                        active = copyCleanupBindings(con remaining)
+                        continue
+                    }
+
+                    mut reactivated := copyCleanupBinding(con active[binding])
+                    reactivated.span = source.Copy(con self.nodes[statement].span)
+                    output = append(output, statement)
+                    active = append(copyCleanupBindings(con remaining), reactivated)
+                    continue
+                }
+            }
+        }
+        if self.nodes[statement].kind == "Stmt.FieldAssign" && len(self.nodes[statement].children) == 2 {
+            expression := self.nodes[statement].children[1]
+            if self.nodes[expression].cleanup {
+                base := self.nodes[statement].children[0]
+                target := self.addNode("E", "Expr.FieldAccess", token.CopyText(con self.nodes[statement].value), token.CopyText(con self.nodes[expression].ty), source.Copy(con self.nodes[statement].span), []int{base}, true)
+                output = self.pushCleanupOverwrite(output, statement, target, expression)
+                active = copyCleanupBindings(con remaining)
+                continue
+            }
+        }
+        if self.nodes[statement].kind == "Stmt.IndexAssign" && len(self.nodes[statement].children) == 3 {
+            expression := self.nodes[statement].children[2]
+            if self.nodes[expression].cleanup {
+                base := self.nodes[statement].children[0]
+                index := self.nodes[statement].children[1]
+                target := self.addNode("E", "Expr.Index", "", token.CopyText(con self.nodes[expression].ty), source.Copy(con self.nodes[statement].span), []int{base, index}, true)
+                output = self.pushCleanupOverwrite(output, statement, target, expression)
+                active = copyCleanupBindings(con remaining)
+                continue
+            }
+        }
         if self.nodes[statement].kind == "Stmt.Return" {
             expression := self.nodes[statement].children[0]
             statementSpan := source.Copy(con self.nodes[statement].span)
@@ -540,13 +582,6 @@ func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
             elseBlock := self.nodes[body[index]].children[2]
             if !self.supportsStraightLineCleanup(con self.nodes[thenBlock].children) || !self.supportsStraightLineCleanup(con self.nodes[elseBlock].children) {
                 return false
-            }
-        }
-        if kind == "Stmt.Assign" || kind == "Stmt.FieldAssign" || kind == "Stmt.IndexAssign" {
-            for mut child := 0; child < len(self.nodes[body[index]].children); child = child + 1 {
-                if self.nodes[self.nodes[body[index]].children[child]].cleanup {
-                    return false
-                }
             }
         }
     }
@@ -594,6 +629,12 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
     if self.nodes[node].category == "A" && self.nodes[node].kind != "Arg.Owned" {
         return []string{}
     }
+    if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.FieldAssign" {
+        return self.movedCleanupRoots(self.nodes[node].children[1], con active)
+    }
+    if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.IndexAssign" {
+        return self.movedCleanupRoots(self.nodes[node].children[2], con active)
+    }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
         binding := cleanupBindingIndex(con active, con self.nodes[node].value)
         if binding >= 0 {
@@ -631,6 +672,20 @@ func (mut self Lowerer) pushCleanupDrops(output []int, con active []CleanupBindi
         variable := self.addNode("E", "Expr.Var", token.CopyText(con active[binding].name), token.CopyText(con active[binding].ty), source.Copy(con active[binding].span), []int{}, true)
         result = append(result, self.addNode("S", "Stmt.Drop", "", "unit", source.Copy(con span), []int{variable}, false))
     }
+    return result
+}
+
+func (mut self Lowerer) pushCleanupOverwrite(output []int, statement int, target int, expression int) []int {
+    mut result := output
+    statementSpan := source.Copy(con self.nodes[statement].span)
+    expressionSpan := source.Copy(con self.nodes[expression].span)
+    expressionType := token.CopyText(con self.nodes[expression].ty)
+    name := cleanupAssignmentRhsTempName(con statementSpan)
+    temporary := self.addNode("S", "Stmt.Let.Immutable", token.CopyText(con name), token.CopyText(con expressionType), source.Copy(con statementSpan), []int{expression}, true)
+    value := self.addNode("E", "Expr.Var", token.CopyText(con name), token.CopyText(con expressionType), source.Copy(con expressionSpan), []int{}, true)
+    overwrite := self.addNode("S", "Stmt.Overwrite", "", "unit", source.Copy(con statementSpan), []int{target, value}, false)
+    result = append(result, temporary)
+    result = append(result, overwrite)
     return result
 }
 
@@ -675,6 +730,10 @@ func copyCleanupBindings(con values []CleanupBinding) []CleanupBinding {
         copied = append(copied, CleanupBinding{key: token.CopyText(con values[index].key), name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
     }
     return copied
+}
+
+func copyCleanupBinding(con value CleanupBinding) CleanupBinding {
+    return CleanupBinding{key: token.CopyText(con value.key), name: token.CopyText(con value.name), ty: token.CopyText(con value.ty), span: source.Copy(con value.span),}
 }
 
 func cleanupBindingKeys(con values []CleanupBinding) []string {
@@ -747,6 +806,10 @@ func closureName(span source.Span) string {
 
 func returnValueTempName(con span source.Span) string {
     return strings.join(con []string{"mallang_return_value_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
+}
+
+func cleanupAssignmentRhsTempName(con span source.Span) string {
+    return strings.join(con []string{"mallang_cleanup_assign_rhs_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
 }
 
 func newError(message string, span source.Span) Error {

@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2b3 complete
+Status: in progress; P176a-P176e2c2 complete
 
 ## Objective
 
@@ -116,6 +116,11 @@ agrees.
 - P176e2b3: identify cleanup bindings by name and declaration span so a
   branch-local shadow move or drop cannot claim the same-named outer root, and
   preserve that identity when assignment reactivates a moved root (complete)
+- P176e2c1: evaluate direct local cleanup assignment RHS values into stable
+  temporaries before `Stmt.Overwrite`, preserve the old target until that
+  evaluation completes, and reactivate self-consuming assignments (complete)
+- P176e2c2: apply the same RHS-before-overwrite contract to non-self-consuming
+  field and index places without moving their aggregate bases (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -499,14 +504,17 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, thirteen typed-IR fixtures and
-  two hundred seven Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, fifteen typed-IR fixtures and
+  two hundred nine Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
   compares focused fixtures against Rust Stage0. P176e2a adds straight-line
   cleanup drops, moved-root exclusion and deterministic return temporaries.
   P176e2b1 adds branch-local cleanup, P176e2b2 adds nested non-shadowing
   outer-root joins, and P176e2b3 keeps shadowed cleanup roots distinct while
-  preserving reactivated assignment identity. Overwrite cleanup and remaining
+  preserving reactivated assignment identity. P176e2c1 adds direct local
+  cleanup overwrite ordering and self-reassignment reactivation. P176e2c2 adds
+  non-self-consuming field/index overwrite without consuming aggregate bases.
+  Mutable direct parameters, self-consuming aggregate overwrite and remaining
   checked constructs continue in P176e.
 
 ## B2 Completion Criteria

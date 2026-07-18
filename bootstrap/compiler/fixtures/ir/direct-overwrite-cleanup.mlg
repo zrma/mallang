@@ -1,0 +1,20 @@
+func identity(name string) string {
+    return name
+}
+
+func replace() {
+    mut name := "kim"
+    name = "lee"
+}
+
+func replaceFrom(replacement string) {
+    mut name := "kim"
+    name = replacement
+}
+
+func reactivate() {
+    mut name := "kim"
+    name = identity(name)
+}
+
+func main() {}
