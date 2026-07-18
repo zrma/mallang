@@ -20,6 +20,10 @@ pub type ParseError struct {
     span source.Span
 }
 
+type ProgramMerger struct {
+    nodes []Node
+}
+
 pub func NewNode(kind string, value string, span source.Span, children []int) Node {
     return Node{kind: kind, value: value, span: span, children: children}
 }
@@ -30,6 +34,71 @@ pub func NewProgram(nodes []Node, root int) Program {
 
 pub func NewError(message string, span source.Span) ParseError {
     return ParseError{message: message, span: span}
+}
+
+pub func MergePrograms(programs []Program) Result[Program, string] {
+    if len(programs) == 0 {
+        return Err("cannot merge an empty program set")
+    }
+    mut merger := ProgramMerger{nodes: []Node{},}
+    mut sourceUnits := []int{}
+    mut structs := []int{}
+    mut enums := []int{}
+    mut functions := []int{}
+    mut tests := []int{}
+
+    for mut programIndex := 0; programIndex < len(programs); programIndex = programIndex + 1 {
+        root := Root(con programs[programIndex])
+        for mut child := 0; child < ChildCount(con programs[programIndex], root); child = child + 1 {
+            sourceNode := Child(con programs[programIndex], root, child)
+            kind := Kind(con programs[programIndex], sourceNode)
+            copied := merger.copyNode(con programs[programIndex], sourceNode)
+            if kind == "SourceUnit" {
+                sourceUnits = append(sourceUnits, copied)
+            } else if kind == "StructDecl.Public" || kind == "StructDecl.Package" {
+                structs = append(structs, copied)
+            } else if kind == "EnumDecl.Public" || kind == "EnumDecl.Package" {
+                enums = append(enums, copied)
+            } else if kind == "FunctionDecl.Public" || kind == "FunctionDecl.Package" {
+                functions = append(functions, copied)
+            } else if kind == "TestDecl" {
+                tests = append(tests, copied)
+            } else {
+                return Err(strings.join(con []string{"cannot merge program child kind `", kind, "`",}, con ""))
+            }
+        }
+    }
+
+    mut children := []int{}
+    for mut index := 0; index < len(sourceUnits); index = index + 1 {
+        children = append(children, sourceUnits[index])
+    }
+    for mut index := 0; index < len(structs); index = index + 1 {
+        children = append(children, structs[index])
+    }
+    for mut index := 0; index < len(enums); index = index + 1 {
+        children = append(children, enums[index])
+    }
+    for mut index := 0; index < len(functions); index = index + 1 {
+        children = append(children, functions[index])
+    }
+    for mut index := 0; index < len(tests); index = index + 1 {
+        children = append(children, tests[index])
+    }
+    firstRoot := Root(con programs[0])
+    mergedRoot := len(merger.nodes)
+    merger.nodes = append(merger.nodes, NewNode("Program", "", Span(con programs[0], firstRoot), children))
+    return Ok(NewProgram(merger.nodes, mergedRoot))
+}
+
+func (mut self ProgramMerger) copyNode(con program Program, node int) int {
+    mut children := []int{}
+    for mut child := 0; child < ChildCount(con program, node); child = child + 1 {
+        children = append(children, self.copyNode(con program, Child(con program, node, child)))
+    }
+    copied := len(self.nodes)
+    self.nodes = append(self.nodes, NewNode(Kind(con program, node), Value(con program, node), Span(con program, node), children))
+    return copied
 }
 
 pub func NodeKind(con node Node) string {

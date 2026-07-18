@@ -223,6 +223,10 @@ origins. P176e3c validates every generic declaration body once with symbolic
 non-Copy, non-printable arguments and restores internal names to source `T` and
 `Box[T]` diagnostics. Two hundred thirty-six semantic fixtures, forty-two
 typed-IR fixtures and two hundred forty-four Mallang project tests cover this
-boundary. Package and standard-intrinsic specialization plus the remaining
+boundary. P176e4a preserves source IDs through tokens, lexical diagnostics and
+parser spans, then merges multiple syntax arenas in deterministic declaration
+groups. Two valid/rejection source sets and two hundred forty-six Mallang
+project tests fix the Rust `parse_sources_with_diagnostics` boundary. Package
+graph, visibility/link rewriting and standard-intrinsic specialization plus the remaining
 full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

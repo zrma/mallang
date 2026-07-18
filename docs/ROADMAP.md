@@ -1763,8 +1763,9 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] demand-driven generic struct/function/receiver specialization과 typed IR
 - [x] generic enum specialization과 source pattern origin 보존
 - [x] symbolic generic body validation과 source diagnostic 복원
+- [x] multi-source lexer/parser source ID 보존과 deterministic AST merge
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
-- [ ] package와 standard intrinsic specialization semantics
+- [ ] package graph, visibility/link rewrite와 standard intrinsic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance
 

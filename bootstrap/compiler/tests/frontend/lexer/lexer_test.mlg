@@ -49,3 +49,24 @@ test SkipsUnicodeWhitespaceAndComments() {
         }
     }
 }
+
+test PreservesExplicitSourceIds() {
+    match LexWithSource("func main() {}", 7) {
+        case Ok(tokens) {
+            assert(len(tokens) == 7)
+            assert(token.Source(con tokens[0]) == 7)
+            assert(token.Source(con tokens[6]) == 7)
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match LexWithSource("@", 9) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(token.ErrorSource(con error) == 9)
+        }
+    }
+}

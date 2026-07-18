@@ -10,11 +10,16 @@ type Rune struct {
 
 type Lexer struct {
     source string
+    sourceId int
     cursor int
 }
 
 pub func Lex(source string) Result[[]token.Token, token.LexError] {
-    mut lexer := Lexer{source: source, cursor: 0}
+    return LexWithSource(source, 0)
+}
+
+pub func LexWithSource(source string, sourceId int) Result[[]token.Token, token.LexError] {
+    mut lexer := Lexer{source: source, sourceId: sourceId, cursor: 0}
     mut tokens := []token.Token{}
 
     for !lexer.atEnd() {
@@ -33,7 +38,7 @@ pub func Lex(source string) Result[[]token.Token, token.LexError] {
     }
 
     end := lexer.cursor
-    tokens = append(tokens, token.Token{kind: "Eof", start: end, end: end, value: ""})
+    tokens = append(tokens, token.Token{source: sourceId, kind: "Eof", start: end, end: end, value: ""})
     return Ok(tokens)
 }
 
@@ -236,11 +241,11 @@ func (con self Lexer) unexpectedCharacter(start int) token.LexError {
 }
 
 func (con self Lexer) makeToken(kind string, start int, value string) token.Token {
-    return token.Token{kind: kind, start: start, end: self.cursor, value: value}
+    return token.Token{source: self.sourceId, kind: kind, start: start, end: self.cursor, value: value}
 }
 
 func (con self Lexer) makeError(start int, end int, message string) token.LexError {
-    return token.LexError{message: message, start: start, end: end}
+    return token.LexError{source: self.sourceId, message: message, start: start, end: end}
 }
 
 func (mut self Lexer) matchCode(expected int) bool {

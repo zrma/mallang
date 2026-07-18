@@ -647,8 +647,12 @@ specialization and function-body checking until later P176 slices.
   non-printable arguments, validates otherwise-unused bodies and restores
   internal names to source `T` and `Box[T]` diagnostics. Two hundred thirty-six
   semantic fixtures, forty-two typed-IR fixtures and two hundred forty-four
-  Mallang project tests cover this boundary. Package and standard-intrinsic
-  specialization continue in P176e.
+  Mallang project tests cover this boundary. P176e4a carries explicit source IDs
+  through tokens, lexical diagnostics and parser spans, then merges source
+  arenas in source-unit/struct/enum/function/test order. Two valid/rejection
+  source sets and two hundred forty-six Mallang project tests match Rust
+  `parse_sources_with_diagnostics`. Package graph, visibility/link rewriting and
+  standard-intrinsic specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

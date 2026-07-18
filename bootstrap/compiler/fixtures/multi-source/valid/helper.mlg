@@ -1,0 +1,17 @@
+package helper
+
+pub type Box[T] struct {
+    value T
+}
+
+pub type Outcome enum {
+    Value(int)
+}
+
+pub func Double(value int) int {
+    return value * 2
+}
+
+test HelperWorks() {
+    assert(true)
+}

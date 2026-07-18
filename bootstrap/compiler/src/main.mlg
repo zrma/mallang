@@ -83,6 +83,54 @@ func runParse(text string) {
     }
 }
 
+func runParseSources(con args []string, start int) {
+    mut programs := []ast.Program{}
+    mut errors := []ast.ParseError{}
+    for mut index := start; index < len(args); index = index + 1 {
+        match fs.readText(con args[index]) {
+            case Ok(text) {
+                sourceId := index - start
+                match lexer.LexWithSource(text, sourceId) {
+                    case Ok(tokens) {
+                        match parser.Parse(tokens) {
+                            case Ok(program) {
+                                programs = append(programs, program)
+                            }
+                            case Err(parseErrors) {
+                                for mut errorIndex := 0; errorIndex < len(parseErrors); errorIndex = errorIndex + 1 {
+                                    errors = append(errors, ast.NewError(ast.ErrorMessage(con parseErrors[errorIndex]), ast.ErrorSpan(con parseErrors[errorIndex])))
+                                }
+                            }
+                        }
+                    }
+                    case Err(error) {
+                        span := source.NewSpan(token.ErrorSource(con error), token.ErrorStart(con error), token.ErrorEnd(con error))
+                        errors = append(errors, ast.NewError(token.ErrorMessage(con error), span))
+                    }
+                }
+            }
+            case Err(_) {
+                fail(con "bootstrap frontend could not read source\n")
+            }
+        }
+    }
+
+    if len(errors) > 0 {
+        for mut index := 0; index < len(errors); index = index + 1 {
+            print(ast.NormalizeError(con errors[index]))
+        }
+    } else {
+        match ast.MergePrograms(programs) {
+            case Ok(program) {
+                print(ast.Normalize(con program))
+            }
+            case Err(message) {
+                fail(con message)
+            }
+        }
+    }
+}
+
 func runCheck(text string) {
     match lexer.Lex(text) {
         case Ok(tokens) {
@@ -228,6 +276,13 @@ func runMode(con mode string, text string) {
 func main() {
     match os.args() {
         case Ok(args) {
+            if len(args) >= 2 && args[1]== "parse-sources" {
+                if len(args) < 3 {
+                    fail(con "usage: bootstrap-frontend parse-sources <source>...\n")
+                }
+                runParseSources(con args, 2)
+                os.exit(0)
+            }
             mut mode := "lex"
             mut pathIndex := 1
             if len(args) == 3 {

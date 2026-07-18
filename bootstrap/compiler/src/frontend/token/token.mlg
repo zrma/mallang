@@ -3,6 +3,7 @@ package token
 import "std/strings"
 
 pub type Token struct {
+    source int
     kind string
     start int
     end int
@@ -10,6 +11,7 @@ pub type Token struct {
 }
 
 pub type LexError struct {
+    source int
     message string
     start int
     end int
@@ -28,6 +30,10 @@ pub func CopyText(con text string) string {
 
 pub func Kind(con value Token) string {
     return CopyText(con value.kind)
+}
+
+pub func Source(con value Token) int {
+    return value.source
 }
 
 pub func HasKind(con value Token, con expected string) bool {
@@ -52,6 +58,10 @@ pub func End(con value Token) int {
 
 pub func ErrorMessage(con error LexError) string {
     return CopyText(con error.message)
+}
+
+pub func ErrorSource(con error LexError) int {
+    return error.source
 }
 
 pub func ErrorStart(con error LexError) int {

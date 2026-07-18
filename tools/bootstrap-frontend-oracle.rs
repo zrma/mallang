@@ -13,8 +13,8 @@ use mallang::ir::{
     IrForPost, IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
-    check, lex, lower, lower_test, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
-    LexError, Span, Token, TokenKind,
+    check, lex, lower, lower_test, parse_sources_with_diagnostics, parse_with_diagnostics,
+    CheckedProgram, IrProgram, Keyword, LexError, SourceMap, Span, Token, TokenKind,
 };
 
 fn main() -> ExitCode {
@@ -24,6 +24,44 @@ fn main() -> ExitCode {
         eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir|ir-test] <source>");
         return ExitCode::from(2);
     };
+    if first == "parse-sources" {
+        let paths = args.collect::<Vec<_>>();
+        if paths.is_empty() {
+            eprintln!("usage: bootstrap-frontend-oracle parse-sources <source>...");
+            return ExitCode::from(2);
+        }
+        let mut sources = SourceMap::new();
+        let mut source_ids = Vec::with_capacity(paths.len());
+        for path in paths {
+            let source = match fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(_) => {
+                    eprintln!("bootstrap frontend oracle could not read source");
+                    return ExitCode::from(2);
+                }
+            };
+            source_ids.push(sources.add_file(path, source));
+        }
+        match parse_sources_with_diagnostics(&sources, &source_ids) {
+            Ok(program) => println!("{}", normalize_program(&program).normalize(0)),
+            Err(errors) => {
+                for error in errors {
+                    if let Some(span) = error.span {
+                        println!(
+                            "PERR|{}|{}|{}|{}",
+                            span.source.index(),
+                            span.start,
+                            span.end,
+                            encode_bytes(&error.message)
+                        );
+                    } else {
+                        println!("PERR|-1|0|0|{}", encode_bytes(&error.message));
+                    }
+                }
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
     let (mode, path) =
         if first == "parse" || first == "check" || first == "ir" || first == "ir-test" {
         let Some(path) = args.next() else {

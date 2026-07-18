@@ -2,6 +2,7 @@ package parser
 
 import "bootstrap_compiler/frontend/ast"
 import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/source"
 
 test ParsesDeclarationsAndTypes() {
     source := "package demo\nimport \"std/strings\"\npub type Box[T] struct { value T }\ntype Outcome[T, E] enum { Empty Value(T) Failure(E) }\npub func (con box Box[T]) Map[U](con transform func(con T) U, values [2][]string) Outcome[U, string] {}\ntest Parses() {}\n"
@@ -224,6 +225,59 @@ test AbandonsUnclosedBlockAtNamedFunction() {
                     assert(ast.ErrorMessage(con errors[2]) == "expected `)` after function parameters")
                 }
             }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test MergesSourceAwareProgramsByDeclarationGroup() {
+    mut programs := []ast.Program{}
+    match lexer.LexWithSource("package main\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match lexer.LexWithSource("package helper\ntype Box[T] struct { value T }\ntype Outcome enum { Value(int) }\npub func Double(value int) int { return value * 2 }\ntest HelperWorks() { assert(true) }\n", 1) {
+        case Ok(tokens) {
+            match Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match ast.MergePrograms(programs) {
+        case Ok(program) {
+            root := ast.Root(con program)
+            assert(ast.ChildCount(con program, root) == 7)
+            assert(ast.Kind(con program, ast.Child(con program, root, 0)) == "SourceUnit")
+            assert(ast.Kind(con program, ast.Child(con program, root, 1)) == "SourceUnit")
+            assert(ast.Kind(con program, ast.Child(con program, root, 2)) == "StructDecl.Package")
+            assert(ast.Kind(con program, ast.Child(con program, root, 3)) == "EnumDecl.Package")
+            assert(ast.Value(con program, ast.Child(con program, root, 4)) == "main")
+            assert(ast.Value(con program, ast.Child(con program, root, 5)) == "Double")
+            assert(ast.Kind(con program, ast.Child(con program, root, 6)) == "TestDecl")
+            assert(source.Source(con ast.Span(con program, ast.Child(con program, root, 0))) == 0)
+            assert(source.Source(con ast.Span(con program, ast.Child(con program, root, 1))) == 1)
+            assert(source.Source(con ast.Span(con program, ast.Child(con program, root, 2))) == 1)
         }
         case Err(_) {
             assert(false)

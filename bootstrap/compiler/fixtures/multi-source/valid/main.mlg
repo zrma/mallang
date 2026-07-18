@@ -1,0 +1,7 @@
+package main
+
+import "example/helper"
+
+func main() {
+    print(helper.Double(21))
+}

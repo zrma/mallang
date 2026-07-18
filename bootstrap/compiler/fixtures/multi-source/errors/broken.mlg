@@ -1,0 +1,4 @@
+package broken
+
+func first(value int {}
+func second(value bool {}
