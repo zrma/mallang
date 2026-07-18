@@ -1,0 +1,13 @@
+type User struct {
+    name string
+}
+
+func show(name string) {
+    print(name)
+}
+
+func showField(user User) {
+    print(user.name)
+}
+
+func main() {}

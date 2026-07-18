@@ -1,0 +1,13 @@
+type Bag struct {
+    values []int
+}
+
+func length(values []int) int {
+    return len(values)
+}
+
+func fieldLength(bag Bag) int {
+    return len(bag.values)
+}
+
+func main() {}

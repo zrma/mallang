@@ -629,6 +629,171 @@ test PreservesSelfConsumingFieldAppendAssignments() {
     }
 }
 
+test TracksSliceAppendMoveAndBorrowCleanup() {
+    source := "type Bag struct { values []int } type Entry struct { name string } type EntryBag struct { values []Entry } func grow(input []int, item int) []int { mut values := input; values = append(values, item); return values } func takeField(con bag Bag, item int) []int { grown := append(bag.values, item); return grown } func appendEntry(con bag EntryBag, item Entry) []Entry { grown := append(bag.values, item); return grown } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    assert(lowered.nodes[lowered.functions[0].body[0]].kind == "Stmt.Let.Mutable")
+                                    assignment := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[assignment].kind == "Stmt.Assign")
+                                    assignmentAppend := lowered.nodes[assignment].children[0]
+                                    assert(lowered.nodes[assignmentAppend].kind == "Expr.SliceAppend")
+                                    assignmentSource := lowered.nodes[assignmentAppend].children[0]
+                                    assert(lowered.nodes[assignmentSource].kind == "Expr.Var")
+                                    assert(lowered.nodes[assignmentSource].value == "values")
+                                    assert(lowered.nodes[lowered.functions[0].body[2]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    borrowedLet := lowered.functions[1].body[0]
+                                    assert(lowered.nodes[borrowedLet].kind == "Stmt.Let.Immutable")
+                                    borrowedAppend := lowered.nodes[borrowedLet].children[0]
+                                    assert(lowered.nodes[borrowedAppend].kind == "Expr.SliceAppend")
+                                    borrowedSource := lowered.nodes[borrowedAppend].children[0]
+                                    assert(lowered.nodes[borrowedSource].kind == "Expr.FieldAccess")
+                                    assert(lowered.nodes[lowered.functions[1].body[1]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[2].body) == 2)
+                                    entryLet := lowered.functions[2].body[0]
+                                    assert(lowered.nodes[entryLet].kind == "Stmt.Let.Immutable")
+                                    entryAppend := lowered.nodes[entryLet].children[0]
+                                    assert(lowered.nodes[entryAppend].kind == "Expr.SliceAppend")
+                                    entryItem := lowered.nodes[entryAppend].children[1]
+                                    assert(lowered.nodes[entryItem].kind == "Expr.Var")
+                                    assert(lowered.nodes[entryItem].value == "item")
+                                    assert(lowered.nodes[lowered.functions[2].body[1]].kind == "Stmt.Return")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test InsertsLenFullExpressionCleanup() {
+    source := "type Bag struct { values []int } func length(values []int) int { return len(values) } func fieldLength(bag Bag) int { return len(bag.values) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    lengthTemp := lowered.functions[0].body[0]
+                                    assert(lowered.nodes[lengthTemp].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[lowered.nodes[lengthTemp].children[0]].kind == "Expr.ArrayLen")
+                                    lengthDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[lengthDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[lengthDrop].children[0]].value == "values")
+                                    assert(lowered.nodes[lowered.functions[0].body[2]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[1].body) == 3)
+                                    fieldTemp := lowered.functions[1].body[0]
+                                    assert(lowered.nodes[fieldTemp].kind == "Stmt.Let.Immutable")
+                                    fieldLen := lowered.nodes[fieldTemp].children[0]
+                                    assert(lowered.nodes[fieldLen].kind == "Expr.ArrayLen")
+                                    fieldSource := lowered.nodes[fieldLen].children[0]
+                                    assert(lowered.nodes[fieldSource].kind == "Expr.FieldAccess")
+                                    fieldDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[fieldDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[fieldDrop].children[0]].value == "bag")
+                                    assert(lowered.nodes[lowered.functions[1].body[2]].kind == "Stmt.Return")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test PreservesPrintReadCleanup() {
+    source := "type User struct { name string } func show(name string) { print(name) } func showField(user User) { print(user.name) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 2)
+                                    show := lowered.functions[0].body[0]
+                                    assert(lowered.nodes[show].kind == "Stmt.Expr")
+                                    showCall := lowered.nodes[show].children[0]
+                                    assert(lowered.nodes[showCall].kind == "Expr.Call")
+                                    assert(lowered.nodes[showCall].value == "print")
+                                    showArgument := lowered.nodes[showCall].children[0]
+                                    assert(lowered.nodes[showArgument].kind == "Arg.Con")
+                                    assert(lowered.nodes[lowered.functions[0].body[1]].kind == "Stmt.Drop")
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    fieldShow := lowered.functions[1].body[0]
+                                    fieldCall := lowered.nodes[fieldShow].children[0]
+                                    fieldArgument := lowered.nodes[fieldCall].children[0]
+                                    assert(lowered.nodes[fieldArgument].kind == "Arg.Con")
+                                    fieldSource := lowered.nodes[fieldArgument].children[0]
+                                    assert(lowered.nodes[fieldSource].kind == "Expr.FieldAccess")
+                                    fieldDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[fieldDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[fieldDrop].children[0]].value == "user")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

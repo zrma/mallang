@@ -390,6 +390,51 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
 
     if kind == "Expr.Call" {
         callee := ast.Child(con syntax, expression, 0)
+        if ast.Kind(con syntax, callee) == "Expr.Var" && ast.Value(con syntax, callee) == "print" {
+            if ast.ChildCount(con syntax, expression) != 2 {
+                return Err(newError("checked print argument count is invalid", ast.Span(con syntax, expression)))
+            }
+            argument := ast.Child(con syntax, expression, 1)
+            if ast.Kind(con syntax, argument) != "Arg.Owned" {
+                return Err(newError("checked print argument mode is invalid", ast.Span(con syntax, expression)))
+            }
+            argumentExpression := ast.Child(con syntax, argument, 0)
+            mut argumentType := ""
+            match semantic.NodeType(con checked, argumentExpression) {
+                case Ok(resolved) {
+                    argumentType = resolved
+                }
+                case Err(_) {
+                    return Err(newError("checked print argument type is missing", ast.Span(con syntax, argument)))
+                }
+            }
+            match self.lowerExpression(con syntax, argumentExpression, con checked) {
+                case Ok(loweredArgument) {
+                    readArgument := self.addNode("A", "Arg.Con", "", token.CopyText(con argumentType), ast.Span(con syntax, argument), []int{loweredArgument}, false)
+                    return Ok(self.addNode("E", "Expr.Call", "print", token.CopyText(con ty), ast.Span(con syntax, expression), []int{readArgument}, cleanup))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        if ast.Kind(con syntax, callee) == "Expr.Var" && ast.Value(con syntax, callee) == "len" {
+            if ast.ChildCount(con syntax, expression) != 2 {
+                return Err(newError("checked len argument count is invalid", ast.Span(con syntax, expression)))
+            }
+            argument := ast.Child(con syntax, expression, 1)
+            if ast.Kind(con syntax, argument) != "Arg.Owned" {
+                return Err(newError("checked len argument mode is invalid", ast.Span(con syntax, expression)))
+            }
+            match self.lowerExpression(con syntax, ast.Child(con syntax, argument, 0), con checked) {
+                case Ok(loweredValue) {
+                    return Ok(self.addNode("E", "Expr.ArrayLen", "", token.CopyText(con ty), ast.Span(con syntax, expression), []int{loweredValue}, cleanup))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
         if ast.Kind(con syntax, callee) == "Expr.Var" && ast.Value(con syntax, callee) == "append" {
             if ast.ChildCount(con syntax, expression) != 3 {
                 return Err(newError("checked append argument count is invalid", ast.Span(con syntax, expression)))
@@ -689,6 +734,9 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
             roots = appendUniqueTexts(roots, con self.movedCleanupRoots(slice, con active))
         }
         return roots
+    }
+    if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.ArrayLen" {
+        return []string{}
     }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
         binding := cleanupBindingIndex(con active, con self.nodes[node].value)

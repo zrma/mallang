@@ -1903,6 +1903,39 @@ test ChecksSelfConsumingFieldAppend() {
     assert(checkTestSource(rejected) == "`append` expects exactly two arguments")
 }
 
+test ChecksAppendMoveAndBorrowModes() {
+    accepted := "type Bag struct { values []int } func grow(input []int, item int) []int { mut values := input; values = append(values, item); return values } func takeField(con bag Bag, item int) []int { grown := append(bag.values, item); return grown } func main() {}"
+    assert(checkTestSource(accepted) == "")
+
+    rejected := "func grow(input []int, item int) []int { return append(con input, item) } func main() {}"
+    assert(checkTestSource(rejected) == "`append` arguments do not take `con` or `mut` mode markers")
+
+    wrongItem := "func grow(input []int) []int { return append(input, false) } func main() {}"
+    assert(checkTestSource(wrongItem) == "`append` item type mismatch: expected `int`, got `bool`")
+}
+
+test ChecksLenFullExpressionReads() {
+    accepted := "type Bag struct { values []int } func length(values []int) int { return len(values) } func fieldLength(bag Bag) int { return len(bag.values) } func main() {}"
+    assert(checkTestSource(accepted) == "")
+
+    marked := "func length(values []int) int { return len(con values) } func main() {}"
+    assert(checkTestSource(marked) == "`len` arguments do not take `con` or `mut` mode markers")
+
+    wrongType := "func length(value int) int { return len(value) } func main() {}"
+    assert(checkTestSource(wrongType) == "`len` expects a fixed-size array or slice, got `int`")
+}
+
+test ChecksPrintStatementReads() {
+    accepted := "type User struct { name string } func show(name string) { print(name) } func showField(user User) { print(user.name) } func main() {}"
+    assert(checkTestSource(accepted) == "")
+
+    valuePosition := "func show(name string) string { return print(name) } func main() {}"
+    assert(checkTestSource(valuePosition) == "`print` is only supported as a statement")
+
+    marked := "func show(name string) { print(con name) } func main() {}"
+    assert(checkTestSource(marked) == "`print` arguments do not take `con` or `mut` mode markers")
+}
+
 test ChecksCopyClosureCaptures() {
     source := "func run() int { offset := 10; add := func(value int) int { return value + offset }; return offset + add(2) } func main() {}"
     assert(checkTestSource(source) == "")

@@ -1,0 +1,29 @@
+type Bag struct {
+    values []int
+}
+
+type Entry struct {
+    name string
+}
+
+type EntryBag struct {
+    values []Entry
+}
+
+func grow(input []int, item int) []int {
+    mut values := input
+    values = append(values, item)
+    return values
+}
+
+func takeField(con bag Bag, item int) []int {
+    grown := append(bag.values, item)
+    return grown
+}
+
+func appendEntry(con bag EntryBag, item Entry) []Entry {
+    grown := append(bag.values, item)
+    return grown
+}
+
+func main() {}

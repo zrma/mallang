@@ -160,6 +160,13 @@ fixtures and 210 Mallang compiler project tests cover this boundary.
 P176e2c3b lowers field-source `append` calls as `Expr.SliceAppend`, preserves
 direct and indexed same-field assignments without overwrite, and retains
 RHS-first overwrite for a distinct source path. Seventeen focused IR fixtures
-and 212 Mallang compiler project tests cover this boundary. Remaining
-append/move cases and the rest of the typed IR are incomplete, so no complete
-semantic, typed-IR or Stage1 compiler claim is made.
+and 212 Mallang compiler project tests cover this boundary. P176e2c3c covers
+direct slice self-append reactivation, field-source reads and non-Copy item
+moves. P176e2c3d lowers read-only `len` as `Expr.ArrayLen`, evaluates return
+values before dropping owned sources and preserves field owners. P176e2c3e
+normalizes statement-only `print` sources as read-only `Arg.Con` values and
+drops their owned direct or field owner at function tail. Twenty focused IR
+fixtures and 218 Mallang compiler project tests cover the expanded boundary.
+Aggregate literal typed IR, remaining full-expression cases and the rest of the
+typed IR are incomplete, so no complete semantic, typed-IR or Stage1 compiler
+claim is made.

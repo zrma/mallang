@@ -857,6 +857,16 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
     }
     if kind == "Stmt.Expr" {
         expression := ast.Child(con program, statement, 0)
+        if isPrintCall(con program, expression) {
+            return match self.checkPrintCall(con program, expression) {
+                case Ok(_) {
+                    Ok(false)
+                }
+                case Err(error) {
+                    Err(error)
+                }
+            }
+        }
         return match self.checkExpression(con program, expression) {
             case Ok(_) {
                 Ok(false)
@@ -2853,6 +2863,12 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
     if name == "Err" {
         return self.checkResultConstructor(con program, expression, con expectedType, hasExpected, false)
     }
+    if name == "print" {
+        return Err(newError("`print` is only supported as a statement", ast.Span(con program, expression)))
+    }
+    if name == "len" {
+        return self.checkLenCall(con program, expression)
+    }
     if name == "append" {
         return self.checkAppendCall(con program, expression)
     }
@@ -2912,6 +2928,66 @@ func (mut self CheckedProgram) checkCall(con program ast.Program, expression int
             return Err(error)
         }
     }
+}
+
+func (mut self CheckedProgram) checkPrintCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    if argumentCount != 1 {
+        return Err(newError("`print` expects exactly one argument", ast.Span(con program, expression)))
+    }
+    argument := ast.Child(con program, expression, 1)
+    if argModeFromKind(con ast.Kind(con program, argument)) != "owned" {
+        return Err(newError("`print` arguments do not take `con` or `mut` mode markers", ast.Span(con program, argument)))
+    }
+
+    value := ast.Child(con program, argument, 0)
+    mut valueType := unitType()
+    match self.checkFullExpressionRead(con program, value) {
+        case Ok(ty) {
+            valueType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if valueType.kind != "int" && valueType.kind != "bool" && valueType.kind != "string" {
+        message := strings.join(con []string{"cannot print value of type `", token.CopyText(con valueType.text), "` in v0",}, con "")
+        return Err(newError(message, ast.Span(con program, argument)))
+    }
+
+    ty := unitType()
+    self.recordType(expression, con ty)
+    return Ok(ty)
+}
+
+func (mut self CheckedProgram) checkLenCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    argumentCount := ast.ChildCount(con program, expression) - 1
+    if argumentCount != 1 {
+        return Err(newError("`len` expects exactly one argument", ast.Span(con program, expression)))
+    }
+    argument := ast.Child(con program, expression, 1)
+    if argModeFromKind(con ast.Kind(con program, argument)) != "owned" {
+        return Err(newError("`len` arguments do not take `con` or `mut` mode markers", ast.Span(con program, argument)))
+    }
+
+    value := ast.Child(con program, argument, 0)
+    mut valueType := unitType()
+    match self.checkFullExpressionRead(con program, value) {
+        case Ok(ty) {
+            valueType = ty
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    if valueType.kind != "array" && valueType.kind != "slice" {
+        message := strings.join(con []string{"`len` expects a fixed-size array or slice, got `", token.CopyText(con valueType.text), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, argument)))
+    }
+
+    ty := intType()
+    self.recordType(expression, con ty)
+    return Ok(ty)
 }
 
 func (mut self CheckedProgram) checkAppendCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
@@ -3359,7 +3435,7 @@ func (mut self CheckedProgram) checkFullExpressionRead(con program ast.Program, 
             }
         }
     }
-    return self.checkExpression(con program, expression)
+    return self.checkExpressionUse(con program, expression, con "read")
 }
 
 func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
@@ -4687,6 +4763,14 @@ func assignmentHasField(con program ast.Program, expression int) bool {
         return assignmentHasField(con program, ast.Child(con program, expression, 0))
     }
     return false
+}
+
+func isPrintCall(con program ast.Program, expression int) bool {
+    if ast.Kind(con program, expression) != "Expr.Call" || ast.ChildCount(con program, expression) == 0 {
+        return false
+    }
+    callee := ast.Child(con program, expression, 0)
+    return ast.Kind(con program, callee) == "Expr.Var" && ast.Value(con program, callee) == "print"
 }
 
 func isBinaryKind(con kind string) bool {

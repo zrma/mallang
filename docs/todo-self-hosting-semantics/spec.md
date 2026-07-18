@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3b complete
+Status: in progress; P176a-P176e2c3e complete
 
 ## Objective
 
@@ -127,6 +127,12 @@ agrees.
 - P176e2c3b: lower field-source `append` as `Expr.SliceAppend`, preserve
   direct/indexed same-field assignment without overwrite, and retain
   RHS-first overwrite for distinct source paths (complete)
+- P176e2c3c: preserve direct slice self-append reactivation, field-source reads
+  and non-Copy item move accounting (complete)
+- P176e2c3d: lower read-only `len` as `Expr.ArrayLen` and evaluate return values
+  before dropping their owned direct or field source (complete)
+- P176e2c3e: normalize statement-only `print` sources as read-only `Arg.Con`
+  values and preserve owner tail cleanup (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -510,8 +516,8 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, seventeen typed-IR fixtures and
-  two hundred twelve Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, twenty typed-IR fixtures and two
+  hundred eighteen Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
   compares focused fixtures against Rust Stage0. P176e2a adds straight-line
   cleanup drops, moved-root exclusion and deterministic return temporaries.
@@ -524,9 +530,14 @@ specialization and function-body checking until later P176 slices.
   evaluates replacement values before overwrite and emits no tail drop for the
   caller/environment-owned root. P176e2c3b adds the `append` semantic and typed
   IR contract, preserves self-consuming direct/indexed field assignment and
-  retains RHS-first overwrite for a distinct source path. Seventeen typed-IR
-  fixtures and two hundred twelve Mallang project tests cover this boundary.
-  Remaining append/move and checked constructs continue in P176e.
+  retains RHS-first overwrite for a distinct source path. P176e2c3c fixes the
+  remaining direct/field append move accounting, and P176e2c3d adds read-only
+  `len` plus return full-expression cleanup. P176e2c3e adds statement-only
+  `print` read arguments and owner tail cleanup. Twenty typed-IR fixtures and
+  two hundred eighteen Mallang project tests cover this boundary. Aggregate
+  literal typed IR, full-expression cases and checked constructs continue in
+  P176e. Stage0 match-arm shadow cleanup identity remains tracked separately in
+  `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 
 ## B2 Completion Criteria
 
