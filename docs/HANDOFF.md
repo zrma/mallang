@@ -574,8 +574,14 @@ mutable, nested closure definition과 parameter, capture metadata, closure value
 typed IR에 보존하며 9개 IR fixture와 전체 203개 project test로 고정한다.
 P176e2a는 straight-line owned parameter/local의 역순 drop, moved root 제외와
 return value 선평가 temporary를 typed IR에 삽입하며 10개 IR fixture와 전체
-204개 project test로 고정한다. 다음 slice는 branch join과 cleanup overwrite를
-구현한다. public language 또는 standard-library addition은
+204개 project test로 고정한다. P176e2b1은 `if` branch-local cleanup의
+tail/return drop과 enclosing statement span을 11개 IR fixture와 전체 205개
+project test로 고정한다. P176e2b2는 non-shadowing outer cleanup root의
+keep/one-side move/both-side
+move/both-side return과 nested join을 12개 IR fixture와 전체 206개 project
+test로 고정한다. 다음 slice는 binding identity가 필요한 branch shadow와 cleanup
+overwrite다. public language 또는
+standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification

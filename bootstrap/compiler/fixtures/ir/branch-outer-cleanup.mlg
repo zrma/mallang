@@ -1,0 +1,43 @@
+func take(name string) {}
+
+func keep(flag bool, name string) {
+    if flag {} else {}
+}
+
+func moveThen(flag bool, name string) {
+    if flag {
+        take(name)
+    } else {}
+}
+
+func moveElse(flag bool, name string) {
+    if flag {} else {
+        take(name)
+    }
+}
+
+func moveBoth(flag bool, name string) {
+    if flag {
+        take(name)
+    } else {
+        take(name)
+    }
+}
+
+func returnBoth(flag bool, name string) int {
+    if flag {
+        return 1
+    } else {
+        return 2
+    }
+}
+
+func nested(outer bool, inner bool, name string) {
+    if outer {
+        if inner {
+            take(name)
+        } else {}
+    } else {}
+}
+
+func main() {}

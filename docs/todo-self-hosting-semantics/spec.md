@@ -108,6 +108,11 @@ agrees.
 - P176e2a: insert deterministic straight-line drops for owned cleanup
   parameters and locals, exclude moved roots, and evaluate return values before
   remaining drops with stable temporary names (complete)
+- P176e2b1: insert branch-local tail and return cleanup recursively with the
+  enclosing `if` statement span (complete)
+- P176e2b2: merge non-shadowing outer cleanup roots across nested branches,
+  compensate continuing paths that retain roots moved elsewhere, and preserve
+  Stage0's canonical tail cleanup after fully returning branches (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -491,12 +496,14 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, ten typed-IR fixtures and two
-  hundred four Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, twelve typed-IR fixtures and two
+  hundred six Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
   compares focused fixtures against Rust Stage0. P176e2a adds straight-line
   cleanup drops, moved-root exclusion and deterministic return temporaries.
-  Branch/overwrite cleanup and remaining checked constructs continue in P176e.
+  P176e2b1 adds branch-local cleanup, and P176e2b2 adds nested non-shadowing
+  outer-root joins. Branch shadow identity, overwrite cleanup and remaining
+  checked constructs continue in P176e.
 
 ## B2 Completion Criteria
 

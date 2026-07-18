@@ -1,0 +1,19 @@
+func branch(flag bool) {
+    if flag {
+        name := "yes"
+    } else {
+        name := "no"
+    }
+}
+
+func branchReturn(flag bool) int {
+    if flag {
+        name := "yes"
+        return 1
+    } else {
+        name := "no"
+        return 2
+    }
+}
+
+func main() {}

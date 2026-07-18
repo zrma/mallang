@@ -131,5 +131,11 @@ Stage1 byte-for-byte. P176e2a adds deterministic straight-line drops for owned
 cleanup parameters and locals, excludes moved roots, and evaluates return
 values before remaining drops with stable temporary names. Ten focused IR
 fixtures now cover this contract. Branch cleanup, overwrite cleanup and the
-remaining typed IR are incomplete, so no complete semantic, typed-IR or Stage1
-compiler claim is made.
+remaining typed IR are incomplete. P176e2b1 recursively inserts branch-local
+tail and return cleanup with the enclosing `if` span, bringing the focused IR
+corpus to eleven fixtures. P176e2b2 merges non-shadowing outer cleanup roots
+across nested branches, inserts compensating drops only on continuing paths
+that retain a root moved elsewhere, and drops outer roots before branches that
+return without moving them. Twelve focused IR fixtures cover this contract.
+Branch shadow identity and overwrite cleanup remain incomplete, so no complete
+semantic, typed-IR or Stage1 compiler claim is made.

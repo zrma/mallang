@@ -245,6 +245,121 @@ test InsertsStraightLineCleanupDrops() {
     }
 }
 
+test InsertsBranchLocalCleanupDrops() {
+    source := "func branch(flag bool) { if flag { name := \"yes\" } else { name := \"no\" } } func branchReturn(flag bool) int { if flag { name := \"yes\"; return 1 } else { name := \"no\"; return 2 } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    firstIf := lowered.functions[0].body[0]
+                                    firstThen := lowered.nodes[firstIf].children[1]
+                                    firstElse := lowered.nodes[firstIf].children[2]
+                                    assert(len(lowered.nodes[firstThen].children) == 2)
+                                    assert(len(lowered.nodes[firstElse].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[firstThen].children[1]].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[firstElse].children[1]].kind == "Stmt.Drop")
+
+                                    secondIf := lowered.functions[1].body[0]
+                                    secondThen := lowered.nodes[secondIf].children[1]
+                                    secondElse := lowered.nodes[secondIf].children[2]
+                                    assert(len(lowered.nodes[secondThen].children) == 4)
+                                    assert(len(lowered.nodes[secondElse].children) == 4)
+                                    assert(lowered.nodes[lowered.nodes[secondThen].children[2]].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[secondElse].children[2]].kind == "Stmt.Drop")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test JoinsOuterCleanupAcrossBranches() {
+    source := "func take(name string) {} func keep(flag bool, name string) { if flag {} else {} } func moveThen(flag bool, name string) { if flag { take(name) } else {} } func moveElse(flag bool, name string) { if flag {} else { take(name) } } func moveBoth(flag bool, name string) { if flag { take(name) } else { take(name) } } func returnBoth(flag bool, name string) int { if flag { return 1 } else { return 2 } } func nested(outer bool, inner bool, name string) { if outer { if inner { take(name) } else {} } else {} } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[1].body[1]].kind == "Stmt.Drop")
+
+                                    thenIf := lowered.functions[2].body[0]
+                                    thenBranch := lowered.nodes[thenIf].children[1]
+                                    thenElse := lowered.nodes[thenIf].children[2]
+                                    assert(len(lowered.nodes[thenBranch].children) == 1)
+                                    assert(len(lowered.nodes[thenElse].children) == 1)
+                                    assert(lowered.nodes[lowered.nodes[thenElse].children[0]].kind == "Stmt.Drop")
+                                    assert(len(lowered.functions[2].body) == 1)
+
+                                    elseIf := lowered.functions[3].body[0]
+                                    elseThen := lowered.nodes[elseIf].children[1]
+                                    elseBranch := lowered.nodes[elseIf].children[2]
+                                    assert(len(lowered.nodes[elseThen].children) == 1)
+                                    assert(lowered.nodes[lowered.nodes[elseThen].children[0]].kind == "Stmt.Drop")
+                                    assert(len(lowered.nodes[elseBranch].children) == 1)
+                                    assert(len(lowered.functions[3].body) == 1)
+
+                                    assert(len(lowered.functions[4].body) == 1)
+                                    assert(len(lowered.functions[5].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[5].body[1]].kind == "Stmt.Drop")
+                                    returningIf := lowered.functions[5].body[0]
+                                    returningThen := lowered.nodes[returningIf].children[1]
+                                    returningElse := lowered.nodes[returningIf].children[2]
+                                    assert(len(lowered.nodes[returningThen].children) == 3)
+                                    assert(len(lowered.nodes[returningElse].children) == 3)
+                                    assert(lowered.nodes[lowered.nodes[returningThen].children[1]].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[returningElse].children[1]].kind == "Stmt.Drop")
+
+                                    nestedIf := lowered.functions[6].body[0]
+                                    nestedThen := lowered.nodes[nestedIf].children[1]
+                                    nestedElse := lowered.nodes[nestedIf].children[2]
+                                    assert(len(lowered.nodes[nestedThen].children) == 1)
+                                    assert(len(lowered.nodes[nestedElse].children) == 1)
+                                    assert(lowered.nodes[lowered.nodes[nestedElse].children[0]].kind == "Stmt.Drop")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

@@ -67,6 +67,11 @@ type CleanupBinding struct {
     span source.Span
 }
 
+type CleanupFlow struct {
+    moved []string
+    continues bool
+}
+
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
     mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
     root := ast.Root(con syntax)
@@ -458,17 +463,41 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
 }
 
 func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, fallback source.Span) []int {
+    return self.insertCleanupDrops(con body, initial, fallback, con []string{})
+}
+
+func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBinding, fallback source.Span, con tailExcluded []string) []int {
     if !self.supportsStraightLineCleanup(con body) {
         return copyInts(con body)
     }
 
-    mut active := []CleanupBinding{}
-    for mut binding := 0; binding < len(initial); binding = binding + 1 {
-        active = append(active, CleanupBinding{name: token.CopyText(con initial[binding].name), ty: token.CopyText(con initial[binding].ty), span: source.Copy(con initial[binding].span),})
-    }
+    mut active := copyCleanupBindings(con initial)
     mut output := []int{}
     for mut statementIndex := 0; statementIndex < len(body); statementIndex = statementIndex + 1 {
         statement := body[statementIndex]
+        if self.nodes[statement].kind == "Stmt.If" {
+            condition := self.nodes[statement].children[0]
+            conditionMoved := self.movedCleanupRoots(condition, con active)
+            active = removeCleanupRoots(active, con conditionMoved)
+            thenBlock := self.nodes[statement].children[1]
+            elseBlock := self.nodes[statement].children[2]
+            thenSource := copyInts(con self.nodes[thenBlock].children)
+            elseSource := copyInts(con self.nodes[elseBlock].children)
+            thenFlow := self.analyzeCleanupFlow(con thenSource, con active)
+            elseFlow := self.analyzeCleanupFlow(con elseSource, con active)
+            persistentMoved := persistentBranchMoves(con active, con thenFlow, con elseFlow)
+            remaining := removeCleanupRoots(copyCleanupBindings(con active), con persistentMoved)
+            excluded := cleanupBindingNames(con remaining)
+            statementSpan := source.Copy(con self.nodes[statement].span)
+            thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
+            elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
+            self.nodes[thenBlock].children = thenBody
+            self.nodes[elseBlock].children = elseBody
+            output = append(output, statement)
+            active = remaining
+            continue
+        }
+
         moved := self.movedCleanupRoots(statement, con active)
         remaining := removeCleanupRoots(active, con moved)
         if self.nodes[statement].kind == "Stmt.Return" {
@@ -498,14 +527,19 @@ func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial [
             active = append(active, CleanupBinding{name: token.CopyText(con self.nodes[statement].value), ty: token.CopyText(con self.nodes[statement].ty), span: source.Copy(con self.nodes[statement].span),})
         }
     }
-    return self.pushCleanupDrops(output, con active, con fallback)
+    droppable := cleanupBindingsExcluding(con active, con tailExcluded)
+    return self.pushCleanupDrops(output, con droppable, con fallback)
 }
 
 func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
     for mut index := 0; index < len(body); index = index + 1 {
         kind := token.CopyText(con self.nodes[body[index]].kind)
         if kind == "Stmt.If" {
-            return false
+            thenBlock := self.nodes[body[index]].children[1]
+            elseBlock := self.nodes[body[index]].children[2]
+            if !self.supportsStraightLineCleanup(con self.nodes[thenBlock].children) || !self.supportsStraightLineCleanup(con self.nodes[elseBlock].children) {
+                return false
+            }
         }
         if kind == "Stmt.Assign" || kind == "Stmt.FieldAssign" || kind == "Stmt.IndexAssign" {
             for mut child := 0; child < len(self.nodes[body[index]].children); child = child + 1 {
@@ -516,6 +550,43 @@ func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
         }
     }
     return true
+}
+
+func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []CleanupBinding) CleanupFlow {
+    mut active := copyCleanupBindings(con initial)
+    mut movedInBody := []string{}
+    for mut statementIndex := 0; statementIndex < len(body); statementIndex = statementIndex + 1 {
+        statement := body[statementIndex]
+        if self.nodes[statement].kind == "Stmt.If" {
+            condition := self.nodes[statement].children[0]
+            conditionMoved := self.movedCleanupRoots(condition, con active)
+            movedInBody = appendUniqueTexts(movedInBody, con conditionMoved)
+            active = removeCleanupRoots(active, con conditionMoved)
+            thenBlock := self.nodes[statement].children[1]
+            elseBlock := self.nodes[statement].children[2]
+            thenFlow := self.analyzeCleanupFlow(con self.nodes[thenBlock].children, con active)
+            elseFlow := self.analyzeCleanupFlow(con self.nodes[elseBlock].children, con active)
+            persistentMoved := persistentBranchMoves(con active, con thenFlow, con elseFlow)
+            movedInBody = appendUniqueTexts(movedInBody, con persistentMoved)
+            active = removeCleanupRoots(active, con persistentMoved)
+            if !thenFlow.continues && !elseFlow.continues {
+                return CleanupFlow{moved: appendUniqueTexts([]string{}, con movedInBody), continues: false}
+            }
+            continue
+        }
+
+        moved := self.movedCleanupRoots(statement, con active)
+        movedInBody = appendUniqueTexts(movedInBody, con moved)
+        active = removeCleanupRoots(active, con moved)
+        if self.nodes[statement].kind == "Stmt.Return" {
+            return CleanupFlow{moved: appendUniqueTexts([]string{}, con movedInBody), continues: false}
+        }
+        letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
+        if letBinding && self.nodes[statement].cleanup {
+            active = append(active, CleanupBinding{name: token.CopyText(con self.nodes[statement].value), ty: token.CopyText(con self.nodes[statement].ty), span: source.Copy(con self.nodes[statement].span),})
+        }
+    }
+    return CleanupFlow{moved: movedInBody, continues: true}
 }
 
 func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding) []string {
@@ -576,6 +647,44 @@ func cleanupBindingIndex(con active []CleanupBinding, con name string) int {
     return - 1
 }
 
+func persistentBranchMoves(con active []CleanupBinding, con thenFlow CleanupFlow, con elseFlow CleanupFlow) []string {
+    mut moved := []string{}
+    for mut index := 0; index < len(active); index = index + 1 {
+        thenMoves := thenFlow.continues && textIndex(con thenFlow.moved, con active[index].name) >= 0
+        elseMoves := elseFlow.continues && textIndex(con elseFlow.moved, con active[index].name) >= 0
+        if thenMoves || elseMoves {
+            moved = append(moved, token.CopyText(con active[index].name))
+        }
+    }
+    return moved
+}
+
+func copyCleanupBindings(con values []CleanupBinding) []CleanupBinding {
+    mut copied := []CleanupBinding{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, CleanupBinding{name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
+    }
+    return copied
+}
+
+func cleanupBindingNames(con values []CleanupBinding) []string {
+    mut names := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        names = append(names, token.CopyText(con values[index].name))
+    }
+    return names
+}
+
+func cleanupBindingsExcluding(con values []CleanupBinding, con excluded []string) []CleanupBinding {
+    mut kept := []CleanupBinding{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        if textIndex(con excluded, con values[index].name) < 0 {
+            kept = append(kept, CleanupBinding{name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
+        }
+    }
+    return kept
+}
+
 func removeCleanupRoots(active []CleanupBinding, con moved []string) []CleanupBinding {
     mut remaining := []CleanupBinding{}
     for mut index := 0; index < len(active); index = index + 1 {
@@ -593,6 +702,16 @@ func textIndex(con values []string, con value string) int {
         }
     }
     return - 1
+}
+
+func appendUniqueTexts(values []string, con additions []string) []string {
+    mut combined := values
+    for mut index := 0; index < len(additions); index = index + 1 {
+        if textIndex(con combined, con additions[index]) < 0 {
+            combined = append(combined, token.CopyText(con additions[index]))
+        }
+    }
+    return combined
 }
 
 func copyInts(con values []int) []int {
