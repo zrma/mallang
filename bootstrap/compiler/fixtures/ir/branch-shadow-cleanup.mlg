@@ -1,0 +1,25 @@
+func take(name string) {}
+
+func shadow(flag bool, name string) {
+    if flag {
+        name := "inner"
+    } else {}
+}
+
+func shadowMove(flag bool, name string) {
+    if flag {
+        name := "inner"
+        take(name)
+    } else {}
+}
+
+func nestedShadow(outer bool, inner bool, name string) {
+    if outer {
+        name := "middle"
+        if inner {
+            name := "inner"
+        } else {}
+    } else {}
+}
+
+func main() {}

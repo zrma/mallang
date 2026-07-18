@@ -471,10 +471,12 @@ impl<'a> Lowerer<'a> {
             .captures
             .iter()
             .filter(|capture| capture.mutable && capture.ty.needs_cleanup())
-            .map(|capture| CleanupBinding {
-                name: capture.name.clone(),
-                ty: capture.ty.clone(),
-                span: closure.literal.body.span,
+            .map(|capture| {
+                new_cleanup_binding(
+                    capture.name.clone(),
+                    capture.ty.clone(),
+                    closure.literal.body.span,
+                )
             })
             .collect::<Vec<_>>();
         let body = insert_straight_line_cleanup_drops(
@@ -1854,16 +1856,15 @@ impl<'a> Lowerer<'a> {
             .bindings
             .iter()
             .filter(|(_, ty)| ty.needs_cleanup())
-            .map(|(name, ty)| CleanupBinding {
-                name: name.clone(),
-                ty: ty.clone(),
-                span: arm.expr.span,
-            })
+            .map(|(name, ty)| new_cleanup_binding(name.clone(), ty.clone(), arm.expr.span))
             .collect::<Vec<_>>();
         if !active.is_empty() {
             let insertion = insert_expr_cleanup_drops(expr, &active);
             for binding in &active {
-                if !insertion.moved_roots.contains(&binding.name) {
+                if !insertion
+                    .moved_roots
+                    .contains(&cleanup_binding_key(binding))
+                {
                     push_cleanup_drop(&mut cleanup, binding, arm.expr.span);
                 }
             }
@@ -2599,9 +2600,26 @@ fn lower_param(param: &ParamSig) -> IrParam {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CleanupBinding {
+    key: String,
     name: String,
     ty: Type,
     span: Span,
+}
+
+fn new_cleanup_binding(name: String, ty: Type, span: Span) -> CleanupBinding {
+    let key = format!(
+        "{}@{}_{}_{}",
+        name,
+        span.source.index(),
+        span.start,
+        span.end
+    );
+    CleanupBinding {
+        key,
+        name,
+        ty,
+        span,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2647,11 +2665,7 @@ fn insert_straight_line_cleanup_drops(
     let active = params
         .iter()
         .filter(|param| param.mode == ParamMode::Owned && param.ty.needs_cleanup())
-        .map(|param| CleanupBinding {
-            name: param.name.clone(),
-            ty: param.ty.clone(),
-            span: fallback_span,
-        })
+        .map(|param| new_cleanup_binding(param.name.clone(), param.ty.clone(), fallback_span))
         .collect::<Vec<_>>();
     let external_roots = params
         .iter()
@@ -2659,11 +2673,7 @@ fn insert_straight_line_cleanup_drops(
         .map(|param| {
             (
                 param.name.clone(),
-                CleanupBinding {
-                    name: param.name.clone(),
-                    ty: param.ty.clone(),
-                    span: fallback_span,
-                },
+                new_cleanup_binding(param.name.clone(), param.ty.clone(), fallback_span),
             )
         })
         .chain(
@@ -2719,7 +2729,7 @@ fn insert_cleanup_drops(
             let needs_pre_drop_evaluation = expr.ty != Type::Unit
                 && active
                     .iter()
-                    .any(|binding| !returned_roots.contains(&binding.name));
+                    .any(|binding| !returned_roots.contains(&cleanup_binding_key(binding)));
             if needs_pre_drop_evaluation && !already_pre_evaluated {
                 let temp_name = return_value_temp_name(stmt.span);
                 output.push(IrStmt {
@@ -2786,7 +2796,24 @@ fn insert_cleanup_drops(
             .filter(|binding| !external_roots.contains_key(&binding.name))
             .filter(|binding| {
                 active.iter().any(|active| active.name == binding.name)
-                    || moved_in_body.contains(&binding.name)
+                    || moved_in_body
+                        .iter()
+                        .any(|root| cleanup_root_has_name(root, &binding.name))
+            })
+            .map(|mut binding| {
+                if let Some(previous) = active
+                    .iter()
+                    .rev()
+                    .find(|active| active.name == binding.name)
+                {
+                    binding.key = previous.key.clone();
+                } else if let Some(previous) = moved_in_body
+                    .iter()
+                    .find(|root| cleanup_root_has_name(root, &binding.name))
+                {
+                    binding.key = previous.clone();
+                }
+                binding
             });
         let reassigned_binding =
             cleanup_reassigned_active_binding(&stmt, &active, &moved_roots).cloned();
@@ -2812,9 +2839,9 @@ fn insert_cleanup_drops(
         }
         moved_in_body.extend(moved_roots.iter().cloned());
         if let Some(binding) = &assigned_binding {
-            moved_in_body.remove(&binding.name);
+            moved_in_body.retain(|root| !cleanup_root_has_name(root, &binding.name));
         }
-        active.retain(|binding| !moved_roots.contains(&binding.name));
+        active.retain(|binding| !moved_roots.contains(&cleanup_binding_key(binding)));
         if let Some(binding) = new_binding {
             active.push(binding);
         }
@@ -2959,7 +2986,7 @@ fn insert_branch_cleanup_drops(
             let condition_insertion = insert_expr_cleanup_drops(condition, active);
             let condition_moved_roots = condition_insertion.moved_roots;
             let branch_active = cleanup_bindings_after_moved_roots(active, &condition_moved_roots);
-            let tail_excluded_roots = cleanup_binding_names(&branch_active);
+            let tail_excluded_roots = cleanup_binding_keys(&branch_active);
 
             let mut then_insertion = insert_cleanup_drops(
                 then_body,
@@ -3019,12 +3046,13 @@ fn insert_branch_cleanup_drops(
                 .as_deref()
                 .map(cleanup_moved_roots_in_for_init)
                 .unwrap_or_default();
+            let init_moved_roots = cleanup_roots_for_names(active, init_moved_roots);
             let mut loop_active = cleanup_bindings_after_moved_roots(active, &init_moved_roots);
-            let pre_loop_roots = cleanup_binding_names(&loop_active);
+            let pre_loop_roots = cleanup_binding_keys(&loop_active);
             if let Some(binding) = init.as_deref().and_then(cleanup_binding_from_for_init) {
                 loop_active.push(binding);
             }
-            let loop_persistent_roots = cleanup_binding_names(&loop_active);
+            let loop_persistent_roots = cleanup_binding_keys(&loop_active);
             let insertion = insert_cleanup_drops(
                 body,
                 loop_active.clone(),
@@ -3067,11 +3095,11 @@ fn insert_branch_cleanup_drops(
             };
             let source_moved_roots = source_insertion.moved_roots;
             let mut loop_active = cleanup_bindings_after_moved_roots(active, &source_moved_roots);
-            let pre_loop_roots = cleanup_binding_names(&loop_active);
+            let pre_loop_roots = cleanup_binding_keys(&loop_active);
             if let Some(binding) = full_expr_owner_binding(&source_insertion.expr) {
                 loop_active.push(binding);
             }
-            let loop_excluded_roots = cleanup_binding_names(&loop_active);
+            let loop_excluded_roots = cleanup_binding_keys(&loop_active);
             let insertion = insert_cleanup_drops(
                 body,
                 loop_active.clone(),
@@ -3104,7 +3132,7 @@ fn insert_branch_cleanup_drops(
             let scrutinee_insertion = insert_expr_cleanup_drops(scrutinee, active);
             let scrutinee_moved_roots = scrutinee_insertion.moved_roots;
             let arm_active = cleanup_bindings_after_moved_roots(active, &scrutinee_moved_roots);
-            let tail_excluded_roots = cleanup_binding_names(&arm_active);
+            let tail_excluded_roots = cleanup_binding_keys(&arm_active);
             let mut arms = arms
                 .into_iter()
                 .map(|arm| {
@@ -3160,20 +3188,47 @@ fn cleanup_bindings_after_moved_roots(
 ) -> Vec<CleanupBinding> {
     active
         .iter()
-        .filter(|binding| !moved_roots.contains(&binding.name))
+        .filter(|binding| !moved_roots.contains(&cleanup_binding_key(binding)))
         .cloned()
         .collect()
 }
 
-fn cleanup_binding_names(active: &[CleanupBinding]) -> HashSet<String> {
-    active.iter().map(|binding| binding.name.clone()).collect()
+fn cleanup_binding_keys(active: &[CleanupBinding]) -> HashSet<String> {
+    active.iter().map(cleanup_binding_key).collect()
+}
+
+fn cleanup_binding_key(binding: &CleanupBinding) -> String {
+    binding.key.clone()
+}
+
+fn cleanup_root_for_name(active: &[CleanupBinding], name: &str) -> String {
+    active
+        .iter()
+        .rev()
+        .find(|binding| binding.name == name)
+        .map(cleanup_binding_key)
+        .unwrap_or_else(|| name.to_owned())
+}
+
+fn cleanup_roots_for_names(active: &[CleanupBinding], roots: HashSet<String>) -> HashSet<String> {
+    roots
+        .into_iter()
+        .map(|root| cleanup_root_for_name(active, &root))
+        .collect()
+}
+
+fn cleanup_root_has_name(root: &str, name: &str) -> bool {
+    root == name
+        || root
+            .strip_prefix(name)
+            .is_some_and(|suffix| suffix.starts_with('@'))
 }
 
 fn merged_cleanup_roots<'a>(
     active: &[CleanupBinding],
     insertions: impl IntoIterator<Item = &'a CleanupInsertion>,
 ) -> HashSet<String> {
-    let active_names = cleanup_binding_names(active);
+    let active_keys = cleanup_binding_keys(active);
     let mut moved_roots = HashSet::new();
     for insertion in insertions {
         if !insertion.continues {
@@ -3183,7 +3238,7 @@ fn merged_cleanup_roots<'a>(
             insertion
                 .moved_roots
                 .iter()
-                .filter(|root| active_names.contains(*root))
+                .filter(|root| active_keys.contains(*root))
                 .cloned(),
         );
     }
@@ -3194,14 +3249,14 @@ fn merged_cleanup_expr_roots<'a>(
     active: &[CleanupBinding],
     insertions: impl IntoIterator<Item = &'a ExprCleanupInsertion>,
 ) -> HashSet<String> {
-    let active_names = cleanup_binding_names(active);
+    let active_keys = cleanup_binding_keys(active);
     let mut moved_roots = HashSet::new();
     for insertion in insertions {
         moved_roots.extend(
             insertion
                 .moved_roots
                 .iter()
-                .filter(|root| active_names.contains(*root))
+                .filter(|root| active_keys.contains(*root))
                 .cloned(),
         );
     }
@@ -3220,8 +3275,8 @@ fn push_branch_merge_cleanup_drops(
         return;
     }
     for binding in active.iter().rev() {
-        if merged_moved_roots.contains(&binding.name) && !branch_moved_roots.contains(&binding.name)
-        {
+        let key = cleanup_binding_key(binding);
+        if merged_moved_roots.contains(&key) && !branch_moved_roots.contains(&key) {
             push_cleanup_drop(body, binding, span);
         }
     }
@@ -3235,8 +3290,8 @@ fn push_expr_branch_cleanup_drops(
     span: Span,
 ) {
     for binding in active.iter().rev() {
-        if merged_moved_roots.contains(&binding.name) && !branch_moved_roots.contains(&binding.name)
-        {
+        let key = cleanup_binding_key(binding);
+        if merged_moved_roots.contains(&key) && !branch_moved_roots.contains(&key) {
             push_cleanup_drop(cleanup, binding, span);
         }
     }
@@ -3258,7 +3313,7 @@ fn insert_expr_cleanup_drops(expr: IrExpr, active: &[CleanupBinding]) -> ExprCle
         }
         IrExprKind::Var(name) => {
             if ty.needs_cleanup() {
-                moved_roots.insert(name.clone());
+                moved_roots.insert(cleanup_root_for_name(active, &name));
             }
             IrExprKind::Var(name)
         }
@@ -3613,24 +3668,18 @@ fn insert_place_expr_cleanup_drops(
 
 fn cleanup_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
     match &stmt.kind {
-        IrStmtKind::Let { name, ty, .. } if ty.needs_cleanup() => Some(CleanupBinding {
-            name: name.clone(),
-            ty: ty.clone(),
-            span: stmt.span,
-        }),
+        IrStmtKind::Let { name, ty, .. } if ty.needs_cleanup() => {
+            Some(new_cleanup_binding(name.clone(), ty.clone(), stmt.span))
+        }
         _ => None,
     }
 }
 
 fn full_expr_owner_binding(expr: &IrExpr) -> Option<CleanupBinding> {
     match &expr.kind {
-        IrExprKind::FullExprTemporary { name, .. } if expr.ty.needs_cleanup() => {
-            Some(CleanupBinding {
-                name: name.clone(),
-                ty: expr.ty.clone(),
-                span: expr.span,
-            })
-        }
+        IrExprKind::FullExprTemporary { name, .. } if expr.ty.needs_cleanup() => Some(
+            new_cleanup_binding(name.clone(), expr.ty.clone(), expr.span),
+        ),
         IrExprKind::FieldAccess { base, .. } | IrExprKind::Index { base, .. } => {
             full_expr_owner_binding(base)
         }
@@ -3640,22 +3689,20 @@ fn full_expr_owner_binding(expr: &IrExpr) -> Option<CleanupBinding> {
 
 fn cleanup_assigned_binding_from_stmt(stmt: &IrStmt) -> Option<CleanupBinding> {
     match &stmt.kind {
-        IrStmtKind::Assign { name, expr } if expr.ty.needs_cleanup() => Some(CleanupBinding {
-            name: name.clone(),
-            ty: expr.ty.clone(),
-            span: stmt.span,
-        }),
+        IrStmtKind::Assign { name, expr } if expr.ty.needs_cleanup() => Some(new_cleanup_binding(
+            name.clone(),
+            expr.ty.clone(),
+            stmt.span,
+        )),
         _ => None,
     }
 }
 
 fn cleanup_binding_from_for_init(init: &IrForInit) -> Option<CleanupBinding> {
     match init {
-        IrForInit::Let { name, ty, expr, .. } if ty.needs_cleanup() => Some(CleanupBinding {
-            name: name.clone(),
-            ty: ty.clone(),
-            span: expr.span,
-        }),
+        IrForInit::Let { name, ty, expr, .. } if ty.needs_cleanup() => {
+            Some(new_cleanup_binding(name.clone(), ty.clone(), expr.span))
+        }
         _ => None,
     }
 }
@@ -3674,7 +3721,8 @@ fn push_loop_cleanup_drops(
     span: Span,
 ) {
     for binding in active.iter().rev() {
-        if pre_loop_roots.contains(&binding.name) || moved_roots.contains(&binding.name) {
+        let key = cleanup_binding_key(binding);
+        if pre_loop_roots.contains(&key) || moved_roots.contains(&key) {
             continue;
         }
         push_cleanup_drop(output, binding, span);
@@ -3689,10 +3737,13 @@ fn cleanup_reassigned_active_binding<'a>(
     let IrStmtKind::Assign { name, expr } = &stmt.kind else {
         return None;
     };
-    if !expr.ty.needs_cleanup() || moved_roots.contains(name) {
+    let binding = active.iter().rev().find(|binding| binding.name == *name);
+    if !expr.ty.needs_cleanup()
+        || binding.is_some_and(|binding| moved_roots.contains(&cleanup_binding_key(binding)))
+    {
         return None;
     }
-    active.iter().find(|binding| binding.name == *name)
+    binding
 }
 
 fn cleanup_reassigned_external_place(
@@ -4067,7 +4118,7 @@ fn push_cleanup_drops(
     span: Span,
 ) {
     for binding in active.iter().rev() {
-        if excluded_roots.contains(&binding.name) {
+        if excluded_roots.contains(&cleanup_binding_key(binding)) {
             continue;
         }
         push_cleanup_drop(output, binding, span);
@@ -4690,6 +4741,47 @@ func add(a int, b int) int {
         assert_eq!(else_body.len(), 2);
         assert_drop_of(&then_body[1], "left");
         assert_drop_of(&else_body[1], "right");
+    }
+
+    #[test]
+    fn branch_shadow_cleanup_keeps_outer_and_inner_roots_distinct() {
+        let program = parse(
+            r#"
+func take(name string) {}
+
+func shadow(flag bool, name string) {
+    if flag {
+        name := "inner"
+        take(name)
+    } else {}
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let shadow = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "shadow")
+            .unwrap();
+
+        assert_eq!(shadow.body.len(), 2);
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &shadow.body[0].kind
+        else {
+            panic!("expected if statement");
+        };
+        assert_eq!(then_body.len(), 2);
+        assert!(else_body.is_empty());
+        assert!(matches!(then_body[0].kind, IrStmtKind::Let { .. }));
+        assert!(matches!(then_body[1].kind, IrStmtKind::Expr { .. }));
+        assert_drop_of(&shadow.body[1], "name");
     }
 
     #[test]

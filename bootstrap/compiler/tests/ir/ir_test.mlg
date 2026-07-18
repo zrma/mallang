@@ -360,6 +360,62 @@ test JoinsOuterCleanupAcrossBranches() {
     }
 }
 
+test KeepsShadowedCleanupBindingsDistinct() {
+    source := "func take(name string) {} func shadow(flag bool, name string) { if flag { name := \"inner\" } else {} } func shadowMove(flag bool, name string) { if flag { name := \"inner\"; take(name) } else {} } func nestedShadow(outer bool, inner bool, name string) { if outer { name := \"middle\"; if inner { name := \"inner\" } else {} } else {} } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    shadowIf := lowered.functions[1].body[0]
+                                    shadowThen := lowered.nodes[shadowIf].children[1]
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[1].body[1]].kind == "Stmt.Drop")
+                                    assert(len(lowered.nodes[shadowThen].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[shadowThen].children[1]].kind == "Stmt.Drop")
+
+                                    movedIf := lowered.functions[2].body[0]
+                                    movedThen := lowered.nodes[movedIf].children[1]
+                                    assert(len(lowered.functions[2].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[2].body[1]].kind == "Stmt.Drop")
+                                    assert(len(lowered.nodes[movedThen].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[movedThen].children[1]].kind == "Stmt.Expr")
+
+                                    outerIf := lowered.functions[3].body[0]
+                                    outerThen := lowered.nodes[outerIf].children[1]
+                                    nestedIf := lowered.nodes[outerThen].children[1]
+                                    nestedThen := lowered.nodes[nestedIf].children[1]
+                                    assert(len(lowered.functions[3].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[3].body[1]].kind == "Stmt.Drop")
+                                    assert(len(lowered.nodes[outerThen].children) == 3)
+                                    assert(lowered.nodes[lowered.nodes[outerThen].children[2]].kind == "Stmt.Drop")
+                                    assert(len(lowered.nodes[nestedThen].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[nestedThen].children[1]].kind == "Stmt.Drop")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

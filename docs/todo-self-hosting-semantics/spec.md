@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176d2a3 complete
+Status: in progress; P176a-P176e2b3 complete
 
 ## Objective
 
@@ -113,6 +113,9 @@ agrees.
 - P176e2b2: merge non-shadowing outer cleanup roots across nested branches,
   compensate continuing paths that retain roots moved elsewhere, and preserve
   Stage0's canonical tail cleanup after fully returning branches (complete)
+- P176e2b3: identify cleanup bindings by name and declaration span so a
+  branch-local shadow move or drop cannot claim the same-named outer root, and
+  preserve that identity when assignment reactivates a moved root (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -496,13 +499,14 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, twelve typed-IR fixtures and two
-  hundred six Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, thirteen typed-IR fixtures and
+  two hundred seven Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
   compares focused fixtures against Rust Stage0. P176e2a adds straight-line
   cleanup drops, moved-root exclusion and deterministic return temporaries.
-  P176e2b1 adds branch-local cleanup, and P176e2b2 adds nested non-shadowing
-  outer-root joins. Branch shadow identity, overwrite cleanup and remaining
+  P176e2b1 adds branch-local cleanup, P176e2b2 adds nested non-shadowing
+  outer-root joins, and P176e2b3 keeps shadowed cleanup roots distinct while
+  preserving reactivated assignment identity. Overwrite cleanup and remaining
   checked constructs continue in P176e.
 
 ## B2 Completion Criteria

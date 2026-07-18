@@ -137,5 +137,9 @@ corpus to eleven fixtures. P176e2b2 merges non-shadowing outer cleanup roots
 across nested branches, inserts compensating drops only on continuing paths
 that retain a root moved elsewhere, and drops outer roots before branches that
 return without moving them. Twelve focused IR fixtures cover this contract.
-Branch shadow identity and overwrite cleanup remain incomplete, so no complete
-semantic, typed-IR or Stage1 compiler claim is made.
+P176e2b3 gives each cleanup binding a stable name-and-declaration-span identity,
+keeps inner shadow moves and drops separate from the same-named outer root, and
+preserves the original identity when assignment reactivates a moved root.
+Thirteen focused IR fixtures and 207 Mallang compiler project tests cover this
+contract. Cleanup overwrite and the remaining typed IR are incomplete, so no
+complete semantic, typed-IR or Stage1 compiler claim is made.

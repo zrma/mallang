@@ -62,6 +62,7 @@ type Lowerer struct {
 }
 
 type CleanupBinding struct {
+    key string
     name string
     ty string
     span source.Span
@@ -167,7 +168,7 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
     for mut param := 0; param < paramCount; param = param + 1 {
         params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
         if params[param].mode == "owned" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
-            cleanupParams = append(cleanupParams, CleanupBinding{name: token.CopyText(con params[param].name), ty: token.CopyText(con params[param].ty), span: ast.Span(con syntax, block),})
+            cleanupParams = append(cleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
     }
 
@@ -210,7 +211,7 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
     for mut param := 0; param < semantic.ClosureParamCount(con checked, closure); param = param + 1 {
         params = append(params, Param{name: semantic.ClosureParamName(con checked, closure, param), mode: semantic.ClosureParamMode(con checked, closure, param), ty: semantic.ClosureParamType(con checked, closure, param),})
         if params[param].mode == "owned" && semantic.ClosureParamNeedsCleanup(con checked, closure, param) {
-            cleanupParams = append(cleanupParams, CleanupBinding{name: token.CopyText(con params[param].name), ty: token.CopyText(con params[param].ty), span: ast.Span(con syntax, block),})
+            cleanupParams = append(cleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
     }
     match self.lowerBlock(con syntax, block, con checked) {
@@ -487,7 +488,7 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
             elseFlow := self.analyzeCleanupFlow(con elseSource, con active)
             persistentMoved := persistentBranchMoves(con active, con thenFlow, con elseFlow)
             remaining := removeCleanupRoots(copyCleanupBindings(con active), con persistentMoved)
-            excluded := cleanupBindingNames(con remaining)
+            excluded := cleanupBindingKeys(con remaining)
             statementSpan := source.Copy(con self.nodes[statement].span)
             thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
             elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
@@ -524,7 +525,7 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
         output = append(output, statement)
         letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
         if letBinding && self.nodes[statement].cleanup {
-            active = append(active, CleanupBinding{name: token.CopyText(con self.nodes[statement].value), ty: token.CopyText(con self.nodes[statement].ty), span: source.Copy(con self.nodes[statement].span),})
+            active = append(active, newCleanupBinding(con self.nodes[statement].value, con self.nodes[statement].ty, source.Copy(con self.nodes[statement].span)))
         }
     }
     droppable := cleanupBindingsExcluding(con active, con tailExcluded)
@@ -583,7 +584,7 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
         }
         letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
         if letBinding && self.nodes[statement].cleanup {
-            active = append(active, CleanupBinding{name: token.CopyText(con self.nodes[statement].value), ty: token.CopyText(con self.nodes[statement].ty), span: source.Copy(con self.nodes[statement].span),})
+            active = append(active, newCleanupBinding(con self.nodes[statement].value, con self.nodes[statement].ty, source.Copy(con self.nodes[statement].span)))
         }
     }
     return CleanupFlow{moved: movedInBody, continues: true}
@@ -594,8 +595,9 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
         return []string{}
     }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
-        if cleanupBindingIndex(con active, con self.nodes[node].value) >= 0 {
-            return []string{token.CopyText(con self.nodes[node].value)}
+        binding := cleanupBindingIndex(con active, con self.nodes[node].value)
+        if binding >= 0 {
+            return []string{token.CopyText(con active[binding].key)}
         }
         return []string{}
     }
@@ -639,7 +641,9 @@ func (mut self Lowerer) addNode(category string, kind string, value string, ty s
 }
 
 func cleanupBindingIndex(con active []CleanupBinding, con name string) int {
-    for mut index := 0; index < len(active); index = index + 1 {
+    mut index := len(active)
+    for index > 0 {
+        index = index - 1
         if active[index].name == name {
             return index
         }
@@ -650,36 +654,42 @@ func cleanupBindingIndex(con active []CleanupBinding, con name string) int {
 func persistentBranchMoves(con active []CleanupBinding, con thenFlow CleanupFlow, con elseFlow CleanupFlow) []string {
     mut moved := []string{}
     for mut index := 0; index < len(active); index = index + 1 {
-        thenMoves := thenFlow.continues && textIndex(con thenFlow.moved, con active[index].name) >= 0
-        elseMoves := elseFlow.continues && textIndex(con elseFlow.moved, con active[index].name) >= 0
+        thenMoves := thenFlow.continues && textIndex(con thenFlow.moved, con active[index].key) >= 0
+        elseMoves := elseFlow.continues && textIndex(con elseFlow.moved, con active[index].key) >= 0
         if thenMoves || elseMoves {
-            moved = append(moved, token.CopyText(con active[index].name))
+            moved = append(moved, token.CopyText(con active[index].key))
         }
     }
     return moved
 }
 
+func newCleanupBinding(con name string, con ty string, span source.Span) CleanupBinding {
+    copiedSpan := source.Copy(con span)
+    key := strings.join(con []string{token.CopyText(con name), "@", strings.fromInt(source.Source(con copiedSpan)), "_", strings.fromInt(source.Start(con copiedSpan)), "_", strings.fromInt(source.End(con copiedSpan)),}, con "")
+    return CleanupBinding{key: key, name: token.CopyText(con name), ty: token.CopyText(con ty), span: copiedSpan}
+}
+
 func copyCleanupBindings(con values []CleanupBinding) []CleanupBinding {
     mut copied := []CleanupBinding{}
     for mut index := 0; index < len(values); index = index + 1 {
-        copied = append(copied, CleanupBinding{name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
+        copied = append(copied, CleanupBinding{key: token.CopyText(con values[index].key), name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
     }
     return copied
 }
 
-func cleanupBindingNames(con values []CleanupBinding) []string {
-    mut names := []string{}
+func cleanupBindingKeys(con values []CleanupBinding) []string {
+    mut keys := []string{}
     for mut index := 0; index < len(values); index = index + 1 {
-        names = append(names, token.CopyText(con values[index].name))
+        keys = append(keys, token.CopyText(con values[index].key))
     }
-    return names
+    return keys
 }
 
 func cleanupBindingsExcluding(con values []CleanupBinding, con excluded []string) []CleanupBinding {
     mut kept := []CleanupBinding{}
     for mut index := 0; index < len(values); index = index + 1 {
-        if textIndex(con excluded, con values[index].name) < 0 {
-            kept = append(kept, CleanupBinding{name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
+        if textIndex(con excluded, con values[index].key) < 0 {
+            kept = append(kept, CleanupBinding{key: token.CopyText(con values[index].key), name: token.CopyText(con values[index].name), ty: token.CopyText(con values[index].ty), span: source.Copy(con values[index].span),})
         }
     }
     return kept
@@ -688,8 +698,8 @@ func cleanupBindingsExcluding(con values []CleanupBinding, con excluded []string
 func removeCleanupRoots(active []CleanupBinding, con moved []string) []CleanupBinding {
     mut remaining := []CleanupBinding{}
     for mut index := 0; index < len(active); index = index + 1 {
-        if textIndex(con moved, con active[index].name) < 0 {
-            remaining = append(remaining, CleanupBinding{name: token.CopyText(con active[index].name), ty: token.CopyText(con active[index].ty), span: source.Copy(con active[index].span),})
+        if textIndex(con moved, con active[index].key) < 0 {
+            remaining = append(remaining, CleanupBinding{key: token.CopyText(con active[index].key), name: token.CopyText(con active[index].name), ty: token.CopyText(con active[index].ty), span: source.Copy(con active[index].span),})
         }
     }
     return remaining
