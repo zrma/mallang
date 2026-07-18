@@ -1,0 +1,19 @@
+type User struct {
+    name string
+}
+
+func hasName(con user User) bool {
+    return user.name != ""
+}
+
+func countNamed(users []User) int {
+    mut count := 0
+    for index := range users {
+        if hasName(con users[index]) {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+func main() {}

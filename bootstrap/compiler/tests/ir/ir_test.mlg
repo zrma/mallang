@@ -1654,6 +1654,54 @@ test LowersLoopCleanupAtExitAndControlFlow() {
     }
 }
 
+test LowersIndexOnlyNonCopyRangeBorrows() {
+    source := "type User struct { name string } func hasName(con user User) bool { return user.name != \"\" } func countNamed(users []User) int { mut count := 0; for index := range users { if hasName(con users[index]) { count = count + 1 } }; return count } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    rangeLoop := lowered.functions[1].body[1]
+                                    bindings := lowered.nodes[rangeLoop].children[0]
+                                    assert(lowered.nodes[bindings].value == "index,_")
+                                    assert(lowered.nodes[bindings].ty == "User")
+                                    rangeBody := lowered.nodes[rangeLoop].children[2]
+                                    conditionIf := lowered.nodes[rangeBody].children[0]
+                                    call := lowered.nodes[conditionIf].children[0]
+                                    assert(lowered.nodes[call].kind == "Expr.Call")
+                                    argument := lowered.nodes[call].children[0]
+                                    assert(lowered.nodes[argument].kind == "Arg.Con")
+                                    indexRead := lowered.nodes[argument].children[0]
+                                    assert(lowered.nodes[indexRead].kind == "Expr.Index")
+                                    assert(lowered.nodes[indexRead].ty == "User")
+                                    returnDrop := lowered.functions[1].body[3]
+                                    assert(lowered.nodes[returnDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[returnDrop].children[0]].value == "users")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {
