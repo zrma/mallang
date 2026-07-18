@@ -13,6 +13,7 @@ pub type Node struct {
     ty string
     span source.Span
     children []int
+    cleanup bool
 }
 
 pub type Param struct {
@@ -58,6 +59,12 @@ type Lowerer struct {
     nodes []Node
     functions []Function
     closures []Closure
+}
+
+type CleanupBinding struct {
+    name string
+    ty string
+    span source.Span
 }
 
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
@@ -151,8 +158,12 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
     }
     paramCount := semantic.FunctionParamCount(con checked, con name)
     mut params := []Param{}
+    mut cleanupParams := []CleanupBinding{}
     for mut param := 0; param < paramCount; param = param + 1 {
         params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
+        if params[param].mode == "owned" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
+            cleanupParams = append(cleanupParams, CleanupBinding{name: token.CopyText(con params[param].name), ty: token.CopyText(con params[param].ty), span: ast.Span(con syntax, block),})
+        }
     }
 
     mut body := []int{}
@@ -167,6 +178,7 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
             }
         }
     }
+    body = self.insertStraightLineCleanupDrops(con body, cleanupParams, ast.Span(con syntax, block))
     self.functions = append(self.functions, Function{name: name, params: params, returnType: returnType, body: body})
     return Ok(true)
 }
@@ -189,12 +201,17 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
         captures = append(captures, Capture{name: semantic.ClosureCaptureName(con checked, closure, capture), ty: semantic.ClosureCaptureType(con checked, closure, capture), mutable: semantic.ClosureCaptureMutable(con checked, closure, capture),})
     }
     mut params := []Param{}
+    mut cleanupParams := []CleanupBinding{}
     for mut param := 0; param < semantic.ClosureParamCount(con checked, closure); param = param + 1 {
         params = append(params, Param{name: semantic.ClosureParamName(con checked, closure, param), mode: semantic.ClosureParamMode(con checked, closure, param), ty: semantic.ClosureParamType(con checked, closure, param),})
+        if params[param].mode == "owned" && semantic.ClosureParamNeedsCleanup(con checked, closure, param) {
+            cleanupParams = append(cleanupParams, CleanupBinding{name: token.CopyText(con params[param].name), ty: token.CopyText(con params[param].ty), span: ast.Span(con syntax, block),})
+        }
     }
     match self.lowerBlock(con syntax, block, con checked) {
         case Ok(body) {
-            self.closures = append(self.closures, Closure{name: closureName(ast.Span(con syntax, node)), mutable: semantic.ClosureMutable(con checked, closure), captures: captures, params: params, returnType: semantic.ClosureReturnType(con checked, closure), body: body,})
+            cleanedBody := self.insertStraightLineCleanupDrops(con body, cleanupParams, ast.Span(con syntax, block))
+            self.closures = append(self.closures, Closure{name: closureName(ast.Span(con syntax, node)), mutable: semantic.ClosureMutable(con checked, closure), captures: captures, params: params, returnType: semantic.ClosureReturnType(con checked, closure), body: cleanedBody,})
             return Ok(true)
         }
         case Err(error) {
@@ -220,7 +237,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         thenBlock := ast.Child(con syntax, statement, 1)
         match self.lowerBlock(con syntax, thenBlock, con checked) {
             case Ok(body) {
-                block := self.addNode("B", "Block.Then", "", "unit", ast.Span(con syntax, statement), body)
+                block := self.addNode("B", "Block.Then", "", "unit", ast.Span(con syntax, statement), body, false)
                 children = append(children, block)
             }
             case Err(error) {
@@ -239,9 +256,9 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                 }
             }
         }
-        elseBlock := self.addNode("B", "Block.Else", "", "unit", ast.Span(con syntax, statement), elseBody)
+        elseBlock := self.addNode("B", "Block.Else", "", "unit", ast.Span(con syntax, statement), elseBody, false)
         children = append(children, elseBlock)
-        return Ok(self.addNode("S", "Stmt.If", "", "unit", ast.Span(con syntax, statement), children))
+        return Ok(self.addNode("S", "Stmt.If", "", "unit", ast.Span(con syntax, statement), children, false))
     }
     if kind == "Stmt.FieldAssign" {
         base := ast.Child(con syntax, statement, 0)
@@ -263,7 +280,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                 return Err(error)
             }
         }
-        return Ok(self.addNode("S", token.CopyText(con kind), token.CopyText(con value), "unit", ast.Span(con syntax, statement), children))
+        return Ok(self.addNode("S", token.CopyText(con kind), token.CopyText(con value), "unit", ast.Span(con syntax, statement), children, false))
     }
     if kind == "Stmt.IndexAssign" {
         mut children := []int{}
@@ -278,7 +295,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                 }
             }
         }
-        return Ok(self.addNode("S", token.CopyText(con kind), "", "unit", ast.Span(con syntax, statement), children))
+        return Ok(self.addNode("S", token.CopyText(con kind), "", "unit", ast.Span(con syntax, statement), children, false))
     }
     if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "Stmt.Assign" || kind == "Stmt.Return" || kind == "Stmt.Expr" {
         expression := ast.Child(con syntax, statement, 0)
@@ -295,7 +312,9 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                         }
                     }
                 }
-                return Ok(self.addNode("S", kind, value, ty, ast.Span(con syntax, statement), []int{child}))
+                letBinding := kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable"
+                cleanup := letBinding && semantic.NodeNeedsCleanup(con checked, expression)
+                return Ok(self.addNode("S", kind, value, ty, ast.Span(con syntax, statement), []int{child}, cleanup))
             }
             case Err(error) {
                 return Err(error)
@@ -333,6 +352,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             return Err(newError("checked expression type is missing", ast.Span(con syntax, expression)))
         }
     }
+    cleanup := semantic.NodeNeedsCleanup(con checked, expression)
 
     if kind == "Expr.FunctionLiteral.Immutable" || kind == "Expr.FunctionLiteral.Mutable" {
         closure := semantic.ClosureIndexForNode(con checked, expression)
@@ -343,11 +363,12 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         for mut capture := 0; capture < semantic.ClosureCaptureCount(con checked, closure); capture = capture + 1 {
             name := semantic.ClosureCaptureName(con checked, closure, capture)
             captureType := semantic.ClosureCaptureType(con checked, closure, capture)
-            variable := self.addNode("E", "Expr.Var", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{})
-            captureValue := self.addNode("C", "Closure.Capture", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{variable})
+            captureCleanup := semantic.ClosureCaptureNeedsCleanup(con checked, closure, capture)
+            variable := self.addNode("E", "Expr.Var", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{}, captureCleanup)
+            captureValue := self.addNode("C", "Closure.Capture", token.CopyText(con name), token.CopyText(con captureType), ast.Span(con syntax, expression), []int{variable}, captureCleanup)
             captures = append(captures, captureValue)
         }
-        return Ok(self.addNode("E", "Expr.ClosureValue", closureName(ast.Span(con syntax, expression)), token.CopyText(con ty), ast.Span(con syntax, expression), captures))
+        return Ok(self.addNode("E", "Expr.ClosureValue", closureName(ast.Span(con syntax, expression)), token.CopyText(con ty), ast.Span(con syntax, expression), captures, cleanup))
     }
 
     if kind == "Expr.Call" {
@@ -386,13 +407,13 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
                 }
             }
         }
-        return Ok(self.addNode("E", callKind, callValue, token.CopyText(con ty), ast.Span(con syntax, expression), children))
+        return Ok(self.addNode("E", callKind, callValue, token.CopyText(con ty), ast.Span(con syntax, expression), children, cleanup))
     }
 
     if kind == "Expr.Var" && semantic.FunctionReferenceDirect(con checked, expression) {
         return match semantic.FunctionReferenceName(con checked, expression) {
             case Ok(name) {
-                Ok(self.addNode("E", "Expr.FunctionValue", name, token.CopyText(con ty), ast.Span(con syntax, expression), []int{}))
+                Ok(self.addNode("E", "Expr.FunctionValue", name, token.CopyText(con ty), ast.Span(con syntax, expression), []int{}, cleanup))
             }
             case Err(_) {
                 Err(newError("checked function value reference is missing", ast.Span(con syntax, expression)))
@@ -412,7 +433,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             }
         }
     }
-    return Ok(self.addNode("E", kind, value, ty, ast.Span(con syntax, expression), children))
+    return Ok(self.addNode("E", kind, value, ty, ast.Span(con syntax, expression), children, cleanup))
 }
 
 func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con checked semantic.CheckedProgram) Result[int, Error] {
@@ -428,7 +449,7 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
     }
     return match self.lowerExpression(con syntax, expression, con checked) {
         case Ok(child) {
-            Ok(self.addNode("A", ast.Kind(con syntax, argument), "", ty, ast.Span(con syntax, argument), []int{child}))
+            Ok(self.addNode("A", ast.Kind(con syntax, argument), "", ty, ast.Span(con syntax, argument), []int{child}, false))
         }
         case Err(error) {
             Err(error)
@@ -436,10 +457,150 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
     }
 }
 
-func (mut self Lowerer) addNode(category string, kind string, value string, ty string, span source.Span, children []int) int {
+func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, fallback source.Span) []int {
+    if !self.supportsStraightLineCleanup(con body) {
+        return copyInts(con body)
+    }
+
+    mut active := []CleanupBinding{}
+    for mut binding := 0; binding < len(initial); binding = binding + 1 {
+        active = append(active, CleanupBinding{name: token.CopyText(con initial[binding].name), ty: token.CopyText(con initial[binding].ty), span: source.Copy(con initial[binding].span),})
+    }
+    mut output := []int{}
+    for mut statementIndex := 0; statementIndex < len(body); statementIndex = statementIndex + 1 {
+        statement := body[statementIndex]
+        moved := self.movedCleanupRoots(statement, con active)
+        remaining := removeCleanupRoots(active, con moved)
+        if self.nodes[statement].kind == "Stmt.Return" {
+            expression := self.nodes[statement].children[0]
+            statementSpan := source.Copy(con self.nodes[statement].span)
+            expressionSpan := source.Copy(con self.nodes[expression].span)
+            expressionType := token.CopyText(con self.nodes[expression].ty)
+            expressionCleanup := self.nodes[expression].cleanup
+            if expressionType != "unit" && len(remaining) > 0 {
+                name := returnValueTempName(con statementSpan)
+                temporary := self.addNode("S", "Stmt.Let.Immutable", token.CopyText(con name), token.CopyText(con expressionType), source.Copy(con statementSpan), []int{expression}, expressionCleanup)
+                output = append(output, temporary)
+                output = self.pushCleanupDrops(output, con remaining, con statementSpan)
+                returned := self.addNode("E", "Expr.Var", token.CopyText(con name), token.CopyText(con expressionType), source.Copy(con expressionSpan), []int{}, expressionCleanup)
+                output = append(output, self.addNode("S", "Stmt.Return", "", "unit", source.Copy(con statementSpan), []int{returned}, false))
+            } else {
+                output = self.pushCleanupDrops(output, con remaining, con statementSpan)
+                output = append(output, statement)
+            }
+            return copyInts(con output)
+        }
+
+        active = remaining
+        output = append(output, statement)
+        letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
+        if letBinding && self.nodes[statement].cleanup {
+            active = append(active, CleanupBinding{name: token.CopyText(con self.nodes[statement].value), ty: token.CopyText(con self.nodes[statement].ty), span: source.Copy(con self.nodes[statement].span),})
+        }
+    }
+    return self.pushCleanupDrops(output, con active, con fallback)
+}
+
+func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
+    for mut index := 0; index < len(body); index = index + 1 {
+        kind := token.CopyText(con self.nodes[body[index]].kind)
+        if kind == "Stmt.If" {
+            return false
+        }
+        if kind == "Stmt.Assign" || kind == "Stmt.FieldAssign" || kind == "Stmt.IndexAssign" {
+            for mut child := 0; child < len(self.nodes[body[index]].children); child = child + 1 {
+                if self.nodes[self.nodes[body[index]].children[child]].cleanup {
+                    return false
+                }
+            }
+        }
+    }
+    return true
+}
+
+func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding) []string {
+    if self.nodes[node].category == "A" && self.nodes[node].kind != "Arg.Owned" {
+        return []string{}
+    }
+    if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
+        if cleanupBindingIndex(con active, con self.nodes[node].value) >= 0 {
+            return []string{token.CopyText(con self.nodes[node].value)}
+        }
+        return []string{}
+    }
+    equality := self.nodes[node].kind == "Expr.Binary.Equal" || self.nodes[node].kind == "Expr.Binary.NotEqual"
+    readOnlyStringEquality := equality && len(self.nodes[node].children) > 0 && self.nodes[self.nodes[node].children[0]].ty == "string"
+    if readOnlyStringEquality {
+        return []string{}
+    }
+
+    mut roots := []string{}
+    mut firstChild := 0
+    if self.nodes[node].kind == "Expr.IndirectCall" {
+        firstChild = 1
+    }
+    for mut child := firstChild; child < len(self.nodes[node].children); child = child + 1 {
+        childRoots := self.movedCleanupRoots(self.nodes[node].children[child], con active)
+        for mut root := 0; root < len(childRoots); root = root + 1 {
+            if textIndex(con roots, con childRoots[root]) < 0 {
+                roots = append(roots, token.CopyText(con childRoots[root]))
+            }
+        }
+    }
+    return roots
+}
+
+func (mut self Lowerer) pushCleanupDrops(output []int, con active []CleanupBinding, con span source.Span) []int {
+    mut result := output
+    mut binding := len(active)
+    for binding > 0 {
+        binding = binding - 1
+        variable := self.addNode("E", "Expr.Var", token.CopyText(con active[binding].name), token.CopyText(con active[binding].ty), source.Copy(con active[binding].span), []int{}, true)
+        result = append(result, self.addNode("S", "Stmt.Drop", "", "unit", source.Copy(con span), []int{variable}, false))
+    }
+    return result
+}
+
+func (mut self Lowerer) addNode(category string, kind string, value string, ty string, span source.Span, children []int, cleanup bool) int {
     index := len(self.nodes)
-    self.nodes = append(self.nodes, Node{category: category, kind: kind, value: value, ty: ty, span: span, children: children})
+    self.nodes = append(self.nodes, Node{category: category, kind: kind, value: value, ty: ty, span: span, children: children, cleanup: cleanup})
     return index
+}
+
+func cleanupBindingIndex(con active []CleanupBinding, con name string) int {
+    for mut index := 0; index < len(active); index = index + 1 {
+        if active[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func removeCleanupRoots(active []CleanupBinding, con moved []string) []CleanupBinding {
+    mut remaining := []CleanupBinding{}
+    for mut index := 0; index < len(active); index = index + 1 {
+        if textIndex(con moved, con active[index].name) < 0 {
+            remaining = append(remaining, CleanupBinding{name: token.CopyText(con active[index].name), ty: token.CopyText(con active[index].ty), span: source.Copy(con active[index].span),})
+        }
+    }
+    return remaining
+}
+
+func textIndex(con values []string, con value string) int {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index]== value {
+            return index
+        }
+    }
+    return - 1
+}
+
+func copyInts(con values []int) []int {
+    mut copied := []int{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, values[index])
+    }
+    return copied
 }
 
 func normalizeNode(con program Program, node int, depth int) string {
@@ -453,6 +614,10 @@ func normalizeNode(con program Program, node int, depth int) string {
 
 func closureName(span source.Span) string {
     return strings.join(con []string{"closure_", strings.fromInt(source.Source(con span)), "_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
+}
+
+func returnValueTempName(con span source.Span) string {
+    return strings.join(con []string{"mallang_return_value_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
 }
 
 func newError(message string, span source.Span) Error {

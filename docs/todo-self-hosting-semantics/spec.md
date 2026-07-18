@@ -105,6 +105,9 @@ agrees.
 - lower every checked construct into the Mallang typed IR arena
 - P176e1: lower plain, mutable and nested closure definitions, ordered capture
   metadata, parameters, closure values and capture expressions (complete)
+- P176e2a: insert deterministic straight-line drops for owned cleanup
+  parameters and locals, exclude moved roots, and evaluate return values before
+  remaining drops with stable temporary names (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -488,11 +491,12 @@ specialization and function-body checking until later P176 slices.
 - Recursive closure initializers are rejected without confusing a deliberately
   shadowed outer function-value binding with recursion.
 - Ten focused success and rejection fixtures match Rust Stage0 byte-for-byte.
-  Two hundred twenty-seven semantic fixtures, nine typed-IR fixtures and two
-  hundred three Mallang project tests pass through Stage0 and generated Stage1.
+  Two hundred twenty-seven semantic fixtures, ten typed-IR fixtures and two
+  hundred four Mallang project tests pass through Stage0 and generated Stage1.
   P176e1 lowers closure definitions, values and captures into the typed IR and
-  compares nine focused fixtures against Rust Stage0. Deterministic ownership
-  cleanup and remaining checked constructs continue in P176e.
+  compares focused fixtures against Rust Stage0. P176e2a adds straight-line
+  cleanup drops, moved-root exclusion and deterministic return temporaries.
+  Branch/overwrite cleanup and remaining checked constructs continue in P176e.
 
 ## B2 Completion Criteria
 

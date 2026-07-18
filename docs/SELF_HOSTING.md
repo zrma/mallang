@@ -127,5 +127,9 @@ deterministic drop insertion and the remaining typed IR remain incomplete.
 P176e1 lowers plain, mutable and nested closure definitions, parameters,
 ordered capture metadata, closure values and capture expressions into typed IR.
 Nine focused IR fixtures now compare the Rust Stage0 oracle and generated
-Stage1 byte-for-byte, but no complete semantic, typed-IR or Stage1 compiler
-claim is made.
+Stage1 byte-for-byte. P176e2a adds deterministic straight-line drops for owned
+cleanup parameters and locals, excludes moved roots, and evaluates return
+values before remaining drops with stable temporary names. Ten focused IR
+fixtures now cover this contract. Branch cleanup, overwrite cleanup and the
+remaining typed IR are incomplete, so no complete semantic, typed-IR or Stage1
+compiler claim is made.

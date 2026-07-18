@@ -1,0 +1,21 @@
+func dropParam(name string) {}
+
+func dropLocal() {
+    name := "kim"
+}
+
+func moveReturn(name string) string {
+    return name
+}
+
+func dropBeforeReturn(name string) int {
+    return 1
+}
+
+func take(name string) {}
+
+func moveCall(name string) {
+    take(name)
+}
+
+func main() {}

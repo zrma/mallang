@@ -571,9 +571,11 @@ mutable capture의 direct assignment, `mut` argument/receiver,
 immutable source rejection과 nested Copy/mutable propagation을 구현하고 recursive
 initializer를 거부하며 전체 201개 project test로 고정한다. P176e1은 plain,
 mutable, nested closure definition과 parameter, capture metadata, closure value를
-typed IR에 보존하며 9개 IR fixture와 전체 203개 project test로 고정한다. 다음
-slice는 deterministic ownership drop과 full-expression temporary를 typed IR에
-삽입한다. public language 또는 standard-library addition은
+typed IR에 보존하며 9개 IR fixture와 전체 203개 project test로 고정한다.
+P176e2a는 straight-line owned parameter/local의 역순 drop, moved root 제외와
+return value 선평가 temporary를 typed IR에 삽입하며 10개 IR fixture와 전체
+204개 project test로 고정한다. 다음 slice는 branch join과 cleanup overwrite를
+구현한다. public language 또는 standard-library addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
 
 Publish helper note: the real publish path fetches `origin` before verification

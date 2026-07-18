@@ -213,6 +213,15 @@ pub func NodeType(con checked CheckedProgram, node int) Result[string, bool] {
     return Err(false)
 }
 
+pub func NodeNeedsCleanup(con checked CheckedProgram, node int) bool {
+    for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
+        if checked.typedNodes[index].node == node {
+            return checked.typedNodes[index].ty.cleanup
+        }
+    }
+    return false
+}
+
 pub func FunctionReturnType(con checked CheckedProgram, con name string) Result[string, bool] {
     for mut index := 0; index < len(checked.functions); index = index + 1 {
         if checked.functions[index].name == name {
@@ -243,6 +252,11 @@ pub func FunctionParamMode(con checked CheckedProgram, con name string, param in
 pub func FunctionParamType(con checked CheckedProgram, con name string, param int) string {
     index := checked.functionIndex(con name)
     return token.CopyText(con checked.functions[index].params[param].ty.text)
+}
+
+pub func FunctionParamNeedsCleanup(con checked CheckedProgram, con name string, param int) bool {
+    index := checked.functionIndex(con name)
+    return checked.functions[index].params[param].ty.cleanup
 }
 
 pub func FunctionReferenceName(con checked CheckedProgram, node int) Result[string, bool] {
@@ -297,6 +311,11 @@ pub func ClosureParamType(con checked CheckedProgram, closure int, param int) st
     return token.CopyText(con ty.text)
 }
 
+pub func ClosureParamNeedsCleanup(con checked CheckedProgram, closure int, param int) bool {
+    ty := checked.callableParamType(checked.closures[closure].function, param)
+    return ty.cleanup
+}
+
 pub func ClosureReturnType(con checked CheckedProgram, closure int) string {
     ty := checked.callableReturnType(checked.closures[closure].function)
     return token.CopyText(con ty.text)
@@ -312,6 +331,10 @@ pub func ClosureCaptureName(con checked CheckedProgram, closure int, capture int
 
 pub func ClosureCaptureType(con checked CheckedProgram, closure int, capture int) string {
     return token.CopyText(con checked.closures[closure].captures[capture].ty.text)
+}
+
+pub func ClosureCaptureNeedsCleanup(con checked CheckedProgram, closure int, capture int) bool {
+    return checked.closures[closure].captures[capture].ty.cleanup
 }
 
 pub func ClosureCaptureMutable(con checked CheckedProgram, closure int, capture int) bool {
