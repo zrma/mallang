@@ -655,9 +655,15 @@ specialization and function-body checking until later P176 slices.
   identity from deterministic project/path input and validates missing or
   mismatched package declarations against Rust `build_package_graph`. Three
   package-layout sets, one hundred sixty-three parser corpus sources and two
-  hundred forty-eight Mallang project tests cover this boundary. Import and
-  declaration graph construction, visibility/link rewriting and
-  standard-intrinsic specialization continue in P176e.
+  hundred forty-eight Mallang project tests cover this boundary. P176e4b2a
+  groups same-project source packages, validates file-local import path and
+  qualifier uniqueness, rejects unresolved imports and cycles, and emits
+  lexical package/import plus dependency-first build order matching Rust. One
+  valid and seven rejection layout sets, one hundred sixty-three parser corpus
+  sources and two hundred fifty Mallang project tests cover this boundary.
+  Declaration inventory, standard and cross-project package construction,
+  visibility/link rewriting and standard-intrinsic specialization continue in
+  P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

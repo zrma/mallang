@@ -6,7 +6,7 @@ import "bootstrap_compiler/frontend/parser"
 
 test BuildsSourcePackageIdentity() {
     mut programs := []ast.Program{}
-    match lexer.LexWithSource("package main\nfunc main() {}\n", 0) {
+    match lexer.LexWithSource("package main\nimport \"hello/greet\"\nfunc main() {}\n", 0) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
@@ -41,7 +41,7 @@ test BuildsSourcePackageIdentity() {
             paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
             match Build(con program, con "hello", con "project/src", con paths) {
                 case Ok(layout) {
-                    assert(Normalize(con layout) == "LAYOUT|2\nSOURCE|0|hello|main\nSOURCE|1|hello/greet|greet")
+                    assert(Normalize(con layout) == "LAYOUT|2|2\nSOURCE|0|hello|main\nSOURCE|1|hello/greet|greet\nPACKAGE|hello|main|1|1\nPSOURCE|hello|0\nIMPORT|hello|hello/greet|greet\nPACKAGE|hello/greet|greet|1|0\nPSOURCE|hello/greet|1\nORDER|2|hello/greet|hello")
                 }
                 case Err(_) {
                     assert(false)
@@ -66,6 +66,97 @@ test RejectsMismatchedPackageDeclaration() {
                         }
                         case Err(error) {
                             assert(ErrorMessage(con error) == "package `other` does not match source directory package `main`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsPackageImportCycle() {
+    mut programs := []ast.Program{}
+    match lexer.LexWithSource("package main\nimport \"hello/a\"\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match lexer.LexWithSource("package a\nimport \"hello/b\"\nfunc A() {}\n", 1) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match lexer.LexWithSource("package b\nimport \"hello/a\"\nfunc B() {}\n", 2) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match ast.MergePrograms(programs) {
+        case Ok(program) {
+            paths := []string{"project/src/main.mlg", "project/src/a/a.mlg", "project/src/b/b.mlg",}
+            match Build(con program, con "hello", con "project/src", con paths) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(error) {
+                    assert(ErrorMessage(con error) == "package import cycle: hello/a -> hello/b -> hello/a")
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsInvalidImportPath() {
+    match lexer.LexWithSource("package main\nimport \"hello/not-valid\"\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    paths := []string{"project/src/main.mlg",}
+                    match Build(con program, con "hello", con "project/src", con paths) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "invalid import path `hello/not-valid`")
                         }
                     }
                 }

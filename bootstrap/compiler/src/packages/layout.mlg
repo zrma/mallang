@@ -11,8 +11,23 @@ pub type SourcePackage struct {
     name string
 }
 
+pub type PackageImport struct {
+    path string
+    qualifier string
+    span source.Span
+}
+
+pub type Package struct {
+    path string
+    name string
+    sources []int
+    imports []PackageImport
+}
+
 pub type Layout struct {
     sources []SourcePackage
+    packages []Package
+    buildOrder []string
 }
 
 pub type LayoutError struct {
@@ -25,11 +40,26 @@ type PackageIdentity struct {
     name string
 }
 
+type PendingImport struct {
+    from string
+    item PackageImport
+}
+
+type Topology struct {
+    packages []Package
+    states []int
+    stack []string
+    depth int
+    order []string
+}
+
 pub func Build(con program ast.Program, con projectName string, con sourceRoot string, con paths []string) Result[Layout, LayoutError] {
     if len(paths) == 0 {
         return Err(newError("cannot build a package layout without source files", source.NewSpan(0, 0, 0)))
     }
-    mut packages := []SourcePackage{}
+    mut sourcePackages := []SourcePackage{}
+    mut packageItems := []Package{}
+    mut pendingImports := []PendingImport{}
     for mut sourceId := 0; sourceId < len(paths); sourceId = sourceId + 1 {
         sourceUnit := findSourceUnit(con program, sourceId)
         if sourceUnit < 0 {
@@ -57,16 +87,64 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
             message := strings.join(con []string{"package `", declared, "` does not match source directory package `", token.CopyText(con identity.name), "`",}, con "")
             return Err(newError(message, ast.Span(con program, packageDecl)))
         }
-        packages = append(packages, SourcePackage{source: sourceId, path: token.CopyText(con identity.path), name: token.CopyText(con identity.name)})
+        sourcePackages = append(sourcePackages, SourcePackage{source: sourceId, path: token.CopyText(con identity.path), name: token.CopyText(con identity.name)})
+        packageIndex := findPackage(con packageItems, con identity.path)
+        if packageIndex < 0 {
+            packageItems = append(packageItems, Package{path: token.CopyText(con identity.path), name: token.CopyText(con identity.name), sources: []int{sourceId}, imports: []PackageImport{},})
+        } else {
+            packageItems[packageIndex].sources = append(packageItems[packageIndex].sources, sourceId)
+        }
+        match collectFileImports(con program, sourceUnit, con identity.path) {
+            case Ok(imports) {
+                for mut index := 0; index < len(imports); index = index + 1 {
+                    pendingImports = append(pendingImports, copyPendingImport(con imports[index]))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
-    return Ok(Layout{sources: packages,})
+    packageItems = sortPackages(con packageItems)
+    match connectImports(con packageItems, con pendingImports) {
+        case Ok(connected) {
+            packageItems = connected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    mut buildOrder := []string{}
+    match topologicalOrder(con packageItems) {
+        case Ok(order) {
+            buildOrder = order
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return Ok(Layout{sources: sourcePackages, packages: packageItems, buildOrder: buildOrder,})
 }
 
 pub func Normalize(con layout Layout) string {
-    mut lines := []string{strings.join(con []string{"LAYOUT|", strings.fromInt(len(layout.sources)),}, con ""),}
+    mut lines := []string{strings.join(con []string{"LAYOUT|", strings.fromInt(len(layout.sources)), "|", strings.fromInt(len(layout.packages)),}, con ""),}
     for mut index := 0; index < len(layout.sources); index = index + 1 {
         lines = append(lines, strings.join(con []string{"SOURCE|", strings.fromInt(layout.sources[index].source), "|", token.CopyText(con layout.sources[index].path), "|", token.CopyText(con layout.sources[index].name),}, con ""))
     }
+    for mut packageIndex := 0; packageIndex < len(layout.packages); packageIndex = packageIndex + 1 {
+        lines = append(lines, strings.join(con []string{"PACKAGE|", token.CopyText(con layout.packages[packageIndex].path), "|", token.CopyText(con layout.packages[packageIndex].name), "|", strings.fromInt(len(layout.packages[packageIndex].sources)), "|", strings.fromInt(len(layout.packages[packageIndex].imports)),}, con ""))
+        for mut sourceIndex := 0; sourceIndex < len(layout.packages[packageIndex].sources); sourceIndex = sourceIndex + 1 {
+            lines = append(lines, strings.join(con []string{"PSOURCE|", token.CopyText(con layout.packages[packageIndex].path), "|", strings.fromInt(layout.packages[packageIndex].sources[sourceIndex]),}, con ""))
+        }
+        for mut importIndex := 0; importIndex < len(layout.packages[packageIndex].imports); importIndex = importIndex + 1 {
+            lines = append(lines, strings.join(con []string{"IMPORT|", token.CopyText(con layout.packages[packageIndex].path), "|", token.CopyText(con layout.packages[packageIndex].imports[importIndex].path), "|", token.CopyText(con layout.packages[packageIndex].imports[importIndex].qualifier),}, con ""))
+        }
+    }
+    mut order := strings.join(con []string{"ORDER|", strings.fromInt(len(layout.buildOrder)),}, con "")
+    for mut index := 0; index < len(layout.buildOrder); index = index + 1 {
+        order = strings.join(con []string{order, "|", token.CopyText(con layout.buildOrder[index]),}, con "")
+    }
+    lines = append(lines, order)
     return strings.join(con lines, con "\n")
 }
 
@@ -77,6 +155,334 @@ pub func NormalizeError(con error LayoutError) string {
 
 pub func ErrorMessage(con error LayoutError) string {
     return token.CopyText(con error.message)
+}
+
+func collectFileImports(con program ast.Program, sourceUnit int, con packagePath string) Result[[]PendingImport, LayoutError] {
+    mut paths := []string{}
+    mut qualifiers := []string{}
+    mut imports := []PendingImport{}
+    for mut child := 0; child < ast.ChildCount(con program, sourceUnit); child = child + 1 {
+        node := ast.Child(con program, sourceUnit, child)
+        if ast.Kind(con program, node) != "ImportDecl" {
+            continue
+        }
+        path := ast.Value(con program, node)
+        span := ast.Span(con program, node)
+        if !validImportPath(con path) {
+            message := strings.join(con []string{"invalid import path `", token.CopyText(con path), "`",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        qualifier := importQualifier(con path)
+        duplicatePath := findText(con paths, con path)
+        if duplicatePath >= 0 {
+            message := strings.join(con []string{"duplicate import `", token.CopyText(con path), "`",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        duplicateQualifier := findText(con qualifiers, con qualifier)
+        if duplicateQualifier >= 0 {
+            message := strings.join(con []string{"imports `", token.CopyText(con paths[duplicateQualifier]), "` and `", token.CopyText(con path), "` use the same qualifier `", token.CopyText(con qualifier), "`",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        paths = append(paths, token.CopyText(con path))
+        qualifiers = append(qualifiers, token.CopyText(con qualifier))
+        imports = append(imports, PendingImport{from: token.CopyText(con packagePath), item: PackageImport{path: path, qualifier: qualifier, span: span,},})
+    }
+    return Ok(imports)
+}
+
+func connectImports(con packages []Package, con pending []PendingImport) Result[[]Package, LayoutError] {
+    mut connected := copyPackages(con packages)
+    for mut index := 0; index < len(pending); index = index + 1 {
+        target := findPackage(con connected, con pending[index].item.path)
+        if target < 0 {
+            mut message := strings.join(con []string{"unresolved import `", token.CopyText(con pending[index].item.path), "`",}, con "")
+            if startsWith(con pending[index].item.path, con "std/") {
+                message = strings.join(con []string{"unknown standard package `", token.CopyText(con pending[index].item.path), "`",}, con "")
+            }
+            return Err(newError(message, source.Copy(con pending[index].item.span)))
+        }
+        from := findPackage(con connected, con pending[index].from)
+        if from < 0 {
+            return Err(newError("import source package is not part of the layout", source.Copy(con pending[index].item.span)))
+        }
+        if findImport(con connected[from].imports, con pending[index].item.path) < 0 {
+            connected[from].imports = append(connected[from].imports, copyImport(con pending[index].item))
+        }
+    }
+    for mut index := 0; index < len(connected); index = index + 1 {
+        connected[index].imports = sortImports(con connected[index].imports)
+    }
+    return Ok(connected)
+}
+
+func topologicalOrder(con packages []Package) Result[[]string, LayoutError] {
+    mut states := []int{}
+    for mut index := 0; index < len(packages); index = index + 1 {
+        states = append(states, 0)
+    }
+    mut topology := Topology{packages: copyPackages(con packages), states: states, stack: []string{}, depth: 0, order: []string{},}
+    for mut index := 0; index < len(packages); index = index + 1 {
+        if topology.states[index]== 0 {
+            match topology.visit(index) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Ok(copyTexts(con topology.order))
+}
+
+func (mut self Topology) visit(index int) Result[bool, LayoutError] {
+    if self.states[index]== 2 {
+        return Ok(true)
+    }
+    self.states[index]= 1
+    path := token.CopyText(con self.packages[index].path)
+    if self.depth < len(self.stack) {
+        self.stack[self.depth]= token.CopyText(con path)
+    } else {
+        self.stack = append(self.stack, token.CopyText(con path))
+    }
+    self.depth = self.depth + 1
+    for mut importIndex := 0; importIndex < len(self.packages[index].imports); importIndex = importIndex + 1 {
+        importPath := token.CopyText(con self.packages[index].imports[importIndex].path)
+        importSpan := source.Copy(con self.packages[index].imports[importIndex].span)
+        target := findPackage(con self.packages, con importPath)
+        if target < 0 {
+            return Err(newError("topological import target is not part of the layout", source.Copy(con importSpan)))
+        }
+        if self.states[target]== 1 {
+            mut cycleStart := 0
+            for mut stackIndex := 0; stackIndex < self.depth; stackIndex = stackIndex + 1 {
+                if self.stack[stackIndex]== importPath {
+                    cycleStart = stackIndex
+                }
+            }
+            mut cycle := ""
+            for mut stackIndex := cycleStart; stackIndex < self.depth; stackIndex = stackIndex + 1 {
+                if cycle != "" {
+                    cycle = strings.join(con []string{cycle, " -> ",}, con "")
+                }
+                cycle = strings.join(con []string{cycle, token.CopyText(con self.stack[stackIndex]),}, con "")
+            }
+            cycle = strings.join(con []string{cycle, " -> ", importPath,}, con "")
+            message := strings.join(con []string{"package import cycle: ", cycle,}, con "")
+            return Err(newError(message, importSpan))
+        }
+        if self.states[target]== 0 {
+            match self.visit(target) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    self.depth = self.depth - 1
+    self.states[index]= 2
+    self.order = append(self.order, path)
+    return Ok(true)
+}
+
+func sortPackages(con values []Package) []Package {
+    mut used := []bool{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        used = append(used, false)
+    }
+    mut sorted := []Package{}
+    for len(sorted) < len(values) {
+        mut best := -1
+        for mut index := 0; index < len(values); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con values[index].path, con values[best].path)) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        sorted = append(sorted, copyPackage(con values[best]))
+    }
+    return sorted
+}
+
+func sortImports(con values []PackageImport) []PackageImport {
+    mut used := []bool{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        used = append(used, false)
+    }
+    mut sorted := []PackageImport{}
+    for len(sorted) < len(values) {
+        mut best := -1
+        for mut index := 0; index < len(values); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con values[index].path, con values[best].path)) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        sorted = append(sorted, copyImport(con values[best]))
+    }
+    return sorted
+}
+
+func validImportPath(con path string) bool {
+    length := strings.byteLen(con path)
+    if length == 0 {
+        return false
+    }
+    mut previousSlash := false
+    for mut index := 0; index < length; index = index + 1 {
+        match strings.byteAt(con path, index) {
+            case Ok(byte) {
+                if byte == 47 {
+                    if index == 0 || index == length - 1 || previousSlash {
+                        return false
+                    }
+                    previousSlash = true
+                } else {
+                    previousSlash = false
+                }
+            }
+            case Err(_) {
+                return false
+            }
+        }
+    }
+    return isIdentifier(con importQualifier(con path))
+}
+
+func importQualifier(con path string) string {
+    start := lastSlash(con path) + 1
+    match strings.slice(con path, start, strings.byteLen(con path)) {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {
+            return ""
+        }
+    }
+}
+
+func isIdentifier(con value string) bool {
+    if strings.byteLen(con value) == 0 {
+        return false
+    }
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        mut byte := 0
+        match strings.byteAt(con value, index) {
+            case Ok(item) {
+                byte = item
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        letter :=(byte >= 65 && byte <= 90) ||(byte >= 97 && byte <= 122) || byte == 95
+        digit := byte >= 48 && byte <= 57
+        if(index == 0 && !letter) ||(index > 0 && !letter && !digit) {
+            return false
+        }
+    }
+    return true
+}
+
+func findPackage(con packages []Package, con path string) int {
+    for mut index := 0; index < len(packages); index = index + 1 {
+        if packages[index].path == path {
+            return index
+        }
+    }
+    return - 1
+}
+
+func findImport(con imports []PackageImport, con path string) int {
+    for mut index := 0; index < len(imports); index = index + 1 {
+        if imports[index].path == path {
+            return index
+        }
+    }
+    return - 1
+}
+
+func findText(con values []string, con value string) int {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index]== value {
+            return index
+        }
+    }
+    return - 1
+}
+
+func textPrecedes(con left string, con right string) bool {
+    mut limit := strings.byteLen(con left)
+    if strings.byteLen(con right) < limit {
+        limit = strings.byteLen(con right)
+    }
+    for mut index := 0; index < limit; index = index + 1 {
+        mut leftByte := 0
+        match strings.byteAt(con left, index) {
+            case Ok(value) {
+                leftByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        mut rightByte := 0
+        match strings.byteAt(con right, index) {
+            case Ok(value) {
+                rightByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        if leftByte != rightByte {
+            return leftByte < rightByte
+        }
+    }
+    return strings.byteLen(con left) < strings.byteLen(con right)
+}
+
+func copyPackages(con values []Package) []Package {
+    mut copied := []Package{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, copyPackage(con values[index]))
+    }
+    return copied
+}
+
+func copyPackage(con value Package) Package {
+    mut sources := []int{}
+    for mut index := 0; index < len(value.sources); index = index + 1 {
+        sources = append(sources, value.sources[index])
+    }
+    mut imports := []PackageImport{}
+    for mut index := 0; index < len(value.imports); index = index + 1 {
+        imports = append(imports, copyImport(con value.imports[index]))
+    }
+    return Package{path: token.CopyText(con value.path), name: token.CopyText(con value.name), sources: sources, imports: imports,}
+}
+
+func copyImport(con value PackageImport) PackageImport {
+    return PackageImport{path: token.CopyText(con value.path), qualifier: token.CopyText(con value.qualifier), span: source.Copy(con value.span),}
+}
+
+func copyPendingImport(con value PendingImport) PendingImport {
+    return PendingImport{from: token.CopyText(con value.from), item: copyImport(con value.item),}
+}
+
+func copyTexts(con values []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, token.CopyText(con values[index]))
+    }
+    return copied
 }
 
 func packageIdentity(con projectName string, con sourceRoot string, con path string, span source.Span) Result[PackageIdentity, LayoutError] {

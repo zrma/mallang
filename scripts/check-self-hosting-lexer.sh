@@ -75,6 +75,8 @@ else
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/frontend/parser::MergesSourceAwareProgramsByDeclarationGroup \
     bootstrap_compiler/packages::BuildsSourcePackageIdentity \
+    bootstrap_compiler/packages::RejectsPackageImportCycle \
+    bootstrap_compiler/packages::RejectsInvalidImportPath \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
@@ -365,6 +367,41 @@ compare_package_layout \
   hello \
   "$PACKAGE_LAYOUT_FIXTURES/mismatch/src" \
   "$PACKAGE_LAYOUT_FIXTURES/mismatch/src/main.mlg"
+compare_package_layout \
+  package-layout-invalid-import \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/invalid-import/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/invalid-import/src/main.mlg"
+compare_package_layout \
+  package-layout-unresolved \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/unresolved/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/unresolved/src/main.mlg"
+compare_package_layout \
+  package-layout-duplicate-import \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-import/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-import/src/main.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-import/src/greet/greet.mlg"
+compare_package_layout \
+  package-layout-duplicate-qualifier \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-qualifier/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-qualifier/src/main.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-qualifier/src/first/util/util.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/duplicate-qualifier/src/second/util/util.mlg"
+compare_package_layout \
+  package-layout-cycle \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/cycle/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/cycle/src/main.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cycle/src/a/a.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cycle/src/b/b.mlg"
 
 if [[ "$MODE" == "fast" ]]; then
   compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
@@ -452,4 +489,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4b1 $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4b2a $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

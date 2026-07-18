@@ -124,10 +124,10 @@ fn main() -> ExitCode {
         };
         match build_package_graph(&project, &sources, &program) {
             Ok(graph) => {
-                println!("LAYOUT|{}", source_ids.len());
-                for source_id in source_ids {
+                println!("LAYOUT|{}|{}", source_ids.len(), graph.packages().len());
+                for source_id in &source_ids {
                     let package = graph
-                        .package_for_source(source_id)
+                        .package_for_source(*source_id)
                         .expect("package graph contains every parsed source");
                     println!(
                         "SOURCE|{}|{}|{}",
@@ -136,6 +136,29 @@ fn main() -> ExitCode {
                         package.name
                     );
                 }
+                for package in graph.packages().values() {
+                    println!(
+                        "PACKAGE|{}|{}|{}|{}",
+                        package.path,
+                        package.name,
+                        package.source_ids.len(),
+                        package.imports.len()
+                    );
+                    for source_id in &package.source_ids {
+                        println!("PSOURCE|{}|{}", package.path, source_id.index());
+                    }
+                    for import in &package.imports {
+                        println!(
+                            "IMPORT|{}|{}|{}",
+                            package.path, import.path, import.qualifier
+                        );
+                    }
+                }
+                print!("ORDER|{}", graph.build_order().len());
+                for package_path in graph.build_order() {
+                    print!("|{package_path}");
+                }
+                println!();
             }
             Err(error) => {
                 if let Some(span) = error.span {

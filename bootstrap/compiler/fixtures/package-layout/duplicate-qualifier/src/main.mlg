@@ -1,0 +1,6 @@
+package main
+
+import "hello/first/util"
+import "hello/second/util"
+
+func main() {}

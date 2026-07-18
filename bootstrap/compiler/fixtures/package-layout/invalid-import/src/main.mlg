@@ -1,0 +1,5 @@
+package main
+
+import "hello/not-valid"
+
+func main() {}

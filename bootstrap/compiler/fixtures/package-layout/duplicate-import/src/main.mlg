@@ -1,0 +1,6 @@
+package main
+
+import "hello/greet"
+import "hello/greet"
+
+func main() {}
