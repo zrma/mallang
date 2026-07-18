@@ -222,6 +222,38 @@ pub func NodeNeedsCleanup(con checked CheckedProgram, node int) bool {
     return false
 }
 
+pub func NodeTypeArgument(con checked CheckedProgram, node int, argument int) Result[string, bool] {
+    for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
+        if checked.typedNodes[index].node == node {
+            return match checked.typeArgument(con checked.typedNodes[index].ty, argument) {
+                case Ok(ty) {
+                    Ok(token.CopyText(con ty.text))
+                }
+                case Err(_) {
+                    Err(false)
+                }
+            }
+        }
+    }
+    return Err(false)
+}
+
+pub func NodeTypeArgumentNeedsCleanup(con checked CheckedProgram, node int, argument int) bool {
+    for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
+        if checked.typedNodes[index].node == node {
+            return match checked.typeArgument(con checked.typedNodes[index].ty, argument) {
+                case Ok(ty) {
+                    ty.cleanup
+                }
+                case Err(_) {
+                    false
+                }
+            }
+        }
+    }
+    return false
+}
+
 pub func StructFieldCount(con checked CheckedProgram, con name string) int {
     structure := checked.structIndex(con name)
     if structure < 0 {

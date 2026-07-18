@@ -9,8 +9,8 @@ use mallang::ast::{
     Visibility,
 };
 use mallang::ir::{
-    IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrStmt,
-    IrStmtKind,
+    IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrMatchArm,
+    IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
@@ -417,6 +417,11 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         IrExprKind::String(value) => ("Expr.String", value.clone(), Vec::new()),
         IrExprKind::Bool(value) => ("Expr.Bool", value.to_string(), Vec::new()),
         IrExprKind::Var(value) => ("Expr.Var", value.clone(), Vec::new()),
+        IrExprKind::FullExprTemporary { name, expr } => (
+            "Expr.FullExprTemporary",
+            name.clone(),
+            vec![normalize_ir_expression(expr, depth + 1)],
+        ),
         IrExprKind::FunctionValue { function } => {
             ("Expr.FunctionValue", function.clone(), Vec::new())
         }
@@ -474,6 +479,14 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
                 .map(|payload| normalize_ir_expression(payload, depth + 1))
                 .collect(),
         ),
+        IrExprKind::Match { scrutinee, arms } => {
+            let mut children = vec![normalize_ir_expression(scrutinee, depth + 1)];
+            children.extend(
+                arms.iter()
+                    .map(|arm| normalize_ir_match_arm(arm, depth + 1)),
+            );
+            ("Expr.Match", String::new(), children)
+        }
         IrExprKind::FieldAccess { base, field } => (
             "Expr.FieldAccess",
             field.clone(),
@@ -574,6 +587,62 @@ fn normalize_ir_field(field: &IrFieldValue, depth: usize) -> String {
         &field.expr.ty.source_name(),
         &[normalize_ir_expression(&field.expr, depth + 1)],
     )
+}
+
+fn normalize_ir_match_arm(arm: &IrMatchArm, depth: usize) -> String {
+    let mut children = vec![
+        normalize_ir_match_pattern(&arm.pattern, arm.span, depth + 1),
+        normalize_ir_expression(&arm.expr, depth + 1),
+    ];
+    children.extend(
+        arm.cleanup
+            .iter()
+            .map(|statement| normalize_ir_statement(statement, depth + 1)),
+    );
+    normalize_ir_line(
+        depth,
+        "M",
+        "Match.Arm",
+        arm.span,
+        "",
+        &arm.expr.ty.source_name(),
+        &children,
+    )
+}
+
+fn normalize_ir_match_pattern(pattern: &IrMatchPattern, span: Span, depth: usize) -> String {
+    let (kind, value, ty, children) = match pattern {
+        IrMatchPattern::Wildcard(ty) => (
+            "Pattern.Wildcard",
+            "",
+            ty.source_name(),
+            Vec::new(),
+        ),
+        IrMatchPattern::Binding { name, ty } => (
+            "Pattern.Binding",
+            name.as_str(),
+            ty.source_name(),
+            Vec::new(),
+        ),
+        IrMatchPattern::Variant {
+            ty,
+            variant,
+            storage,
+            payloads,
+        } => (
+            match storage {
+                IrEnumStorage::Inline => "Pattern.Variant.Inline",
+                IrEnumStorage::Owned => "Pattern.Variant.Owned",
+            },
+            variant.as_str(),
+            ty.source_name(),
+            payloads
+                .iter()
+                .map(|payload| normalize_ir_match_pattern(payload, span, depth + 1))
+                .collect(),
+        ),
+    };
+    normalize_ir_line(depth, "P", kind, span, value, &ty, &children)
 }
 
 fn normalize_ir_capture(capture: &IrClosureCaptureValue, depth: usize) -> String {

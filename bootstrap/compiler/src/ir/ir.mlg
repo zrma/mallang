@@ -73,6 +73,11 @@ type CleanupFlow struct {
     continues bool
 }
 
+type LoweredMatchPattern struct {
+    node int
+    cleanup []CleanupBinding
+}
+
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
     mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
     root := ast.Root(con syntax)
@@ -635,6 +640,98 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         return Ok(self.addNode("E", "Expr.ArrayLiteral", "", token.CopyText(con ty), ast.Span(con syntax, expression), elements, cleanup))
     }
 
+    if kind == "Expr.Match" {
+        if ast.ChildCount(con syntax, expression) < 2 {
+            return Err(newError("checked match expression has no arms", ast.Span(con syntax, expression)))
+        }
+        scrutinee := ast.Child(con syntax, expression, 0)
+        mut matchChildren := []int{}
+        match self.lowerExpression(con syntax, scrutinee, con checked) {
+            case Ok(loweredScrutinee) {
+                matchChildren = append(matchChildren, loweredScrutinee)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con syntax, expression); child = child + 1 {
+            arm := ast.Child(con syntax, expression, child)
+            if ast.Kind(con syntax, arm) != "MatchArm" || ast.ChildCount(con syntax, arm) != 2 {
+                return Err(newError("checked match arm is malformed", ast.Span(con syntax, arm)))
+            }
+            pattern := ast.Child(con syntax, arm, 0)
+            branch := ast.Child(con syntax, arm, 1)
+            mut loweredPattern := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}}
+            match self.lowerBuiltinMatchPattern(con syntax, pattern, scrutinee, ast.Span(con syntax, branch), ast.Span(con syntax, arm), con checked) {
+                case Ok(value) {
+                    loweredPattern = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match self.lowerExpression(con syntax, branch, con checked) {
+                case Ok(loweredBranch) {
+                    mut branchType := ""
+                    match semantic.NodeType(con checked, branch) {
+                        case Ok(resolved) {
+                            branchType = resolved
+                        }
+                        case Err(_) {
+                            return Err(newError("checked match arm type is missing", ast.Span(con syntax, branch)))
+                        }
+                    }
+                    mut armChildren := []int{loweredPattern.node, loweredBranch}
+                    movedBindings := self.movedCleanupRoots(loweredBranch, con loweredPattern.cleanup)
+                    for mut binding := 0; binding < len(loweredPattern.cleanup); binding = binding + 1 {
+                        if textIndex(con movedBindings, con loweredPattern.cleanup[binding].key) < 0 {
+                            bindingValue := self.addNode("E", "Expr.Var", token.CopyText(con loweredPattern.cleanup[binding].name), token.CopyText(con loweredPattern.cleanup[binding].ty), source.Copy(con loweredPattern.cleanup[binding].span), []int{}, true)
+                            armChildren = append(armChildren, self.addNode("S", "Stmt.Drop", "", "unit", ast.Span(con syntax, branch), []int{bindingValue}, false))
+                        }
+                    }
+                    matchChildren = append(matchChildren, self.addNode("M", "Match.Arm", "", token.CopyText(con branchType), ast.Span(con syntax, branch), armChildren, false))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("E", "Expr.Match", "", token.CopyText(con ty), ast.Span(con syntax, expression), matchChildren, cleanup))
+    }
+
+    if(kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual") && ast.ChildCount(con syntax, expression) == 2 {
+        left := ast.Child(con syntax, expression, 0)
+        mut leftType := ""
+        match semantic.NodeType(con checked, left) {
+            case Ok(resolved) {
+                leftType = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked equality operand type is missing", ast.Span(con syntax, left)))
+            }
+        }
+        if leftType == "string" {
+            mut equalityChildren := []int{}
+            match self.lowerReadExpression(con syntax, left, con checked) {
+                case Ok(loweredLeft) {
+                    equalityChildren = append(equalityChildren, loweredLeft)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match self.lowerReadExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+                case Ok(loweredRight) {
+                    equalityChildren = append(equalityChildren, loweredRight)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            return Ok(self.addNode("E", token.CopyText(con kind), "", token.CopyText(con ty), ast.Span(con syntax, expression), equalityChildren, cleanup))
+        }
+    }
+
     mut children := []int{}
     for mut child := 0; child < ast.ChildCount(con syntax, expression); child = child + 1 {
         syntaxChild := ast.Child(con syntax, expression, child)
@@ -669,6 +766,92 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
             Err(error)
         }
     }
+}
+
+func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    mut lowered := -1
+    match self.lowerExpression(con syntax, expression, con checked) {
+        case Ok(value) {
+            lowered = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    directRead := isDirectReadExpression(con syntax, expression)
+    cleanup := semantic.NodeNeedsCleanup(con checked, expression)
+    if directRead || !cleanup {
+        return Ok(lowered)
+    }
+    mut ty := ""
+    match semantic.NodeType(con checked, expression) {
+        case Ok(resolved) {
+            ty = resolved
+        }
+        case Err(_) {
+            return Err(newError("checked read temporary type is missing", ast.Span(con syntax, expression)))
+        }
+    }
+    span := ast.Span(con syntax, expression)
+    name := strings.join(con []string{"mallang_full_expr_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
+    return Ok(self.addNode("E", "Expr.FullExprTemporary", name, token.CopyText(con ty), source.Copy(con span), []int{lowered}, true))
+}
+
+func (mut self Lowerer) lowerBuiltinMatchPattern(con syntax ast.Program, pattern int, scrutinee int, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
+    mut scrutineeType := ""
+    match semantic.NodeType(con checked, scrutinee) {
+        case Ok(resolved) {
+            scrutineeType = resolved
+        }
+        case Err(_) {
+            return Err(newError("checked match scrutinee type is missing", source.Copy(con span)))
+        }
+    }
+    kind := ast.Kind(con syntax, pattern)
+    if kind == "Pattern.Wildcard" {
+        if semantic.NodeNeedsCleanup(con checked, scrutinee) {
+            name := matchDiscardName(con discardSpan, 0)
+            node := self.addNode("P", "Pattern.Binding", token.CopyText(con name), token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
+            return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{newCleanupBinding(con name, con scrutineeType, source.Copy(con span))}})
+        }
+        node := self.addNode("P", "Pattern.Wildcard", "", token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}})
+    }
+    if kind == "Pattern.None" {
+        node := self.addNode("P", "Pattern.Variant.Inline", "None", token.CopyText(con scrutineeType), source.Copy(con span), []int{}, false)
+        return Ok(LoweredMatchPattern{node: node, cleanup: []CleanupBinding{}})
+    }
+    mut argument := -1
+    mut variant := ""
+    if kind == "Pattern.Some" {
+        argument = 0
+        variant = "Some"
+    } else if kind == "Pattern.Ok" {
+        argument = 0
+        variant = "Ok"
+    } else if kind == "Pattern.Err" {
+        argument = 1
+        variant = "Err"
+    } else {
+        return Err(newError("B2e typed IR only accepts flat built-in match patterns", source.Copy(con span)))
+    }
+    mut payloadType := ""
+    match semantic.NodeTypeArgument(con checked, scrutinee, argument) {
+        case Ok(resolved) {
+            payloadType = resolved
+        }
+        case Err(_) {
+            return Err(newError("checked match payload type is missing", source.Copy(con span)))
+        }
+    }
+    bindingName := ast.Value(con syntax, pattern)
+    binding := self.addNode("P", "Pattern.Binding", token.CopyText(con bindingName), token.CopyText(con payloadType), source.Copy(con span), []int{}, false)
+    node := self.addNode("P", "Pattern.Variant.Inline", variant, token.CopyText(con scrutineeType), source.Copy(con span), []int{binding}, false)
+    mut cleanupBindings := []CleanupBinding{}
+    if semantic.NodeTypeArgumentNeedsCleanup(con checked, scrutinee, argument) {
+        cleanupBindings = append(cleanupBindings, newCleanupBinding(con bindingName, con payloadType, source.Copy(con span)))
+    }
+    return Ok(LoweredMatchPattern{node: node, cleanup: cleanupBindings})
 }
 
 func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span) []int {
@@ -1097,6 +1280,21 @@ func variantConstructorKind(con storage string) string {
         return "Expr.VariantConstructor.Owned"
     }
     return "Expr.VariantConstructor.Inline"
+}
+
+func matchDiscardName(con span source.Span, index int) string {
+    return strings.join(con []string{"mallang_match_discard_", strings.fromInt(source.Source(con span)), "_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)), "_", strings.fromInt(index),}, con "")
+}
+
+func isDirectReadExpression(con syntax ast.Program, expression int) bool {
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.Var" {
+        return true
+    }
+    if(kind == "Expr.FieldAccess" || kind == "Expr.Index") && ast.ChildCount(con syntax, expression) > 0 {
+        return isDirectReadExpression(con syntax, ast.Child(con syntax, expression, 0))
+    }
+    return false
 }
 
 func newError(message string, span source.Span) Error {

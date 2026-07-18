@@ -172,8 +172,11 @@ literals as `Expr.ArrayLiteral` and consumes owned elements exactly once.
 P176e2c3h lowers `None`, `Some`, `Ok` and `Err` as inline
 `Expr.VariantConstructor` values and consumes owned payloads exactly once.
 P176e2c3i lowers user enum constructors with graph-derived inline or owned
-storage and consumes zero, one and multiple payloads exactly once. Twenty-four
-focused IR fixtures and 222 Mallang compiler project tests cover the expanded
-boundary. Match typed IR, remaining full-expression cases and the rest of the
-typed IR are incomplete, so no complete semantic, typed-IR or Stage1 compiler
-claim is made.
+storage and consumes zero, one and multiple payloads exactly once. P176e2c3j
+lowers flat Copy `Option` and `Result` expression matches as explicit match-arm
+and pattern nodes. P176e2c3k extends that contract to cleanup payloads, moved
+bindings, cleanup wildcards and string-read full-expression temporaries.
+Twenty-six focused IR fixtures and 224 Mallang compiler project tests cover the
+expanded boundary. User-enum, nested and statement-form match typed IR,
+remaining full-expression cases and the rest of the typed IR are incomplete,
+so no complete semantic, typed-IR or Stage1 compiler claim is made.

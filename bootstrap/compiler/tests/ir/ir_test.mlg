@@ -1057,6 +1057,132 @@ test LowersUserEnumConstructorStorageAndCleanup() {
     }
 }
 
+test LowersCopyBuiltinMatchExpressions() {
+    source := "func optionValue(input Option[int]) int { return match input { case Some(value) { value } case None { 0 } } } func resultValue(input Result[int, bool]) int { return match input { case Ok(value) { value } case Err(failed) { if failed { 1 } else { 0 } } } } func optionOrZero(input Option[int]) int { return match input { case Some(value) { value } case _ { 0 } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    optionMatch := lowered.nodes[lowered.functions[0].body[0]].children[0]
+                                    assert(lowered.nodes[optionMatch].kind == "Expr.Match")
+                                    assert(len(lowered.nodes[optionMatch].children) == 3)
+                                    someArm := lowered.nodes[optionMatch].children[1]
+                                    assert(lowered.nodes[someArm].kind == "Match.Arm")
+                                    somePattern := lowered.nodes[someArm].children[0]
+                                    assert(lowered.nodes[somePattern].kind == "Pattern.Variant.Inline")
+                                    assert(lowered.nodes[somePattern].value == "Some")
+                                    someBinding := lowered.nodes[somePattern].children[0]
+                                    assert(lowered.nodes[someBinding].kind == "Pattern.Binding")
+                                    assert(lowered.nodes[someBinding].value == "value")
+                                    assert(lowered.nodes[someBinding].ty == "int")
+                                    nonePattern := lowered.nodes[lowered.nodes[optionMatch].children[2]].children[0]
+                                    assert(lowered.nodes[nonePattern].value == "None")
+
+                                    resultMatch := lowered.nodes[lowered.functions[1].body[0]].children[0]
+                                    assert(lowered.nodes[resultMatch].kind == "Expr.Match")
+                                    errPattern := lowered.nodes[lowered.nodes[resultMatch].children[2]].children[0]
+                                    assert(lowered.nodes[errPattern].value == "Err")
+                                    errBinding := lowered.nodes[errPattern].children[0]
+                                    assert(lowered.nodes[errBinding].ty == "bool")
+
+                                    wildcardMatch := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    wildcardPattern := lowered.nodes[lowered.nodes[wildcardMatch].children[2]].children[0]
+                                    assert(lowered.nodes[wildcardPattern].kind == "Pattern.Wildcard")
+                                    assert(lowered.nodes[wildcardPattern].ty == "Option[int]")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test LowersCleanupBuiltinMatchExpressions() {
+    source := "func unwrap(input Option[string], unused string) string { return match input { case Some(value) { value } case None { \"fallback\" } } } func inspect(input Option[string]) int { return match input { case Some(value) { if value == \"\" { 1 } else { 2 } } case None { 0 } } } func ignore(input Option[string]) int { return match input { case _ { 0 } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    unwrapTemp := lowered.functions[0].body[0]
+                                    unwrapMatch := lowered.nodes[unwrapTemp].children[0]
+                                    assert(lowered.nodes[unwrapMatch].kind == "Expr.Match")
+                                    someArm := lowered.nodes[unwrapMatch].children[1]
+                                    assert(len(lowered.nodes[someArm].children) == 2)
+                                    someBranch := lowered.nodes[someArm].children[1]
+                                    assert(lowered.nodes[someBranch].kind == "Expr.Var")
+                                    assert(lowered.nodes[someBranch].value == "value")
+                                    unwrapDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[unwrapDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[unwrapDrop].children[0]].value == "unused")
+                                    assert(lowered.nodes[lowered.functions[0].body[2]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[1].body) == 1)
+                                    inspectMatch := lowered.nodes[lowered.functions[1].body[0]].children[0]
+                                    inspectSomeArm := lowered.nodes[inspectMatch].children[1]
+                                    assert(len(lowered.nodes[inspectSomeArm].children) == 3)
+                                    inspectBranch := lowered.nodes[inspectSomeArm].children[1]
+                                    equality := lowered.nodes[inspectBranch].children[0]
+                                    equalityRight := lowered.nodes[equality].children[1]
+                                    assert(lowered.nodes[equalityRight].kind == "Expr.FullExprTemporary")
+                                    bindingDrop := lowered.nodes[inspectSomeArm].children[2]
+                                    assert(lowered.nodes[bindingDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[bindingDrop].children[0]].value == "value")
+
+                                    assert(len(lowered.functions[2].body) == 1)
+                                    ignoreMatch := lowered.nodes[lowered.functions[2].body[0]].children[0]
+                                    ignoreArm := lowered.nodes[ignoreMatch].children[1]
+                                    assert(len(lowered.nodes[ignoreArm].children) == 3)
+                                    ignorePattern := lowered.nodes[ignoreArm].children[0]
+                                    assert(lowered.nodes[ignorePattern].kind == "Pattern.Binding")
+                                    ignoreDrop := lowered.nodes[ignoreArm].children[2]
+                                    assert(lowered.nodes[ignoreDrop].kind == "Stmt.Drop")
+                                    ignoreDropValue := lowered.nodes[ignoreDrop].children[0]
+                                    assert(lowered.nodes[ignoreDropValue].value == lowered.nodes[ignorePattern].value)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

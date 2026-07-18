@@ -1747,6 +1747,8 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] fixed-array/slice literal typed IR와 element move cleanup
 - [x] built-in ADT constructor typed IR와 payload move cleanup
 - [x] user enum constructor inline/owned storage와 payload cleanup
+- [x] Copy built-in expression match arm/pattern typed IR
+- [x] cleanup built-in expression match의 arm-local drop과 full-expression temporary
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

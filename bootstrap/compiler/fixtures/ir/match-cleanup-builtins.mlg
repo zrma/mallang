@@ -1,0 +1,21 @@
+func unwrap(input Option[string], unused string) string {
+    return match input {
+        case Some(value) { value }
+        case None { "fallback" }
+    }
+}
+
+func inspect(input Option[string]) int {
+    return match input {
+        case Some(value) { if value == "" { 1 } else { 2 } }
+        case None { 0 }
+    }
+}
+
+func ignore(input Option[string]) int {
+    return match input {
+        case _ { 0 }
+    }
+}
+
+func main() {}

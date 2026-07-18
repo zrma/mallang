@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3i complete
+Status: in progress; P176a-P176e2c3k complete
 
 ## Objective
 
@@ -141,6 +141,11 @@ agrees.
   `Expr.VariantConstructor` values and preserve payload move cleanup (complete)
 - P176e2c3i: lower user enum constructors with graph-derived inline or owned
   storage and preserve zero, one and multiple payload cleanup (complete)
+- P176e2c3j: lower flat Copy `Option` and `Result` expression matches as
+  explicit match-arm and inline variant-pattern nodes (complete)
+- P176e2c3k: lower cleanup built-in expression matches with moved binding
+  exclusion, arm-local drops, cleanup wildcard bindings and string-read
+  full-expression temporaries (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -553,9 +558,14 @@ specialization and function-body checking until later P176 slices.
   Mallang project tests cover that boundary. P176e2c3i adds user enum
   constructors with graph-derived inline or owned storage and payload move
   accounting. Twenty-four typed-IR fixtures and two hundred twenty-two Mallang
-  project tests cover the expanded boundary. Match typed IR, full-expression
-  cases and checked constructs continue in P176e. Stage0 match-arm shadow
-  cleanup identity remains tracked separately in
+  project tests cover that boundary. P176e2c3j adds flat Copy built-in
+  expression match arms and patterns. P176e2c3k adds cleanup payload moves,
+  arm-local drops, cleanup wildcard bindings and string-read full-expression
+  temporaries. Twenty-six typed-IR fixtures and two hundred twenty-four Mallang
+  project tests cover the expanded boundary. User-enum, nested and
+  statement-form match typed IR, remaining full-expression cases and checked
+  constructs continue in P176e. Stage0 match-arm shadow cleanup identity
+  remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 
 ## B2 Completion Criteria
