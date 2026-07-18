@@ -1711,6 +1711,76 @@ test LowersLoopCleanupAtExitAndControlFlow() {
     }
 }
 
+test KeepsRangeTemporaryOwnerCleanup() {
+    source := "type Bucket struct { values []int } func makeBucket(values []int) Bucket { return Bucket{values: values} } func first() int { for index, value := range []int{7, 8} { if index == 0 { return value } }; return -1 } func sumProjected(values []int) int { mut total := 0; for _, value := range makeBucket(values).values { total = total + value }; return total } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    firstRange := lowered.functions[1].body[0]
+                                    firstSource := lowered.nodes[firstRange].children[1]
+                                    assert(lowered.nodes[firstSource].kind == "Expr.FullExprTemporary")
+                                    firstCleanup := lowered.nodes[firstRange].children[3]
+                                    assert(len(lowered.nodes[firstCleanup].children) == 1)
+                                    firstDrop := lowered.nodes[firstCleanup].children[0]
+                                    assert(lowered.nodes[firstDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[firstDrop].children[0]].value == lowered.nodes[firstSource].value)
+
+                                    projectedRange := lowered.functions[2].body[1]
+                                    projectedSource := lowered.nodes[projectedRange].children[1]
+                                    assert(lowered.nodes[projectedSource].kind == "Expr.FieldAccess")
+                                    projectedOwnerNode := lowered.nodes[projectedSource].children[0]
+                                    assert(lowered.nodes[projectedOwnerNode].kind == "Expr.FullExprTemporary")
+                                    projectedCleanup := lowered.nodes[projectedRange].children[3]
+                                    assert(len(lowered.nodes[projectedCleanup].children) == 1)
+                                    projectedDrop := lowered.nodes[projectedCleanup].children[0]
+                                    assert(lowered.nodes[projectedDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[projectedDrop].children[0]].value == lowered.nodes[projectedOwnerNode].value)
+
+                                    mut firstOwnerDrops := 0
+                                    mut projectedOwnerDrops := 0
+                                    mut movedSourceDrops := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Stmt.Drop" {
+                                            dropped := lowered.nodes[node].children[0]
+                                            if lowered.nodes[dropped].value == lowered.nodes[firstSource].value {
+                                                firstOwnerDrops = firstOwnerDrops + 1
+                                            } else if lowered.nodes[dropped].value == lowered.nodes[projectedOwnerNode].value {
+                                                projectedOwnerDrops = projectedOwnerDrops + 1
+                                            } else if lowered.nodes[dropped].value == "values" {
+                                                movedSourceDrops = movedSourceDrops + 1
+                                            }
+                                        }
+                                    }
+                                    assert(firstOwnerDrops == 2)
+                                    assert(projectedOwnerDrops == 1)
+                                    assert(movedSourceDrops == 0)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersIndexOnlyNonCopyRangeBorrows() {
     source := "type User struct { name string } func hasName(con user User) bool { return user.name != \"\" } func countNamed(users []User) int { mut count := 0; for index := range users { if hasName(con users[index]) { count = count + 1 } }; return count } func main() {}"
     match lexer.Lex(source) {

@@ -1,0 +1,26 @@
+type Bucket struct {
+    values []int
+}
+
+func makeBucket(values []int) Bucket {
+    return Bucket{values: values}
+}
+
+func first() int {
+    for index, value := range []int{7, 8} {
+        if index == 0 {
+            return value
+        }
+    }
+    return -1
+}
+
+func sumProjected(values []int) int {
+    mut total := 0
+    for _, value := range makeBucket(values).values {
+        total = total + value
+    }
+    return total
+}
+
+func main() {}

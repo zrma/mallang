@@ -644,8 +644,10 @@ temporary/computed field/index receiver를 place-aware typed IR로 내리고 com
 owner의 move를 보존한다. 36개 IR fixture와 전체 237개 project test가 이를 고정한다.
 P176e2c3w는 computed array 및 projected-field `len` source를 동일한
 full-expression place 경로로 낮추고 이미 move된 owner의 tail drop을 제거한다. 37개 IR
-fixture와 전체 238개 project test가 이를 고정한다. 다음 slice는 generic/intrinsic과
-남은 full-expression typed IR이다. public language 또는
+fixture와 전체 238개 project test가 이를 고정한다. P176e2c3x는 inline/projected range
+temporary owner를 normal exit와 early control-flow cleanup까지 유지하고 consumed source
+move를 tail cleanup에서 제외한다. 38개 IR fixture와 전체 239개 project test가 이를
+고정한다. 다음 slice는 generic/intrinsic과 남은 full-expression typed IR이다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.

@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3w complete
+Status: in progress; P176a-P176e2c3x complete
 
 ## Objective
 
@@ -175,6 +175,9 @@ agrees.
   (complete)
 - P176e2c3w: lower computed `len` sources through place-aware full-expression
   temporaries and preserve moves inside their owners
+  (complete)
+- P176e2c3x: retain inline and projected range temporary owners through loop
+  exit and control-flow cleanup while preserving source moves
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -613,6 +616,10 @@ specialization and function-body checking until later P176 slices.
   computed array and projected-field `len` sources through the same read-place
   path and prevents moved owners from receiving a second tail drop. Thirty-seven
   typed-IR fixtures and two hundred thirty-eight Mallang project tests cover
+  that boundary. P176e2c3x retains inline and projected range source owners as
+  loop-local cleanup bindings and removes consumed source roots from tail
+  cleanup. Thirty-eight typed-IR fixtures and two hundred thirty-nine Mallang
+  project tests cover
   the expanded boundary. Generic and intrinsic IR, remaining full-expression
   cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity

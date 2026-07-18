@@ -208,6 +208,9 @@ Thirty-six focused IR fixtures and 237 Mallang compiler project tests cover
 that boundary. P176e2c3w routes computed array and projected-field `len` sources
 through place-aware full-expression temporaries and preserves moves inside their
 owners. Thirty-seven focused IR fixtures and 238 Mallang compiler project tests
+cover that boundary. P176e2c3x retains inline and projected range temporary
+owners through normal loop exit and early control flow while preserving source
+moves. Thirty-eight focused IR fixtures and 239 Mallang compiler project tests
 cover the expanded boundary. Generic and intrinsic IR plus remaining
 full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

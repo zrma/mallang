@@ -432,7 +432,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
             }
         }
         mut children := []int{self.addNode("F", "RangeBindings", token.CopyText(con value), token.CopyText(con elementType), ast.Span(con syntax, statement), []int{}, false),}
-        match self.lowerExpression(con syntax, rangeSource, con checked) {
+        match self.lowerReadExpression(con syntax, rangeSource, con checked) {
             case Ok(loweredSource) {
                 children = append(children, loweredSource)
             }
@@ -1425,9 +1425,23 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
         }
         if self.nodes[statement].kind == "Stmt.RangeFor" {
             bodyBlock := self.nodes[statement].children[len(self.nodes[statement].children) - 2]
-            loopKeys := cleanupBindingKeys(con active)
+            cleanupBlock := self.nodes[statement].children[len(self.nodes[statement].children) - 1]
+            rangeSource := self.nodes[statement].children[1]
+            sourceMoved := self.movedPlaceCleanupRoots(rangeSource, con active)
+            mut loopActive := removeCleanupRoots(copyCleanupBindings(con active), con sourceMoved)
+            preLoopKeys := cleanupBindingKeys(con loopActive)
+            owner := self.fullExpressionOwnerNode(rangeSource)
+            if owner >= 0 {
+                loopActive = append(loopActive, newCleanupBinding(con self.nodes[owner].value, con self.nodes[owner].ty, source.Copy(con self.nodes[owner].span)))
+            }
+            loopKeys := cleanupBindingKeys(con loopActive)
             sourceBody := copyInts(con self.nodes[bodyBlock].children)
-            self.nodes[bodyBlock].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con self.nodes[statement].span), con loopKeys, con loopKeys, con loopKeys)
+            self.nodes[bodyBlock].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con loopActive), copyCleanupBindings(con external), source.Copy(con self.nodes[statement].span), con loopKeys, con loopKeys, con loopKeys)
+            loopOwned := cleanupBindingsExcluding(con loopActive, con preLoopKeys)
+            cleanupBody := copyInts(con self.nodes[cleanupBlock].children)
+            loopSpan := source.Copy(con self.nodes[statement].span)
+            self.nodes[cleanupBlock].children = self.pushCleanupDrops(cleanupBody, con loopOwned, con loopSpan)
+            active = removeCleanupRoots(active, con sourceMoved)
             output = append(output, statement)
             continue
         }
@@ -1612,7 +1626,7 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
 
 func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding) []string {
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.RangeFor" {
-        return []string{}
+        return self.movedPlaceCleanupRoots(self.nodes[node].children[1], con active)
     }
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.For" {
         mut roots := []string{}
@@ -1690,6 +1704,16 @@ func (con self Lowerer) movedPlaceCleanupRoots(node int, con active []CleanupBin
         return roots
     }
     return self.movedCleanupRoots(node, con active)
+}
+
+func (con self Lowerer) fullExpressionOwnerNode(node int) int {
+    if self.nodes[node].kind == "Expr.FullExprTemporary" && self.nodes[node].cleanup {
+        return node
+    }
+    if(self.nodes[node].kind == "Expr.FieldAccess" || self.nodes[node].kind == "Expr.Index") && len(self.nodes[node].children) > 0 {
+        return self.fullExpressionOwnerNode(self.nodes[node].children[0])
+    }
+    return - 1
 }
 
 func (con self Lowerer) fieldAssignmentConsumesOverwrittenPlace(statement int) bool {
