@@ -631,10 +631,15 @@ specialization and function-body checking until later P176 slices.
   Mallang project tests cover that boundary. P176e2c3z appends outer-owner
   compensation drops after existing match pattern cleanup in each expression
   arm. Forty typed-IR fixtures and two hundred forty-one Mallang project tests
-  cover
-  the expanded boundary. Generic and intrinsic IR, remaining full-expression
-  cases and checked
-  constructs continue in P176e. Stage0 match-arm shadow cleanup identity
+  cover the expanded boundary. P176e3a adds demand-driven concrete
+  specialization for generic structs, functions and declaration-bound receiver
+  methods. Named, slice and fixed-array type arguments reuse the existing
+  semantic, ownership and typed-IR core; cleanup-returning generic calls read by
+  `print` use the common full-expression temporary path. Two hundred thirty
+  semantic fixtures, forty-one typed-IR fixtures and two hundred forty-two
+  Mallang project tests cover this boundary. Generic enums, symbolic generic
+  body validation and package/intrinsic specialization continue in P176e.
+  Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 

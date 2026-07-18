@@ -780,7 +780,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
                     return Err(newError("checked print argument type is missing", ast.Span(con syntax, argument)))
                 }
             }
-            match self.lowerExpression(con syntax, argumentExpression, con checked) {
+            match self.lowerReadExpression(con syntax, argumentExpression, con checked) {
                 case Ok(loweredArgument) {
                     readArgument := self.addNode("A", "Arg.Con", "", token.CopyText(con argumentType), ast.Span(con syntax, argument), []int{loweredArgument}, false)
                     return Ok(self.addNode("E", "Expr.Call", "print", token.CopyText(con ty), ast.Span(con syntax, expression), []int{readArgument}, cleanup))
@@ -1177,6 +1177,9 @@ func (mut self Lowerer) lowerTemporaryPlaceExpression(con syntax ast.Program, ex
 }
 
 func (mut self Lowerer) wrapFullExpressionTemporary(con syntax ast.Program, expression int, lowered int, con checked semantic.CheckedProgram) Result[int, Error] {
+    if !semantic.NodeNeedsCleanup(con checked, expression) {
+        return Ok(lowered)
+    }
     mut ty := ""
     match semantic.NodeType(con checked, expression) {
         case Ok(resolved) {

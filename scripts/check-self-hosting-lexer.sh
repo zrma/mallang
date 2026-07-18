@@ -72,6 +72,7 @@ else
     bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
+    bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/ir::NormalizesMatchExpressionOuterCleanup; do
     "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
   done
@@ -324,4 +325,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e2c3z $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e3a $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

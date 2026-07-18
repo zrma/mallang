@@ -10,6 +10,7 @@ import "bootstrap_compiler/frontend/source"
 import "bootstrap_compiler/frontend/token"
 import "bootstrap_compiler/ir"
 import "bootstrap_compiler/semantic"
+import "bootstrap_compiler/specialize"
 
 func fail(con message string) {
     match io.writeStderr(con message) {
@@ -59,12 +60,19 @@ func runCheck(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match semantic.Check(con program) {
-                        case Ok(checked) {
-                            print(semantic.Normalize(con checked))
+                    match specialize.Specialize(con program) {
+                        case Ok(concrete) {
+                            match semantic.Check(con concrete) {
+                                case Ok(checked) {
+                                    print(semantic.Normalize(con checked))
+                                }
+                                case Err(error) {
+                                    print(semantic.NormalizeError(con error))
+                                }
+                            }
                         }
                         case Err(error) {
-                            print(semantic.NormalizeError(con error))
+                            print(specialize.NormalizeError(con error))
                         }
                     }
                 }
@@ -88,19 +96,26 @@ func runIr(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match semantic.Check(con program) {
-                        case Ok(checked) {
-                            match ir.Lower(con program, con checked) {
-                                case Ok(lowered) {
-                                    print(ir.Normalize(con lowered))
+                    match specialize.Specialize(con program) {
+                        case Ok(concrete) {
+                            match semantic.Check(con concrete) {
+                                case Ok(checked) {
+                                    match ir.Lower(con concrete, con checked) {
+                                        case Ok(lowered) {
+                                            print(ir.Normalize(con lowered))
+                                        }
+                                        case Err(error) {
+                                            print(ir.NormalizeError(con error))
+                                        }
+                                    }
                                 }
                                 case Err(error) {
-                                    print(ir.NormalizeError(con error))
+                                    print(semantic.NormalizeError(con error))
                                 }
                             }
                         }
                         case Err(error) {
-                            print(semantic.NormalizeError(con error))
+                            print(specialize.NormalizeError(con error))
                         }
                     }
                 }
@@ -124,19 +139,26 @@ func runIrTest(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match semantic.Check(con program) {
-                        case Ok(checked) {
-                            match ir.LowerTest(con program, con checked, 0) {
-                                case Ok(lowered) {
-                                    print(ir.Normalize(con lowered))
+                    match specialize.Specialize(con program) {
+                        case Ok(concrete) {
+                            match semantic.Check(con concrete) {
+                                case Ok(checked) {
+                                    match ir.LowerTest(con concrete, con checked, 0) {
+                                        case Ok(lowered) {
+                                            print(ir.Normalize(con lowered))
+                                        }
+                                        case Err(error) {
+                                            print(ir.NormalizeError(con error))
+                                        }
+                                    }
                                 }
                                 case Err(error) {
-                                    print(ir.NormalizeError(con error))
+                                    print(semantic.NormalizeError(con error))
                                 }
                             }
                         }
                         case Err(error) {
-                            print(semantic.NormalizeError(con error))
+                            print(specialize.NormalizeError(con error))
                         }
                     }
                 }

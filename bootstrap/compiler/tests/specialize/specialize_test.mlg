@@ -1,0 +1,39 @@
+package specialize
+
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/semantic"
+
+test SpecializesGenericStructsFunctionsAndReceivers() {
+    source := "type Box[T] struct { value T } func (mut box Box[T]) replace(value T) { box.value = value } func Identity[T](value T) T { return value } func main() { mut box := Box[string]{value: Identity[string](\"before\")}; box.replace(\"after\") }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Specialize(con program) {
+                        case Ok(concrete) {
+                            match semantic.Check(con concrete) {
+                                case Ok(checked) {
+                                    expected := "CHECKED|1|0|2|1\nSTRUCT|__mlg_spec_type_426f785b737472696e675d|1\nFIELD|__mlg_spec_type_426f785b737472696e675d|value|string\nFUNC|main|unit|0\nFUNC|__mlg_spec_func_4964656e746974795b737472696e675d|string|1\nPARAM|__mlg_spec_func_4964656e746974795b737472696e675d|owned|value|string\nMETHOD|__mlg_spec_type_426f785b737472696e675d|replace|mut|box|unit|1\nMPARAM|__mlg_spec_type_426f785b737472696e675d|replace|owned|value|string"
+                                    assert(semantic.Normalize(con checked) == expected)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

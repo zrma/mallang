@@ -1760,8 +1760,9 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] index-only non-Copy range와 indexed `con` element borrow typed IR
 - [x] method declaration과 direct local owned/`con`/`mut` receiver typed IR
 - [x] field/index/temporary/computed method receiver typed IR
+- [x] demand-driven generic struct/function/receiver specialization과 typed IR
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
-- [ ] complete control flow, ADT, closure, generic specialization semantics
+- [ ] generic enum, symbolic body validation과 intrinsic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance
 

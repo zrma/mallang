@@ -1,0 +1,679 @@
+package specialize
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+pub type SpecializationError struct {
+    message string
+    span source.Span
+}
+
+type GenericDecl struct {
+    name string
+    node int
+    params []string
+}
+
+type GenericMethod struct {
+    owner string
+    node int
+}
+
+type Substitution struct {
+    name string
+    node int
+}
+
+type Instance struct {
+    key string
+    name string
+}
+
+type ActiveInstance struct {
+    declaration string
+    key string
+    active bool
+}
+
+type Specializer struct {
+    nodes []ast.Node
+    genericStructs []GenericDecl
+    genericFunctions []GenericDecl
+    genericMethods []GenericMethod
+    structInstances []Instance
+    functionInstances []Instance
+    activeStructs []ActiveInstance
+    activeFunctions []ActiveInstance
+    generatedStructs []int
+    generatedFunctions []int
+}
+
+pub func Specialize(con program ast.Program) Result[ast.Program, SpecializationError] {
+    mut specializer := Specializer{nodes: []ast.Node{}, genericStructs: []GenericDecl{}, genericFunctions: []GenericDecl{}, genericMethods: []GenericMethod{}, structInstances: []Instance{}, functionInstances: []Instance{}, activeStructs: []ActiveInstance{}, activeFunctions: []ActiveInstance{}, generatedStructs: []int{}, generatedFunctions: []int{},}
+    specializer.collect(con program)
+    return specializer.run(con program)
+}
+
+pub func NormalizeError(con error SpecializationError) string {
+    span := source.Copy(con error.span)
+    parts := []string{"SERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", encodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
+
+pub func ErrorMessage(con error SpecializationError) string {
+    return copyText(con error.message)
+}
+
+func (mut self Specializer) collect(con program ast.Program) {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isStructKind(con kind) {
+            params := typeParams(con program, declaration)
+            if len(params) > 0 {
+                self.genericStructs = append(self.genericStructs, GenericDecl{name: ast.Value(con program, declaration), node: declaration, params: params})
+            }
+        }
+    }
+
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if isFunctionKind(con kind) {
+            params := typeParams(con program, declaration)
+            if len(params) > 0 {
+                self.genericFunctions = append(self.genericFunctions, GenericDecl{name: ast.Value(con program, declaration), node: declaration, params: params})
+            } else {
+                owner := receiverOwner(con program, declaration)
+                if owner != "" && self.genericStructIndex(con owner) >= 0 {
+                    self.genericMethods = append(self.genericMethods, GenericMethod{owner: owner, node: declaration})
+                }
+            }
+        }
+    }
+}
+
+func (mut self Specializer) run(con program ast.Program) Result[ast.Program, SpecializationError] {
+    root := ast.Root(con program)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        if self.isGenericDeclaration(con program, declaration) || self.isGenericMethod(declaration) {
+            continue
+        }
+        match self.rewriteNode(con program, declaration, con []Substitution {}
+        ){case Ok(rewritten) {
+                children = append(children, rewritten)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    for mut index := 0; index < len(self.generatedStructs); index = index + 1 {
+        children = append(children, self.generatedStructs[index])
+    }
+    for mut index := 0; index < len(self.generatedFunctions); index = index + 1 {
+        children = append(children, self.generatedFunctions[index])
+    }
+    rootNode := self.addNode(ast.Kind(con program, root), ast.Value(con program, root), ast.Span(con program, root), children)
+    return Ok(ast.NewProgram(self.nodes, rootNode))
+}
+
+func (mut self Specializer) rewriteNode(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    kind := ast.Kind(con program, node)
+    if kind == "Type.Named" {
+        return self.rewriteNamedType(con program, node, con substitutions)
+    }
+    if kind == "Expr.StructLiteral" {
+        return self.rewriteStructLiteral(con program, node, con substitutions)
+    }
+    if kind == "Expr.TypeApply" || kind == "Expr.Index" {
+        match self.rewriteFunctionApply(con program, node, con substitutions) {
+            case Ok(rewritten) {
+                if rewritten >= 0 {
+                    return Ok(rewritten)
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, node)
+        if self.genericFunctionIndex(con name) >= 0 {
+            message := strings.join(con []string{"generic function `", token.CopyText(con name), "` requires explicit type arguments",}, con "")
+            return Err(newError(message, ast.Span(con program, node)))
+        }
+    }
+
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+            case Ok(rewritten) {
+                children = append(children, rewritten)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode(kind, ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Specializer) rewriteNamedType(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    name := ast.Value(con program, node)
+    if ast.ChildCount(con program, node) == 0 {
+        substitution := substitutionIndex(con substitutions, con name)
+        if substitution >= 0 {
+            return Ok(self.cloneOutputNode(substitutions[substitution].node, ast.Span(con program, node), true))
+        }
+    }
+
+    mut arguments := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+            case Ok(argument) {
+                arguments = append(arguments, argument)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if self.genericStructIndex(con name) >= 0 {
+        match self.specializeStruct(con program, con name, con arguments, ast.Span(con program, node)) {
+            case Ok(specialized) {
+                return Ok(self.addNode("Type.Named", specialized, ast.Span(con program, node), []int{}))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode("Type.Named", name, ast.Span(con program, node), arguments))
+}
+
+func (mut self Specializer) rewriteStructLiteral(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    name := ast.Value(con program, node)
+    genericIndex := self.genericStructIndex(con name)
+    if genericIndex < 0 {
+        return self.rewriteChildren(con program, node, con substitutions)
+    }
+
+    mut typeCount := 0
+    for typeCount < ast.ChildCount(con program, node) {
+        child := ast.Child(con program, node, typeCount)
+        if !isTypeKind(con ast.Kind(con program, child)) {
+            break
+        }
+        typeCount = typeCount + 1
+    }
+    mut arguments := []int{}
+    for mut child := 0; child < typeCount; child = child + 1 {
+        match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+            case Ok(argument) {
+                arguments = append(arguments, argument)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    mut specialized := ""
+    match self.specializeStruct(con program, con name, con arguments, ast.Span(con program, node)) {
+        case Ok(value) {
+            specialized = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut fields := []int{}
+    for mut child := typeCount; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+            case Ok(field) {
+                fields = append(fields, field)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode("Expr.StructLiteral", specialized, ast.Span(con program, node), fields))
+}
+
+func (mut self Specializer) rewriteFunctionApply(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    base := ast.Child(con program, node, 0)
+    if ast.Kind(con program, base) != "Expr.Var" {
+        return Ok(-1)
+    }
+    name := ast.Value(con program, base)
+    if self.genericFunctionIndex(con name) < 0 {
+        return Ok(-1)
+    }
+
+    mut arguments := []int{}
+    if ast.Kind(con program, node) == "Expr.TypeApply" {
+        for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+                case Ok(argument) {
+                    arguments = append(arguments, argument)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    } else {
+        match self.expressionType(con program, ast.Child(con program, node, 1), con substitutions) {
+            case Ok(argument) {
+                arguments = append(arguments, argument)
+            }
+            case Err(_) {
+                return Ok(-1)
+            }
+        }
+    }
+
+    match self.specializeFunction(con program, con name, con arguments, ast.Span(con program, node)) {
+        case Ok(specialized) {
+            return Ok(self.addNode("Expr.Var", specialized, ast.Span(con program, node), []int{}))
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func (mut self Specializer) expressionType(con program ast.Program, expression int, con substitutions []Substitution) Result[int, bool] {
+    kind := ast.Kind(con program, expression)
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, expression)
+        substitution := substitutionIndex(con substitutions, con name)
+        if substitution >= 0 {
+            return Ok(self.cloneOutputNode(substitutions[substitution].node, ast.Span(con program, expression), true))
+        }
+        return Ok(self.addNode("Type.Named", name, ast.Span(con program, expression), []int{}))
+    }
+    if kind == "Expr.Index" {
+        base := ast.Child(con program, expression, 0)
+        if ast.Kind(con program, base) != "Expr.Var" {
+            return Err(false)
+        }
+        match self.expressionType(con program, ast.Child(con program, expression, 1), con substitutions) {
+            case Ok(argument) {
+                name := ast.Value(con program, base)
+                return Ok(self.addNode("Type.Named", name, ast.Span(con program, expression), []int{argument}))
+            }
+            case Err(_) {
+                return Err(false)
+            }
+        }
+    }
+    return Err(false)
+}
+
+func (mut self Specializer) rewriteChildren(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewriteNode(con program, ast.Child(con program, node, child), con substitutions) {
+            case Ok(rewritten) {
+                children = append(children, rewritten)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Specializer) specializeStruct(con program ast.Program, con name string, con arguments []int, span source.Span) Result[string, SpecializationError] {
+    declarationIndex := self.genericStructIndex(con name)
+    declarationNode := self.genericStructs[declarationIndex].node
+    match checkArity(con self.genericStructs[declarationIndex].name, len(self.genericStructs[declarationIndex].params), con arguments, source.Copy(con span)) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    key := self.specializationKey(con name, con arguments)
+    instance := instanceIndex(con self.structInstances, con key)
+    if instance >= 0 {
+        return Ok(copyText(con self.structInstances[instance].name))
+    }
+    match self.rejectExpandingCycle(con self.activeStructs, con name, con key, source.Copy(con span), con "struct") {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    specialized := strings.join(con []string{"__mlg_spec_type_", hexEncode(con key),}, con "")
+    self.structInstances = append(self.structInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
+    active := len(self.activeStructs)
+    self.activeStructs = append(self.activeStructs, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
+    substitutions := makeSubstitutions(con self.genericStructs[declarationIndex].params, con arguments)
+
+    mut fields := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, declarationNode); child = child + 1 {
+        item := ast.Child(con program, declarationNode, child)
+        if ast.Kind(con program, item) == "TypeParam" {
+            continue
+        }
+        match self.rewriteNode(con program, item, con substitutions) {
+            case Ok(field) {
+                fields = append(fields, field)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    specializedNode := self.addNode(ast.Kind(con program, declarationNode), copyText(con specialized), ast.Span(con program, declarationNode), fields)
+    self.generatedStructs = append(self.generatedStructs, specializedNode)
+
+    for mut method := 0; method < len(self.genericMethods); method = method + 1 {
+        if self.genericMethods[method].owner == name {
+            methodName := ast.Value(con program, self.genericMethods[method].node)
+            match self.rewriteFunctionDecl(con program, self.genericMethods[method].node, con substitutions, con methodName) {
+                case Ok(function) {
+                    self.generatedFunctions = append(self.generatedFunctions, function)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    self.activeStructs[active].active = false
+    return Ok(specialized)
+}
+
+func (mut self Specializer) specializeFunction(con program ast.Program, con name string, con arguments []int, span source.Span) Result[string, SpecializationError] {
+    declarationIndex := self.genericFunctionIndex(con name)
+    declarationNode := self.genericFunctions[declarationIndex].node
+    match checkArity(con self.genericFunctions[declarationIndex].name, len(self.genericFunctions[declarationIndex].params), con arguments, source.Copy(con span)) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    key := self.specializationKey(con name, con arguments)
+    instance := instanceIndex(con self.functionInstances, con key)
+    if instance >= 0 {
+        return Ok(copyText(con self.functionInstances[instance].name))
+    }
+    match self.rejectExpandingCycle(con self.activeFunctions, con name, con key, source.Copy(con span), con "function") {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    specialized := strings.join(con []string{"__mlg_spec_func_", hexEncode(con key),}, con "")
+    self.functionInstances = append(self.functionInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
+    active := len(self.activeFunctions)
+    self.activeFunctions = append(self.activeFunctions, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
+    substitutions := makeSubstitutions(con self.genericFunctions[declarationIndex].params, con arguments)
+    match self.rewriteFunctionDecl(con program, declarationNode, con substitutions, con specialized) {
+        case Ok(function) {
+            self.generatedFunctions = append(self.generatedFunctions, function)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    self.activeFunctions[active].active = false
+    return Ok(specialized)
+}
+
+func (mut self Specializer) rewriteFunctionDecl(con program ast.Program, declaration int, con substitutions []Substitution, con name string) Result[int, SpecializationError] {
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        item := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, item) == "TypeParam" {
+            continue
+        }
+        match self.rewriteNode(con program, item, con substitutions) {
+            case Ok(rewritten) {
+                children = append(children, rewritten)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode(ast.Kind(con program, declaration), copyText(con name), ast.Span(con program, declaration), children))
+}
+
+func (con self Specializer) specializationKey(con name string, con arguments []int) string {
+    mut rendered := []string{}
+    for mut index := 0; index < len(arguments); index = index + 1 {
+        rendered = append(rendered, self.renderType(arguments[index]))
+    }
+    return strings.join(con []string{copyText(con name), "[", strings.join(con rendered, con ","), "]",}, con "")
+}
+
+func (con self Specializer) renderType(node int) string {
+    kind := ast.NodeKind(con self.nodes[node])
+    if kind == "Type.Named" {
+        name := ast.NodeValue(con self.nodes[node])
+        if ast.NodeChildCount(con self.nodes[node]) == 0 {
+            return copyText(con name)
+        }
+        mut arguments := []string{}
+        for mut child := 0; child < ast.NodeChildCount(con self.nodes[node]); child = child + 1 {
+            arguments = append(arguments, self.renderType(ast.NodeChild(con self.nodes[node], child)))
+        }
+        return strings.join(con []string{name, "[", strings.join(con arguments, con ","), "]",}, con "")
+    }
+    if kind == "Type.Slice" {
+        return strings.join(con []string{"[]", self.renderType(ast.NodeChild(con self.nodes[node], 0)),}, con "")
+    }
+    if kind == "Type.Array" {
+        return strings.join(con []string{"[", ast.NodeValue(con self.nodes[node]), "]", self.renderType(ast.NodeChild(con self.nodes[node], 0)),}, con "")
+    }
+    return ast.NodeValue(con self.nodes[node])
+}
+
+func (mut self Specializer) cloneOutputNode(node int, override source.Span, replaceSpan bool) int {
+    mut children := []int{}
+    for mut child := 0; child < ast.NodeChildCount(con self.nodes[node]); child = child + 1 {
+        sourceChild := ast.NodeChild(con self.nodes[node], child)
+        children = append(children, self.cloneOutputNode(sourceChild, ast.NodeSpan(con self.nodes[sourceChild]), false))
+    }
+    mut span := ast.NodeSpan(con self.nodes[node])
+    if replaceSpan {
+        span = source.Copy(con override)
+    }
+    return self.addNode(ast.NodeKind(con self.nodes[node]), ast.NodeValue(con self.nodes[node]), span, children)
+}
+
+func (mut self Specializer) addNode(kind string, value string, span source.Span, children []int) int {
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, ast.NewNode(kind, value, span, children))
+    return index
+}
+
+func (con self Specializer) isGenericDeclaration(con program ast.Program, declaration int) bool {
+    kind := ast.Kind(con program, declaration)
+    name := ast.Value(con program, declaration)
+    if isStructKind(con kind) {
+        return self.genericStructIndex(con name) >= 0
+    }
+    if isFunctionKind(con kind) {
+        return self.genericFunctionIndex(con name) >= 0
+    }
+    return false
+}
+
+func (con self Specializer) isGenericMethod(declaration int) bool {
+    for mut index := 0; index < len(self.genericMethods); index = index + 1 {
+        if self.genericMethods[index].node == declaration {
+            return true
+        }
+    }
+    return false
+}
+
+func (con self Specializer) genericStructIndex(con name string) int {
+    for mut index := 0; index < len(self.genericStructs); index = index + 1 {
+        if self.genericStructs[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self Specializer) genericFunctionIndex(con name string) int {
+    for mut index := 0; index < len(self.genericFunctions); index = index + 1 {
+        if self.genericFunctions[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self Specializer) rejectExpandingCycle(con active []ActiveInstance, con declaration string, con key string, span source.Span, con kind string) Result[bool, SpecializationError] {
+    for mut index := 0; index < len(active); index = index + 1 {
+        if active[index].active && active[index].declaration == declaration && active[index].key != key {
+            message := strings.join(con []string{"generic ", copyText(con kind), " `", copyText(con declaration), "` creates an expanding specialization cycle: `", copyText(con active[index].key), "` -> `", copyText(con key), "`",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+    }
+    return Ok(true)
+}
+
+func checkArity(con name string, expected int, con arguments []int, span source.Span) Result[bool, SpecializationError] {
+    if len(arguments) != expected {
+        message := strings.join(con []string{"generic declaration `", copyText(con name), "` expects ", strings.fromInt(expected), " type argument(s), got ", strings.fromInt(len(arguments)),}, con "")
+        return Err(newError(message, span))
+    }
+    return Ok(true)
+}
+
+func typeParams(con program ast.Program, declaration int) []string {
+    mut params := []string{}
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "TypeParam" {
+            params = append(params, ast.Value(con program, node))
+        }
+    }
+    return params
+}
+
+func receiverOwner(con program ast.Program, declaration int) string {
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "Receiver" {
+            param := ast.Child(con program, node, 0)
+            ty := ast.Child(con program, param, 0)
+            if ast.Kind(con program, ty) == "Type.Named" {
+                return ast.Value(con program, ty)
+            }
+        }
+    }
+    return ""
+}
+
+func makeSubstitutions(con params []string, con arguments []int) []Substitution {
+    mut substitutions := []Substitution{}
+    for mut index := 0; index < len(params); index = index + 1 {
+        substitutions = append(substitutions, Substitution{name: copyText(con params[index]), node: arguments[index]})
+    }
+    return substitutions
+}
+
+func substitutionIndex(con substitutions []Substitution, con name string) int {
+    for mut index := 0; index < len(substitutions); index = index + 1 {
+        if substitutions[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func instanceIndex(con instances []Instance, con key string) int {
+    for mut index := 0; index < len(instances); index = index + 1 {
+        if instances[index].key == key {
+            return index
+        }
+    }
+    return - 1
+}
+
+func isStructKind(con kind string) bool {
+    return kind == "StructDecl.Package" || kind == "StructDecl.Public"
+}
+
+func isFunctionKind(con kind string) bool {
+    return kind == "FunctionDecl.Package" || kind == "FunctionDecl.Public"
+}
+
+func isTypeKind(con kind string) bool {
+    return kind == "Type.Named" || kind == "Type.Slice" || kind == "Type.Array" || kind == "Type.Function.Immutable" || kind == "Type.Function.Mutable"
+}
+
+func newError(message string, span source.Span) SpecializationError {
+    return SpecializationError{message: message, span: span}
+}
+
+func copyText(con text string) string {
+    return match strings.slice(con text, 0, strings.byteLen(con text)) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+func hexEncode(con text string) string {
+    mut output := ""
+    for mut index := 0; index < strings.byteLen(con text); index = index + 1 {
+        match strings.byteAt(con text, index) {
+            case Ok(value) {
+                high := hexDigit(value / 16)
+                low := hexDigit(value % 16)
+                output = strings.join(con []string{output, high, low}, con "")
+            }
+            case Err(_) {}
+        }
+    }
+    return output
+}
+
+func hexDigit(value int) string {
+    return match strings.slice(con "0123456789abcdef", value, value + 1) {
+        case Ok(digit) {
+            digit
+        }
+        case Err(_) {
+            "0"
+        }
+    }
+}
+
+func encodeBytes(con text string) string {
+    mut parts := []string{}
+    for mut index := 0; index < strings.byteLen(con text); index = index + 1 {
+        match strings.byteAt(con text, index) {
+            case Ok(value) {
+                parts = append(parts, strings.fromInt(value))
+            }
+            case Err(_) {
+                parts = append(parts, "invalid")
+            }
+        }
+    }
+    return strings.join(con parts, con ",")
+}

@@ -1,0 +1,12 @@
+type Box[T] struct {
+    value T
+}
+
+func Identity[T](value T) T {
+    return value
+}
+
+func main() {
+    box := Box[int]{value: Identity[int](7)}
+    print(box.value)
+}

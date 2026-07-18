@@ -1,0 +1,18 @@
+type Box[T] struct {
+    value T
+}
+
+func (mut box Box[T]) replace(value T) {
+    box.value = value
+}
+
+func Identity[T](value T) T {
+    return value
+}
+
+func main() {
+    print(Identity[string]("initial"))
+    mut box := Box[string]{value: "before"}
+    box.replace("after")
+    print(box.value)
+}
