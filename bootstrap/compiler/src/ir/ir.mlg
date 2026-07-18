@@ -511,6 +511,61 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         }
     }
 
+    if kind == "Expr.StructLiteral" {
+        fieldCount := semantic.StructFieldCount(con checked, con value)
+        if fieldCount < 0 {
+            return Err(newError("checked struct literal metadata is missing", ast.Span(con syntax, expression)))
+        }
+        mut fields := []int{}
+        for mut signatureField := 0; signatureField < fieldCount; signatureField = signatureField + 1 {
+            fieldName := semantic.StructFieldName(con checked, con value, signatureField)
+            mut fieldNode := -1
+            for mut child := 0; child < ast.ChildCount(con syntax, expression); child = child + 1 {
+                candidate := ast.Child(con syntax, expression, child)
+                if ast.Kind(con syntax, candidate) == "FieldInit" && ast.Value(con syntax, candidate) == fieldName {
+                    fieldNode = candidate
+                }
+            }
+            if fieldNode < 0 || ast.ChildCount(con syntax, fieldNode) != 1 {
+                return Err(newError("checked struct literal field is missing", ast.Span(con syntax, expression)))
+            }
+            fieldExpression := ast.Child(con syntax, fieldNode, 0)
+            mut fieldType := ""
+            match semantic.NodeType(con checked, fieldExpression) {
+                case Ok(resolved) {
+                    fieldType = resolved
+                }
+                case Err(_) {
+                    return Err(newError("checked struct literal field type is missing", ast.Span(con syntax, fieldNode)))
+                }
+            }
+            match self.lowerExpression(con syntax, fieldExpression, con checked) {
+                case Ok(loweredField) {
+                    fields = append(fields, self.addNode("F", "Field.Value", token.CopyText(con fieldName), token.CopyText(con fieldType), ast.Span(con syntax, fieldNode), []int{loweredField}, false))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("E", "Expr.StructLiteral", token.CopyText(con value), token.CopyText(con ty), ast.Span(con syntax, expression), fields, cleanup))
+    }
+
+    if kind == "Expr.ArrayLiteral" {
+        mut elements := []int{}
+        for mut child := 1; child < ast.ChildCount(con syntax, expression); child = child + 1 {
+            match self.lowerExpression(con syntax, ast.Child(con syntax, expression, child), con checked) {
+                case Ok(element) {
+                    elements = append(elements, element)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("E", "Expr.ArrayLiteral", "", token.CopyText(con ty), ast.Span(con syntax, expression), elements, cleanup))
+    }
+
     mut children := []int{}
     for mut child := 0; child < ast.ChildCount(con syntax, expression); child = child + 1 {
         syntaxChild := ast.Child(con syntax, expression, child)

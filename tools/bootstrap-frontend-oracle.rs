@@ -9,7 +9,7 @@ use mallang::ast::{
     Visibility,
 };
 use mallang::ir::{
-    IrArg, IrClosureCaptureValue, IrExpr, IrExprKind, IrStmt, IrStmtKind,
+    IrArg, IrClosureCaptureValue, IrExpr, IrExprKind, IrFieldValue, IrStmt, IrStmtKind,
 };
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
@@ -442,6 +442,22 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
             );
             ("Expr.IndirectCall", String::new(), children)
         }
+        IrExprKind::StructLiteral { type_name, fields } => (
+            "Expr.StructLiteral",
+            type_name.clone(),
+            fields
+                .iter()
+                .map(|field| normalize_ir_field(field, depth + 1))
+                .collect(),
+        ),
+        IrExprKind::ArrayLiteral { elements } => (
+            "Expr.ArrayLiteral",
+            String::new(),
+            elements
+                .iter()
+                .map(|element| normalize_ir_expression(element, depth + 1))
+                .collect(),
+        ),
         IrExprKind::FieldAccess { base, field } => (
             "Expr.FieldAccess",
             field.clone(),
@@ -529,6 +545,18 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         &value,
         &expression.ty.source_name(),
         &children,
+    )
+}
+
+fn normalize_ir_field(field: &IrFieldValue, depth: usize) -> String {
+    normalize_ir_line(
+        depth,
+        "F",
+        "Field.Value",
+        field.span,
+        &field.name,
+        &field.expr.ty.source_name(),
+        &[normalize_ir_expression(&field.expr, depth + 1)],
     )
 }
 

@@ -165,8 +165,11 @@ direct slice self-append reactivation, field-source reads and non-Copy item
 moves. P176e2c3d lowers read-only `len` as `Expr.ArrayLen`, evaluates return
 values before dropping owned sources and preserves field owners. P176e2c3e
 normalizes statement-only `print` sources as read-only `Arg.Con` values and
-drops their owned direct or field owner at function tail. Twenty focused IR
-fixtures and 218 Mallang compiler project tests cover the expanded boundary.
-Aggregate literal typed IR, remaining full-expression cases and the rest of the
-typed IR are incomplete, so no complete semantic, typed-IR or Stage1 compiler
-claim is made.
+drops their owned direct or field owner at function tail. P176e2c3f lowers
+struct literal fields in declaration order as `Field.Value` nodes and consumes
+owned field sources exactly once. P176e2c3g lowers fixed-array and slice
+literals as `Expr.ArrayLiteral` and consumes owned elements exactly once.
+Twenty-two focused IR fixtures and 220 Mallang compiler project tests cover the
+expanded boundary. ADT constructor typed IR, remaining full-expression cases
+and the rest of the typed IR are incomplete, so no complete semantic, typed-IR
+or Stage1 compiler claim is made.

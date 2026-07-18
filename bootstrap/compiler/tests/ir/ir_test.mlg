@@ -794,6 +794,125 @@ test PreservesPrintReadCleanup() {
     }
 }
 
+test LowersStructLiteralCleanup() {
+    source := "type User struct { name string age int } func build(name string, unused string) User { return User{age: 30, name: name} } func discard(name string) { user := User{age: 30, name: name} } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    buildTemp := lowered.functions[0].body[0]
+                                    assert(lowered.nodes[buildTemp].kind == "Stmt.Let.Immutable")
+                                    buildLiteral := lowered.nodes[buildTemp].children[0]
+                                    assert(lowered.nodes[buildLiteral].kind == "Expr.StructLiteral")
+                                    assert(lowered.nodes[buildLiteral].value == "User")
+                                    assert(len(lowered.nodes[buildLiteral].children) == 2)
+                                    nameField := lowered.nodes[buildLiteral].children[0]
+                                    ageField := lowered.nodes[buildLiteral].children[1]
+                                    assert(lowered.nodes[nameField].kind == "Field.Value")
+                                    assert(lowered.nodes[nameField].value == "name")
+                                    assert(lowered.nodes[ageField].value == "age")
+                                    nameValue := lowered.nodes[nameField].children[0]
+                                    assert(lowered.nodes[nameValue].kind == "Expr.Var")
+                                    assert(lowered.nodes[nameValue].value == "name")
+                                    buildDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[buildDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[buildDrop].children[0]].value == "unused")
+                                    assert(lowered.nodes[lowered.functions[0].body[2]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    discardLet := lowered.functions[1].body[0]
+                                    assert(lowered.nodes[discardLet].kind == "Stmt.Let.Immutable")
+                                    discardLiteral := lowered.nodes[discardLet].children[0]
+                                    assert(lowered.nodes[discardLiteral].kind == "Expr.StructLiteral")
+                                    discardDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[discardDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[discardDrop].children[0]].value == "user")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test LowersArrayLiteralCleanup() {
+    source := "type Entry struct { label string } func fixed(first string, unused string) [2]string { return [2]string{first, \"second\"} } func discard(first string) { values := []string{first, \"second\"} } func collect(entry Entry) []Entry { return []Entry{entry} } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 3)
+                                    fixedTemp := lowered.functions[0].body[0]
+                                    fixedLiteral := lowered.nodes[fixedTemp].children[0]
+                                    assert(lowered.nodes[fixedLiteral].kind == "Expr.ArrayLiteral")
+                                    assert(lowered.nodes[fixedLiteral].ty == "[2]string")
+                                    assert(len(lowered.nodes[fixedLiteral].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[fixedLiteral].children[0]].value == "first")
+                                    fixedDrop := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[fixedDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[fixedDrop].children[0]].value == "unused")
+                                    assert(lowered.nodes[lowered.functions[0].body[2]].kind == "Stmt.Return")
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    discardLet := lowered.functions[1].body[0]
+                                    discardLiteral := lowered.nodes[discardLet].children[0]
+                                    assert(lowered.nodes[discardLiteral].kind == "Expr.ArrayLiteral")
+                                    assert(lowered.nodes[discardLiteral].ty == "[]string")
+                                    discardDrop := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[discardDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[discardDrop].children[0]].value == "values")
+
+                                    assert(len(lowered.functions[2].body) == 1)
+                                    collectReturn := lowered.functions[2].body[0]
+                                    collectLiteral := lowered.nodes[collectReturn].children[0]
+                                    assert(lowered.nodes[collectLiteral].kind == "Expr.ArrayLiteral")
+                                    assert(lowered.nodes[collectLiteral].ty == "[]Entry")
+                                    assert(lowered.nodes[lowered.nodes[collectLiteral].children[0]].value == "entry")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

@@ -1,0 +1,14 @@
+type User struct {
+    name string
+    age int
+}
+
+func build(name string, unused string) User {
+    return User{age: 30, name: name}
+}
+
+func discard(name string) {
+    user := User{age: 30, name: name}
+}
+
+func main() {}

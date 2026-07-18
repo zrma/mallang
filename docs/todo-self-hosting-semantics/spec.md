@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3e complete
+Status: in progress; P176a-P176e2c3g complete
 
 ## Objective
 
@@ -133,6 +133,10 @@ agrees.
   before dropping their owned direct or field source (complete)
 - P176e2c3e: normalize statement-only `print` sources as read-only `Arg.Con`
   values and preserve owner tail cleanup (complete)
+- P176e2c3f: lower struct literal fields in declaration order as explicit
+  `Field.Value` nodes and preserve field-value move cleanup (complete)
+- P176e2c3g: lower fixed-array and slice literals as `Expr.ArrayLiteral` and
+  preserve owned element move cleanup (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -534,10 +538,15 @@ specialization and function-body checking until later P176 slices.
   remaining direct/field append move accounting, and P176e2c3d adds read-only
   `len` plus return full-expression cleanup. P176e2c3e adds statement-only
   `print` read arguments and owner tail cleanup. Twenty typed-IR fixtures and
-  two hundred eighteen Mallang project tests cover this boundary. Aggregate
-  literal typed IR, full-expression cases and checked constructs continue in
-  P176e. Stage0 match-arm shadow cleanup identity remains tracked separately in
-  `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
+  two hundred eighteen Mallang project tests cover that boundary. P176e2c3f
+  adds declaration-ordered struct literal fields and excludes owned field
+  sources from duplicate cleanup. Twenty-one typed-IR fixtures and two hundred
+  nineteen Mallang project tests cover that boundary. P176e2c3g adds fixed-array
+  and slice literal element lowering with owned move accounting. Twenty-two
+  typed-IR fixtures and two hundred twenty Mallang project tests cover the
+  expanded boundary. ADT constructor typed IR, full-expression cases and
+  checked constructs continue in P176e. Stage0 match-arm shadow cleanup identity
+  remains tracked separately in `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 
 ## B2 Completion Criteria
 

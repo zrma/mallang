@@ -222,6 +222,22 @@ pub func NodeNeedsCleanup(con checked CheckedProgram, node int) bool {
     return false
 }
 
+pub func StructFieldCount(con checked CheckedProgram, con name string) int {
+    structure := checked.structIndex(con name)
+    if structure < 0 {
+        return - 1
+    }
+    return len(checked.structs[structure].fields)
+}
+
+pub func StructFieldName(con checked CheckedProgram, con name string, field int) string {
+    structure := checked.structIndex(con name)
+    if structure < 0 || field < 0 || field >= len(checked.structs[structure].fields) {
+        return ""
+    }
+    return token.CopyText(con checked.structs[structure].fields[field].name)
+}
+
 pub func FunctionReturnType(con checked CheckedProgram, con name string) Result[string, bool] {
     for mut index := 0; index < len(checked.functions); index = index + 1 {
         if checked.functions[index].name == name {
