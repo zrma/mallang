@@ -1,0 +1,5 @@
+func Debug[T](value T) {
+    print(value)
+}
+
+func main() {}

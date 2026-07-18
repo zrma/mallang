@@ -1,0 +1,9 @@
+type Box[T] struct {
+    value T
+}
+
+func Debug[T](value Box[T]) {
+    print(value)
+}
+
+func main() {}

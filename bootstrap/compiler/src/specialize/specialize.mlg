@@ -10,6 +10,16 @@ pub type SpecializationError struct {
     span source.Span
 }
 
+pub type NameMapping struct {
+    internal string
+    source string
+}
+
+pub type SpecializedProgram struct {
+    program ast.Program
+    mappings []NameMapping
+}
+
 type GenericDecl struct {
     name string
     node int
@@ -37,6 +47,10 @@ type ActiveInstance struct {
     active bool
 }
 
+type ProgramCopier struct {
+    nodes []ast.Node
+}
+
 type Specializer struct {
     nodes []ast.Node
     genericStructs []GenericDecl
@@ -52,12 +66,63 @@ type Specializer struct {
     generatedStructs []int
     generatedEnums []int
     generatedFunctions []int
+    mappings []NameMapping
+    symbolic bool
 }
 
 pub func Specialize(con program ast.Program) Result[ast.Program, SpecializationError] {
-    mut specializer := Specializer{nodes: []ast.Node{}, genericStructs: []GenericDecl{}, genericEnums: []GenericDecl{}, genericFunctions: []GenericDecl{}, genericMethods: []GenericMethod{}, structInstances: []Instance{}, enumInstances: []Instance{}, functionInstances: []Instance{}, activeStructs: []ActiveInstance{}, activeEnums: []ActiveInstance{}, activeFunctions: []ActiveInstance{}, generatedStructs: []int{}, generatedEnums: []int{}, generatedFunctions: []int{},}
+    return match SpecializeDetailed(con program) {
+        case Ok(specialized) {
+            Ok(Program(con specialized))
+        }
+        case Err(error) {
+            Err(error)
+        }
+    }
+}
+
+pub func SpecializeDetailed(con program ast.Program) Result[SpecializedProgram, SpecializationError] {
+    mut specializer := newSpecializer(false)
     specializer.collect(con program)
     return specializer.run(con program)
+}
+
+pub func SpecializeForValidation(con program ast.Program) Result[SpecializedProgram, SpecializationError] {
+    mut specializer := newSpecializer(true)
+    specializer.collect(con program)
+    return specializer.run(con program)
+}
+
+pub func HasGenerics(con program ast.Program) bool {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        if len(typeParams(con program, declaration)) > 0 {
+            return true
+        }
+    }
+    return false
+}
+
+pub func Program(con specialized SpecializedProgram) ast.Program {
+    mut copier := ProgramCopier{nodes: []ast.Node{},}
+    root := copier.copyNode(con specialized.program, ast.Root(con specialized.program))
+    return ast.NewProgram(copier.nodes, root)
+}
+
+pub func RestoreMessage(con specialized SpecializedProgram, con message string) string {
+    mut restored := copyText(con message)
+    order := mappingOrder(con specialized.mappings)
+    for mut position := 0; position < len(order); position = position + 1 {
+        index := order[position]
+        restored = replaceAll(con restored, con specialized.mappings[index].internal, con specialized.mappings[index].source)
+    }
+    return restored
+}
+
+pub func NormalizeMappedError(con specialized SpecializedProgram, con message string, span source.Span) string {
+    restored := RestoreMessage(con specialized, con message)
+    return normalizeMessage(con restored, span)
 }
 
 pub func NormalizeError(con error SpecializationError) string {
@@ -68,6 +133,85 @@ pub func NormalizeError(con error SpecializationError) string {
 
 pub func ErrorMessage(con error SpecializationError) string {
     return copyText(con error.message)
+}
+
+func newSpecializer(symbolic bool) Specializer {
+    return Specializer{nodes: []ast.Node{}, genericStructs: []GenericDecl{}, genericEnums: []GenericDecl{}, genericFunctions: []GenericDecl{}, genericMethods: []GenericMethod{}, structInstances: []Instance{}, enumInstances: []Instance{}, functionInstances: []Instance{}, activeStructs: []ActiveInstance{}, activeEnums: []ActiveInstance{}, activeFunctions: []ActiveInstance{}, generatedStructs: []int{}, generatedEnums: []int{}, generatedFunctions: []int{}, mappings: []NameMapping{}, symbolic: symbolic,}
+}
+
+func (mut self ProgramCopier) copyNode(con program ast.Program, node int) int {
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        children = append(children, self.copyNode(con program, ast.Child(con program, node, child)))
+    }
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, ast.NewNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+    return index
+}
+
+func (mut self Specializer) addSymbolicDemands(con program ast.Program) Result[bool, SpecializationError] {
+    structOrder := genericDeclOrder(con self.genericStructs)
+    for mut position := 0; position < len(structOrder); position = position + 1 {
+        declaration := structOrder[position]
+        node := self.genericStructs[declaration].node
+        name := copyText(con self.genericStructs[declaration].name)
+        params := copyTexts(con self.genericStructs[declaration].params)
+        arguments := self.symbolicArguments(con program, node, con name, con params)
+        match self.specializeStruct(con program, con name, con arguments, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    enumOrder := genericDeclOrder(con self.genericEnums)
+    for mut position := 0; position < len(enumOrder); position = position + 1 {
+        declaration := enumOrder[position]
+        node := self.genericEnums[declaration].node
+        name := copyText(con self.genericEnums[declaration].name)
+        params := copyTexts(con self.genericEnums[declaration].params)
+        arguments := self.symbolicArguments(con program, node, con name, con params)
+        match self.specializeEnum(con program, con name, con arguments, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    functionOrder := genericDeclOrder(con self.genericFunctions)
+    for mut position := 0; position < len(functionOrder); position = position + 1 {
+        declaration := functionOrder[position]
+        node := self.genericFunctions[declaration].node
+        name := copyText(con self.genericFunctions[declaration].name)
+        params := copyTexts(con self.genericFunctions[declaration].params)
+        arguments := self.symbolicArguments(con program, node, con name, con params)
+        match self.specializeFunction(con program, con name, con arguments, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self Specializer) symbolicArguments(con program ast.Program, declaration int, con declarationName string, con params []string) []int {
+    mut arguments := []int{}
+    for mut index := 0; index < len(params); index = index + 1 {
+        paramNode := typeParamNode(con program, declaration, index)
+        span := ast.Span(con program, paramNode)
+        key := strings.join(con []string{copyText(con declarationName), ":", copyText(con params[index]), ":", strings.fromInt(index),}, con "")
+        internal := strings.join(con []string{"__mlg_symbolic_type_", hexEncode(con key),}, con "")
+        self.mappings = append(self.mappings, NameMapping{internal: copyText(con internal), source: copyText(con params[index]),})
+
+        intType := self.addNode("Type.Named", "int", source.Copy(con span), []int{})
+        arrayType := self.addNode("Type.Array", "1", source.Copy(con span), []int{intType})
+        field := self.addNode("FieldDecl", "__non_printable", source.Copy(con span), []int{arrayType})
+        structure := self.addNode("StructDecl.Package", copyText(con internal), source.Copy(con span), []int{field})
+        self.generatedStructs = append(self.generatedStructs, structure)
+        arguments = append(arguments, self.addNode("Type.Named", internal, span, []int{}))
+    }
+    return arguments
 }
 
 func (mut self Specializer) collect(con program ast.Program) {
@@ -105,7 +249,7 @@ func (mut self Specializer) collect(con program ast.Program) {
     }
 }
 
-func (mut self Specializer) run(con program ast.Program) Result[ast.Program, SpecializationError] {
+func (mut self Specializer) run(con program ast.Program) Result[SpecializedProgram, SpecializationError] {
     root := ast.Root(con program)
     mut children := []int{}
     for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
@@ -122,6 +266,14 @@ func (mut self Specializer) run(con program ast.Program) Result[ast.Program, Spe
             }
         }
     }
+    if self.symbolic {
+        match self.addSymbolicDemands(con program) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
     for mut index := 0; index < len(self.generatedStructs); index = index + 1 {
         children = append(children, self.generatedStructs[index])
     }
@@ -132,7 +284,7 @@ func (mut self Specializer) run(con program ast.Program) Result[ast.Program, Spe
         children = append(children, self.generatedFunctions[index])
     }
     rootNode := self.addNode(ast.Kind(con program, root), ast.Value(con program, root), ast.Span(con program, root), children)
-    return Ok(ast.NewProgram(self.nodes, rootNode))
+    return Ok(SpecializedProgram{program: ast.NewProgram(self.nodes, rootNode), mappings: self.mappings,})
 }
 
 func (mut self Specializer) rewriteNode(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
@@ -458,6 +610,7 @@ func (mut self Specializer) specializeStruct(con program ast.Program, con name s
     }
 
     specialized := strings.join(con []string{"__mlg_spec_type_", hexEncode(con key),}, con "")
+    self.mappings = append(self.mappings, NameMapping{internal: copyText(con specialized), source: copyText(con key),})
     self.structInstances = append(self.structInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
     active := len(self.activeStructs)
     self.activeStructs = append(self.activeStructs, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
@@ -520,6 +673,7 @@ func (mut self Specializer) specializeEnum(con program ast.Program, con name str
     }
 
     specialized := strings.join(con []string{"__mlg_spec_enum_", hexEncode(con key),}, con "")
+    self.mappings = append(self.mappings, NameMapping{internal: copyText(con specialized), source: copyText(con key),})
     self.enumInstances = append(self.enumInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
     active := len(self.activeEnums)
     self.activeEnums = append(self.activeEnums, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
@@ -568,6 +722,7 @@ func (mut self Specializer) specializeFunction(con program ast.Program, con name
     }
 
     specialized := strings.join(con []string{"__mlg_spec_func_", hexEncode(con key),}, con "")
+    self.mappings = append(self.mappings, NameMapping{internal: copyText(con specialized), source: copyText(con key),})
     self.functionInstances = append(self.functionInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
     active := len(self.activeFunctions)
     self.activeFunctions = append(self.activeFunctions, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
@@ -732,6 +887,20 @@ func typeParams(con program ast.Program, declaration int) []string {
     return params
 }
 
+func typeParamNode(con program ast.Program, declaration int, target int) int {
+    mut seen := 0
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "TypeParam" {
+            if seen == target {
+                return node
+            }
+            seen = seen + 1
+        }
+    }
+    return declaration
+}
+
 func receiverOwner(con program ast.Program, declaration int) string {
     for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
         node := ast.Child(con program, declaration, child)
@@ -803,6 +972,98 @@ func copyText(con text string) string {
     }
 }
 
+func copyTexts(con values []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, copyText(con values[index]))
+    }
+    return copied
+}
+
+func genericDeclOrder(con declarations []GenericDecl) []int {
+    mut used := []bool{}
+    for mut index := 0; index < len(declarations); index = index + 1 {
+        used = append(used, false)
+    }
+    mut order := []int{}
+    for len(order) < len(declarations) {
+        mut best := -1
+        for mut index := 0; index < len(declarations); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con declarations[index].name, con declarations[best].name)) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        order = append(order, best)
+    }
+    return order
+}
+
+func mappingOrder(con mappings []NameMapping) []int {
+    mut used := []bool{}
+    for mut index := 0; index < len(mappings); index = index + 1 {
+        used = append(used, false)
+    }
+    mut order := []int{}
+    for len(order) < len(mappings) {
+        mut best := -1
+        for mut index := 0; index < len(mappings); index = index + 1 {
+            if !used[index]&&(best < 0 || mappingPrecedes(con mappings[index], con mappings[best])) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        order = append(order, best)
+    }
+    return order
+}
+
+func mappingPrecedes(con left NameMapping, con right NameMapping) bool {
+    leftLength := strings.byteLen(con left.internal)
+    rightLength := strings.byteLen(con right.internal)
+    if leftLength != rightLength {
+        return leftLength > rightLength
+    }
+    return textPrecedes(con left.internal, con right.internal)
+}
+
+func textPrecedes(con left string, con right string) bool {
+    mut limit := strings.byteLen(con left)
+    if strings.byteLen(con right) < limit {
+        limit = strings.byteLen(con right)
+    }
+    for mut index := 0; index < limit; index = index + 1 {
+        mut leftByte := 0
+        match strings.byteAt(con left, index) {
+            case Ok(value) {
+                leftByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        mut rightByte := 0
+        match strings.byteAt(con right, index) {
+            case Ok(value) {
+                rightByte = value
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        if leftByte != rightByte {
+            return leftByte < rightByte
+        }
+    }
+    return strings.byteLen(con left) < strings.byteLen(con right)
+}
+
 func hexEncode(con text string) string {
     mut output := ""
     for mut index := 0; index < strings.byteLen(con text); index = index + 1 {
@@ -827,6 +1088,46 @@ func hexDigit(value int) string {
             "0"
         }
     }
+}
+
+func replaceAll(con text string, con needle string, con replacement string) string {
+    if strings.byteLen(con needle) == 0 {
+        return copyText(con text)
+    }
+    mut output := ""
+    mut remaining := copyText(con text)
+    for {
+        match strings.find(con remaining, con needle) {
+            case Some(offset) {
+                mut before := ""
+                match strings.slice(con remaining, 0, offset) {
+                    case Ok(value) {
+                        before = value
+                    }
+                    case Err(_) {}
+                }
+                output = strings.join(con []string{copyText(con output), before, copyText(con replacement),}, con "")
+                start := offset + strings.byteLen(con needle)
+                match strings.slice(con remaining, start, strings.byteLen(con remaining)) {
+                    case Ok(value) {
+                        remaining = value
+                    }
+                    case Err(_) {
+                        remaining = ""
+                    }
+                }
+            }
+            case None {
+                return strings.join(con []string{copyText(con output), copyText(con remaining),}, con "")
+            }
+        }
+    }
+    return copyText(con output)
+}
+
+func normalizeMessage(con message string, span source.Span) string {
+    parts := []string{"SERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", encodeBytes(con message),}
+    return strings.join(con parts, con "")
 }
 
 func encodeBytes(con text string) string {

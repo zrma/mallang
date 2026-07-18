@@ -71,3 +71,38 @@ test SpecializesGenericEnumsAndPreservesPatternOrigins() {
         }
     }
 }
+
+test RestoresSymbolicGenericBodyDiagnostics() {
+    source := "type Box[T] struct { value T } func Debug[T](value Box[T]) { print(value) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match SpecializeForValidation(con program) {
+                        case Ok(symbolic) {
+                            validationProgram := Program(con symbolic)
+                            match semantic.Check(con validationProgram) {
+                                case Ok(_) {
+                                    assert(false)
+                                }
+                                case Err(error) {
+                                    message := semantic.ErrorMessage(con error)
+                                    assert(RestoreMessage(con symbolic, con message) == "cannot print value of type `Box[T]` in v0")
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

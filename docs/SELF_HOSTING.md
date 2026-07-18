@@ -216,7 +216,13 @@ explicit then/else cleanup blocks shared by Stage0 and Stage1. Thirty-nine
 focused IR fixtures and 240 Mallang compiler project tests cover the expanded
 boundary. P176e2c3z appends expression-form `match` outer-owner compensation
 drops after each arm's existing pattern cleanup. Forty focused IR fixtures and
-241 Mallang compiler project tests cover the expanded boundary. Generic and
-intrinsic IR plus remaining
-full-expression typed IR are incomplete, so
+241 Mallang compiler project tests cover the expanded boundary. P176e3a adds
+demand-driven generic struct, function and receiver specialization, and P176e3b
+extends the same concrete path to generic enum constructors and source pattern
+origins. P176e3c validates every generic declaration body once with symbolic
+non-Copy, non-printable arguments and restores internal names to source `T` and
+`Box[T]` diagnostics. Two hundred thirty-six semantic fixtures, forty-two
+typed-IR fixtures and two hundred forty-four Mallang project tests cover this
+boundary. Package and standard-intrinsic specialization plus the remaining
+full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

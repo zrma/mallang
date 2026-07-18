@@ -658,8 +658,13 @@ argument와 cleanup generic call의 `print` full-expression temporary를 230개 
 fixture, 41개 IR fixture와 전체 242개 project test가 고정한다. P176e3b는 generic enum
 constructor를 concrete enum identity로 rewrite하고 source generic pattern origin을 별도로
 보존한다. 두 concrete specialization, owned payload cleanup과 wrong-arity rejection을 232개
-semantic fixture, 42개 IR fixture와 전체 243개 project test가 고정한다. 다음 slice는
-symbolic body validation과 package/intrinsic specialization이다. public language 또는
+semantic fixture, 42개 IR fixture와 전체 243개 project test가 고정한다. P176e3c는
+사용 여부와 무관하게 모든 generic declaration을 non-Copy, non-printable symbolic type
+argument로 한 번 specialization하고 semantic checker에 전달한다. Internal
+symbolic/specialization 이름은 source `T`/`Box[T]` 표기로 복원하며 네 rejection fixture가
+Rust oracle의 declaration order, stage, span과 message에 바이트 단위로 일치한다. 236개 semantic fixture,
+42개 IR fixture와 전체 244개 project test가 이를 고정한다. 다음 slice는
+package/intrinsic specialization이다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
@@ -668,7 +673,7 @@ B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 243개 project test와
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 244개 project test와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
 

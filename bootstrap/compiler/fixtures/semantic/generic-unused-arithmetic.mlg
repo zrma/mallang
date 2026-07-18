@@ -1,0 +1,5 @@
+func Add[T](left T, right T) T {
+    return left + right
+}
+
+func main() {}

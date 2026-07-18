@@ -642,8 +642,13 @@ specialization and function-body checking until later P176 slices.
   source generic name independently for pattern diagnostics and exhaustive
   coverage. Two concrete specializations, owned payload cleanup and wrong-arity
   rejection are fixed by two hundred thirty-two semantic fixtures, forty-two
-  typed-IR fixtures and two hundred forty-three Mallang project tests. Symbolic
-  generic body validation and package/intrinsic specialization continue in P176e.
+  typed-IR fixtures and two hundred forty-three Mallang project tests. P176e3c
+  specializes every generic declaration once with symbolic non-Copy,
+  non-printable arguments, validates otherwise-unused bodies and restores
+  internal names to source `T` and `Box[T]` diagnostics. Two hundred thirty-six
+  semantic fixtures, forty-two typed-IR fixtures and two hundred forty-four
+  Mallang project tests cover this boundary. Package and standard-intrinsic
+  specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

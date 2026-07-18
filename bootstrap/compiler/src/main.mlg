@@ -20,6 +20,34 @@ func fail(con message string) {
     os.exit(2)
 }
 
+func prepareProgram(con program ast.Program) Result[specialize.SpecializedProgram, string] {
+    if specialize.HasGenerics(con program) {
+        match specialize.SpecializeForValidation(con program) {
+            case Ok(symbolic) {
+                validationProgram := specialize.Program(con symbolic)
+                match semantic.Check(con validationProgram) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        message := semantic.ErrorMessage(con error)
+                        return Err(specialize.NormalizeMappedError(con symbolic, con message, semantic.ErrorSpan(con error)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(specialize.NormalizeError(con error))
+            }
+        }
+    }
+    return match specialize.SpecializeDetailed(con program) {
+        case Ok(concrete) {
+            Ok(concrete)
+        }
+        case Err(error) {
+            Err(specialize.NormalizeError(con error))
+        }
+    }
+}
+
 func runLex(source string) {
     match lexer.Lex(source) {
         case Ok(tokens) {
@@ -60,19 +88,21 @@ func runCheck(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match specialize.Specialize(con program) {
-                        case Ok(concrete) {
+                    match prepareProgram(con program) {
+                        case Ok(specialized) {
+                            concrete := specialize.Program(con specialized)
                             match semantic.Check(con concrete) {
                                 case Ok(checked) {
                                     print(semantic.Normalize(con checked))
                                 }
                                 case Err(error) {
-                                    print(semantic.NormalizeError(con error))
+                                    message := semantic.ErrorMessage(con error)
+                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
                                 }
                             }
                         }
-                        case Err(error) {
-                            print(specialize.NormalizeError(con error))
+                        case Err(message) {
+                            print(message)
                         }
                     }
                 }
@@ -96,8 +126,9 @@ func runIr(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match specialize.Specialize(con program) {
-                        case Ok(concrete) {
+                    match prepareProgram(con program) {
+                        case Ok(specialized) {
+                            concrete := specialize.Program(con specialized)
                             match semantic.Check(con concrete) {
                                 case Ok(checked) {
                                     match ir.Lower(con concrete, con checked) {
@@ -110,12 +141,13 @@ func runIr(text string) {
                                     }
                                 }
                                 case Err(error) {
-                                    print(semantic.NormalizeError(con error))
+                                    message := semantic.ErrorMessage(con error)
+                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
                                 }
                             }
                         }
-                        case Err(error) {
-                            print(specialize.NormalizeError(con error))
+                        case Err(message) {
+                            print(message)
                         }
                     }
                 }
@@ -139,8 +171,9 @@ func runIrTest(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match specialize.Specialize(con program) {
-                        case Ok(concrete) {
+                    match prepareProgram(con program) {
+                        case Ok(specialized) {
+                            concrete := specialize.Program(con specialized)
                             match semantic.Check(con concrete) {
                                 case Ok(checked) {
                                     match ir.LowerTest(con concrete, con checked, 0) {
@@ -153,12 +186,13 @@ func runIrTest(text string) {
                                     }
                                 }
                                 case Err(error) {
-                                    print(semantic.NormalizeError(con error))
+                                    message := semantic.ErrorMessage(con error)
+                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
                                 }
                             }
                         }
-                        case Err(error) {
-                            print(specialize.NormalizeError(con error))
+                        case Err(message) {
+                            print(message)
                         }
                     }
                 }
