@@ -165,10 +165,14 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
     paramCount := semantic.FunctionParamCount(con checked, con name)
     mut params := []Param{}
     mut cleanupParams := []CleanupBinding{}
+    mut externalCleanupParams := []CleanupBinding{}
     for mut param := 0; param < paramCount; param = param + 1 {
         params = append(params, Param{name: semantic.FunctionParamName(con checked, con name, param), mode: semantic.FunctionParamMode(con checked, con name, param), ty: semantic.FunctionParamType(con checked, con name, param),})
         if params[param].mode == "owned" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
             cleanupParams = append(cleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
+        }
+        if params[param].mode == "mut" && semantic.FunctionParamNeedsCleanup(con checked, con name, param) {
+            externalCleanupParams = append(externalCleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
     }
 
@@ -184,7 +188,7 @@ func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, c
             }
         }
     }
-    body = self.insertStraightLineCleanupDrops(con body, cleanupParams, ast.Span(con syntax, block))
+    body = self.insertStraightLineCleanupDrops(con body, cleanupParams, externalCleanupParams, ast.Span(con syntax, block))
     self.functions = append(self.functions, Function{name: name, params: params, returnType: returnType, body: body})
     return Ok(true)
 }
@@ -203,8 +207,12 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
     }
 
     mut captures := []Capture{}
+    mut externalCleanup := []CleanupBinding{}
     for mut capture := 0; capture < semantic.ClosureCaptureCount(con checked, closure); capture = capture + 1 {
         captures = append(captures, Capture{name: semantic.ClosureCaptureName(con checked, closure, capture), ty: semantic.ClosureCaptureType(con checked, closure, capture), mutable: semantic.ClosureCaptureMutable(con checked, closure, capture),})
+        if captures[capture].mutable && semantic.ClosureCaptureNeedsCleanup(con checked, closure, capture) {
+            externalCleanup = append(externalCleanup, newCleanupBinding(con captures[capture].name, con captures[capture].ty, ast.Span(con syntax, block)))
+        }
     }
     mut params := []Param{}
     mut cleanupParams := []CleanupBinding{}
@@ -213,10 +221,13 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
         if params[param].mode == "owned" && semantic.ClosureParamNeedsCleanup(con checked, closure, param) {
             cleanupParams = append(cleanupParams, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
         }
+        if params[param].mode == "mut" && semantic.ClosureParamNeedsCleanup(con checked, closure, param) {
+            externalCleanup = append(externalCleanup, newCleanupBinding(con params[param].name, con params[param].ty, ast.Span(con syntax, block)))
+        }
     }
     match self.lowerBlock(con syntax, block, con checked) {
         case Ok(body) {
-            cleanedBody := self.insertStraightLineCleanupDrops(con body, cleanupParams, ast.Span(con syntax, block))
+            cleanedBody := self.insertStraightLineCleanupDrops(con body, cleanupParams, externalCleanup, ast.Span(con syntax, block))
             self.closures = append(self.closures, Closure{name: closureName(ast.Span(con syntax, node)), mutable: semantic.ClosureMutable(con checked, closure), captures: captures, params: params, returnType: semantic.ClosureReturnType(con checked, closure), body: cleanedBody,})
             return Ok(true)
         }
@@ -463,11 +474,11 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
     }
 }
 
-func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, fallback source.Span) []int {
-    return self.insertCleanupDrops(con body, initial, fallback, con []string{})
+func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span) []int {
+    return self.insertCleanupDrops(con body, initial, external, fallback, con []string{})
 }
 
-func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBinding, fallback source.Span, con tailExcluded []string) []int {
+func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span, con tailExcluded []string) []int {
     if !self.supportsStraightLineCleanup(con body) {
         return copyInts(con body)
     }
@@ -490,8 +501,8 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
             remaining := removeCleanupRoots(copyCleanupBindings(con active), con persistentMoved)
             excluded := cleanupBindingKeys(con remaining)
             statementSpan := source.Copy(con self.nodes[statement].span)
-            thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
-            elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), source.Copy(con statementSpan), con excluded)
+            thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded)
+            elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded)
             self.nodes[thenBlock].children = thenBody
             self.nodes[elseBlock].children = elseBody
             output = append(output, statement)
@@ -518,6 +529,13 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
                     reactivated.span = source.Copy(con self.nodes[statement].span)
                     output = append(output, statement)
                     active = append(copyCleanupBindings(con remaining), reactivated)
+                    continue
+                }
+                externalBinding := cleanupBindingIndex(con external, con self.nodes[statement].value)
+                if externalBinding >= 0 {
+                    target := self.addNode("E", "Expr.Var", token.CopyText(con external[externalBinding].name), token.CopyText(con external[externalBinding].ty), source.Copy(con external[externalBinding].span), []int{}, true)
+                    output = self.pushCleanupOverwrite(output, statement, target, expression)
+                    active = copyCleanupBindings(con remaining)
                     continue
                 }
             }

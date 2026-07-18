@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c2 complete
+Status: in progress; P176a-P176e2c3a complete
 
 ## Objective
 
@@ -121,6 +121,9 @@ agrees.
   evaluation completes, and reactivate self-consuming assignments (complete)
 - P176e2c2: apply the same RHS-before-overwrite contract to non-self-consuming
   field and index places without moving their aggregate bases (complete)
+- P176e2c3a: treat mutable cleanup parameters and captures as externally owned
+  overwrite roots, preserving RHS-first replacement without tail drops
+  (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -514,8 +517,11 @@ specialization and function-body checking until later P176 slices.
   preserving reactivated assignment identity. P176e2c1 adds direct local
   cleanup overwrite ordering and self-reassignment reactivation. P176e2c2 adds
   non-self-consuming field/index overwrite without consuming aggregate bases.
-  Mutable direct parameters, self-consuming aggregate overwrite and remaining
-  checked constructs continue in P176e.
+  P176e2c3a keeps mutable cleanup parameters and captures externally owned,
+  evaluates replacement values before overwrite and emits no tail drop for the
+  caller/environment-owned root. Sixteen typed-IR fixtures and two hundred ten
+  Mallang project tests cover this boundary. Self-consuming aggregate overwrite
+  and remaining checked constructs continue in P176e.
 
 ## B2 Completion Criteria
 

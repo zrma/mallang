@@ -1,0 +1,17 @@
+func replace(mut value string) {
+    value = "after"
+}
+
+func replaceFrom(mut value string, replacement string) {
+    value = replacement
+}
+
+func capture() {
+    mut state := "before"
+    mut update := func mut() {
+        state = "after"
+    }
+    update()
+}
+
+func main() {}

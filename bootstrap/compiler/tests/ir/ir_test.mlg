@@ -522,6 +522,58 @@ test InsertsFieldAndIndexCleanupOverwrite() {
     }
 }
 
+test InsertsMutableExternalCleanupOverwrite() {
+    source := "func replace(mut value string) { value = \"after\" } func replaceFrom(mut value string, replacement string) { value = replacement } func capture() { mut state := \"before\"; mut update := func mut() { state = \"after\" }; update() } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions[0].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[0].body[0]].kind == "Stmt.Let.Immutable")
+                                    replaceOverwrite := lowered.functions[0].body[1]
+                                    assert(lowered.nodes[replaceOverwrite].kind == "Stmt.Overwrite")
+                                    replaceTarget := lowered.nodes[replaceOverwrite].children[0]
+                                    assert(lowered.nodes[replaceTarget].kind == "Expr.Var")
+                                    assert(lowered.nodes[replaceTarget].value == "value")
+
+                                    assert(len(lowered.functions[1].body) == 2)
+                                    assert(lowered.nodes[lowered.functions[1].body[0]].kind == "Stmt.Let.Immutable")
+                                    assert(lowered.nodes[lowered.functions[1].body[1]].kind == "Stmt.Overwrite")
+
+                                    assert(len(lowered.closures) == 1)
+                                    assert(len(lowered.closures[0].body) == 2)
+                                    assert(lowered.nodes[lowered.closures[0].body[0]].kind == "Stmt.Let.Immutable")
+                                    captureOverwrite := lowered.closures[0].body[1]
+                                    assert(lowered.nodes[captureOverwrite].kind == "Stmt.Overwrite")
+                                    captureTarget := lowered.nodes[captureOverwrite].children[0]
+                                    assert(lowered.nodes[captureTarget].kind == "Expr.Var")
+                                    assert(lowered.nodes[captureTarget].value == "state")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {
