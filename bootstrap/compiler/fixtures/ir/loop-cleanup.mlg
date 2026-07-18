@@ -1,0 +1,26 @@
+func initCleanup() {
+    for label := "init"; true; {
+        print(label)
+        break
+    }
+}
+
+func breakCleanup() {
+    for {
+        label := "break"
+        print(label)
+        break
+    }
+}
+
+func rangeCleanup(values [2]int) {
+    for index, value := range values {
+        label := "range"
+        print(label)
+        if index == value {
+            continue
+        }
+    }
+}
+
+func main() {}

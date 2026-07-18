@@ -1177,10 +1177,10 @@ func (mut self Lowerer) lowerMatchPatternForType(con syntax ast.Program, pattern
 }
 
 func (mut self Lowerer) insertStraightLineCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span) []int {
-    return self.insertCleanupDrops(con body, initial, external, fallback, con []string{})
+    return self.insertCleanupDrops(con body, initial, external, fallback, con []string{}, con []string{}, con []string{})
 }
 
-func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span, con tailExcluded []string) []int {
+func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBinding, external []CleanupBinding, fallback source.Span, con tailExcluded []string, con breakExcluded []string, con continueExcluded []string) []int {
     if !self.supportsStraightLineCleanup(con body) {
         return copyInts(con body)
     }
@@ -1203,8 +1203,8 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
             remaining := removeCleanupRoots(copyCleanupBindings(con active), con persistentMoved)
             excluded := cleanupBindingKeys(con remaining)
             statementSpan := source.Copy(con self.nodes[statement].span)
-            thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded)
-            elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded)
+            thenBody := self.insertCleanupDrops(con thenSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded, con breakExcluded, con continueExcluded)
+            elseBody := self.insertCleanupDrops(con elseSource, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con statementSpan), con excluded, con breakExcluded, con continueExcluded)
             self.nodes[thenBlock].children = thenBody
             self.nodes[elseBlock].children = elseBody
             output = append(output, statement)
@@ -1228,11 +1228,60 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
                 arm := self.nodes[statement].children[child]
                 block := self.nodes[arm].children[1]
                 sourceBody := copyInts(con self.nodes[block].children)
-                self.nodes[block].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con self.nodes[block].span), con excluded)
+                self.nodes[block].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con self.nodes[block].span), con excluded, con breakExcluded, con continueExcluded)
             }
             output = append(output, statement)
             active = remaining
             continue
+        }
+        if self.nodes[statement].kind == "Stmt.For" {
+            bodyBlock := self.nodes[statement].children[len(self.nodes[statement].children) - 2]
+            cleanupBlock := self.nodes[statement].children[len(self.nodes[statement].children) - 1]
+            mut initMoved := []string{}
+            mut loopActive := copyCleanupBindings(con active)
+            preLoopKeys := cleanupBindingKeys(con loopActive)
+            for mut child := 0; child < len(self.nodes[statement].children) - 2; child = child + 1 {
+                control := self.nodes[statement].children[child]
+                if self.nodes[control].kind == "ForInit.Let.Immutable" || self.nodes[control].kind == "ForInit.Let.Mutable" {
+                    initMoved = appendUniqueTexts(initMoved, con self.movedCleanupRoots(control, con loopActive))
+                    loopActive = removeCleanupRoots(loopActive, con initMoved)
+                    if self.nodes[control].cleanup {
+                        loopActive = append(loopActive, newCleanupBinding(con self.nodes[control].value, con self.nodes[control].ty, source.Copy(con self.nodes[control].span)))
+                    }
+                }
+            }
+            loopKeys := cleanupBindingKeys(con loopActive)
+            sourceBody := copyInts(con self.nodes[bodyBlock].children)
+            self.nodes[bodyBlock].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con loopActive), copyCleanupBindings(con external), source.Copy(con self.nodes[statement].span), con loopKeys, con loopKeys, con loopKeys)
+            loopOwned := cleanupBindingsExcluding(con loopActive, con preLoopKeys)
+            cleanupBody := copyInts(con self.nodes[cleanupBlock].children)
+            loopSpan := source.Copy(con self.nodes[statement].span)
+            self.nodes[cleanupBlock].children = self.pushCleanupDrops(cleanupBody, con loopOwned, con loopSpan)
+            active = removeCleanupRoots(active, con initMoved)
+            output = append(output, statement)
+            continue
+        }
+        if self.nodes[statement].kind == "Stmt.RangeFor" {
+            bodyBlock := self.nodes[statement].children[len(self.nodes[statement].children) - 2]
+            loopKeys := cleanupBindingKeys(con active)
+            sourceBody := copyInts(con self.nodes[bodyBlock].children)
+            self.nodes[bodyBlock].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con self.nodes[statement].span), con loopKeys, con loopKeys, con loopKeys)
+            output = append(output, statement)
+            continue
+        }
+        if self.nodes[statement].kind == "Stmt.Break" || self.nodes[statement].kind == "Stmt.Continue" {
+            mut excluded := copyTexts(con breakExcluded)
+            if self.nodes[statement].kind == "Stmt.Continue" {
+                excluded = copyTexts(con continueExcluded)
+            }
+            droppable := cleanupBindingsExcluding(con active, con excluded)
+            controlSpan := source.Copy(con self.nodes[statement].span)
+            mut controlled := self.pushCleanupDrops(copyInts(con output), con droppable, con controlSpan)
+            controlled = append(controlled, statement)
+            for mut remainingStatement := statementIndex + 1; remainingStatement < len(body); remainingStatement = remainingStatement + 1 {
+                controlled = append(controlled, body[remainingStatement])
+            }
+            return controlled
         }
 
         moved := self.movedCleanupRoots(statement, con active)
@@ -1336,6 +1385,12 @@ func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
                 }
             }
         }
+        if kind == "Stmt.For" || kind == "Stmt.RangeFor" {
+            bodyBlock := self.nodes[body[index]].children[len(self.nodes[body[index]].children) - 2]
+            if !self.supportsStraightLineCleanup(con self.nodes[bodyBlock].children) {
+                return false
+            }
+        }
     }
     return true
 }
@@ -1382,7 +1437,7 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
         moved := self.movedCleanupRoots(statement, con active)
         movedInBody = appendUniqueTexts(movedInBody, con moved)
         active = removeCleanupRoots(active, con moved)
-        if self.nodes[statement].kind == "Stmt.Return" {
+        if self.nodes[statement].kind == "Stmt.Return" || self.nodes[statement].kind == "Stmt.Break" || self.nodes[statement].kind == "Stmt.Continue" {
             return CleanupFlow{moved: appendUniqueTexts([]string{}, con movedInBody), continues: false}
         }
         letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
@@ -1396,6 +1451,16 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
 func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding) []string {
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.RangeFor" {
         return []string{}
+    }
+    if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.For" {
+        mut roots := []string{}
+        for mut child := 0; child < len(self.nodes[node].children) - 2; child = child + 1 {
+            control := self.nodes[node].children[child]
+            if self.nodes[control].kind == "ForInit.Let.Immutable" || self.nodes[control].kind == "ForInit.Let.Mutable" {
+                roots = appendUniqueTexts(roots, con self.movedCleanupRoots(control, con active))
+            }
+        }
+        return roots
     }
     if self.nodes[node].category == "A" && self.nodes[node].kind != "Arg.Owned" {
         return []string{}
@@ -1641,6 +1706,14 @@ func copyFunction(con function Function) Function {
         params = append(params, Param{name: token.CopyText(con function.params[index].name), mode: token.CopyText(con function.params[index].mode), ty: token.CopyText(con function.params[index].ty),})
     }
     return Function{name: token.CopyText(con function.name), params: params, returnType: token.CopyText(con function.returnType), body: copyInts(con function.body),}
+}
+
+func copyTexts(con values []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, token.CopyText(con values[index]))
+    }
+    return copied
 }
 
 func copyInts(con values []int) []int {

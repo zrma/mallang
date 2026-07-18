@@ -193,6 +193,9 @@ Thirty-two focused IR fixtures and 232 Mallang compiler project tests cover the
 expanded boundary. P176e2c3r lowers Copy element array and slice range bindings,
 source reads, body and cleanup blocks while preserving owned range-source
 cleanup. Thirty-three focused IR fixtures and 233 Mallang compiler project tests
-cover the expanded boundary. Non-Copy and cleanup-bearing loops plus remaining
-full-expression typed IR are incomplete, so
+cover that boundary. P176e2c3s inserts owned for-init exit cleanup and loop/range
+body-local cleanup at normal tails and before `break` or `continue`. Thirty-four
+focused IR fixtures and 234 Mallang compiler project tests cover the expanded
+boundary. Non-Copy range and remaining full-expression typed IR are incomplete,
+so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

@@ -1596,6 +1596,64 @@ test LowersCopyArrayAndSliceRangeLoops() {
     }
 }
 
+test LowersLoopCleanupAtExitAndControlFlow() {
+    source := "func initCleanup() { for label := \"init\"; true; { print(label); break } } func breakCleanup() { for { label := \"break\"; print(label); break } } func rangeCleanup(values [2]int) { for index, value := range values { label := \"range\"; print(label); if index == value { continue } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    initLoop := lowered.functions[0].body[0]
+                                    initBody := lowered.nodes[initLoop].children[2]
+                                    assert(len(lowered.nodes[initBody].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[initBody].children[1]].kind == "Stmt.Break")
+                                    initCleanup := lowered.nodes[initLoop].children[3]
+                                    assert(len(lowered.nodes[initCleanup].children) == 1)
+                                    initDrop := lowered.nodes[initCleanup].children[0]
+                                    assert(lowered.nodes[initDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[initDrop].children[0]].value == "label")
+
+                                    breakLoop := lowered.functions[1].body[0]
+                                    breakBody := lowered.nodes[breakLoop].children[0]
+                                    assert(len(lowered.nodes[breakBody].children) == 4)
+                                    breakDrop := lowered.nodes[breakBody].children[2]
+                                    assert(lowered.nodes[breakDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[breakBody].children[3]].kind == "Stmt.Break")
+
+                                    rangeLoop := lowered.functions[2].body[0]
+                                    rangeBody := lowered.nodes[rangeLoop].children[2]
+                                    assert(len(lowered.nodes[rangeBody].children) == 4)
+                                    rangeIf := lowered.nodes[rangeBody].children[2]
+                                    continueBlock := lowered.nodes[rangeIf].children[1]
+                                    assert(len(lowered.nodes[continueBlock].children) == 2)
+                                    assert(lowered.nodes[lowered.nodes[continueBlock].children[0]].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[continueBlock].children[1]].kind == "Stmt.Continue")
+                                    assert(lowered.nodes[lowered.nodes[rangeBody].children[3]].kind == "Stmt.Drop")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {
