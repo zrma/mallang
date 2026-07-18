@@ -1330,6 +1330,67 @@ test LowersNestedMatchPatterns() {
     }
 }
 
+test LowersMatchStatementsAndBranchCleanup() {
+    source := "func consume(value string) {} func inspect(input Option[string]) { match input { case Some(value) { print(value) } case None {} } } func merge(input Option[int], payload string) { match input { case Some(_) { consume(payload) } case None {} } } func classify(input Option[int]) int { match input { case Some(value) { return value } case None { return 0 } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    inspectMatch := lowered.functions[1].body[0]
+                                    assert(lowered.nodes[inspectMatch].kind == "Stmt.Match")
+                                    inspectSomeArm := lowered.nodes[inspectMatch].children[1]
+                                    assert(lowered.nodes[inspectSomeArm].kind == "Match.BlockArm")
+                                    inspectSomeBlock := lowered.nodes[inspectSomeArm].children[1]
+                                    assert(lowered.nodes[inspectSomeBlock].kind == "Block.Match")
+                                    assert(len(lowered.nodes[inspectSomeBlock].children) == 2)
+                                    inspectDrop := lowered.nodes[inspectSomeBlock].children[1]
+                                    assert(lowered.nodes[inspectDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[inspectDrop].children[0]].value == "value")
+
+                                    mergeMatch := lowered.functions[2].body[0]
+                                    mergeSomeArm := lowered.nodes[mergeMatch].children[1]
+                                    mergeSomeBlock := lowered.nodes[mergeSomeArm].children[1]
+                                    assert(len(lowered.nodes[mergeSomeBlock].children) == 1)
+                                    mergeNoneArm := lowered.nodes[mergeMatch].children[2]
+                                    mergeNoneBlock := lowered.nodes[mergeNoneArm].children[1]
+                                    assert(len(lowered.nodes[mergeNoneBlock].children) == 1)
+                                    mergeDrop := lowered.nodes[mergeNoneBlock].children[0]
+                                    assert(lowered.nodes[mergeDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[mergeDrop].children[0]].value == "payload")
+
+                                    classifyMatch := lowered.functions[3].body[0]
+                                    classifySomeArm := lowered.nodes[classifyMatch].children[1]
+                                    classifySomeBlock := lowered.nodes[classifySomeArm].children[1]
+                                    assert(lowered.nodes[lowered.nodes[classifySomeBlock].children[0]].kind == "Stmt.Return")
+                                    classifyNoneArm := lowered.nodes[classifyMatch].children[2]
+                                    classifyNoneBlock := lowered.nodes[classifyNoneArm].children[1]
+                                    assert(lowered.nodes[lowered.nodes[classifyNoneBlock].children[0]].kind == "Stmt.Return")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

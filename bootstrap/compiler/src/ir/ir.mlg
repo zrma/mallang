@@ -283,6 +283,49 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         children = append(children, elseBlock)
         return Ok(self.addNode("S", "Stmt.If", "", "unit", ast.Span(con syntax, statement), children, false))
     }
+    if kind == "Stmt.Match" {
+        if ast.ChildCount(con syntax, statement) < 2 {
+            return Err(newError("checked match statement has no arms", ast.Span(con syntax, statement)))
+        }
+        scrutinee := ast.Child(con syntax, statement, 0)
+        mut children := []int{}
+        match self.lowerExpression(con syntax, scrutinee, con checked) {
+            case Ok(loweredScrutinee) {
+                children = append(children, loweredScrutinee)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con syntax, statement); child = child + 1 {
+            arm := ast.Child(con syntax, statement, child)
+            if ast.Kind(con syntax, arm) != "MatchBlockArm" || ast.ChildCount(con syntax, arm) != 2 {
+                return Err(newError("checked match block arm is malformed", ast.Span(con syntax, arm)))
+            }
+            pattern := ast.Child(con syntax, arm, 0)
+            block := ast.Child(con syntax, arm, 1)
+            mut loweredPattern := LoweredMatchPattern{node: -1, cleanup: []CleanupBinding{}, nextDiscard: 0,}
+            match self.lowerMatchPattern(con syntax, pattern, scrutinee, ast.Span(con syntax, block), ast.Span(con syntax, arm), con checked) {
+                case Ok(value) {
+                    loweredPattern = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match self.lowerBlock(con syntax, block, con checked) {
+                case Ok(body) {
+                    cleanedBody := self.insertStraightLineCleanupDrops(con body, copyCleanupBindings(con loweredPattern.cleanup), []CleanupBinding{}, ast.Span(con syntax, block))
+                    loweredBlock := self.addNode("B", "Block.Match", "", "unit", ast.Span(con syntax, block), cleanedBody, false)
+                    children = append(children, self.addNode("M", "Match.BlockArm", "", "unit", ast.Span(con syntax, block), []int{loweredPattern.node, loweredBlock}, false))
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("S", "Stmt.Match", "", "unit", ast.Span(con syntax, statement), children, false))
+    }
     if kind == "Stmt.FieldAssign" {
         base := ast.Child(con syntax, statement, 0)
         expression := ast.Child(con syntax, statement, 1)
@@ -980,6 +1023,29 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
             active = remaining
             continue
         }
+        if self.nodes[statement].kind == "Stmt.Match" {
+            scrutinee := self.nodes[statement].children[0]
+            scrutineeMoved := self.movedCleanupRoots(scrutinee, con active)
+            active = removeCleanupRoots(active, con scrutineeMoved)
+            mut armFlows := []CleanupFlow{}
+            for mut child := 1; child < len(self.nodes[statement].children); child = child + 1 {
+                arm := self.nodes[statement].children[child]
+                block := self.nodes[arm].children[1]
+                armFlows = append(armFlows, self.analyzeCleanupFlow(con self.nodes[block].children, con active))
+            }
+            persistentMoved := persistentMatchMoves(con active, con armFlows)
+            remaining := removeCleanupRoots(copyCleanupBindings(con active), con persistentMoved)
+            excluded := cleanupBindingKeys(con remaining)
+            for mut child := 1; child < len(self.nodes[statement].children); child = child + 1 {
+                arm := self.nodes[statement].children[child]
+                block := self.nodes[arm].children[1]
+                sourceBody := copyInts(con self.nodes[block].children)
+                self.nodes[block].children = self.insertCleanupDrops(con sourceBody, copyCleanupBindings(con active), copyCleanupBindings(con external), source.Copy(con self.nodes[block].span), con excluded)
+            }
+            output = append(output, statement)
+            active = remaining
+            continue
+        }
 
         moved := self.movedCleanupRoots(statement, con active)
         remaining := removeCleanupRoots(copyCleanupBindings(con active), con moved)
@@ -1073,6 +1139,15 @@ func (con self Lowerer) supportsStraightLineCleanup(con body []int) bool {
                 return false
             }
         }
+        if kind == "Stmt.Match" {
+            for mut child := 1; child < len(self.nodes[body[index]].children); child = child + 1 {
+                arm := self.nodes[body[index]].children[child]
+                block := self.nodes[arm].children[1]
+                if !self.supportsStraightLineCleanup(con self.nodes[block].children) {
+                    return false
+                }
+            }
+        }
     }
     return true
 }
@@ -1097,6 +1172,22 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
             if !thenFlow.continues && !elseFlow.continues {
                 return CleanupFlow{moved: appendUniqueTexts([]string{}, con movedInBody), continues: false}
             }
+            continue
+        }
+        if self.nodes[statement].kind == "Stmt.Match" {
+            scrutinee := self.nodes[statement].children[0]
+            scrutineeMoved := self.movedCleanupRoots(scrutinee, con active)
+            movedInBody = appendUniqueTexts(movedInBody, con scrutineeMoved)
+            active = removeCleanupRoots(active, con scrutineeMoved)
+            mut armFlows := []CleanupFlow{}
+            for mut child := 1; child < len(self.nodes[statement].children); child = child + 1 {
+                arm := self.nodes[statement].children[child]
+                block := self.nodes[arm].children[1]
+                armFlows = append(armFlows, self.analyzeCleanupFlow(con self.nodes[block].children, con active))
+            }
+            persistentMoved := persistentMatchMoves(con active, con armFlows)
+            movedInBody = appendUniqueTexts(movedInBody, con persistentMoved)
+            active = removeCleanupRoots(active, con persistentMoved)
             continue
         }
 
@@ -1267,6 +1358,22 @@ func persistentBranchMoves(con active []CleanupBinding, con thenFlow CleanupFlow
         elseMoves := elseFlow.continues && textIndex(con elseFlow.moved, con active[index].key) >= 0
         if thenMoves || elseMoves {
             moved = append(moved, token.CopyText(con active[index].key))
+        }
+    }
+    return moved
+}
+
+func persistentMatchMoves(con active []CleanupBinding, con flows []CleanupFlow) []string {
+    mut moved := []string{}
+    for mut binding := 0; binding < len(active); binding = binding + 1 {
+        mut persistent := false
+        for mut flow := 0; flow < len(flows); flow = flow + 1 {
+            if flows[flow].continues && textIndex(con flows[flow].moved, con active[binding].key) >= 0 {
+                persistent = true
+            }
+        }
+        if persistent {
+            moved = append(moved, token.CopyText(con active[binding].key))
         }
     }
     return moved

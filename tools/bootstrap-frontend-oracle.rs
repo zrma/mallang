@@ -10,7 +10,7 @@ use mallang::ast::{
 };
 use mallang::ir::{
     IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrMatchArm,
-    IrMatchPattern, IrStmt, IrStmtKind,
+    IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
     check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
@@ -350,6 +350,14 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
                 normalize_ir_block("Block.Else", else_body, statement.span, depth + 1),
             ],
         ),
+        IrStmtKind::Match { scrutinee, arms } => {
+            let mut children = vec![normalize_ir_expression(scrutinee, depth + 1)];
+            children.extend(
+                arms.iter()
+                    .map(|arm| normalize_ir_match_block_arm(arm, depth + 1)),
+            );
+            ("Stmt.Match", "", "unit".to_string(), children)
+        }
         IrStmtKind::Expr { expr } => (
             "Stmt.Expr",
             "",
@@ -607,6 +615,21 @@ fn normalize_ir_match_arm(arm: &IrMatchArm, depth: usize) -> String {
         "",
         &arm.expr.ty.source_name(),
         &children,
+    )
+}
+
+fn normalize_ir_match_block_arm(arm: &IrMatchBlockArm, depth: usize) -> String {
+    normalize_ir_line(
+        depth,
+        "M",
+        "Match.BlockArm",
+        arm.span,
+        "",
+        "unit",
+        &[
+            normalize_ir_match_pattern(&arm.pattern, arm.span, depth + 1),
+            normalize_ir_block("Block.Match", &arm.body, arm.span, depth + 1),
+        ],
     )
 }
 

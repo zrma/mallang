@@ -1,0 +1,32 @@
+func consume(value string) {}
+
+func inspect(input Option[string]) {
+    match input {
+        case Some(value) {
+            print(value)
+        }
+        case None {}
+    }
+}
+
+func merge(input Option[int], payload string) {
+    match input {
+        case Some(_) {
+            consume(payload)
+        }
+        case None {}
+    }
+}
+
+func classify(input Option[int]) int {
+    match input {
+        case Some(value) {
+            return value
+        }
+        case None {
+            return 0
+        }
+    }
+}
+
+func main() {}

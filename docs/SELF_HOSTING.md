@@ -180,7 +180,8 @@ P176e2c3l lowers flat user-enum expression matches with graph-derived inline or
 owned pattern storage, multiple payload bindings and cleanup wildcards.
 P176e2c3m recursively lowers nested built-in and user-enum patterns, including
 recursive owned enums, while sharing deterministic cleanup wildcard numbering
-across each arm. Twenty-eight focused IR fixtures and 226 Mallang compiler
-project tests cover the expanded boundary. Statement-form match typed IR,
-remaining full-expression cases and the rest of the typed IR are incomplete,
-so no complete semantic, typed-IR or Stage1 compiler claim is made.
+across each arm. P176e2c3n lowers statement-form match blocks with arm-local
+payload cleanup and outer branch move compensation. Twenty-nine focused IR
+fixtures and 227 Mallang compiler project tests cover the expanded boundary.
+Loop, range, assert and remaining full-expression typed IR are incomplete, so
+no complete semantic, typed-IR or Stage1 compiler claim is made.

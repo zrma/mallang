@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3m complete
+Status: in progress; P176a-P176e2c3n complete
 
 ## Objective
 
@@ -152,6 +152,8 @@ agrees.
 - P176e2c3m: recursively lower nested built-in and user-enum patterns,
   including recursive owned enums, with arm-wide deterministic cleanup
   wildcard numbering (complete)
+- P176e2c3n: lower statement-form match blocks with arm-local payload cleanup,
+  scrutinee moves and outer branch move compensation (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -571,11 +573,12 @@ specialization and function-body checking until later P176 slices.
   graph-derived inline or owned pattern storage, multiple payload bindings and
   cleanup wildcards. P176e2c3m adds recursive nested built-in and user-enum
   pattern lowering, including recursive owned enums and arm-wide cleanup
-  wildcard numbering. Twenty-eight typed-IR fixtures and two hundred twenty-six
-  Mallang project tests cover the expanded boundary. Statement-form match typed
-  IR, remaining full-expression cases and checked constructs continue in P176e.
-  Stage0 match-arm shadow cleanup identity remains tracked
-  separately in
+  wildcard numbering. P176e2c3n adds statement-form match blocks, arm-local
+  payload cleanup and outer branch move compensation. Twenty-nine typed-IR
+  fixtures and two hundred twenty-seven Mallang project tests cover the expanded
+  boundary. Loop, range, assert, remaining full-expression cases and checked
+  constructs continue in P176e. Stage0 match-arm shadow cleanup identity
+  remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
 
 ## B2 Completion Criteria
