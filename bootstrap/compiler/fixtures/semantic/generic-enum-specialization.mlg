@@ -1,0 +1,23 @@
+type Maybe[T] enum {
+    None
+    Some(T)
+}
+
+func number(value Maybe[int]) int {
+    return match value {
+        case Maybe.Some(item) { item }
+        case Maybe.None { 0 }
+    }
+}
+
+func text(value Maybe[string]) string {
+    return match value {
+        case Maybe.Some(item) { item }
+        case Maybe.None { "" }
+    }
+}
+
+func main() {
+    print(number(Maybe[int].Some(7)))
+    print(text(Maybe[string].Some("ok")))
+}

@@ -1293,7 +1293,7 @@ func (mut self Lowerer) lowerMatchPatternForType(con syntax ast.Program, pattern
         return Ok(LoweredMatchPattern{node: node, cleanup: copyCleanupBindings(con loweredPayload.cleanup), nextDiscard: loweredPayload.nextDiscard,})
     }
     if kind == "Pattern.Variant" {
-        enumName := semantic.PatternVariantTypeName(con syntax, pattern)
+        enumName := token.CopyText(con expectedType)
         variantName := semantic.PatternVariantName(con syntax, pattern)
         if enumName == "" || variantName == "" {
             return Err(newError("checked user enum match pattern is malformed", source.Copy(con span)))

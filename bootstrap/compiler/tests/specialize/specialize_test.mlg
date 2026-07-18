@@ -37,3 +37,37 @@ test SpecializesGenericStructsFunctionsAndReceivers() {
         }
     }
 }
+
+test SpecializesGenericEnumsAndPreservesPatternOrigins() {
+    source := "type Maybe[T] enum { None; Some(T) } func number(value Maybe[int]) int { return match value { case Maybe.Some(item) { item } case Maybe.None { 0 } } } func text(value Maybe[string]) string { return match value { case Maybe.Some(item) { item } case Maybe.None { \"\" } } } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match Specialize(con program) {
+                        case Ok(concrete) {
+                            match semantic.Check(con concrete) {
+                                case Ok(checked) {
+                                    expected := "CHECKED|0|2|3|0\nENUM|__mlg_spec_enum_4d617962655b696e745d|2\nVARIANT|__mlg_spec_enum_4d617962655b696e745d|None|0\nVARIANT|__mlg_spec_enum_4d617962655b696e745d|Some|1|int\nENUM|__mlg_spec_enum_4d617962655b737472696e675d|2\nVARIANT|__mlg_spec_enum_4d617962655b737472696e675d|None|0\nVARIANT|__mlg_spec_enum_4d617962655b737472696e675d|Some|1|string\nFUNC|number|int|1\nPARAM|number|owned|value|__mlg_spec_enum_4d617962655b696e745d\nFUNC|text|string|1\nPARAM|text|owned|value|__mlg_spec_enum_4d617962655b737472696e675d\nFUNC|main|unit|0"
+                                    assert(semantic.Normalize(con checked) == expected)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

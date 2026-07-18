@@ -35,6 +35,7 @@ pub type EnumVariantSig struct {
 
 pub type EnumSig struct {
     name string
+    patternName string
     variants []EnumVariantSig
 }
 
@@ -613,7 +614,14 @@ func (mut self CheckedProgram) collectEnumNames(con program ast.Program) Result[
             if self.hasEnum(con name) {
                 return Err(newError(strings.join(con []string{"duplicate enum `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
             }
-            self.enums = append(self.enums, EnumSig{name: name, variants: []EnumVariantSig{}})
+            mut patternName := token.CopyText(con name)
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                metadata := ast.Child(con program, declaration, item)
+                if ast.Kind(con program, metadata) == "SpecializationOrigin" {
+                    patternName = ast.Value(con program, metadata)
+                }
+            }
+            self.enums = append(self.enums, EnumSig{name: name, patternName: patternName, variants: []EnumVariantSig{}})
         }
     }
     return Ok(true)
@@ -2414,7 +2422,7 @@ func (con self CheckedProgram) checkUserEnumMatchPatterns(con program ast.Progra
     mut missing := []string{}
     for mut variant := 0; variant < len(seen); variant = variant + 1 {
         if !seen[variant] {
-            missing = append(missing, strings.join(con []string{token.CopyText(con self.enums[enumIndex].name), ".", token.CopyText(con self.enums[enumIndex].variants[variant].name),}, con ""))
+            missing = append(missing, strings.join(con []string{token.CopyText(con self.enums[enumIndex].patternName), ".", token.CopyText(con self.enums[enumIndex].variants[variant].name),}, con ""))
         }
     }
     if len(missing) == 0 {
@@ -2450,8 +2458,8 @@ func (con self CheckedProgram) validateUserEnumPattern(con program ast.Program, 
     if !parts.valid {
         return Err(newError("malformed user enum match pattern", ast.Span(con program, pattern)))
     }
-    if parts.typeName != self.enums[enumIndex].name {
-        message := strings.join(con []string{"pattern type `", token.CopyText(con parts.typeName), "` does not match `", token.CopyText(con self.enums[enumIndex].name), "`",}, con "")
+    if parts.typeName != self.enums[enumIndex].patternName {
+        message := strings.join(con []string{"pattern type `", token.CopyText(con parts.typeName), "` does not match `", token.CopyText(con self.enums[enumIndex].patternName), "`",}, con "")
         return Err(newError(message, ast.Span(con program, pattern)))
     }
     variantIndex := enumVariantIndex(con self.enums[enumIndex], con parts.variantName)
@@ -4220,6 +4228,10 @@ func (con self CheckedProgram) adtPatternName(con ty ResolvedType) string {
         return "Result"
     }
     if ty.kind == "enum" {
+        index := self.enumIndex(con ty.text)
+        if index >= 0 {
+            return token.CopyText(con self.enums[index].patternName)
+        }
         return token.CopyText(con ty.text)
     }
     return ""

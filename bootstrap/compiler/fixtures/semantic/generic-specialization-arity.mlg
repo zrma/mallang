@@ -1,0 +1,8 @@
+type Box[T] struct {
+    value T
+}
+
+func main() {
+    value := Box[int, string]{value: 7}
+    print(value)
+}

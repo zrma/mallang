@@ -40,18 +40,22 @@ type ActiveInstance struct {
 type Specializer struct {
     nodes []ast.Node
     genericStructs []GenericDecl
+    genericEnums []GenericDecl
     genericFunctions []GenericDecl
     genericMethods []GenericMethod
     structInstances []Instance
+    enumInstances []Instance
     functionInstances []Instance
     activeStructs []ActiveInstance
+    activeEnums []ActiveInstance
     activeFunctions []ActiveInstance
     generatedStructs []int
+    generatedEnums []int
     generatedFunctions []int
 }
 
 pub func Specialize(con program ast.Program) Result[ast.Program, SpecializationError] {
-    mut specializer := Specializer{nodes: []ast.Node{}, genericStructs: []GenericDecl{}, genericFunctions: []GenericDecl{}, genericMethods: []GenericMethod{}, structInstances: []Instance{}, functionInstances: []Instance{}, activeStructs: []ActiveInstance{}, activeFunctions: []ActiveInstance{}, generatedStructs: []int{}, generatedFunctions: []int{},}
+    mut specializer := Specializer{nodes: []ast.Node{}, genericStructs: []GenericDecl{}, genericEnums: []GenericDecl{}, genericFunctions: []GenericDecl{}, genericMethods: []GenericMethod{}, structInstances: []Instance{}, enumInstances: []Instance{}, functionInstances: []Instance{}, activeStructs: []ActiveInstance{}, activeEnums: []ActiveInstance{}, activeFunctions: []ActiveInstance{}, generatedStructs: []int{}, generatedEnums: []int{}, generatedFunctions: []int{},}
     specializer.collect(con program)
     return specializer.run(con program)
 }
@@ -75,6 +79,11 @@ func (mut self Specializer) collect(con program ast.Program) {
             params := typeParams(con program, declaration)
             if len(params) > 0 {
                 self.genericStructs = append(self.genericStructs, GenericDecl{name: ast.Value(con program, declaration), node: declaration, params: params})
+            }
+        } else if isEnumKind(con kind) {
+            params := typeParams(con program, declaration)
+            if len(params) > 0 {
+                self.genericEnums = append(self.genericEnums, GenericDecl{name: ast.Value(con program, declaration), node: declaration, params: params})
             }
         }
     }
@@ -116,6 +125,9 @@ func (mut self Specializer) run(con program ast.Program) Result[ast.Program, Spe
     for mut index := 0; index < len(self.generatedStructs); index = index + 1 {
         children = append(children, self.generatedStructs[index])
     }
+    for mut index := 0; index < len(self.generatedEnums); index = index + 1 {
+        children = append(children, self.generatedEnums[index])
+    }
     for mut index := 0; index < len(self.generatedFunctions); index = index + 1 {
         children = append(children, self.generatedFunctions[index])
     }
@@ -130,6 +142,18 @@ func (mut self Specializer) rewriteNode(con program ast.Program, node int, con s
     }
     if kind == "Expr.StructLiteral" {
         return self.rewriteStructLiteral(con program, node, con substitutions)
+    }
+    if kind == "Expr.FieldAccess" {
+        match self.rewriteEnumSelection(con program, node, con substitutions) {
+            case Ok(rewritten) {
+                if rewritten >= 0 {
+                    return Ok(rewritten)
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
     if kind == "Expr.TypeApply" || kind == "Expr.Index" {
         match self.rewriteFunctionApply(con program, node, con substitutions) {
@@ -194,6 +218,15 @@ func (mut self Specializer) rewriteNamedType(con program ast.Program, node int, 
                 return Err(error)
             }
         }
+    } else if self.genericEnumIndex(con name) >= 0 {
+        match self.specializeEnum(con program, con name, con arguments, ast.Span(con program, node)) {
+            case Ok(specialized) {
+                return Ok(self.addNode("Type.Named", specialized, ast.Span(con program, node), []int{}))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
     return Ok(self.addNode("Type.Named", name, ast.Span(con program, node), arguments))
 }
@@ -246,6 +279,57 @@ func (mut self Specializer) rewriteStructLiteral(con program ast.Program, node i
         }
     }
     return Ok(self.addNode("Expr.StructLiteral", specialized, ast.Span(con program, node), fields))
+}
+
+func (mut self Specializer) rewriteEnumSelection(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
+    base := ast.Child(con program, node, 0)
+    baseKind := ast.Kind(con program, base)
+    if baseKind != "Expr.TypeApply" && baseKind != "Expr.Index" {
+        return Ok(-1)
+    }
+    path := ast.Child(con program, base, 0)
+    if ast.Kind(con program, path) != "Expr.Var" {
+        return Ok(-1)
+    }
+    name := ast.Value(con program, path)
+    if self.genericEnumIndex(con name) < 0 {
+        return Ok(-1)
+    }
+
+    mut arguments := []int{}
+    if baseKind == "Expr.TypeApply" {
+        for mut child := 1; child < ast.ChildCount(con program, base); child = child + 1 {
+            match self.rewriteNode(con program, ast.Child(con program, base, child), con substitutions) {
+                case Ok(argument) {
+                    arguments = append(arguments, argument)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    } else {
+        match self.expressionType(con program, ast.Child(con program, base, 1), con substitutions) {
+            case Ok(argument) {
+                arguments = append(arguments, argument)
+            }
+            case Err(_) {
+                return Ok(-1)
+            }
+        }
+    }
+
+    mut specialized := ""
+    match self.specializeEnum(con program, con name, con arguments, ast.Span(con program, base)) {
+        case Ok(value) {
+            specialized = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    specializedBase := self.addNode("Expr.Var", specialized, ast.Span(con program, base), []int{})
+    return Ok(self.addNode("Expr.FieldAccess", ast.Value(con program, node), ast.Span(con program, node), []int{specializedBase}))
 }
 
 func (mut self Specializer) rewriteFunctionApply(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {
@@ -315,6 +399,24 @@ func (mut self Specializer) expressionType(con program ast.Program, expression i
                 return Err(false)
             }
         }
+    }
+    if kind == "Expr.TypeApply" {
+        base := ast.Child(con program, expression, 0)
+        if ast.Kind(con program, base) != "Expr.Var" {
+            return Err(false)
+        }
+        mut arguments := []int{}
+        for mut child := 1; child < ast.ChildCount(con program, expression); child = child + 1 {
+            match self.rewriteNode(con program, ast.Child(con program, expression, child), con substitutions) {
+                case Ok(argument) {
+                    arguments = append(arguments, argument)
+                }
+                case Err(_) {
+                    return Err(false)
+                }
+            }
+        }
+        return Ok(self.addNode("Type.Named", ast.Value(con program, base), ast.Span(con program, expression), arguments))
     }
     return Err(false)
 }
@@ -393,6 +495,54 @@ func (mut self Specializer) specializeStruct(con program ast.Program, con name s
         }
     }
     self.activeStructs[active].active = false
+    return Ok(specialized)
+}
+
+func (mut self Specializer) specializeEnum(con program ast.Program, con name string, con arguments []int, span source.Span) Result[string, SpecializationError] {
+    declarationIndex := self.genericEnumIndex(con name)
+    declarationNode := self.genericEnums[declarationIndex].node
+    match checkArity(con self.genericEnums[declarationIndex].name, len(self.genericEnums[declarationIndex].params), con arguments, source.Copy(con span)) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    key := self.specializationKey(con name, con arguments)
+    instance := instanceIndex(con self.enumInstances, con key)
+    if instance >= 0 {
+        return Ok(copyText(con self.enumInstances[instance].name))
+    }
+    match self.rejectExpandingCycle(con self.activeEnums, con name, con key, source.Copy(con span), con "enum") {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    specialized := strings.join(con []string{"__mlg_spec_enum_", hexEncode(con key),}, con "")
+    self.enumInstances = append(self.enumInstances, Instance{key: copyText(con key), name: copyText(con specialized)})
+    active := len(self.activeEnums)
+    self.activeEnums = append(self.activeEnums, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
+    substitutions := makeSubstitutions(con self.genericEnums[declarationIndex].params, con arguments)
+
+    mut variants := []int{self.addNode("SpecializationOrigin", copyText(con name), ast.Span(con program, declarationNode), []int{})}
+    for mut child := 0; child < ast.ChildCount(con program, declarationNode); child = child + 1 {
+        item := ast.Child(con program, declarationNode, child)
+        if ast.Kind(con program, item) == "TypeParam" {
+            continue
+        }
+        match self.rewriteNode(con program, item, con substitutions) {
+            case Ok(variant) {
+                variants = append(variants, variant)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    specializedNode := self.addNode(ast.Kind(con program, declarationNode), copyText(con specialized), ast.Span(con program, declarationNode), variants)
+    self.generatedEnums = append(self.generatedEnums, specializedNode)
+    self.activeEnums[active].active = false
     return Ok(specialized)
 }
 
@@ -508,6 +658,9 @@ func (con self Specializer) isGenericDeclaration(con program ast.Program, declar
     if isStructKind(con kind) {
         return self.genericStructIndex(con name) >= 0
     }
+    if isEnumKind(con kind) {
+        return self.genericEnumIndex(con name) >= 0
+    }
     if isFunctionKind(con kind) {
         return self.genericFunctionIndex(con name) >= 0
     }
@@ -535,6 +688,15 @@ func (con self Specializer) genericStructIndex(con name string) int {
 func (con self Specializer) genericFunctionIndex(con name string) int {
     for mut index := 0; index < len(self.genericFunctions); index = index + 1 {
         if self.genericFunctions[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self Specializer) genericEnumIndex(con name string) int {
+    for mut index := 0; index < len(self.genericEnums); index = index + 1 {
+        if self.genericEnums[index].name == name {
             return index
         }
     }
@@ -616,6 +778,10 @@ func isStructKind(con kind string) bool {
 
 func isFunctionKind(con kind string) bool {
     return kind == "FunctionDecl.Package" || kind == "FunctionDecl.Public"
+}
+
+func isEnumKind(con kind string) bool {
+    return kind == "EnumDecl.Package" || kind == "EnumDecl.Public"
 }
 
 func isTypeKind(con kind string) bool {
