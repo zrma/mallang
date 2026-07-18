@@ -182,6 +182,9 @@ P176e2c3m recursively lowers nested built-in and user-enum patterns, including
 recursive owned enums, while sharing deterministic cleanup wildcard numbering
 across each arm. P176e2c3n lowers statement-form match blocks with arm-local
 payload cleanup and outer branch move compensation. Twenty-nine focused IR
-fixtures and 227 Mallang compiler project tests cover the expanded boundary.
-Loop, range, assert and remaining full-expression typed IR are incomplete, so
+fixtures and 227 Mallang compiler project tests cover that boundary. P176e2c3o
+checks test declaration bodies and lowers `assert(bool)` plus the selected test
+body as a synthetic `main`. Thirty focused IR fixtures and 230 Mallang compiler
+project tests cover the expanded boundary. Loop, range and remaining
+full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

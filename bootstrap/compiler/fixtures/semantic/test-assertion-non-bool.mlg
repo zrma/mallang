@@ -1,0 +1,5 @@
+func main() {}
+
+test RejectsNonBooleanAssertion() {
+    assert(1)
+}

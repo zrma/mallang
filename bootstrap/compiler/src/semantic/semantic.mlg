@@ -200,6 +200,12 @@ pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
             return Err(error)
         }
     }
+    match checked.checkTestBodies(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
 
     return Ok(checked)
 }
@@ -838,6 +844,28 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
     return Ok(true)
 }
 
+func (mut self CheckedProgram) checkTestBodies(con program ast.Program) Result[bool, SemanticError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        if ast.Kind(con program, declaration) == "TestDecl" {
+            if ast.ChildCount(con program, declaration) != 1 {
+                return Err(newError("checked test declaration body is missing", ast.Span(con program, declaration)))
+            }
+            self.locals = []Local{}
+            self.scopeDepth = 0
+            self.loopDepth = 0
+            match self.checkBlock(con program, ast.Child(con program, declaration, 0), con unitType()) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Ok(true)
+}
+
 func (mut self CheckedProgram) checkBlock(con program ast.Program, block int, con returnType ResolvedType) Result[bool, SemanticError] {
     mut returned := false
     for mut statementIndex := 0; statementIndex < ast.ChildCount(con program, block); statementIndex = statementIndex + 1 {
@@ -979,6 +1007,23 @@ func (mut self CheckedProgram) checkStatement(con program ast.Program, statement
             return Err(newError(message, ast.Span(con program, statement)))
         }
         return Ok(false)
+    }
+    if kind == "Stmt.Assert" {
+        if ast.ChildCount(con program, statement) != 1 {
+            return Err(newError("checked assertion condition is missing", ast.Span(con program, statement)))
+        }
+        condition := ast.Child(con program, statement, 0)
+        match self.checkExpression(con program, condition) {
+            case Ok(conditionType) {
+                if conditionType.kind != "bool" {
+                    return Err(newError("assertion condition must have type `bool`", ast.Span(con program, condition)))
+                }
+                return Ok(false)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
     if kind == "Stmt.Return" {
         expression := ast.Child(con program, statement, 0)

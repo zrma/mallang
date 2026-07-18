@@ -1391,6 +1391,53 @@ test LowersMatchStatementsAndBranchCleanup() {
     }
 }
 
+test LowersTestAssertions() {
+    source := "func ready(con value string) bool { return value == \"ready\" } func main() {} test ChecksReady() { value := \"ready\"; assert(ready(con value)); assert(value == \"ready\") }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match LowerTest(con program, con checked, 0) {
+                                case Ok(lowered) {
+                                    assert(len(lowered.functions) == 2)
+                                    assert(lowered.functions[0].name == "ready")
+                                    assert(lowered.functions[1].name == "main")
+                                    assert(len(lowered.functions[1].body) == 4)
+                                    firstAssert := lowered.functions[1].body[1]
+                                    assert(lowered.nodes[firstAssert].kind == "Stmt.Assert")
+                                    assert(lowered.nodes[lowered.nodes[firstAssert].children[0]].kind == "Expr.Call")
+                                    secondAssert := lowered.functions[1].body[2]
+                                    assert(lowered.nodes[secondAssert].kind == "Stmt.Assert")
+                                    equality := lowered.nodes[secondAssert].children[0]
+                                    assert(lowered.nodes[equality].kind == "Expr.Binary.Equal")
+                                    assert(lowered.nodes[lowered.nodes[equality].children[1]].kind == "Expr.FullExprTemporary")
+                                    tailDrop := lowered.functions[1].body[3]
+                                    assert(lowered.nodes[tailDrop].kind == "Stmt.Drop")
+                                    assert(lowered.nodes[lowered.nodes[tailDrop].children[0]].value == "value")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

@@ -1752,6 +1752,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] flat user-enum expression match의 inline/owned pattern과 payload cleanup
 - [x] nested built-in/user-enum pattern과 recursive owned enum typed IR
 - [x] statement-form match arm cleanup과 outer branch move compensation
+- [x] test body semantic checking, `assert(bool)`와 synthetic test `main` typed IR
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

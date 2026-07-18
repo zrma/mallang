@@ -1,0 +1,11 @@
+func ready(con value string) bool {
+    return value == "ready"
+}
+
+func main() {}
+
+test ChecksReady() {
+    value := "ready"
+    assert(ready(con value))
+    assert(value == "ready")
+}

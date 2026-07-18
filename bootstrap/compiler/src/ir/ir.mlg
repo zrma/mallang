@@ -81,12 +81,68 @@ type LoweredMatchPattern struct {
 
 pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Result[Program, Error] {
     mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
+    match lowerer.lowerProgramDeclarations(con syntax, con checked) {
+        case Ok(_) {
+            return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+pub func LowerTest(con syntax ast.Program, con checked semantic.CheckedProgram, testIndex int) Result[Program, Error] {
+    mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
+    match lowerer.lowerProgramDeclarations(con syntax, con checked) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    root := ast.Root(con syntax)
+    mut selectedTest := -1
+    mut seenTests := 0
+    for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
+        declaration := ast.Child(con syntax, root, child)
+        if ast.Kind(con syntax, declaration) == "TestDecl" {
+            if seenTests == testIndex {
+                selectedTest = declaration
+            }
+            seenTests = seenTests + 1
+        }
+    }
+    if selectedTest < 0 {
+        return Err(newError("unknown test index", ast.Span(con syntax, root)))
+    }
+    block := ast.Child(con syntax, selectedTest, 0)
+    mut testBody := []int{}
+    match lowerer.lowerBlock(con syntax, block, con checked) {
+        case Ok(body) {
+            testBody = lowerer.insertStraightLineCleanupDrops(con body, []CleanupBinding{}, []CleanupBinding{}, ast.Span(con syntax, block))
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut functions := []Function{}
+    for mut function := 0; function < len(lowerer.functions); function = function + 1 {
+        if lowerer.functions[function].name != "main" {
+            functions = append(functions, copyFunction(con lowerer.functions[function]))
+        }
+    }
+    functions = append(functions, Function{name: "main", params: []Param{}, returnType: "unit", body: testBody,})
+    return Ok(Program{nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
+}
+
+func (mut self Lowerer) lowerProgramDeclarations(con syntax ast.Program, con checked semantic.CheckedProgram) Result[bool, Error] {
     root := ast.Root(con syntax)
     for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
         declaration := ast.Child(con syntax, root, child)
         declarationKind := ast.Kind(con syntax, declaration)
         if declarationKind == "FunctionDecl.Package" || declarationKind == "FunctionDecl.Public" {
-            match lowerer.lowerFunction(con syntax, declaration, con checked) {
+            match self.lowerFunction(con syntax, declaration, con checked) {
                 case Ok(_) {}
                 case Err(error) {
                     return Err(error)
@@ -95,14 +151,14 @@ pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Resu
         }
     }
     for mut closure := 0; closure < semantic.ClosureCount(con checked); closure = closure + 1 {
-        match lowerer.lowerClosure(con syntax, closure, con checked) {
+        match self.lowerClosure(con syntax, closure, con checked) {
             case Ok(_) {}
             case Err(error) {
                 return Err(error)
             }
         }
     }
-    return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
+    return Ok(true)
 }
 
 pub func Normalize(con program Program) string {
@@ -362,6 +418,20 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
             }
         }
         return Ok(self.addNode("S", token.CopyText(con kind), "", "unit", ast.Span(con syntax, statement), children, false))
+    }
+    if kind == "Stmt.Assert" {
+        if ast.ChildCount(con syntax, statement) != 1 {
+            return Err(newError("checked assertion condition is missing", ast.Span(con syntax, statement)))
+        }
+        condition := ast.Child(con syntax, statement, 0)
+        match self.lowerExpression(con syntax, condition, con checked) {
+            case Ok(loweredCondition) {
+                return Ok(self.addNode("S", "Stmt.Assert", "", "unit", ast.Span(con syntax, statement), []int{loweredCondition}, false))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
     if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "Stmt.Assign" || kind == "Stmt.Return" || kind == "Stmt.Expr" {
         expression := ast.Child(con syntax, statement, 0)
@@ -1442,6 +1512,14 @@ func appendUniqueTexts(values []string, con additions []string) []string {
         }
     }
     return combined
+}
+
+func copyFunction(con function Function) Function {
+    mut params := []Param{}
+    for mut index := 0; index < len(function.params); index = index + 1 {
+        params = append(params, Param{name: token.CopyText(con function.params[index].name), mode: token.CopyText(con function.params[index].mode), ty: token.CopyText(con function.params[index].ty),})
+    }
+    return Function{name: token.CopyText(con function.name), params: params, returnType: token.CopyText(con function.returnType), body: copyInts(con function.body),}
 }
 
 func copyInts(con values []int) []int {

@@ -47,6 +47,7 @@ FIXTURES="$PROJECT/fixtures/lexer"
 PARSER_FIXTURES="$PROJECT/fixtures/parser"
 SEMANTIC_FIXTURES="$PROJECT/fixtures/semantic"
 IR_FIXTURES="$PROJECT/fixtures/ir"
+IR_TEST_FIXTURES="$PROJECT/fixtures/ir-test"
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -71,7 +72,7 @@ else
     bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
-    bootstrap_compiler/ir::LowersMatchStatementsAndBranchCleanup; do
+    bootstrap_compiler/ir::LowersTestAssertions; do
     "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
   done
 fi
@@ -146,6 +147,10 @@ compare_fixture() {
     ir)
       label="typed IR"
       command="ir"
+      ;;
+    ir-test)
+      label="test typed IR"
+      command="ir-test"
       ;;
     *)
       echo "unknown self-hosting differential kind: $kind" >&2
@@ -227,6 +232,10 @@ done
 
 for fixture in "$IR_FIXTURES"/*.mlg; do
   compare_fixture ir "$fixture" "ir-$(basename "$fixture" .mlg)" "$fixture_profile"
+done
+
+for fixture in "$IR_TEST_FIXTURES"/*.mlg; do
+  compare_fixture ir-test "$fixture" "ir-test-$(basename "$fixture" .mlg)" "$fixture_profile"
 done
 
 if [[ "$MODE" == "fast" ]]; then
@@ -315,4 +324,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e2c3n $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e2c3o $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

@@ -147,6 +147,16 @@ test ChecksPrimitiveFunctionBodies() {
     }
 }
 
+test ChecksBooleanTestAssertions() {
+    source := "func main() {} test AcceptsBooleanAssertions() { value := 1; assert(true); assert(value == 1) }"
+    assert(checkTestSource(source) == "")
+}
+
+test RejectsNonBooleanTestAssertions() {
+    source := "func main() {} test RejectsNonBooleanAssertion() { assert(1) }"
+    assert(checkTestSource(source) == "assertion condition must have type `bool`")
+}
+
 test RejectsImmutableAssignment() {
     source := "func main() { value := 1; value = 2 }"
     match lexer.Lex(source) {

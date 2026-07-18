@@ -13,20 +13,21 @@ use mallang::ir::{
     IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
-    check, lex, lower, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword, LexError, Span,
-    Token, TokenKind,
+    check, lex, lower, lower_test, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
+    LexError, Span, Token, TokenKind,
 };
 
 fn main() -> ExitCode {
     let mut args = env::args();
     let _program = args.next();
     let Some(first) = args.next() else {
-        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir|ir-test] <source>");
         return ExitCode::from(2);
     };
-    let (mode, path) = if first == "parse" || first == "check" || first == "ir" {
+    let (mode, path) =
+        if first == "parse" || first == "check" || first == "ir" || first == "ir-test" {
         let Some(path) = args.next() else {
-            eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
+            eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir|ir-test] <source>");
             return ExitCode::from(2);
         };
         (first.as_str(), path)
@@ -34,7 +35,7 @@ fn main() -> ExitCode {
         ("lex", first)
     };
     if args.next().is_some() {
-        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir] <source>");
+        eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir|ir-test] <source>");
         return ExitCode::from(2);
     }
 
@@ -46,10 +47,14 @@ fn main() -> ExitCode {
         }
     };
 
-    if mode == "ir" {
+    if mode == "ir" || mode == "ir-test" {
         match parse_with_diagnostics(&source) {
             Ok(program) => match check(&program) {
-                Ok(checked) => match lower(&checked) {
+                Ok(checked) => match if mode == "ir-test" {
+                    lower_test(&checked, 0)
+                } else {
+                    lower(&checked)
+                } {
                     Ok(ir) => println!("{}", normalize_ir(&ir)),
                     Err(error) => println!(
                         "IERR|{}|{}|{}|{}",
@@ -358,6 +363,12 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             );
             ("Stmt.Match", "", "unit".to_string(), children)
         }
+        IrStmtKind::Assert { condition, .. } => (
+            "Stmt.Assert",
+            "",
+            "unit".to_string(),
+            vec![normalize_ir_expression(condition, depth + 1)],
+        ),
         IrStmtKind::Expr { expr } => (
             "Stmt.Expr",
             "",

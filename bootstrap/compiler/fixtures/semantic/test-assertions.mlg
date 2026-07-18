@@ -1,0 +1,7 @@
+func main() {}
+
+test AcceptsBooleanAssertions() {
+    value := 1
+    assert(true)
+    assert(value == 1)
+}
