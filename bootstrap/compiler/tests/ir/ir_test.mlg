@@ -1760,6 +1760,59 @@ test LowersDirectMethodReceiverModes() {
     }
 }
 
+test LowersPlaceAndTemporaryMethodReceivers() {
+    source := "type Counter struct { value int } type CounterHolder struct { counter Counter } type User struct { name string } type UserHolder struct { user User } func (con self Counter) valueOf() int { return self.value } func (mut self Counter) increment() { self.value = self.value + 1 } func (con self User) inspect() int { return 1 } func identityUser(user User) User { return user } func identityUserHolder(holder UserHolder) UserHolder { return holder } func identityUsers(users [1]User) [1]User { return users } func updateHolder(mut holder CounterHolder) int { holder.counter.increment(); return holder.counter.valueOf() } func updateCounters(mut counters [1]Counter) int { counters[0].increment(); return counters[0].valueOf() } func readTemporary(user User) int { return identityUser(user).inspect() } func readComputedHolder(holder UserHolder) int { return identityUserHolder(holder).user.inspect() } func readComputedUsers(users [1]User) int { return identityUsers(users)[0].inspect() } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    mut methodCalls := 0
+                                    mut conReceivers := 0
+                                    mut mutReceivers := 0
+                                    mut fullExpressionTemporaries := 0
+                                    for mut node := 0; node < len(lowered.nodes); node = node + 1 {
+                                        if lowered.nodes[node].kind == "Expr.Call" &&(lowered.nodes[node].value == "Counter.valueOf" || lowered.nodes[node].value == "Counter.increment" || lowered.nodes[node].value == "User.inspect") {
+                                            methodCalls = methodCalls + 1
+                                            receiverArgument := lowered.nodes[node].children[0]
+                                            if lowered.nodes[receiverArgument].kind == "Arg.Con" {
+                                                conReceivers = conReceivers + 1
+                                            } else if lowered.nodes[receiverArgument].kind == "Arg.Mut" {
+                                                mutReceivers = mutReceivers + 1
+                                            }
+                                        } else if lowered.nodes[node].kind == "Expr.FullExprTemporary" {
+                                            fullExpressionTemporaries = fullExpressionTemporaries + 1
+                                        }
+                                    }
+                                    assert(methodCalls == 7)
+                                    assert(conReceivers == 5)
+                                    assert(mutReceivers == 2)
+                                    assert(fullExpressionTemporaries == 3)
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersFieldAndIndexReads() {
     source := "type User struct { age int } func readAge(con user User) int { return user.age } func readArray(con values [2]int) int { return values[0] + values[1] } func main() {}"
     match lexer.Lex(source) {

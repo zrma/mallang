@@ -1,0 +1,63 @@
+type Counter struct {
+    value int
+}
+
+type CounterHolder struct {
+    counter Counter
+}
+
+type User struct {
+    name string
+}
+
+type UserHolder struct {
+    user User
+}
+
+func (con self Counter) valueOf() int {
+    return self.value
+}
+
+func (mut self Counter) increment() {
+    self.value = self.value + 1
+}
+
+func (con self User) inspect() int {
+    return 1
+}
+
+func identityUser(user User) User {
+    return user
+}
+
+func identityUserHolder(holder UserHolder) UserHolder {
+    return holder
+}
+
+func identityUsers(users [1]User) [1]User {
+    return users
+}
+
+func updateHolder(mut holder CounterHolder) int {
+    holder.counter.increment()
+    return holder.counter.valueOf()
+}
+
+func updateCounters(mut counters [1]Counter) int {
+    counters[0].increment()
+    return counters[0].valueOf()
+}
+
+func readTemporary(user User) int {
+    return identityUser(user).inspect()
+}
+
+func readComputedHolder(holder UserHolder) int {
+    return identityUserHolder(holder).user.inspect()
+}
+
+func readComputedUsers(users [1]User) int {
+    return identityUsers(users)[0].inspect()
+}
+
+func main() {}

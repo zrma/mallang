@@ -1086,6 +1086,14 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
 }
 
 func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    if isDirectReadExpression(con syntax, expression) {
+        return self.lowerExpression(con syntax, expression, con checked)
+    }
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.FieldAccess" || kind == "Expr.Index" {
+        return self.lowerTemporaryPlaceExpression(con syntax, expression, con checked)
+    }
+
     mut lowered := -1
     match self.lowerExpression(con syntax, expression, con checked) {
         case Ok(value) {
@@ -1095,23 +1103,92 @@ func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression i
             return Err(error)
         }
     }
-    directRead := isDirectReadExpression(con syntax, expression)
-    cleanup := semantic.NodeNeedsCleanup(con checked, expression)
-    if directRead || !cleanup {
-        return Ok(lowered)
+    return self.wrapFullExpressionTemporary(con syntax, expression, lowered, con checked)
+}
+
+func (mut self Lowerer) lowerTemporaryPlaceExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    if isDirectReadExpression(con syntax, expression) {
+        return self.lowerExpression(con syntax, expression, con checked)
     }
+
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.FieldAccess" {
+        mut base := -1
+        match self.lowerTemporaryPlaceExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        mut ty := ""
+        match semantic.NodeType(con checked, expression) {
+            case Ok(resolved) {
+                ty = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked temporary field type is missing", ast.Span(con syntax, expression)))
+            }
+        }
+        return Ok(self.addNode("E", "Expr.FieldAccess", ast.Value(con syntax, expression), ty, ast.Span(con syntax, expression), []int{base}, semantic.NodeNeedsCleanup(con checked, expression)))
+    }
+    if kind == "Expr.Index" {
+        mut base := -1
+        match self.lowerTemporaryPlaceExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        mut index := -1
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+            case Ok(value) {
+                index = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        mut ty := ""
+        match semantic.NodeType(con checked, expression) {
+            case Ok(resolved) {
+                ty = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked temporary index type is missing", ast.Span(con syntax, expression)))
+            }
+        }
+        return Ok(self.addNode("E", "Expr.Index", "", ty, ast.Span(con syntax, expression), []int{base, index,}, semantic.NodeNeedsCleanup(con checked, expression)))
+    }
+
+    mut lowered := -1
+    match self.lowerExpression(con syntax, expression, con checked) {
+        case Ok(value) {
+            lowered = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return self.wrapFullExpressionTemporary(con syntax, expression, lowered, con checked)
+}
+
+func (mut self Lowerer) wrapFullExpressionTemporary(con syntax ast.Program, expression int, lowered int, con checked semantic.CheckedProgram) Result[int, Error] {
     mut ty := ""
     match semantic.NodeType(con checked, expression) {
         case Ok(resolved) {
             ty = resolved
         }
         case Err(_) {
-            return Err(newError("checked read temporary type is missing", ast.Span(con syntax, expression)))
+            return Err(newError("checked full-expression temporary type is missing", ast.Span(con syntax, expression)))
         }
     }
     span := ast.Span(con syntax, expression)
     name := strings.join(con []string{"mallang_full_expr_", strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
-    return Ok(self.addNode("E", "Expr.FullExprTemporary", name, token.CopyText(con ty), source.Copy(con span), []int{lowered}, true))
+    return Ok(self.addNode("E", "Expr.FullExprTemporary", name, token.CopyText(con ty), source.Copy(con span), []int{lowered}, semantic.NodeNeedsCleanup(con checked, expression)))
 }
 
 func (mut self Lowerer) lowerMatchPattern(con syntax ast.Program, pattern int, scrutinee int, span source.Span, discardSpan source.Span, con checked semantic.CheckedProgram) Result[LoweredMatchPattern, Error] {
@@ -1548,6 +1625,9 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
         return roots
     }
     if self.nodes[node].category == "A" && self.nodes[node].kind != "Arg.Owned" {
+        if len(self.nodes[node].children) == 1 {
+            return self.movedPlaceCleanupRoots(self.nodes[node].children[0], con active)
+        }
         return []string{}
     }
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.FieldAssign" {
@@ -1595,6 +1675,21 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
         }
     }
     return roots
+}
+
+func (con self Lowerer) movedPlaceCleanupRoots(node int, con active []CleanupBinding) []string {
+    if self.nodes[node].kind == "Expr.Var" {
+        return []string{}
+    }
+    if self.nodes[node].kind == "Expr.FieldAccess" && len(self.nodes[node].children) == 1 {
+        return self.movedPlaceCleanupRoots(self.nodes[node].children[0], con active)
+    }
+    if self.nodes[node].kind == "Expr.Index" && len(self.nodes[node].children) == 2 {
+        mut roots := self.movedPlaceCleanupRoots(self.nodes[node].children[0], con active)
+        roots = appendUniqueTexts(roots, con self.movedCleanupRoots(self.nodes[node].children[1], con active))
+        return roots
+    }
+    return self.movedCleanupRoots(node, con active)
 }
 
 func (con self Lowerer) fieldAssignmentConsumesOverwrittenPlace(statement int) bool {

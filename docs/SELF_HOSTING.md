@@ -201,7 +201,10 @@ Thirty-five focused IR fixtures and 235 Mallang compiler project tests cover the
 expanded boundary. P176e2c3u lowers method declarations as
 `ReceiverType.method` functions and preserves direct local owned, `con` and
 `mut` receivers as the first call argument. Thirty-six focused IR fixtures and
-236 Mallang compiler project tests cover that boundary. Field, index and
-temporary method receivers, generic and intrinsic IR plus remaining
-full-expression typed IR are incomplete, so
+236 Mallang compiler project tests cover that boundary. P176e2c3v lowers
+field, index, temporary and computed method receivers with place-aware
+full-expression temporaries while preserving moves inside computed owners.
+Thirty-seven focused IR fixtures and 237 Mallang compiler project tests cover
+that boundary. Generic and intrinsic IR plus remaining full-expression typed
+IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.
