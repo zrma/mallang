@@ -74,11 +74,16 @@ Mallang to specific 1.x versions.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
-  accounting and sanitizer gate. The historical filename remains stable while
-  the compiler gate grows through B2.
+  accounting and sanitizer gate. The argument-free command remains the full
+  milestone gate; `--fast` keeps complete Stage0/Stage1 differential coverage
+  with one exact project test per compiler phase, focused accounting and
+  representative sanitizer smoke for inner loops. The historical filename
+  remains stable while the compiler gate grows through B2.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: active B2 work breakdown and decisions.
+- `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
+  execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and

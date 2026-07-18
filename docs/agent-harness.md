@@ -49,6 +49,8 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - Publication boundary: `scripts/check-publication-boundary.py`; 공개 출고 전에는 권한 있는 local private-inventory guard도 실행한다.
 - Harness interface: `scripts/check-agent-harness-interface.sh`.
 - 기본 full gate: `scripts/check.sh`.
+- self-hosting inner loop: `scripts/check-self-hosting-lexer.sh --fast`; logical
+  B2 change publication 전에는 인자 없는 full self-hosting gate를 실행한다.
 - frontend 변경: lexer/parser/semantic targeted tests와 example diagnostics.
 - backend/runtime 변경: generated C warning/sanitizer 검사와 native smoke.
 - 최종 증거에는 acceptance별 test, planned/implemented 문서 상태, local/remote bookmark, CI를 포함한다.

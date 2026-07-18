@@ -4,6 +4,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+MODE="full"
+if [[ $# -gt 1 ]] || [[ $# -eq 1 && "$1" != "--fast" ]]; then
+  echo "usage: scripts/check-self-hosting-lexer.sh [--fast]" >&2
+  exit 2
+fi
+if [[ $# -eq 1 ]]; then
+  MODE="fast"
+fi
+
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)
 elif command -v rustup >/dev/null 2>&1; then
@@ -38,12 +47,34 @@ FIXTURES="$PROJECT/fixtures/lexer"
 PARSER_FIXTURES="$PROJECT/fixtures/parser"
 SEMANTIC_FIXTURES="$PROJECT/fixtures/semantic"
 IR_FIXTURES="$PROJECT/fixtures/ir"
+OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
+SANITIZER_FLAGS=(
+  -std=c11
+  -O1
+  -Wall
+  -Wextra
+  -Werror
+  -pedantic
+  "-fsanitize=address,undefined"
+  -fno-omit-frame-pointer
+)
 mkdir -p "$WORK"
+gate_started=$SECONDS
 
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
 "$STAGE0" fmt --check "$PROJECT"
 "$STAGE0" check "$PROJECT" >/dev/null
-"$STAGE0" test "$PROJECT" >/dev/null
+if [[ "$MODE" == "full" ]]; then
+  "$STAGE0" test "$PROJECT" >/dev/null
+else
+  for test_id in \
+    bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
+    bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
+    bootstrap_compiler/semantic::PropagatesNestedMutableCaptures \
+    bootstrap_compiler/ir::InsertsFieldAndIndexCleanupOverwrite; do
+    "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
+  done
+fi
 
 "$STAGE0" build "$PROJECT" -o "$STAGE1" >/dev/null
 cp "$GENERATED_C" "$WORK/bootstrap-frontend-first.c"
@@ -53,6 +84,7 @@ if ! cmp -s "$WORK/bootstrap-frontend-first.c" "$GENERATED_C"; then
   diff -u "$WORK/bootstrap-frontend-first.c" "$GENERATED_C" >&2 || true
   exit 1
 fi
+"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$GENERATED_C" -o "$STAGE1"
 
 "${RUSTC[@]}" \
   --edition=2021 \
@@ -88,133 +120,109 @@ int main(int argc, char **argv) {
 }
 EOF
 
-COMMON_FLAGS=(-std=c11 -Wall -Wextra -Werror -pedantic)
-"$CLANG_BIN" "${COMMON_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting"
-"$CLANG_BIN" \
-  "${COMMON_FLAGS[@]}" \
-  -fsanitize=address,undefined \
-  -fno-omit-frame-pointer \
-  "$WORK/accounting.c" \
-  -o "$WORK/accounting-san"
+"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting"
+"$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting-san"
+
+compare_fixture() {
+  local kind="$1"
+  local fixture="$2"
+  local stem="$3"
+  local profile="$4"
+  local label
+  local -a command=()
+  local -a actual_outputs=()
+  case "$kind" in
+    lexer)
+      label="lexer"
+      ;;
+    parser)
+      label="parser"
+      command=(parse)
+      ;;
+    semantic)
+      label="semantic"
+      command=(check)
+      ;;
+    ir)
+      label="typed IR"
+      command=(ir)
+      ;;
+    *)
+      echo "unknown self-hosting differential kind: $kind" >&2
+      exit 2
+      ;;
+  esac
+
+  oracle_output="$WORK/$stem.oracle"
+  stage1_output="$WORK/$stem.stage1"
+  strict_output="$WORK/$stem.strict"
+  sanitizer_output="$WORK/$stem.sanitizer"
+
+  "$ORACLE" "${command[@]}" "$fixture" >"$oracle_output"
+  "$STAGE1" "${command[@]}" "$fixture" >"$stage1_output"
+  actual_outputs+=("$stage1_output")
+  if [[ "$profile" != "stage1" ]]; then
+    "$WORK/accounting" "${command[@]}" "$fixture" \
+      >"$strict_output" 2>"$WORK/$stem.strict.stderr"
+    actual_outputs+=("$strict_output")
+  fi
+  if [[ "$profile" == "full" ]]; then
+    "$WORK/accounting-san" "${command[@]}" "$fixture" \
+      >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
+    actual_outputs+=("$sanitizer_output")
+  fi
+
+  for actual in "${actual_outputs[@]}"; do
+    if ! cmp -s "$oracle_output" "$actual"; then
+      echo "self-hosting $label differential mismatch: $stem" >&2
+      diff -u "$oracle_output" "$actual" >&2 || true
+      exit 1
+    fi
+  done
+  if [[ "$profile" != "stage1" && -s "$WORK/$stem.strict.stderr" ]]; then
+    echo "self-hosting $label runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.strict.stderr" >&2
+    exit 1
+  fi
+  if [[ "$profile" == "full" && -s "$WORK/$stem.sanitizer.stderr" ]]; then
+    echo "self-hosting $label runtime emitted stderr: $stem" >&2
+    cat "$WORK/$stem.sanitizer.stderr" >&2
+    exit 1
+  fi
+}
+
+fixture_profile="full"
+corpus_profile="full"
+if [[ "$MODE" == "fast" ]]; then
+  fixture_profile="strict"
+  corpus_profile="stage1"
+fi
 
 for fixture in "$FIXTURES"/*.mlg; do
-  stem="$(basename "$fixture" .mlg)"
-  oracle_output="$WORK/$stem.oracle"
-  stage1_output="$WORK/$stem.stage1"
-  strict_output="$WORK/$stem.strict"
-  sanitizer_output="$WORK/$stem.sanitizer"
-
-  "$ORACLE" "$fixture" >"$oracle_output"
-  "$STAGE1" "$fixture" >"$stage1_output"
-  "$WORK/accounting" "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
-  "$WORK/accounting-san" "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
-
-  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
-    if ! cmp -s "$oracle_output" "$actual"; then
-      echo "self-hosting lexer differential mismatch: $stem" >&2
-      diff -u "$oracle_output" "$actual" >&2 || true
-      exit 1
-    fi
-  done
-  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
-    echo "self-hosting lexer runtime emitted stderr: $stem" >&2
-    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
-    exit 1
-  fi
+  compare_fixture lexer "$fixture" "$(basename "$fixture" .mlg)" "$fixture_profile"
 done
-
-compare_parser_fixture() {
-  local fixture="$1"
-  local stem="$2"
-  oracle_output="$WORK/$stem.oracle"
-  stage1_output="$WORK/$stem.stage1"
-  strict_output="$WORK/$stem.strict"
-  sanitizer_output="$WORK/$stem.sanitizer"
-
-  "$ORACLE" parse "$fixture" >"$oracle_output"
-  "$STAGE1" parse "$fixture" >"$stage1_output"
-  "$WORK/accounting" parse "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
-  "$WORK/accounting-san" parse "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
-
-  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
-    if ! cmp -s "$oracle_output" "$actual"; then
-      echo "self-hosting parser differential mismatch: $stem" >&2
-      diff -u "$oracle_output" "$actual" >&2 || true
-      exit 1
-    fi
-  done
-  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
-    echo "self-hosting parser runtime emitted stderr: $stem" >&2
-    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
-    exit 1
-  fi
-}
 
 for fixture in "$PARSER_FIXTURES"/*.mlg; do
-  compare_parser_fixture "$fixture" "parser-$(basename "$fixture" .mlg)"
+  compare_fixture parser "$fixture" "parser-$(basename "$fixture" .mlg)" "$fixture_profile"
 done
-
-compare_semantic_fixture() {
-  local fixture="$1"
-  local stem="$2"
-  oracle_output="$WORK/$stem.oracle"
-  stage1_output="$WORK/$stem.stage1"
-  strict_output="$WORK/$stem.strict"
-  sanitizer_output="$WORK/$stem.sanitizer"
-
-  "$ORACLE" check "$fixture" >"$oracle_output"
-  "$STAGE1" check "$fixture" >"$stage1_output"
-  "$WORK/accounting" check "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
-  "$WORK/accounting-san" check "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
-
-  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
-    if ! cmp -s "$oracle_output" "$actual"; then
-      echo "self-hosting semantic differential mismatch: $stem" >&2
-      diff -u "$oracle_output" "$actual" >&2 || true
-      exit 1
-    fi
-  done
-  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
-    echo "self-hosting semantic runtime emitted stderr: $stem" >&2
-    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
-    exit 1
-  fi
-}
 
 for fixture in "$SEMANTIC_FIXTURES"/*.mlg; do
-  compare_semantic_fixture "$fixture" "semantic-$(basename "$fixture" .mlg)"
+  compare_fixture semantic "$fixture" "semantic-$(basename "$fixture" .mlg)" "$fixture_profile"
 done
-
-compare_ir_fixture() {
-  local fixture="$1"
-  local stem="$2"
-  oracle_output="$WORK/$stem.oracle"
-  stage1_output="$WORK/$stem.stage1"
-  strict_output="$WORK/$stem.strict"
-  sanitizer_output="$WORK/$stem.sanitizer"
-
-  "$ORACLE" ir "$fixture" >"$oracle_output"
-  "$STAGE1" ir "$fixture" >"$stage1_output"
-  "$WORK/accounting" ir "$fixture" >"$strict_output" 2>"$WORK/$stem.strict.stderr"
-  "$WORK/accounting-san" ir "$fixture" >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
-
-  for actual in "$stage1_output" "$strict_output" "$sanitizer_output"; do
-    if ! cmp -s "$oracle_output" "$actual"; then
-      echo "self-hosting typed IR differential mismatch: $stem" >&2
-      diff -u "$oracle_output" "$actual" >&2 || true
-      exit 1
-    fi
-  done
-  if [[ -s "$WORK/$stem.strict.stderr" || -s "$WORK/$stem.sanitizer.stderr" ]]; then
-    echo "self-hosting typed IR runtime emitted stderr: $stem" >&2
-    cat "$WORK/$stem.strict.stderr" "$WORK/$stem.sanitizer.stderr" >&2
-    exit 1
-  fi
-}
 
 for fixture in "$IR_FIXTURES"/*.mlg; do
-  compare_ir_fixture "$fixture" "ir-$(basename "$fixture" .mlg)"
+  compare_fixture ir "$fixture" "ir-$(basename "$fixture" .mlg)" "$fixture_profile"
 done
+
+if [[ "$MODE" == "fast" ]]; then
+  compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
+  compare_fixture parser "$PARSER_FIXTURES/control-expressions.mlg" fast-sanitizer-parser full
+  compare_fixture semantic \
+    "$SEMANTIC_FIXTURES/closure-nested-mutable.mlg" \
+    fast-sanitizer-semantic \
+    full
+  compare_fixture ir "$IR_FIXTURES/place-overwrite-cleanup.mlg" fast-sanitizer-ir full
+fi
 
 PARSER_CORPUS_LIST="$WORK/parser-corpus.list"
 find \
@@ -227,7 +235,7 @@ find \
 parser_corpus_count=0
 while IFS= read -r fixture; do
   stem="parser-corpus-$(printf '%04d' "$parser_corpus_count")"
-  compare_parser_fixture "$fixture" "$stem"
+  compare_fixture parser "$fixture" "$stem" "$corpus_profile"
   parser_corpus_count=$((parser_corpus_count + 1))
 done <"$PARSER_CORPUS_LIST"
 
@@ -268,13 +276,8 @@ int main(void) {
     return 0;
 }
 EOF
-  "$CLANG_BIN" "${COMMON_FLAGS[@]}" "$accounting_source" -o "$binary-accounting"
-  "$CLANG_BIN" \
-    "${COMMON_FLAGS[@]}" \
-    -fsanitize=address,undefined \
-    -fno-omit-frame-pointer \
-    "$accounting_source" \
-    -o "$binary-san"
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$accounting_source" -o "$binary-accounting"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$accounting_source" -o "$binary-san"
   "$binary" >"$WORK/$regression.stdout"
   "$binary-accounting" >"$WORK/$regression.accounting.stdout" \
     2>"$WORK/$regression.accounting.stderr"
@@ -297,4 +300,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e2c2 place cleanup overwrite, cleanup identities, branch cleanup joins, closure typed IR, B1 frontend, determinism, accounting, and sanitizer gate passed: parser-corpus=$parser_corpus_count"
+echo "self-hosting B2e2c2 $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
