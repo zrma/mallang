@@ -1,0 +1,9 @@
+func choose(input Option[int], values []int, replacement []int) []int {
+    result := match input {
+        case Some(_) { values }
+        case None { replacement }
+    }
+    return result
+}
+
+func main() {}

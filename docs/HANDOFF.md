@@ -649,7 +649,9 @@ temporary owner를 normal exit와 early control-flow cleanup까지 유지하고 
 move를 tail cleanup에서 제외한다. 38개 IR fixture와 전체 239개 project test가 이를
 고정한다. P176e2c3y는 expression-form `if`의 branch move를 explicit then/else cleanup
 block으로 정규화하고 Rust oracle도 동일 schema를 사용한다. 39개 IR fixture와 전체
-240개 project test가 이를 고정한다. 다음 slice는 generic/intrinsic과 남은
+240개 project test가 이를 고정한다. P176e2c3z는 expression-form `match`의 outer-owner
+compensation drop을 각 arm의 기존 pattern cleanup 뒤에 추가한다. 40개 IR fixture와
+전체 241개 project test가 이를 고정한다. 다음 slice는 generic/intrinsic과 남은
 full-expression typed IR이다. public language 또는
 standard-library
 addition은

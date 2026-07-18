@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3y complete
+Status: in progress; P176a-P176e2c3z complete
 
 ## Objective
 
@@ -181,6 +181,9 @@ agrees.
   (complete)
 - P176e2c3y: normalize expression-form `if` branch moves with explicit then and
   else cleanup blocks
+  (complete)
+- P176e2c3z: normalize expression-form `match` outer branch moves after each
+  arm's pattern cleanup
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -625,7 +628,10 @@ specialization and function-body checking until later P176 slices.
   project tests cover that boundary. P176e2c3y records expression-form `if`
   branch cleanup in explicit then/else blocks and extends the Rust oracle to the
   same deterministic schema. Thirty-nine typed-IR fixtures and two hundred forty
-  Mallang project tests cover
+  Mallang project tests cover that boundary. P176e2c3z appends outer-owner
+  compensation drops after existing match pattern cleanup in each expression
+  arm. Forty typed-IR fixtures and two hundred forty-one Mallang project tests
+  cover
   the expanded boundary. Generic and intrinsic IR, remaining full-expression
   cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity

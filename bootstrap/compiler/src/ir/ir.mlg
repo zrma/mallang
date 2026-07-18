@@ -1574,10 +1574,28 @@ func (mut self Lowerer) insertExpressionBranchCleanup(node int, con active []Cle
         self.insertExpressionBranchCleanup(scrutinee, con active)
         scrutineeMoved := self.movedCleanupRoots(scrutinee, con active)
         armActive := removeCleanupRoots(copyCleanupBindings(con active), con scrutineeMoved)
+        mut mergedMoved := []string{}
         for mut child := 1; child < len(self.nodes[node].children); child = child + 1 {
             arm := self.nodes[node].children[child]
             if self.nodes[arm].kind == "Match.Arm" && len(self.nodes[arm].children) >= 2 {
-                self.insertExpressionBranchCleanup(self.nodes[arm].children[1], con armActive)
+                expression := self.nodes[arm].children[1]
+                self.insertExpressionBranchCleanup(expression, con armActive)
+                mergedMoved = appendUniqueTexts(mergedMoved, con self.movedCleanupRoots(expression, con armActive))
+            }
+        }
+        for mut child := 1; child < len(self.nodes[node].children); child = child + 1 {
+            arm := self.nodes[node].children[child]
+            if self.nodes[arm].kind == "Match.Arm" && len(self.nodes[arm].children) >= 2 {
+                expression := self.nodes[arm].children[1]
+                armMoved := self.movedCleanupRoots(expression, con armActive)
+                cleanup := expressionBranchCleanupBindings(con armActive, con mergedMoved, con armMoved)
+                armSpan := source.Copy(con self.nodes[arm].span)
+                mut children := copyInts(con self.nodes[arm].children)
+                drops := self.pushCleanupDrops([]int{}, con cleanup, con armSpan)
+                for mut drop := 0; drop < len(drops); drop = drop + 1 {
+                    children = append(children, drops[drop])
+                }
+                self.nodes[arm].children = children
             }
         }
         return true
