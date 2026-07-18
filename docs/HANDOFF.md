@@ -626,23 +626,26 @@ project test가 이를 고정한다. P176e2c3n은 statement-form match block, ar
 payload cleanup과 outer branch move compensation을 낮춘다. 29개 IR fixture와 전체
 227개 project test가 이를 고정한다. P176e2c3o는 test declaration body checking,
 `assert(bool)` statement와 선택된 test를 synthetic `main`으로 만드는 test typed IR을
-추가한다. 30개 IR fixture와 전체 230개 project test가 이를 고정한다. P176e2c3p는
+추가한다. 29개 IR fixture와 전체 230개 project test가 이를 고정한다. P176e2c3p는
 condition/conditionless `for`, `break`/`continue`, explicit body/cleanup block typed IR을
-추가한다. 31개 IR fixture와 전체 231개 project test가 이를 고정한다. P176e2c3q는
-three-clause `for`의 init/optional condition/post typed IR을 추가한다. 32개 IR fixture와
+추가한다. 30개 IR fixture와 전체 231개 project test가 이를 고정한다. P176e2c3q는
+three-clause `for`의 init/optional condition/post typed IR을 추가한다. 31개 IR fixture와
 전체 232개 project test가 이를 고정한다. P176e2c3r은 Copy element array/slice range의
 binding/element type, source, body/cleanup typed IR과 owned range source read cleanup을
-추가한다. 33개 IR fixture와 전체 233개 project test가 이를 고정한다. P176e2c3s는
+추가한다. 32개 IR fixture와 전체 233개 project test가 이를 고정한다. P176e2c3s는
 owned for-init exit cleanup과 loop/range body-local cleanup을 normal tail 및
-`break`/`continue` 경로에 삽입한다. 34개 IR fixture와 전체 234개 project test가 이를
+`break`/`continue` 경로에 삽입한다. 33개 IR fixture와 전체 234개 project test가 이를
 고정한다. P176e2c3t는 index-only non-Copy range와 indexed `con` element borrow typed
-IR을 추가한다. 35개 IR fixture와 전체 235개 project test가 이를 고정한다. P176e2c3u는
+IR을 추가한다. 34개 IR fixture와 전체 235개 project test가 이를 고정한다. P176e2c3u는
 method declaration을 `ReceiverType.method` IR 함수로 내리고 direct local
-owned/`con`/`mut` receiver를 첫 call argument로 보존한다. 36개 IR fixture와 전체
+owned/`con`/`mut` receiver를 첫 call argument로 보존한다. 35개 IR fixture와 전체
 236개 project test가 이를 고정한다. P176e2c3v는 direct field/index receiver와
 temporary/computed field/index receiver를 place-aware typed IR로 내리고 computed
-owner의 move를 보존한다. 37개 IR fixture와 전체 237개 project test가 이를 고정한다.
-다음 slice는 generic/intrinsic과 남은 full-expression typed IR이다. public language 또는
+owner의 move를 보존한다. 36개 IR fixture와 전체 237개 project test가 이를 고정한다.
+P176e2c3w는 computed array 및 projected-field `len` source를 동일한
+full-expression place 경로로 낮추고 이미 move된 owner의 tail drop을 제거한다. 37개 IR
+fixture와 전체 238개 project test가 이를 고정한다. 다음 slice는 generic/intrinsic과
+남은 full-expression typed IR이다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.

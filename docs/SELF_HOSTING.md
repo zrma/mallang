@@ -184,27 +184,30 @@ across each arm. P176e2c3n lowers statement-form match blocks with arm-local
 payload cleanup and outer branch move compensation. Twenty-nine focused IR
 fixtures and 227 Mallang compiler project tests cover that boundary. P176e2c3o
 checks test declaration bodies and lowers `assert(bool)` plus the selected test
-body as a synthetic `main`. Thirty focused IR fixtures and 230 Mallang compiler
+body as a synthetic `main`. Twenty-nine focused IR fixtures and 230 Mallang compiler
 project tests cover that boundary. P176e2c3p lowers condition and conditionless
-`for`, `break` and `continue` with explicit body and cleanup blocks. Thirty-one
+`for`, `break` and `continue` with explicit body and cleanup blocks. Thirty
 focused IR fixtures and 231 Mallang compiler project tests cover that boundary.
 P176e2c3q lowers three-clause `for` init, optional condition and post nodes.
-Thirty-two focused IR fixtures and 232 Mallang compiler project tests cover the
+Thirty-one focused IR fixtures and 232 Mallang compiler project tests cover the
 expanded boundary. P176e2c3r lowers Copy element array and slice range bindings,
 source reads, body and cleanup blocks while preserving owned range-source
-cleanup. Thirty-three focused IR fixtures and 233 Mallang compiler project tests
+cleanup. Thirty-two focused IR fixtures and 233 Mallang compiler project tests
 cover that boundary. P176e2c3s inserts owned for-init exit cleanup and loop/range
-body-local cleanup at normal tails and before `break` or `continue`. Thirty-four
+body-local cleanup at normal tails and before `break` or `continue`. Thirty-three
 focused IR fixtures and 234 Mallang compiler project tests cover that boundary.
 P176e2c3t lowers index-only non-Copy ranges and indexed `con` element borrows.
-Thirty-five focused IR fixtures and 235 Mallang compiler project tests cover the
+Thirty-four focused IR fixtures and 235 Mallang compiler project tests cover the
 expanded boundary. P176e2c3u lowers method declarations as
 `ReceiverType.method` functions and preserves direct local owned, `con` and
-`mut` receivers as the first call argument. Thirty-six focused IR fixtures and
+`mut` receivers as the first call argument. Thirty-five focused IR fixtures and
 236 Mallang compiler project tests cover that boundary. P176e2c3v lowers
 field, index, temporary and computed method receivers with place-aware
 full-expression temporaries while preserving moves inside computed owners.
-Thirty-seven focused IR fixtures and 237 Mallang compiler project tests cover
-that boundary. Generic and intrinsic IR plus remaining full-expression typed
-IR are incomplete, so
+Thirty-six focused IR fixtures and 237 Mallang compiler project tests cover
+that boundary. P176e2c3w routes computed array and projected-field `len` sources
+through place-aware full-expression temporaries and preserves moves inside their
+owners. Thirty-seven focused IR fixtures and 238 Mallang compiler project tests
+cover the expanded boundary. Generic and intrinsic IR plus remaining
+full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

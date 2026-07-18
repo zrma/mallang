@@ -798,7 +798,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
             if ast.Kind(con syntax, argument) != "Arg.Owned" {
                 return Err(newError("checked len argument mode is invalid", ast.Span(con syntax, expression)))
             }
-            match self.lowerExpression(con syntax, ast.Child(con syntax, argument, 0), con checked) {
+            match self.lowerReadExpression(con syntax, ast.Child(con syntax, argument, 0), con checked) {
                 case Ok(loweredValue) {
                     return Ok(self.addNode("E", "Expr.ArrayLen", "", token.CopyText(con ty), ast.Span(con syntax, expression), []int{loweredValue}, cleanup))
                 }
@@ -1646,7 +1646,7 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
         return roots
     }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.ArrayLen" {
-        return []string{}
+        return self.movedPlaceCleanupRoots(self.nodes[node].children[0], con active)
     }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
         binding := cleanupBindingIndex(con active, con self.nodes[node].value)

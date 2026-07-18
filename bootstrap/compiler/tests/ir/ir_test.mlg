@@ -742,6 +742,63 @@ test InsertsLenFullExpressionCleanup() {
     }
 }
 
+test LowersComputedLenOwnerCleanup() {
+    source := "type User struct { name string } type Bag struct { values []int } func identityUsers(users [1]User) [1]User { return users } func identityBag(bag Bag) Bag { return bag } func arrayLength(users [1]User) int { return len(identityUsers(users)) } func fieldLength(bag Bag) int { return len(identityBag(bag).values) } func main() {}"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    arrayLengthTemp := lowered.functions[2].body[0]
+                                    arrayLen := lowered.nodes[arrayLengthTemp].children[0]
+                                    assert(lowered.nodes[arrayLen].kind == "Expr.ArrayLen")
+                                    arraySource := lowered.nodes[arrayLen].children[0]
+                                    assert(lowered.nodes[arraySource].kind == "Expr.FullExprTemporary")
+                                    for mut statement := 0; statement < len(lowered.functions[2].body); statement = statement + 1 {
+                                        node := lowered.functions[2].body[statement]
+                                        if lowered.nodes[node].kind == "Stmt.Drop" {
+                                            assert(lowered.nodes[lowered.nodes[node].children[0]].value != "users")
+                                        }
+                                    }
+
+                                    fieldLengthTemp := lowered.functions[3].body[0]
+                                    fieldLen := lowered.nodes[fieldLengthTemp].children[0]
+                                    assert(lowered.nodes[fieldLen].kind == "Expr.ArrayLen")
+                                    fieldSource := lowered.nodes[fieldLen].children[0]
+                                    assert(lowered.nodes[fieldSource].kind == "Expr.FieldAccess")
+                                    fieldOwner := lowered.nodes[fieldSource].children[0]
+                                    assert(lowered.nodes[fieldOwner].kind == "Expr.FullExprTemporary")
+                                    for mut statement := 0; statement < len(lowered.functions[3].body); statement = statement + 1 {
+                                        node := lowered.functions[3].body[statement]
+                                        if lowered.nodes[node].kind == "Stmt.Drop" {
+                                            assert(lowered.nodes[lowered.nodes[node].children[0]].value != "bag")
+                                        }
+                                    }
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test PreservesPrintReadCleanup() {
     source := "type User struct { name string } func show(name string) { print(name) } func showField(user User) { print(user.name) } func main() {}"
     match lexer.Lex(source) {

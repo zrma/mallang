@@ -1,0 +1,25 @@
+type User struct {
+    name string
+}
+
+type Bag struct {
+    values []int
+}
+
+func identityUsers(users [1]User) [1]User {
+    return users
+}
+
+func identityBag(bag Bag) Bag {
+    return bag
+}
+
+func arrayLength(users [1]User) int {
+    return len(identityUsers(users))
+}
+
+func fieldLength(bag Bag) int {
+    return len(identityBag(bag).values)
+}
+
+func main() {}
