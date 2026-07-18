@@ -396,6 +396,41 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             ));
             ("Stmt.For", "", "unit".to_string(), children)
         }
+        IrStmtKind::RangeFor {
+            index_name,
+            value_name,
+            source,
+            element_ty,
+            body,
+            cleanup,
+        } => {
+            let bindings = format!("{index_name},{value_name}");
+            let element_ty = element_ty.source_name();
+            (
+                "Stmt.RangeFor",
+                "",
+                "unit".to_string(),
+                vec![
+                    normalize_ir_line(
+                        depth + 1,
+                        "F",
+                        "RangeBindings",
+                        statement.span,
+                        &bindings,
+                        &element_ty,
+                        &[],
+                    ),
+                    normalize_ir_expression(source, depth + 1),
+                    normalize_ir_block("Block.RangeFor", body, statement.span, depth + 1),
+                    normalize_ir_block(
+                        "Block.RangeCleanup",
+                        cleanup,
+                        statement.span,
+                        depth + 1,
+                    ),
+                ],
+            )
+        }
         IrStmtKind::Break => ("Stmt.Break", "", "unit".to_string(), Vec::new()),
         IrStmtKind::Continue => ("Stmt.Continue", "", "unit".to_string(), Vec::new()),
         IrStmtKind::Match { scrutinee, arms } => {
@@ -452,7 +487,6 @@ fn normalize_ir_statement(statement: &IrStmt, depth: usize) -> String {
             "unit".to_string(),
             vec![normalize_ir_expression(expr, depth + 1)],
         ),
-        other => panic!("unsupported P176b IR statement in oracle: {other:?}"),
     };
     normalize_ir_line(
         depth,

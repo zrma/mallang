@@ -382,6 +382,44 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         children = append(children, self.addNode("B", "Block.ForCleanup", "", "unit", ast.Span(con syntax, statement), []int{}, false))
         return Ok(self.addNode("S", "Stmt.For", "", "unit", ast.Span(con syntax, statement), children, false))
     }
+    if kind == "Stmt.RangeFor" {
+        if ast.ChildCount(con syntax, statement) != 2 {
+            return Err(newError("checked range statement is malformed", ast.Span(con syntax, statement)))
+        }
+        rangeSource := ast.Child(con syntax, statement, 0)
+        body := ast.Child(con syntax, statement, 1)
+        if ast.Kind(con syntax, body) != "Block" {
+            return Err(newError("checked range statement body is malformed", ast.Span(con syntax, statement)))
+        }
+        mut elementType := ""
+        match semantic.NodeTypeArgument(con checked, rangeSource, 0) {
+            case Ok(resolved) {
+                elementType = resolved
+            }
+            case Err(_) {
+                return Err(newError("checked range element type is missing", ast.Span(con syntax, rangeSource)))
+            }
+        }
+        mut children := []int{self.addNode("F", "RangeBindings", token.CopyText(con value), token.CopyText(con elementType), ast.Span(con syntax, statement), []int{}, false),}
+        match self.lowerExpression(con syntax, rangeSource, con checked) {
+            case Ok(loweredSource) {
+                children = append(children, loweredSource)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.lowerBlock(con syntax, body, con checked) {
+            case Ok(loweredBody) {
+                children = append(children, self.addNode("B", "Block.RangeFor", "", "unit", ast.Span(con syntax, statement), loweredBody, false))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, self.addNode("B", "Block.RangeCleanup", "", "unit", ast.Span(con syntax, statement), []int{}, false))
+        return Ok(self.addNode("S", "Stmt.RangeFor", "", "unit", ast.Span(con syntax, statement), children, false))
+    }
     if kind == "Stmt.If" {
         condition := ast.Child(con syntax, statement, 0)
         mut children := []int{}
@@ -1356,6 +1394,9 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
 }
 
 func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding) []string {
+    if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.RangeFor" {
+        return []string{}
+    }
     if self.nodes[node].category == "A" && self.nodes[node].kind != "Arg.Owned" {
         return []string{}
     }

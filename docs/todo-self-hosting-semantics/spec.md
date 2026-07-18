@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3q complete
+Status: in progress; P176a-P176e2c3r complete
 
 ## Objective
 
@@ -159,6 +159,9 @@ agrees.
 - P176e2c3p: lower condition and conditionless `for`, `break` and `continue`
   with explicit body and cleanup blocks (complete)
 - P176e2c3q: lower three-clause `for` init, optional condition and post nodes
+  (complete)
+- P176e2c3r: lower Copy element array and slice range bindings, source reads,
+  body and cleanup blocks while preserving owned range-source cleanup
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -584,9 +587,11 @@ specialization and function-body checking until later P176 slices.
   declaration bodies and lowers `assert(bool)` plus the selected test body as a
   synthetic `main`. P176e2c3p lowers condition and conditionless `for`, `break`
   and `continue` with explicit body and cleanup blocks. P176e2c3q lowers
-  three-clause `for` init, optional condition and post nodes. Thirty-two typed-IR
-  fixtures and two hundred thirty-two Mallang project tests cover the expanded
-  boundary. Range, cleanup-bearing loops, remaining
+  three-clause `for` init, optional condition and post nodes. P176e2c3r lowers
+  Copy element array and slice range binding/source/body/cleanup nodes and keeps
+  owned range-source cleanup after the loop. Thirty-three typed-IR fixtures and
+  two hundred thirty-three Mallang project tests cover the expanded boundary.
+  Non-Copy and cleanup-bearing loops, remaining
   full-expression cases and checked
   constructs continue in P176e. Stage0 match-arm shadow cleanup identity
   remains tracked separately in

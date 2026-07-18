@@ -190,6 +190,9 @@ project tests cover that boundary. P176e2c3p lowers condition and conditionless
 focused IR fixtures and 231 Mallang compiler project tests cover that boundary.
 P176e2c3q lowers three-clause `for` init, optional condition and post nodes.
 Thirty-two focused IR fixtures and 232 Mallang compiler project tests cover the
-expanded boundary. Range, cleanup-bearing loops and remaining
+expanded boundary. P176e2c3r lowers Copy element array and slice range bindings,
+source reads, body and cleanup blocks while preserving owned range-source
+cleanup. Thirty-three focused IR fixtures and 233 Mallang compiler project tests
+cover the expanded boundary. Non-Copy and cleanup-bearing loops plus remaining
 full-expression typed IR are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

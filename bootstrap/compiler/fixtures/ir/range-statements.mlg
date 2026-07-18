@@ -1,0 +1,17 @@
+func sumArray(values [3]int) int {
+    mut total := 0
+    for index, value := range values {
+        total = total + index + value
+    }
+    return total
+}
+
+func sumSlice(values []int) int {
+    mut total := 0
+    for index := range values {
+        total = total + values[index]
+    }
+    return total
+}
+
+func main() {}

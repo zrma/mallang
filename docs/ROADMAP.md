@@ -1755,6 +1755,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] test body semantic checking, `assert(bool)`와 synthetic test `main` typed IR
 - [x] condition/conditionless `for`, `break`/`continue`와 loop block typed IR
 - [x] three-clause `for` init/optional condition/post typed IR
+- [x] Copy array/slice range binding, source와 body/cleanup typed IR
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
 - [ ] complete control flow, ADT, closure, generic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus
