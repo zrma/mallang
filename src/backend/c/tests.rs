@@ -5,7 +5,7 @@ use crate::{
     ir::{
         lower, IrArg, IrClosure, IrClosureCapture, IrEnum, IrEnumStorage, IrEnumVariant, IrExpr,
         IrExprKind, IrForInit, IrFunction, IrMatchBlockArm, IrMatchPattern, IrParam, IrProgram,
-        IrStmt, IrStmtKind, IrStruct, IrStructField,
+        IrStmt, IrStmtKind, IrStruct, IrStructField, IrTestRunner,
     },
     parse,
     semantic::{FunctionParamType, FunctionType, Type},
@@ -34,6 +34,39 @@ return a + b
     assert!(c.contains("int main(void)"));
     assert!(c.contains("int64_t mlg_add(int64_t mlg_a, int64_t mlg_b);"));
     assert!(c.contains("printf(\"%lld\\n\", (long long)(mlg_y));"));
+}
+
+#[test]
+fn rejects_application_main_in_test_runner_ir() {
+    let runner = IrTestRunner {
+        program: IrProgram {
+            structs: Vec::new(),
+            enums: Vec::new(),
+            closures: Vec::new(),
+            functions: vec![
+                IrFunction {
+                    name: "main".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+                IrFunction {
+                    name: "__mlg_test_0000".to_string(),
+                    params: Vec::new(),
+                    return_type: Type::Unit,
+                    body: Vec::new(),
+                },
+            ],
+        },
+        test_functions: vec!["__mlg_test_0000".to_string()],
+    };
+
+    let error = generate_c_test_runner_from_ir(&runner).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "IR invariant violation: test runner must not contain application `main`"
+    );
 }
 
 #[test]

@@ -68,17 +68,18 @@ global identifier compatibility를 깨지 않는다. String test name과 naming-
 
 - Source와 모든 test/helper declaration은 execution 전에 한 번 parse/link/semantic
   preflight를 통과해야 한다. Compile failure가 있으면 어떤 test도 실행하지 않는다.
-- 선택된 각 test를 별도 synthetic native executable로 build하고 deterministic serial
-  order로 실행한다.
+- 선택된 test body를 하나의 synthetic native runner에 내부 function으로 build하고, parent가
+  case별 별도 child process를 deterministic serial order로 실행한다.
 - Application `main`은 preflight에서 검사하지만 test child의 entrypoint로 실행하지 않는다.
-  Test body가 synthetic `main`이 되고 production/test helper code는 같은 compiler path를
-  사용한다.
+  Test body는 reserved internal function이 되고 production/test helper code는 같은 compiler
+  path를 사용한다. Runner dispatch argument는 Mallang의 `os.args()`에 노출하지 않는다.
 - Failed `assert`는 test ID와 source location을 포함하는 test-only fatal diagnostic을 내고
   해당 child만 non-zero로 종료한다. Parent `mlg test`는 다음 test를 계속 실행한다.
-- One-binary recoverable runner, parallel execution과 in-process unwind는 P156에서 제외한다.
+- Recoverable in-process assertion, parallel execution과 in-process unwind는 제외한다.
 
-Per-test compilation cost는 수용한다. 현재 cleanup-aware recoverable assertion path를 새로
-만드는 것보다 process isolation이 failure containment와 native behavior를 명확히 검증한다.
+초기 P156 구현은 per-test compilation cost를 수용했다. 2026-07-19 성능 후속 작업은 공용
+binary를 도입하되 invocation별 process isolation을 유지해 failure containment와 native
+behavior 계약을 바꾸지 않았다.
 
 ## Q4. Identity, Ordering And Filtering
 
@@ -131,15 +132,16 @@ test result: FAILED. 1 passed; 1 failed
 3. Package graph와 linker가 test body를 같은-package context로 연결한다. Specializer는 모든
    test body의 generic demand를 수집하고 semantic preflight는 production function, test
    helper와 모든 test/assert를 실행 전에 한 번 검사한다.
-4. Checked program에서 selected test body를 synthetic `main`으로 낮추고 application `main`을
-   해당 child IR에서 교체한다. `IrStmtKind::Assert`는 condition full-expression evaluation 뒤
+4. Checked program에서 selected test body를 reserved internal function으로 낮추고 application
+   `main`을 runner IR에서 제거한다. `IrStmtKind::Assert`는 condition full-expression evaluation 뒤
    false일 때 no-unwind runtime failure marker를 기록하고 종료한다.
 5. Parent runner는 marker의 `SourceId`/offset을 보유한 `SourceMap`으로 해석해 project-relative
    `path:line:column` diagnostic으로 바꾼다. Internal marker와 absolute project path는 public
    CLI output에 노출하지 않는다.
-6. `mlg test`는 preflight 결과에서 stable test inventory를 만들고 ordinal artifact path로
-   test별 C/native child를 build한다. Child output을 capture해 pass에서는 버리고 fail에서
-   channel별 replay한 뒤 deterministic summary와 exit status를 집계한다.
+6. `mlg test`는 preflight 결과에서 stable test inventory를 만들고 하나의 C/native runner를
+   build한다. Case ordinal로 runner를 별도 child process에서 실행하고, child output을 capture해
+   pass에서는 버리고 fail에서 channel별 replay한 뒤 deterministic summary와 exit status를
+   집계한다.
 
 Implementation slice는 syntax/formatter, source/package/link, semantic/specialization,
 IR/backend, CLI runner, native safety/docs 순서로 닫는다. 각 slice는 focused regression 뒤
@@ -152,7 +154,7 @@ canonical `scripts/check.sh`를 유지하고 마지막 slice에서 debug/release
 - [x] contextual test/assert parser and formatter regression
 - [x] source/test package mapping, private access와 test-public rejection
 - [x] duplicate test ID, invalid declaration shape와 assert type diagnostics
-- [x] whole-suite preflight and per-test synthetic native build
+- [x] whole-suite preflight, shared native runner build and per-test child invocation
 - [x] deterministic default order and exact filter
 - [x] pass/fail/output/exit aggregation and child signal handling
 - [x] ownership cleanup, allocation accounting, strict C and sanitizer native tests
@@ -164,4 +166,4 @@ Q1-Q6은 2026-07-15 사용자 승인으로 확정했다. 구현은 위 blueprint
 따라 완료했다. `scripts/check-test-workflow.sh`가 debug/release CLI의 stable output,
 whole-suite preflight, exact/standalone rejection, child isolation과 계속 실행을 검증하고,
 생성된 representative test C를 zero-allocation wrapper, strict C 및 ASan/UBSan으로 다시
-컴파일해 실행한다.
+컴파일해 실행한다. 2026-07-19 후속 최적화는 같은 검증을 shared runner 전체 case에 적용한다.

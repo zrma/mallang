@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 mod expressions;
 mod names;
@@ -23,7 +23,7 @@ use validate::validate_program;
 
 use crate::{
     ast::Program,
-    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram, IrStmt, IrStmtKind},
+    ir::{lower, IrClosure, IrEnum, IrFunction, IrProgram, IrStmt, IrStmtKind, IrTestRunner},
     semantic::{check, FunctionParamType, FunctionType, Type},
     standard::StandardIntrinsic,
 };
@@ -36,6 +36,12 @@ pub fn generate_c(program: &Program) -> Result<String, CompileError> {
 
 pub fn generate_c_from_ir(program: &IrProgram) -> Result<String, CompileError> {
     CGenerator::new(program).generate()
+}
+
+pub(crate) fn generate_c_test_runner_from_ir(
+    runner: &IrTestRunner,
+) -> Result<String, CompileError> {
+    CGenerator::new(&runner.program).generate_test_runner(&runner.test_functions)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +98,18 @@ impl<'a> CGenerator<'a> {
     }
 
     fn generate(self) -> Result<String, CompileError> {
+        self.generate_with_test_runner(None)
+    }
+
+    fn generate_test_runner(self, test_functions: &[String]) -> Result<String, CompileError> {
+        validate_test_runner(self.program, test_functions)?;
+        self.generate_with_test_runner(Some(test_functions))
+    }
+
+    fn generate_with_test_runner(
+        self,
+        test_functions: Option<&[String]>,
+    ) -> Result<String, CompileError> {
         validate_program(self.program)?;
         let mut output = String::new();
         output.push_str("#include <errno.h>\n");
@@ -193,7 +211,50 @@ impl<'a> CGenerator<'a> {
             output.push('\n');
         }
 
+        if let Some(test_functions) = test_functions {
+            output.push_str(&self.emit_test_runner(test_functions));
+            output.push('\n');
+        }
+
         Ok(output)
+    }
+
+    fn emit_test_runner(&self, test_functions: &[String]) -> String {
+        let mut output = String::from(
+            r#"int main(int argc, char **argv) {
+    if (argc != 2 || argv == NULL || argv[1] == NULL || argv[1][0] == '\0') {
+        mallang_runtime_error("invalid test runner invocation");
+    }
+    for (const char *cursor = argv[1]; *cursor != '\0'; cursor++) {
+        if (*cursor < '0' || *cursor > '9') {
+            mallang_runtime_error("invalid test runner invocation");
+        }
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long long test_case = strtoull(argv[1], &end, 10);
+    if (errno == ERANGE || end == argv[1] || *end != '\0') {
+        mallang_runtime_error("invalid test runner invocation");
+    }
+"#,
+        );
+        if program_uses_intrinsic(self.program, StandardIntrinsic::OsArgs) {
+            output.push_str("    mallang_process_init(argc - 1, argv);\n");
+        }
+        output.push_str("    switch (test_case) {\n");
+        for (runner_case, function_name) in test_functions.iter().enumerate() {
+            output.push_str(&format!(
+                "        case {runner_case}: {}(); return 0;\n",
+                c_ident(function_name)
+            ));
+        }
+        output.push_str(
+            r#"        default: mallang_runtime_error("unknown test runner case");
+    }
+}
+"#,
+        );
+        output
     }
 
     fn prototype(&self, function: &IrFunction) -> Result<String, CompileError> {
@@ -442,6 +503,50 @@ impl<'a> CGenerator<'a> {
                 CompileError::new(format!("IR invariant violation: unknown enum `{name}`"))
             })
     }
+}
+
+fn validate_test_runner(
+    program: &IrProgram,
+    test_functions: &[String],
+) -> Result<(), CompileError> {
+    if program
+        .functions
+        .iter()
+        .any(|function| function.name == "main")
+    {
+        return Err(CompileError::new(
+            "IR invariant violation: test runner must not contain application `main`",
+        ));
+    }
+    if test_functions.is_empty() {
+        return Err(CompileError::new(
+            "IR invariant violation: test runner must contain at least one test",
+        ));
+    }
+
+    let mut seen = HashSet::new();
+    for function_name in test_functions {
+        if !seen.insert(function_name.as_str()) {
+            return Err(CompileError::new(format!(
+                "IR invariant violation: duplicate test runner function `{function_name}`"
+            )));
+        }
+        let function = program
+            .functions
+            .iter()
+            .find(|function| function.name == *function_name)
+            .ok_or_else(|| {
+                CompileError::new(format!(
+                    "IR invariant violation: unknown test runner function `{function_name}`"
+                ))
+            })?;
+        if !function.params.is_empty() || function.return_type != Type::Unit {
+            return Err(CompileError::new(format!(
+                "IR invariant violation: test runner function `{function_name}` must have no parameters and return `unit`"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn program_uses_test_assertion(program: &IrProgram) -> bool {

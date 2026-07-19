@@ -265,13 +265,18 @@ augment, prepare, check and typed-IR outputs and the unsupported-map-key
 rejection match Rust Stage0. Three focused tests, five project differential
 invocations, one hundred sixty-seven parser corpus sources and two hundred
   sixty-three Mallang project tests cover this boundary. The quadratic string
-  cursor path is removed, fixture/corpus and generated-test compilation use
-  bounded concurrency, and CI no longer repeats the canonical core gate per
-  platform artifact. Representative focused gates complete in 38-46 seconds,
-  the fast gate in 101 seconds and the complete gate in 375 seconds on the same
-  local host class, down from 2,317 seconds. The twelve-file compiler source now
-  matches Stage0 for link, prepare and semantic-check output; a direct augment
-  pass completes in about 9.6 seconds instead of exceeding fifteen minutes.
+  cursor path is removed, fixture/corpus work uses bounded concurrency, and CI
+  no longer repeats the canonical core gate per platform artifact. `mlg test`
+  lowers selected tests into one deterministic C runner while keeping every case
+  in a separate child process. The complete 263-test compiler suite now takes
+  about 3.2-3.4 seconds instead of roughly 250 seconds and produces a 9.9 MB
+  artifact directory instead of about 1.76 GB of generated C. Representative
+  focused gates complete in 38-46 seconds, and measured fast and complete gates
+  both complete in about 100 seconds on the same local host class. The complete
+  path is down from 375 seconds immediately before the runner change and 2,317
+  seconds earlier. The twelve-file compiler source now matches Stage0 for link,
+  prepare and semantic-check output; a direct augment pass completes in about
+  9.6 seconds instead of exceeding fifteen minutes.
   Full compiler-source typed IR still differs in cleanup insertion, so full
   typed IR, deterministic drop closure and the B2 canonical gate remain
   incomplete. No complete typed-IR or Stage1 compiler claim is made.

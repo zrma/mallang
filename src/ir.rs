@@ -21,17 +21,29 @@ pub fn lower(checked: &CheckedProgram) -> Result<IrProgram, IrError> {
 }
 
 pub fn lower_test(checked: &CheckedProgram, test_index: usize) -> Result<IrProgram, IrError> {
-    let test = checked.program.tests.get(test_index).ok_or_else(|| {
+    let mut runner = lower_test_runner(checked, &[test_index])?;
+    let test_function = runner.program.functions.last_mut().ok_or_else(|| {
         IrError::new(
-            format!("unknown test index {test_index}"),
+            "test lowering did not produce a synthetic function",
             checked.program.span,
         )
     })?;
+    test_function.name = "main".to_string();
+    Ok(runner.program)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IrTestRunner {
+    pub(crate) program: IrProgram,
+    pub(crate) test_functions: Vec<String>,
+}
+
+pub(crate) fn lower_test_runner(
+    checked: &CheckedProgram,
+    test_indices: &[usize],
+) -> Result<IrTestRunner, IrError> {
     let lowerer = Lowerer::new(checked);
     let mut program = lowerer.lower_program()?;
-    let mut locals = HashMap::new();
-    let body = lowerer.lower_block_statements(&test.body, &mut locals, &Type::Unit)?;
-    let body = insert_straight_line_cleanup_drops(body, &[], &[], test.body.span);
     let main_count = program
         .functions
         .iter()
@@ -40,17 +52,53 @@ pub fn lower_test(checked: &CheckedProgram, test_index: usize) -> Result<IrProgr
     if main_count > 1 {
         return Err(IrError::new(
             "checked test program must contain at most one application `main`",
-            test.span,
+            checked.program.span,
         ));
     }
     program.functions.retain(|function| function.name != "main");
-    program.functions.push(IrFunction {
-        name: "main".to_string(),
-        params: Vec::new(),
-        return_type: Type::Unit,
-        body,
-    });
-    Ok(program)
+
+    let mut selected = HashSet::new();
+    let mut test_functions = Vec::with_capacity(test_indices.len());
+    for (runner_case, test_index) in test_indices.iter().copied().enumerate() {
+        if !selected.insert(test_index) {
+            return Err(IrError::new(
+                format!("duplicate test index {test_index}"),
+                checked.program.span,
+            ));
+        }
+        let test = checked.program.tests.get(test_index).ok_or_else(|| {
+            IrError::new(
+                format!("unknown test index {test_index}"),
+                checked.program.span,
+            )
+        })?;
+        let function_name = format!("__mlg_test_{runner_case:04}");
+        if program
+            .functions
+            .iter()
+            .any(|function| function.name == function_name)
+        {
+            return Err(IrError::new(
+                format!("generated test function `{function_name}` conflicts with a function"),
+                test.span,
+            ));
+        }
+        let mut locals = HashMap::new();
+        let body = lowerer.lower_block_statements(&test.body, &mut locals, &Type::Unit)?;
+        let body = insert_straight_line_cleanup_drops(body, &[], &[], test.body.span);
+        program.functions.push(IrFunction {
+            name: function_name.clone(),
+            params: Vec::new(),
+            return_type: Type::Unit,
+            body,
+        });
+        test_functions.push(function_name);
+    }
+
+    Ok(IrTestRunner {
+        program,
+        test_functions,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

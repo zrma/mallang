@@ -5,11 +5,6 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     process::{self, Command},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
-    thread,
 };
 
 use mallang::{
@@ -491,6 +486,7 @@ fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat)
     for artifact in artifacts {
         let test = &suite.tests()[artifact.test_index];
         let output = Command::new(&artifact.binary_path)
+            .arg(artifact.runner_case.to_string())
             .output()
             .map_err(|error| {
                 CliError::native(format!("failed to execute test `{}`: {error}", test.id))
@@ -531,6 +527,7 @@ fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat)
 
 struct TestArtifact {
     test_index: usize,
+    runner_case: usize,
     binary_path: PathBuf,
 }
 
@@ -553,92 +550,53 @@ fn build_test_artifacts(
     fallback_path: &str,
 ) -> CliResult<Vec<TestArtifact>> {
     let build_dir = project.root().join("target/mallang/tests");
+    if build_dir.exists() {
+        fs::remove_dir_all(&build_dir).map_err(|error| {
+            CliError::native(format!("failed to clean {}: {error}", build_dir.display()))
+        })?;
+    }
     fs::create_dir_all(&build_dir).map_err(|error| {
         CliError::native(format!("failed to create {}: {error}", build_dir.display()))
     })?;
-    let mut artifacts = Vec::with_capacity(selected.len());
+    if selected.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    for test_index in selected.iter().copied() {
-        let test = &suite.tests()[test_index];
-        let c_source = suite
-            .generate_c(test_index)
-            .map_err(|error| compiler_diagnostic(sources, Some(project), fallback_path, error))?;
-        let stem = format!("test-{test_index:04}");
-        let c_path = build_dir.join(format!("{stem}.c"));
-        let binary_path = build_dir.join(stem);
-        fs::write(&c_path, c_source).map_err(|error| {
-            CliError::native(format!(
-                "failed to write test `{}` C source: {error}",
-                test.id
-            ))
+    let c_source = suite
+        .generate_c_runner(selected)
+        .map_err(|error| compiler_diagnostic(sources, Some(project), fallback_path, error))?;
+    let c_path = build_dir.join("runner.c");
+    let binary_path = build_dir.join("runner");
+    fs::write(&c_path, c_source).map_err(|error| {
+        CliError::native(format!(
+            "failed to write native test runner C source: {error}"
+        ))
+    })?;
+    let output = Command::new("clang")
+        .arg(&c_path)
+        .arg("-o")
+        .arg(&binary_path)
+        .output()
+        .map_err(|error| {
+            CliError::native(format!("failed to execute clang for test runner: {error}"))
         })?;
-        artifacts.push(TestArtifact {
+    if !output.status.success() {
+        return Err(CliError::native(format!(
+            "native test runner compilation failed:\n{}",
+            String::from_utf8_lossy(&output.stderr).trim_end()
+        )));
+    }
+
+    Ok(selected
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(runner_case, test_index)| TestArtifact {
             test_index,
-            binary_path,
-        });
-    }
-
-    compile_test_artifacts(suite.tests(), &artifacts)?;
-    Ok(artifacts)
-}
-
-fn compile_test_artifacts(tests: &[PackageTest], artifacts: &[TestArtifact]) -> CliResult<()> {
-    if artifacts.is_empty() {
-        return Ok(());
-    }
-
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(4)
-        .min(artifacts.len());
-    let next = AtomicUsize::new(0);
-    let failures = Mutex::new(Vec::new());
-
-    thread::scope(|scope| {
-        for _ in 0..worker_count {
-            scope.spawn(|| loop {
-                let artifact_index = next.fetch_add(1, Ordering::Relaxed);
-                let Some(artifact) = artifacts.get(artifact_index) else {
-                    break;
-                };
-                let test = &tests[artifact.test_index];
-                let c_path = artifact.binary_path.with_extension("c");
-                let failure = match Command::new("clang")
-                    .arg(&c_path)
-                    .arg("-o")
-                    .arg(&artifact.binary_path)
-                    .output()
-                {
-                    Ok(output) if output.status.success() => None,
-                    Ok(output) => Some(format!(
-                        "native compilation failed for test `{}`:\n{}",
-                        test.id,
-                        String::from_utf8_lossy(&output.stderr).trim_end()
-                    )),
-                    Err(error) => Some(format!(
-                        "failed to execute clang for test `{}`: {error}",
-                        test.id
-                    )),
-                };
-                if let Some(message) = failure {
-                    failures
-                        .lock()
-                        .expect("test compile failure mutex poisoned")
-                        .push((artifact.test_index, message));
-                }
-            });
-        }
-    });
-
-    let mut failures = failures
-        .into_inner()
-        .expect("test compile failure mutex poisoned");
-    failures.sort_by_key(|(test_index, _)| *test_index);
-    if let Some((_, message)) = failures.into_iter().next() {
-        return Err(CliError::native(message));
-    }
-    Ok(())
+            runner_case,
+            binary_path: binary_path.clone(),
+        })
+        .collect())
 }
 
 fn replay_test_stderr(

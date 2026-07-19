@@ -701,10 +701,14 @@ intrinsic body를 건너뛰고 지원하지 않는 map key를 거부하며, type
 augment/prepare/check/IR 네 출력과 map-key rejection이 Stage0과 일치한다. 세 focused test,
 다섯 project differential invocation, 167개 parser corpus source와 전체 263개 project test가
 이를 고정한다. 후속 성능 개선에서 byte cursor의 반복 전체 UTF-8 검증을 제거하고
-fixture/corpus 및 generated test C compilation을 최대 4개로 병렬화했다. focused gate는
-38-46초, fast gate는 101초, complete Stage1/strict-accounting/ASan/UBSan gate는 375초에
-통과해 직전 2,317초보다 약 6.2배 빨라졌다. 12-file compiler source는 link/prepare/check가
-Stage0과 일치하고 augment는 15분 초과에서 약 9.6초로 줄었다. full compiler-source IR은
+fixture/corpus를 최대 4개로 병렬화했다. `mlg test`는 선택된 test body를 하나의
+deterministic C runner로 만들되 각 case를 별도 child process로 실행한다. 전체 263-test
+compiler suite는 약 250초와 1.76 GB의 중복 C에서 3.2-3.4초와 9.9 MB artifact directory로
+줄었다. focused gate는 38-46초, fast gate와 complete
+Stage1/strict-accounting/ASan/UBSan gate는 각각 약 100초에 통과한다. complete gate는 runner
+변경 직전 375초, 그 이전 2,317초에서 줄었다. 12-file compiler source는
+link/prepare/check가 Stage0과 일치하고 augment는 15분 초과에서 약 9.6초로 줄었다. full
+compiler-source IR은
 cleanup insertion 차이가 남아 있다. 다음
 기능 slice는 full typed IR과 deterministic drop insertion/corpus closure이다. public language
 또는 standard-library addition은 representative compiler blocker가 확인되기 전에는 포함하지

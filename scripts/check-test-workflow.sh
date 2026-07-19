@@ -64,6 +64,12 @@ if grep -Fq "hidden passing output" "$OUT_DIR/success.stdout"; then
   echo "test workflow leaked passing child output" >&2
   exit 1
 fi
+success_runner="$SUCCESS_PROJECT/target/mallang/tests/runner.c"
+if [[ ! -f "$success_runner" ]]; then
+  echo "test workflow did not generate a shared native runner" >&2
+  exit 1
+fi
+cp "$success_runner" "$OUT_DIR/success-runner.c"
 
 run_success \
   "exact" \
@@ -122,24 +128,26 @@ if [[ "$(cat "$OUT_DIR/empty.stdout")" != 'test result: ok. 0 passed; 0 failed' 
   exit 1
 fi
 
-for c_source in "$SUCCESS_PROJECT"/target/mallang/tests/test-*.c; do
-  stem="$(basename "$c_source" .c)"
-  c_source_abs="$(cd "$(dirname "$c_source")" && pwd)/$(basename "$c_source")"
-  accounting_source="$OUT_DIR/$stem-accounting.c"
-  strict_binary="$OUT_DIR/$stem-strict"
-  sanitizer_binary="$OUT_DIR/$stem-sanitized"
-  compile_stderr="$OUT_DIR/$stem.compile.stderr"
-  strict_run_stderr="$OUT_DIR/$stem.strict.stderr"
-  sanitizer_stderr="$OUT_DIR/$stem.sanitizer.stderr"
-  main_setup=""
-  main_call="mallang_test_main()"
-  if grep -Fq 'int main(int argc, char **argv)' "$c_source"; then
-    main_setup=$'    char mlg_program[] = "mallang-test";\n    char *mlg_argv[] = {mlg_program, NULL};'
-    main_call="mallang_test_main(1, mlg_argv)"
-  fi
+run_failure \
+  "runner-invocation" \
+  "$SUCCESS_PROJECT/target/mallang/tests/runner"
+if [[ -s "$OUT_DIR/runner-invocation.stdout" ]] || \
+  [[ "$(cat "$OUT_DIR/runner-invocation.stderr")" != \
+    'mallang runtime error: invalid test runner invocation' ]]; then
+  echo "test workflow runner invocation diagnostic mismatch" >&2
+  exit 1
+fi
 
-  cat >"$accounting_source" <<EOF
-#define main mallang_test_main
+c_source_abs="$(cd "$(dirname "$OUT_DIR/success-runner.c")" && pwd)/success-runner.c"
+accounting_source="$OUT_DIR/runner-accounting.c"
+strict_binary="$OUT_DIR/runner-strict"
+sanitizer_binary="$OUT_DIR/runner-sanitized"
+compile_stderr="$OUT_DIR/runner.compile.stderr"
+strict_run_stderr="$OUT_DIR/runner.strict.stderr"
+sanitizer_stderr="$OUT_DIR/runner.sanitizer.stderr"
+
+cat >"$accounting_source" <<EOF
+#define main mallang_test_runner_main
 #include "$c_source_abs"
 #undef main
 
@@ -148,64 +156,72 @@ int main(void) {
         fprintf(stderr, "test allocation accounting did not start at zero\n");
         return 10;
     }
-$main_setup
-    int status = $main_call;
-    if (status != 0) {
-        fprintf(stderr, "Mallang test main failed\n");
-        return 11;
-    }
-    if (mallang_live_allocation_count() != 0) {
-        fprintf(stderr, "Mallang test leaked compiler-owned allocations\n");
-        return 12;
+    char program[] = "mallang-test";
+    char case_0[] = "0";
+    char case_1[] = "1";
+    char case_2[] = "2";
+    char case_3[] = "3";
+    char case_4[] = "4";
+    char *cases[] = {case_0, case_1, case_2, case_3, case_4};
+    for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        char *argv[] = {program, cases[index], NULL};
+        int status = mallang_test_runner_main(2, argv);
+        if (status != 0) {
+            fprintf(stderr, "Mallang test runner case failed\n");
+            return 11;
+        }
+        if (mallang_live_allocation_count() != 0) {
+            fprintf(stderr, "Mallang test leaked compiler-owned allocations\n");
+            return 12;
+        }
     }
     return 0;
 }
 EOF
 
-  if ! "$CLANG_BIN" -std=c11 -Wall -Wextra -Werror -pedantic \
-    "$accounting_source" -o "$strict_binary" 2>"$compile_stderr"; then
-    echo "test workflow strict C compile failed for $stem" >&2
-    cat "$compile_stderr" >&2
-    exit 1
-  fi
-  if [[ -s "$compile_stderr" ]]; then
-    echo "test workflow strict C compile emitted stderr for $stem" >&2
-    cat "$compile_stderr" >&2
-    exit 1
-  fi
-  if ! "$strict_binary" >/dev/null 2>"$strict_run_stderr"; then
-    echo "test workflow allocation accounting failed for $stem" >&2
-    cat "$strict_run_stderr" >&2
-    exit 1
-  fi
-  if [[ -s "$strict_run_stderr" ]]; then
-    echo "test workflow strict C run emitted stderr for $stem" >&2
-    cat "$strict_run_stderr" >&2
-    exit 1
-  fi
+if ! "$CLANG_BIN" -std=c11 -Wall -Wextra -Werror -pedantic \
+  "$accounting_source" -o "$strict_binary" 2>"$compile_stderr"; then
+  echo "test workflow shared runner strict C compile failed" >&2
+  cat "$compile_stderr" >&2
+  exit 1
+fi
+if [[ -s "$compile_stderr" ]]; then
+  echo "test workflow shared runner strict C compile emitted stderr" >&2
+  cat "$compile_stderr" >&2
+  exit 1
+fi
+if ! "$strict_binary" >/dev/null 2>"$strict_run_stderr"; then
+  echo "test workflow shared runner allocation accounting failed" >&2
+  cat "$strict_run_stderr" >&2
+  exit 1
+fi
+if [[ -s "$strict_run_stderr" ]]; then
+  echo "test workflow shared runner strict C run emitted stderr" >&2
+  cat "$strict_run_stderr" >&2
+  exit 1
+fi
 
-  if ! "$CLANG_BIN" -std=c11 -Wall -Wextra -Werror -pedantic \
-    -fsanitize=address,undefined -fno-omit-frame-pointer \
-    "$accounting_source" -o "$sanitizer_binary" 2>"$sanitizer_stderr"; then
-    echo "test workflow sanitizer compile failed for $stem" >&2
-    cat "$sanitizer_stderr" >&2
-    exit 1
-  fi
-  if [[ -s "$sanitizer_stderr" ]]; then
-    echo "test workflow sanitizer compile emitted stderr for $stem" >&2
-    cat "$sanitizer_stderr" >&2
-    exit 1
-  fi
-  if ! "$sanitizer_binary" >/dev/null 2>"$sanitizer_stderr"; then
-    echo "test workflow sanitizer run failed for $stem" >&2
-    cat "$sanitizer_stderr" >&2
-    exit 1
-  fi
-  if [[ -s "$sanitizer_stderr" ]]; then
-    echo "test workflow sanitizer run emitted stderr for $stem" >&2
-    cat "$sanitizer_stderr" >&2
-    exit 1
-  fi
-done
+if ! "$CLANG_BIN" -std=c11 -Wall -Wextra -Werror -pedantic \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  "$accounting_source" -o "$sanitizer_binary" 2>"$sanitizer_stderr"; then
+  echo "test workflow shared runner sanitizer compile failed" >&2
+  cat "$sanitizer_stderr" >&2
+  exit 1
+fi
+if [[ -s "$sanitizer_stderr" ]]; then
+  echo "test workflow shared runner sanitizer compile emitted stderr" >&2
+  cat "$sanitizer_stderr" >&2
+  exit 1
+fi
+if ! "$sanitizer_binary" >/dev/null 2>"$sanitizer_stderr"; then
+  echo "test workflow shared runner sanitizer run failed" >&2
+  cat "$sanitizer_stderr" >&2
+  exit 1
+fi
+if [[ -s "$sanitizer_stderr" ]]; then
+  echo "test workflow shared runner sanitizer run emitted stderr" >&2
+  cat "$sanitizer_stderr" >&2
+  exit 1
+fi
 
 echo "project test workflow aggregation, accounting, strict C, and sanitizer smoke passed"

@@ -2,9 +2,9 @@ use std::fmt;
 
 use crate::{
     ast::Program,
-    backend::generate_c_from_ir,
+    backend::{generate_c_from_ir, generate_c_test_runner_from_ir},
     frontend::parse_sources_with_diagnostics,
-    ir::{lower, lower_test, IrProgram},
+    ir::{lower, lower_test, lower_test_runner, IrProgram},
     linker::{display_linked_message, link_project, link_standalone},
     package::{build_package_graph, build_standalone_package_graph, PackageGraph, PackageTest},
     project::Project,
@@ -51,6 +51,23 @@ impl ProjectTestSuite {
             )
         })?;
         generate_c_from_ir(&ir).map_err(|error| {
+            CompilerError::new(
+                CompilerStage::Backend,
+                display_linked_message(&error.message),
+                None,
+            )
+        })
+    }
+
+    pub fn generate_c_runner(&self, test_indices: &[usize]) -> Result<String, CompilerError> {
+        let runner = lower_test_runner(&self.checked, test_indices).map_err(|error| {
+            CompilerError::new(
+                CompilerStage::Ir,
+                display_linked_message(&error.message),
+                error.span,
+            )
+        })?;
+        generate_c_test_runner_from_ir(&runner).map_err(|error| {
             CompilerError::new(
                 CompilerStage::Backend,
                 display_linked_message(&error.message),
@@ -970,6 +987,73 @@ mod tests {
         assert!(!c_source.contains("application-main"));
         assert!(c_source.contains("mallang_test_assertion_failed("));
         assert!(c_source.contains("__mlg_test_assert:%zu:%zu"));
+    }
+
+    #[test]
+    fn generates_one_native_runner_for_all_selected_tests() {
+        let temp = TempProject::new("shared-test-runner");
+        temp.write("mallang.toml", "[project]\nname = \"hello\"\n");
+        temp.write(
+            "src/main.mlg",
+            "package main\nfunc main() { print(\"application-main\") }\n",
+        );
+        temp.write(
+            "tests/main_test.mlg",
+            "package main\nimport \"std/os\"\ntest First() { assert(1 == 1) }\ntest Second() { match os.args() { case Ok(args) { assert(len(args) == 1) } case Err(_) { assert(false) } } }\n",
+        );
+        let (project, loaded) = temp.load_with_tests();
+        let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids).unwrap();
+
+        let c_source = suite.generate_c_runner(&[1, 0]).unwrap();
+
+        assert_eq!(
+            c_source
+                .matches("int main(int argc, char **argv) {")
+                .count(),
+            1
+        );
+        assert!(!c_source.contains("int main(void)"));
+        assert!(!c_source.contains("application-main"));
+        assert_eq!(
+            c_source.matches("void mlg___mlg_test_0000(void) {").count(),
+            1
+        );
+        assert_eq!(
+            c_source.matches("void mlg___mlg_test_0001(void) {").count(),
+            1
+        );
+        assert!(c_source.contains("case 0: mlg___mlg_test_0000(); return 0;"));
+        assert!(c_source.contains("case 1: mlg___mlg_test_0001(); return 0;"));
+        assert!(!c_source.contains("case 2:"));
+        assert!(c_source.contains("mallang_process_init(argc - 1, argv);"));
+    }
+
+    #[test]
+    fn rejects_invalid_shared_test_runner_selections() {
+        let temp = TempProject::new("shared-test-runner-selection");
+        temp.write("mallang.toml", "[project]\nname = \"hello\"\n");
+        temp.write("src/main.mlg", "package main\nfunc main() {}\n");
+        temp.write(
+            "tests/main_test.mlg",
+            "package main\ntest Only() { assert(true) }\n",
+        );
+        let (project, loaded) = temp.load_with_tests();
+        let suite = prepare_project_tests(&project, &loaded.sources, &loaded.source_ids).unwrap();
+
+        let duplicate = suite.generate_c_runner(&[0, 0]).unwrap_err();
+        assert_eq!(duplicate.stage, CompilerStage::Ir);
+        assert_eq!(duplicate.message, "duplicate test index 0");
+
+        let unknown = suite.generate_c_runner(&[1]).unwrap_err();
+        assert_eq!(unknown.stage, CompilerStage::Ir);
+        assert_eq!(unknown.message, "unknown test index 1");
+
+        let empty = suite.generate_c_runner(&[]).unwrap_err();
+        assert_eq!(empty.stage, CompilerStage::Backend);
+        assert_eq!(
+            empty.message,
+            "IR invariant violation: test runner must contain at least one test"
+        );
     }
 
     #[test]

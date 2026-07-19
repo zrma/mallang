@@ -32,9 +32,13 @@ remain inside the same worker so attribution stays local.
 
 ## What Is The Next Performance Boundary?
 
-Generated test artifacts. The current test command emits and compiles the whole
-project C translation unit once per selected test. Bounded `clang` concurrency
-reduces wall time but does not remove roughly 1.76 GB of duplicate generated C.
-A shared compiler object with small test harnesses, or one deterministic test
-runner containing all selected tests, should precede lower-level incremental
-compiler caching.
+The generated-test boundary is closed. `mlg test` emits one deterministic
+translation unit and runner binary for all selected tests, then launches that
+binary once per case to preserve process isolation. The complete compiler suite
+fell from roughly 250 seconds and 1.76 GB of generated C to 3.2-3.4 seconds and
+a 9.9 MB artifact directory.
+
+The remaining full-gate work is distributed across Stage1/profile preparation,
+fixture and project differentials, and the parser corpus. Lower-level
+incremental caching is deferred until new measurements show that this roughly
+100-second publication gate materially limits B2 delivery again.

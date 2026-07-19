@@ -100,14 +100,21 @@ check_generated_program() {
   local label="$1"
   local c_source="$2"
   local expected_stdout="$3"
+  local runner_case="${4:-}"
   local c_source_abs
   local accounting_source="$OUT_DIR/$label-accounting.c"
   local strict_binary="$OUT_DIR/$label-strict"
   local sanitizer_binary="$OUT_DIR/$label-sanitized"
   local stderr_path="$OUT_DIR/$label.stderr"
+  local main_setup=""
+  local main_call="mallang_program_main()"
   local output
 
   c_source_abs="$(cd "$(dirname "$c_source")" && pwd)/$(basename "$c_source")"
+  if [[ -n "$runner_case" ]]; then
+    main_setup=$'    char mlg_program[] = "mallang-test";\n    char mlg_case[] = "'"$runner_case"$'";\n    char *mlg_argv[] = {mlg_program, mlg_case, NULL};'
+    main_call="mallang_program_main(2, mlg_argv)"
+  fi
   cat >"$accounting_source" <<EOF
 #define main mallang_program_main
 #include "$c_source_abs"
@@ -117,7 +124,8 @@ int main(void) {
     if (mallang_live_allocation_count() != 0) {
         return 10;
     }
-    int status = mallang_program_main();
+$main_setup
+    int status = $main_call;
     if (status != 0 || mallang_live_allocation_count() != 0) {
         return 11;
     }
@@ -156,7 +164,7 @@ EOF
 }
 
 check_generated_program "app" "$APP/target/mallang/pathapp.c" $'42\n42'
-check_generated_program "app-test" "$APP/target/mallang/tests/test-0000.c" ""
-check_generated_program "model-test" "$MODEL/target/mallang/tests/test-0000.c" ""
+check_generated_program "app-test" "$APP/target/mallang/tests/runner.c" "" "0"
+check_generated_program "model-test" "$MODEL/target/mallang/tests/runner.c" "" "0"
 
 echo "local path dependency graph, library workflow, native accounting, strict C, and sanitizer smoke passed"
