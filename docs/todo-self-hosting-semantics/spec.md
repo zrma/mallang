@@ -671,8 +671,13 @@ specialization and function-body checking until later P176 slices.
   Unknown `std/*` imports match the Rust package error span and message. Two
   valid and ten rejection layout sets, one hundred sixty-three parser corpus
   sources and two hundred fifty-three Mallang project tests cover this boundary.
-  Cross-project package construction, visibility/link rewriting and
-  standard-intrinsic specialization continue in P176e.
+  P176e4b3a preserves dependency project source roots and direct dependency
+  edges in the compiler input. The transitive `app -> text -> shared` graph
+  normalizes dependency-first, while an `app` import of undeclared `shared`
+  matches the Rust source, span and message. Three valid and eleven rejection
+  layout sets, one hundred sixty-three parser corpus sources and two hundred
+  fifty-five Mallang project tests cover this boundary. Package visibility/link
+  rewriting and standard-intrinsic specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

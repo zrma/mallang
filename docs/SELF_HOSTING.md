@@ -245,7 +245,12 @@ standard packages at their import spans and preserves all thirty public declarat
 kinds and generic parameters in Rust registry order. Unknown `std/*` imports match
 the Rust package error span and message. Two valid and ten rejection layout sets,
 one hundred sixty-three parser corpus sources and two hundred fifty-three Mallang
-project tests cover this boundary. Cross-project package construction,
+project tests cover this boundary. P176e4b3a preserves dependency project source
+roots and direct dependency edges in the compiler input. The transitive
+`app -> text -> shared` graph normalizes dependency-first, while an `app` import
+of undeclared `shared` matches the Rust source, span and message. Three valid and
+eleven rejection layout sets, one hundred sixty-three parser corpus sources and
+two hundred fifty-five Mallang project tests cover this boundary. Package
 visibility/link rewriting, standard-intrinsic specialization and the remaining
 full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

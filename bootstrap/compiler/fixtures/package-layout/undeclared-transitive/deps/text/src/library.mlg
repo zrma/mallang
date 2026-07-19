@@ -1,0 +1,7 @@
+package main
+
+import "shared"
+
+pub func Read() int {
+    return shared.Value()
+}

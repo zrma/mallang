@@ -3,6 +3,36 @@ package packages
 import "bootstrap_compiler/frontend/ast"
 import "bootstrap_compiler/frontend/lexer"
 import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/frontend/token"
+
+func parseLayoutSources(con texts []string) Result[ast.Program, bool] {
+    mut programs := []ast.Program{}
+    for mut sourceId := 0; sourceId < len(texts); sourceId = sourceId + 1 {
+        match lexer.LexWithSource(token.CopyText(con texts[sourceId]), sourceId) {
+            case Ok(tokens) {
+                match parser.Parse(tokens) {
+                    case Ok(program) {
+                        programs = append(programs, program)
+                    }
+                    case Err(_) {
+                        return Err(false)
+                    }
+                }
+            }
+            case Err(_) {
+                return Err(false)
+            }
+        }
+    }
+    return match ast.MergePrograms(programs) {
+        case Ok(program) {
+            Ok(program)
+        }
+        case Err(_) {
+            Err(false)
+        }
+    }
+}
 
 test BuildsSourcePackageIdentity() {
     mut programs := []ast.Program{}
@@ -45,6 +75,54 @@ test BuildsSourcePackageIdentity() {
                 }
                 case Err(_) {
                     assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test BuildsCrossProjectDependencyGraph() {
+    texts := []string{"package main\npub func Value() int { return 42 }\n", "package main\nimport \"shared\"\npub func Read() int { return shared.Value() }\n", "package main\nimport \"text\"\nfunc main() {}\n",}
+    match parseLayoutSources(con texts) {
+        case Ok(program) {
+            app := NewProjectUnit(con "app", con "project/src", con []string{"text",})
+            text := NewProjectUnit(con "text", con "project/deps/text/src", con []string{"shared",})
+            shared := NewProjectUnit(con "shared", con "project/deps/shared/src", con []string{})
+            project := NewProject(con []ProjectUnit{app, text, shared})
+            paths := []string{"project/deps/shared/src/library.mlg", "project/deps/text/src/library.mlg", "project/src/main.mlg",}
+            match BuildProject(con program, con project, con paths) {
+                case Ok(layout) {
+                    assert(Normalize(con layout) == "LAYOUT|3|3\nSOURCE|0|shared|main\nSOURCE|1|text|main\nSOURCE|2|app|main\nPACKAGE|app|main|1|1|1|0\nPSOURCE|app|2\nIMPORT|app|text|text\nDECL|app|Function|Package|main|0\nPACKAGE|shared|main|1|0|1|0\nPSOURCE|shared|0\nDECL|shared|Function|Public|Value|0\nPACKAGE|text|main|1|1|1|0\nPSOURCE|text|1\nIMPORT|text|shared|shared\nDECL|text|Function|Public|Read|0\nORDER|3|shared|text|app")
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUndeclaredTransitiveProjectImport() {
+    texts := []string{"package main\npub func Value() int { return 42 }\n", "package main\nimport \"shared\"\npub func Read() int { return shared.Value() }\n", "package main\nimport \"shared\"\nfunc main() {}\n",}
+    match parseLayoutSources(con texts) {
+        case Ok(program) {
+            app := NewProjectUnit(con "app", con "project/src", con []string{"text",})
+            text := NewProjectUnit(con "text", con "project/deps/text/src", con []string{"shared",})
+            shared := NewProjectUnit(con "shared", con "project/deps/shared/src", con []string{})
+            project := NewProject(con []ProjectUnit{app, text, shared})
+            paths := []string{"project/deps/shared/src/library.mlg", "project/deps/text/src/library.mlg", "project/src/main.mlg",}
+            match BuildProject(con program, con project, con paths) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(error) {
+                    assert(ErrorMessage(con error) == "project `app` does not declare dependency `shared`")
                 }
             }
         }

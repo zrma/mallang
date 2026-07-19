@@ -74,11 +74,13 @@ else
     bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/frontend/parser::MergesSourceAwareProgramsByDeclarationGroup \
+    bootstrap_compiler/packages::BuildsCrossProjectDependencyGraph \
     bootstrap_compiler/packages::BuildsSourcePackageIdentity \
     bootstrap_compiler/packages::BuildsStandardPackageInventory \
     bootstrap_compiler/packages::RejectsDuplicatePackageDeclarations \
     bootstrap_compiler/packages::RejectsPackageImportCycle \
     bootstrap_compiler/packages::RejectsInvalidImportPath \
+    bootstrap_compiler/packages::RejectsUndeclaredTransitiveProjectImport \
     bootstrap_compiler/packages::RejectsUnknownStandardPackage \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
@@ -267,29 +269,27 @@ compare_source_set() {
   fi
 }
 
-compare_package_layout() {
+compare_package_layout_invocation() {
   local stem="$1"
   local profile="$2"
-  local project_name="$3"
-  local source_root="$4"
-  shift 4
-  local -a fixtures=("$@")
+  shift 2
+  local -a invocation=("$@")
   local -a actual_outputs=()
   oracle_output="$WORK/$stem.oracle"
   stage1_output="$WORK/$stem.stage1"
   strict_output="$WORK/$stem.strict"
   sanitizer_output="$WORK/$stem.sanitizer"
 
-  "$ORACLE" package-layout "$project_name" "$source_root" "${fixtures[@]}" >"$oracle_output"
-  "$STAGE1" package-layout "$project_name" "$source_root" "${fixtures[@]}" >"$stage1_output"
+  "$ORACLE" "${invocation[@]}" >"$oracle_output"
+  "$STAGE1" "${invocation[@]}" >"$stage1_output"
   actual_outputs+=("$stage1_output")
   if [[ "$profile" != "stage1" ]]; then
-    "$WORK/accounting" package-layout "$project_name" "$source_root" "${fixtures[@]}" \
+    "$WORK/accounting" "${invocation[@]}" \
       >"$strict_output" 2>"$WORK/$stem.strict.stderr"
     actual_outputs+=("$strict_output")
   fi
   if [[ "$profile" == "full" ]]; then
-    "$WORK/accounting-san" package-layout "$project_name" "$source_root" "${fixtures[@]}" \
+    "$WORK/accounting-san" "${invocation[@]}" \
       >"$sanitizer_output" 2>"$WORK/$stem.sanitizer.stderr"
     actual_outputs+=("$sanitizer_output")
   fi
@@ -311,6 +311,51 @@ compare_package_layout() {
     cat "$WORK/$stem.sanitizer.stderr" >&2
     exit 1
   fi
+}
+
+compare_package_layout() {
+  local stem="$1"
+  local profile="$2"
+  local project_name="$3"
+  local source_root="$4"
+  shift 4
+  compare_package_layout_invocation \
+    "$stem" \
+    "$profile" \
+    package-layout \
+    "$project_name" \
+    "$source_root" \
+    "$@"
+}
+
+compare_project_package_layout() {
+  local stem="$1"
+  local profile="$2"
+  shift 2
+  local -a project_args=()
+  local -a fixtures=()
+  local in_fixtures=false
+  local argument
+  for argument in "$@"; do
+    if [[ "$argument" == "--" ]]; then
+      in_fixtures=true
+    elif [[ "$in_fixtures" == "true" ]]; then
+      fixtures+=("$argument")
+    else
+      project_args+=("$argument")
+    fi
+  done
+  if [[ ${#project_args[@]} -eq 0 || ${#fixtures[@]} -eq 0 ]]; then
+    echo "self-hosting project package layout requires graph and source arguments" >&2
+    exit 2
+  fi
+
+  compare_package_layout_invocation \
+    "$stem" \
+    "$profile" \
+    package-layout-project \
+    "${project_args[@]}" \
+    "${fixtures[@]}"
 }
 
 fixture_profile="full"
@@ -433,6 +478,28 @@ compare_package_layout \
   hello \
   "$PACKAGE_LAYOUT_FIXTURES/unknown-standard/src" \
   "$PACKAGE_LAYOUT_FIXTURES/unknown-standard/src/main.mlg"
+compare_project_package_layout \
+  package-layout-cross-project \
+  "$fixture_profile" \
+  3 \
+  app "$PACKAGE_LAYOUT_FIXTURES/cross-project/src" 1 text \
+  text "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/text/src" 1 shared \
+  shared "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/shared/src" 0 \
+  -- \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/shared/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/text/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/src/main.mlg"
+compare_project_package_layout \
+  package-layout-undeclared-transitive \
+  "$fixture_profile" \
+  3 \
+  app "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/src" 1 text \
+  text "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/deps/text/src" 1 shared \
+  shared "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/deps/shared/src" 0 \
+  -- \
+  "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/deps/shared/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/deps/text/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/src/main.mlg"
 
 if [[ "$MODE" == "fast" ]]; then
   compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
@@ -520,4 +587,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4b2c $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4b3a $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

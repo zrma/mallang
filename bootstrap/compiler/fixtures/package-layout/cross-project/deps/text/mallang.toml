@@ -1,0 +1,5 @@
+[project]
+name = "text"
+
+[dependencies]
+shared = { path = "../shared" }

@@ -50,6 +50,16 @@ pub type LayoutError struct {
     span source.Span
 }
 
+pub type ProjectUnit struct {
+    name string
+    sourceRoot string
+    directDependencies []string
+}
+
+pub type Project struct {
+    units []ProjectUnit
+}
+
 type PackageIdentity struct {
     path string
     name string
@@ -69,6 +79,23 @@ type Topology struct {
 }
 
 pub func Build(con program ast.Program, con projectName string, con sourceRoot string, con paths []string) Result[Layout, LayoutError] {
+    unit := NewProjectUnit(con projectName, con sourceRoot, con []string{})
+    return BuildProject(con program, con NewProject(con []ProjectUnit{unit}), con paths)
+}
+
+pub func NewProjectUnit(con name string, con sourceRoot string, con directDependencies []string) ProjectUnit {
+    return ProjectUnit{name: token.CopyText(con name), sourceRoot: token.CopyText(con sourceRoot), directDependencies: copyTexts(con directDependencies),}
+}
+
+pub func NewProject(con units []ProjectUnit) Project {
+    mut copied := []ProjectUnit{}
+    for mut index := 0; index < len(units); index = index + 1 {
+        copied = append(copied, NewProjectUnit(con units[index].name, con units[index].sourceRoot, con units[index].directDependencies))
+    }
+    return Project{units: copied}
+}
+
+pub func BuildProject(con program ast.Program, con project Project, con paths []string) Result[Layout, LayoutError] {
     if len(paths) == 0 {
         return Err(newError("cannot build a package layout without source files", source.NewSpan(0, 0, 0)))
     }
@@ -83,7 +110,7 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
         }
         unitSpan := ast.Span(con program, sourceUnit)
         mut identity := PackageIdentity{path: "", name: ""}
-        match packageIdentity(con projectName, con sourceRoot, con paths[sourceId], source.Copy(con unitSpan)) {
+        match packageIdentity(con project, con paths[sourceId], source.Copy(con unitSpan)) {
             case Ok(value) {
                 identity = value
             }
@@ -129,7 +156,7 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
         }
     }
     packageItems = sortPackages(con packageItems)
-    match connectImports(con packageItems, con pendingImports) {
+    match connectImports(con packageItems, con pendingImports, con project) {
         case Ok(connected) {
             packageItems = connected
         }
@@ -294,7 +321,7 @@ func standardDeclaration(con name string, con kind string, con typeParams []stri
     return Declaration{name: token.CopyText(con name), kind: token.CopyText(con kind), visibility: "Public", typeParams: copyTexts(con typeParams), span: source.Copy(con span),}
 }
 
-func connectImports(con packages []Package, con pending []PendingImport) Result[[]Package, LayoutError] {
+func connectImports(con packages []Package, con pending []PendingImport, con project Project) Result[[]Package, LayoutError] {
     mut connected := copyPackages(con packages)
     for mut index := 0; index < len(pending); index = index + 1 {
         target := findPackage(con connected, con pending[index].item.path)
@@ -303,6 +330,12 @@ func connectImports(con packages []Package, con pending []PendingImport) Result[
             if startsWith(con pending[index].item.path, con "std/") {
                 message = strings.join(con []string{"unknown standard package `", token.CopyText(con pending[index].item.path), "`",}, con "")
             }
+            return Err(newError(message, source.Copy(con pending[index].item.span)))
+        }
+        fromProject := projectSegment(con pending[index].from)
+        targetProject := projectSegment(con pending[index].item.path)
+        if targetProject != "std" && !allowsProjectImport(con project, con fromProject, con targetProject) {
+            message := strings.join(con []string{"project `", fromProject, "` does not declare dependency `", targetProject, "`",}, con "")
             return Err(newError(message, source.Copy(con pending[index].item.span)))
         }
         from := findPackage(con connected, con pending[index].from)
@@ -792,12 +825,22 @@ func copyTexts(con values []string) []string {
     return copied
 }
 
-func packageIdentity(con projectName string, con sourceRoot string, con path string, span source.Span) Result[PackageIdentity, LayoutError] {
-    prefix := strings.join(con []string{token.CopyText(con sourceRoot), "/",}, con "")
-    if !startsWith(con path, con prefix) {
-        message := strings.join(con []string{token.CopyText(con path), ": source is outside the project source directory",}, con "")
+func packageIdentity(con project Project, con path string, span source.Span) Result[PackageIdentity, LayoutError] {
+    mut unitIndex := -1
+    for mut index := 0; index < len(project.units); index = index + 1 {
+        prefix := strings.join(con []string{token.CopyText(con project.units[index].sourceRoot), "/",}, con "")
+        if startsWith(con path, con prefix) {
+            unitIndex = index
+            break
+        }
+    }
+    if unitIndex < 0 {
+        message := strings.join(con []string{token.CopyText(con path), ": source is outside the project graph source and root test directories",}, con "")
         return Err(newError(message, source.Copy(con span)))
     }
+    projectName := token.CopyText(con project.units[unitIndex].name)
+    sourceRoot := token.CopyText(con project.units[unitIndex].sourceRoot)
+    prefix := strings.join(con []string{sourceRoot, "/",}, con "")
     mut relative := ""
     match strings.slice(con path, strings.byteLen(con prefix), strings.byteLen(con path)) {
         case Ok(value) {
@@ -832,6 +875,33 @@ func packageIdentity(con projectName string, con sourceRoot string, con path str
     }
     packagePath := strings.join(con []string{token.CopyText(con projectName), "/", directory,}, con "")
     return Ok(PackageIdentity{path: packagePath, name: name})
+}
+
+func allowsProjectImport(con project Project, con from string, con target string) bool {
+    if from == target {
+        return true
+    }
+    for mut index := 0; index < len(project.units); index = index + 1 {
+        if project.units[index].name == from {
+            return findText(con project.units[index].directDependencies, con target) >= 0
+        }
+    }
+    return false
+}
+
+func projectSegment(con path string) string {
+    separator := firstSlash(con path)
+    if separator < 0 {
+        return token.CopyText(con path)
+    }
+    match strings.slice(con path, 0, separator) {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {
+            return ""
+        }
+    }
 }
 
 func findSourceUnit(con program ast.Program, sourceId int) int {
@@ -882,6 +952,20 @@ func lastSlash(con value string) int {
         }
     }
     return result
+}
+
+func firstSlash(con value string) int {
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        match strings.byteAt(con value, index) {
+            case Ok(byte) {
+                if byte == 47 {
+                    return index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    return - 1
 }
 
 func newError(message string, span source.Span) LayoutError {

@@ -63,18 +63,56 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    if first == "package-layout" {
-        let Some(_project_name) = args.next() else {
-            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
-            return ExitCode::from(2);
+    if first == "package-layout" || first == "package-layout-project" {
+        let (source_root, paths) = if first == "package-layout" {
+            let Some(_project_name) = args.next() else {
+                eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+                return ExitCode::from(2);
+            };
+            let Some(source_root) = args.next() else {
+                eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+                return ExitCode::from(2);
+            };
+            (source_root, args.collect::<Vec<_>>())
+        } else {
+            let Some(unit_count) = args.next().and_then(|value| value.parse::<usize>().ok()) else {
+                eprintln!("usage: bootstrap-frontend-oracle package-layout-project <unit-count> (<name> <source-root> <dependency-count> <dependency>...)* <source>...");
+                return ExitCode::from(2);
+            };
+            let mut root_source = None;
+            for unit_index in 0..unit_count {
+                let Some(_name) = args.next() else {
+                    eprintln!("bootstrap frontend oracle received an incomplete project unit");
+                    return ExitCode::from(2);
+                };
+                let Some(source_root) = args.next() else {
+                    eprintln!("bootstrap frontend oracle received an incomplete project unit");
+                    return ExitCode::from(2);
+                };
+                if unit_index == 0 {
+                    root_source = Some(source_root);
+                }
+                let Some(dependency_count) =
+                    args.next().and_then(|value| value.parse::<usize>().ok())
+                else {
+                    eprintln!("bootstrap frontend oracle received an invalid dependency count");
+                    return ExitCode::from(2);
+                };
+                for _ in 0..dependency_count {
+                    if args.next().is_none() {
+                        eprintln!("bootstrap frontend oracle received an incomplete dependency list");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            let Some(source_root) = root_source else {
+                eprintln!("bootstrap frontend oracle project graph requires a root unit");
+                return ExitCode::from(2);
+            };
+            (source_root, args.collect::<Vec<_>>())
         };
-        let Some(source_root) = args.next() else {
-            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
-            return ExitCode::from(2);
-        };
-        let paths = args.collect::<Vec<_>>();
         if paths.is_empty() {
-            eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
+            eprintln!("bootstrap frontend oracle project layout requires source files");
             return ExitCode::from(2);
         }
         let project = match discover_project(&source_root) {
