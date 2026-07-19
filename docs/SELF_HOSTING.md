@@ -78,8 +78,10 @@ Mallang to specific 1.x versions.
   accounting and sanitizer gate. The argument-free command remains the full
   milestone gate; `--fast` keeps complete Stage0/Stage1 differential coverage
   with one exact project test per compiler phase, focused accounting and
-  representative sanitizer smoke for inner loops. The historical filename
-  remains stable while the compiler gate grows through B2.
+  representative sanitizer smoke for integration loops. `--focus <area>` keeps
+  edit loops to representative tests, differentials and one sanitizer path;
+  `--jobs` controls bounded concurrency. The historical filename remains stable
+  while the compiler gate grows through B2.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: active B2 work breakdown and decisions.
@@ -262,10 +264,14 @@ metadata, plus typed intrinsic calls and function values. The valid project's
 augment, prepare, check and typed-IR outputs and the unsupported-map-key
 rejection match Rust Stage0. Three focused tests, five project differential
 invocations, one hundred sixty-seven parser corpus sources and two hundred
-sixty-three Mallang project tests cover this boundary. The B2e4c1 fast gate
-passed in 392 seconds and the complete Stage1, strict-accounting and
-ASan/UBSan gate passed in 2,317 seconds. A twelve-file compiler-source
-augmentation measurement was stopped after exceeding a fifteen-minute local
-budget and remains performance debt. Full typed IR, deterministic drop closure
-and the B2 canonical gate remain incomplete, so no complete semantic, typed-IR
-or Stage1 compiler claim is made.
+  sixty-three Mallang project tests cover this boundary. The quadratic string
+  cursor path is removed, fixture/corpus and generated-test compilation use
+  bounded concurrency, and CI no longer repeats the canonical core gate per
+  platform artifact. Representative focused gates complete in 38-46 seconds,
+  the fast gate in 101 seconds and the complete gate in 375 seconds on the same
+  local host class, down from 2,317 seconds. The twelve-file compiler source now
+  matches Stage0 for link, prepare and semantic-check output; a direct augment
+  pass completes in about 9.6 seconds instead of exceeding fifteen minutes.
+  Full compiler-source typed IR still differs in cleanup insertion, so full
+  typed IR, deterministic drop closure and the B2 canonical gate remain
+  incomplete. No complete typed-IR or Stage1 compiler claim is made.

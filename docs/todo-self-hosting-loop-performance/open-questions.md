@@ -23,6 +23,18 @@ oracle parity, accounting, sanitizer and full-gate timing evidence.
 
 ## Should Full-Gate Paths Run Concurrently?
 
-Not in this slice. Serial normal, accounting and sanitizer execution keeps
-failure attribution and supported-platform resource usage predictable. Bounded
-parallelism may be evaluated later with explicit memory and CI-runner evidence.
+Yes, for independent work with deterministic output ownership. Fixture and
+parser-corpus jobs use separate result paths and run with a default cap of four.
+The complete compiler-source link, prepare and check differentials also run as
+independent background jobs. Each worker preserves exact oracle comparison,
+stderr checks and failure status; sanitizer/profile variants of one fixture
+remain inside the same worker so attribution stays local.
+
+## What Is The Next Performance Boundary?
+
+Generated test artifacts. The current test command emits and compiles the whole
+project C translation unit once per selected test. Bounded `clang` concurrency
+reduces wall time but does not remove roughly 1.76 GB of duplicate generated C.
+A shared compiler object with small test harnesses, or one deterministic test
+runner containing all selected tests, should precede lower-level incremental
+compiler caching.

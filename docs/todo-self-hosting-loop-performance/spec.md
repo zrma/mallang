@@ -22,7 +22,13 @@ sanitizer configurations dominated every B2 iteration.
   complete Stage0/Stage1 differential coverage, runs focused fixtures through
   strict allocation accounting, runs one project test and sanitizer smoke for
   each lexer, parser, semantic and typed-IR boundary, and leaves the complete
-  209-test project suite to the full gate.
+  project suite to the full gate.
+- `scripts/check-self-hosting-lexer.sh --focus <area>` is the edit-loop gate for
+  `lexer`, `parser`, `packages`, `linker`, `specialize`, `semantic`, `ir` or
+  `standard`. It runs two or three exact compiler tests, representative
+  differential fixtures and one sanitizer path for only that ownership area.
+- `--jobs <count>` and `SELF_HOSTING_JOBS` control bounded fixture/corpus
+  concurrency. The default uses available processors but is capped at four.
 - The fast gate is not milestone, publication or release evidence. A logical
   B2 change still requires the full gate before publication.
 - Stage1 and strict-accounting native programs use strict C11 with `-O2`.
@@ -75,3 +81,35 @@ and was stopped. The standard augmentation arena copy is flat, so the remaining
 cost is in the combined multi-source parse/link/normalize path. This is tracked
 as residual performance debt and is not recorded as a successful augmentation
 result.
+
+## 2026-07-19 Acceleration Result
+
+Sampling the generated Stage1 on the 227 KB semantic source attributed 8,220 of
+8,223 samples to repeated UTF-8 scalar counting. `strings.byteLen` and
+`strings.byteAt` validated the entire string for every byte cursor operation,
+turning parser traversal into quadratic work. Separating constant-time string
+layout validation from full UTF-8 validation reduced the direct Stage1 parse
+from about 129 seconds to 4.25 seconds. A complete twelve-source
+`augment-project` run that had exceeded fifteen minutes now completes in about
+9.6 seconds and matches Stage0 byte-for-byte.
+
+The gate now runs independent fixture and parser-corpus differentials with up
+to four workers. `mlg test` generates artifacts deterministically, compiles up
+to four generated C test programs concurrently and still reports the
+lowest-index failure first. CI runs the canonical core and deep sanitizer gate
+once; platform artifact jobs only repeat platform-specific release acceptance.
+
+On the same local host class, representative focused gates complete in 38-46
+seconds, the fast gate completes in 101 seconds, and the full 263-test,
+167-source gate completes in 375 seconds. The full path is about 6.2x faster
+than the preceding 2,317-second observation while preserving full publication
+coverage. The twelve-source compiler `link-project`, `prepare-project` and
+`check-project` outputs also match Stage0 and execute concurrently in the full
+gate.
+
+The remaining dominant phase is the 307-second bootstrap. Of that phase, about
+250 seconds comes from emitting and compiling 263 complete generated C test
+programs totaling roughly 1.76 GB. The next high-leverage optimization is one
+shared compiler object plus small per-test harnesses, or an equivalent single
+test-runner binary. Incremental compiler caching is lower priority until this
+whole-program duplication is removed.

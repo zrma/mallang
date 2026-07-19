@@ -702,11 +702,17 @@ specialization and function-body checking until later P176 slices.
   check and IR outputs and the map-key rejection match Rust Stage0 byte for
   byte. Three focused tests, five project differential invocations, one hundred
   sixty-seven parser corpus sources and two hundred sixty-three Mallang project
-  tests cover this boundary. The B2e4c1 fast gate passed in 392 seconds and the
-  complete Stage1, strict-accounting and ASan/UBSan gate passed in 2,317
-  seconds. A separate twelve-file compiler-source augmentation measurement
-  exceeded the fifteen-minute local budget and was stopped, so it remains
-  performance debt rather than claimed correctness evidence.
+  tests cover this boundary. A follow-up fixes call-scoped `con`/`mut`
+  temporary arguments in Stage1 and adds their differential fixture. The
+  quadratic byte-cursor path is removed and independent fixture, corpus and
+  generated-test compilation work uses bounded concurrency. Focused gates take
+  38-46 seconds, the fast gate takes 101 seconds and the complete Stage1,
+  strict-accounting and ASan/UBSan gate takes 375 seconds on the same local host
+  class, down from 2,317 seconds. The complete twelve-file compiler source now
+  matches Stage0 for link, prepare and semantic-check output, while a direct
+  augmentation completes in about 9.6 seconds instead of exceeding fifteen
+  minutes. Full compiler-source typed IR exposes remaining cleanup insertion
+  differences and is not claimed complete.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

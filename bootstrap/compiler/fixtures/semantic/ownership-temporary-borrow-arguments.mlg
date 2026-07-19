@@ -1,0 +1,12 @@
+func inspect(con values []string) {
+    print(len(values))
+}
+
+func replace(mut values []string) {
+    values = []string{"updated"}
+}
+
+func main() {
+    inspect(con []string{"first", "second"})
+    replace(mut []string{"before"})
+}

@@ -5,6 +5,11 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     process::{self, Command},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    },
+    thread,
 };
 
 use mallang::{
@@ -567,31 +572,73 @@ fn build_test_artifacts(
                 test.id
             ))
         })?;
-        let output = Command::new("clang")
-            .arg(&c_path)
-            .arg("-o")
-            .arg(&binary_path)
-            .output()
-            .map_err(|error| {
-                CliError::native(format!(
-                    "failed to execute clang for test `{}`: {error}",
-                    test.id
-                ))
-            })?;
-        if !output.status.success() {
-            return Err(CliError::native(format!(
-                "native compilation failed for test `{}`:\n{}",
-                test.id,
-                String::from_utf8_lossy(&output.stderr).trim_end()
-            )));
-        }
         artifacts.push(TestArtifact {
             test_index,
             binary_path,
         });
     }
 
+    compile_test_artifacts(suite.tests(), &artifacts)?;
     Ok(artifacts)
+}
+
+fn compile_test_artifacts(tests: &[PackageTest], artifacts: &[TestArtifact]) -> CliResult<()> {
+    if artifacts.is_empty() {
+        return Ok(());
+    }
+
+    let worker_count = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(4)
+        .min(artifacts.len());
+    let next = AtomicUsize::new(0);
+    let failures = Mutex::new(Vec::new());
+
+    thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| loop {
+                let artifact_index = next.fetch_add(1, Ordering::Relaxed);
+                let Some(artifact) = artifacts.get(artifact_index) else {
+                    break;
+                };
+                let test = &tests[artifact.test_index];
+                let c_path = artifact.binary_path.with_extension("c");
+                let failure = match Command::new("clang")
+                    .arg(&c_path)
+                    .arg("-o")
+                    .arg(&artifact.binary_path)
+                    .output()
+                {
+                    Ok(output) if output.status.success() => None,
+                    Ok(output) => Some(format!(
+                        "native compilation failed for test `{}`:\n{}",
+                        test.id,
+                        String::from_utf8_lossy(&output.stderr).trim_end()
+                    )),
+                    Err(error) => Some(format!(
+                        "failed to execute clang for test `{}`: {error}",
+                        test.id
+                    )),
+                };
+                if let Some(message) = failure {
+                    failures
+                        .lock()
+                        .expect("test compile failure mutex poisoned")
+                        .push((artifact.test_index, message));
+                }
+            });
+        }
+    });
+
+    let mut failures = failures
+        .into_inner()
+        .expect("test compile failure mutex poisoned");
+    failures.sort_by_key(|(test_index, _)| *test_index);
+    if let Some((_, message)) = failures.into_iter().next() {
+        return Err(CliError::native(message));
+    }
+    Ok(())
 }
 
 fn replay_test_stderr(

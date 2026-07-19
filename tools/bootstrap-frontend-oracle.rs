@@ -846,6 +846,9 @@ fn normalize_ir_for_post(post: &IrForPost, depth: usize) -> String {
 }
 
 fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
+    if let IrExprKind::SliceFieldTake { source } = &expression.kind {
+        return normalize_ir_expression(source, depth);
+    }
     let (kind, value, children) = match &expression.kind {
         IrExprKind::Int(value) => ("Expr.Int", value.to_string(), Vec::new()),
         IrExprKind::String(value) => ("Expr.String", value.clone(), Vec::new()),

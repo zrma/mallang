@@ -9200,6 +9200,26 @@ func touch(mut s string) {
     }
 
     #[test]
+    fn ownership_allows_call_scoped_temporary_borrow_arguments() {
+        check_ok(
+            r#"
+func inspect(con values []string) {
+    print(len(values))
+}
+
+func replace(mut values []string) {
+    values = []string{"updated"}
+}
+
+func main() {
+    inspect(con []string{"first", "second"})
+    replace(mut []string{"before"})
+}
+"#,
+        );
+    }
+
+    #[test]
     fn ownership_allows_array_element_borrow_arguments() {
         check_ok(
             r#"

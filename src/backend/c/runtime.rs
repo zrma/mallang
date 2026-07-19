@@ -154,7 +154,7 @@ static bool MLG_UNUSED mallang_utf8_scalar_count_bytes(
     return true;
 }
 
-static void MLG_UNUSED mallang_validate_string(mlg_String mlg_value) {
+static void MLG_UNUSED mallang_validate_string_layout(mlg_String mlg_value) {
     if (mlg_value.mlg_storage != MLG_STRING_STATIC &&
         mlg_value.mlg_storage != MLG_STRING_OWNED) {
         mallang_runtime_error("invalid string storage");
@@ -165,6 +165,10 @@ static void MLG_UNUSED mallang_validate_string(mlg_String mlg_value) {
     if (mlg_value.mlg_len > INT64_MAX) {
         mallang_runtime_error("invalid string length");
     }
+}
+
+static void MLG_UNUSED mallang_validate_string(mlg_String mlg_value) {
+    mallang_validate_string_layout(mlg_value);
     if (!mallang_utf8_scalar_count_bytes(
             mlg_value.mlg_data,
             mlg_value.mlg_len,

@@ -1159,7 +1159,7 @@ const BYTE_FIND_HELPER: &str = r#"static bool MLG_UNUSED mallang_std_find_bytes(
 const BYTE_LEN_HELPER: &str = r#"static int64_t MLG_UNUSED mallang_std_strings_byte_len(
     const mlg_String *mlg_text
 ) {
-    mallang_validate_string(*mlg_text);
+    mallang_validate_string_layout(*mlg_text);
     if (mlg_text->mlg_len > INT64_MAX) {
         mallang_runtime_error("string byte length overflow");
     }
@@ -1172,7 +1172,7 @@ const BYTE_AT_HELPER: &str = r#"static <RESULT_INT_ERROR> MLG_UNUSED mallang_std
     const mlg_String *mlg_text,
     int64_t mlg_index
 ) {
-    mallang_validate_string(*mlg_text);
+    mallang_validate_string_layout(*mlg_text);
     if (mlg_index < 0 || (uint64_t)mlg_index >= (uint64_t)mlg_text->mlg_len) {
         return (<RESULT_INT_ERROR>){
             .tag = 1,

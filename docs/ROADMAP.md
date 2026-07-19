@@ -1738,6 +1738,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] direct local cleanup overwrite RHS 선평가와 self-reassignment reactivation
 - [x] non-self-consuming field/index cleanup overwrite와 aggregate base 보존
 - [x] optimized generated-C full gate와 explicit `--fast` B2 inner loop
+- [x] 영역별 `--focus`, bounded differential/test compile workers와 CI gate deduplication
 - [x] `mut` cleanup parameter/capture external overwrite와 tail-drop 제외
 - [x] self-consuming direct/indexed field `append` typed IR와 overwrite 제외
 - [x] direct/field `append` move accounting과 non-Copy item consumption

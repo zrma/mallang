@@ -3677,6 +3677,14 @@ func (mut self CheckedProgram) checkReceiverBorrow(con program ast.Program, rece
 }
 
 func (mut self CheckedProgram) checkFullExpressionRead(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {
+    expectedType := unitType()
+    return self.checkFullExpressionReadExpected(con program, expression, con expectedType, false)
+}
+
+func (mut self CheckedProgram) checkFullExpressionReadExpected(con program ast.Program, expression int, con expectedType ResolvedType, hasExpected bool) Result[ResolvedType, SemanticError] {
+    if isDirectBorrowExpression(con program, expression) {
+        return self.checkExpressionExpected(con program, expression, con "read", con expectedType, hasExpected)
+    }
     kind := ast.Kind(con program, expression)
     if kind == "Expr.FieldAccess" {
         base := ast.Child(con program, expression, 0)
@@ -3739,7 +3747,7 @@ func (mut self CheckedProgram) checkFullExpressionRead(con program ast.Program, 
             }
         }
     }
-    return self.checkExpressionUse(con program, expression, con "read")
+    return self.checkExpressionExpected(con program, expression, con "owned", con expectedType, hasExpected)
 }
 
 func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expression int, function int, con name string, indirect bool) Result[bool, SemanticError] {
@@ -3774,7 +3782,7 @@ func (mut self CheckedProgram) checkCallArguments(con program ast.Program, expre
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
             emptyReceiver := BorrowPlace{root: "", segments: []string{}, ty: unitType(), exclusive: false,}
-            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con emptyReceiver) {
+            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con emptyReceiver, con parameterType) {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -3828,7 +3836,7 @@ func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, exp
         parameterType := copyType(con self.methods[method].params[index].ty)
         mut argumentType := unitType()
         if argumentMode == "con" || argumentMode == "mut" {
-            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con receiverBorrow) {
+            match self.checkBorrowArgument(con program, expression, index, argumentMode == "mut", con receiverBorrow, con parameterType) {
                 case Ok(ty) {
                     argumentType = ty
                 }
@@ -3854,9 +3862,12 @@ func (mut self CheckedProgram) checkMethodArguments(con program ast.Program, exp
     return Ok(true)
 }
 
-func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call int, argumentIndex int, mutable bool, con receiverBorrow BorrowPlace) Result[ResolvedType, SemanticError] {
+func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call int, argumentIndex int, mutable bool, con receiverBorrow BorrowPlace, con parameterType ResolvedType) Result[ResolvedType, SemanticError] {
     argument := ast.Child(con program, call, argumentIndex + 1)
     value := ast.Child(con program, argument, 0)
+    if !isDirectBorrowExpression(con program, value) {
+        return self.checkFullExpressionReadExpected(con program, value, con parameterType, true)
+    }
     match self.resolveBorrowPlace(con program, value) {
         case Ok(place) {
             local := localIndex(con self.locals, con place.root)
@@ -3899,16 +3910,18 @@ func (mut self CheckedProgram) checkBorrowArgument(con program ast.Program, call
                 previousMode := argModeFromKind(con ast.Kind(con program, previousArgument))
                 if previousMode == "con" || previousMode == "mut" {
                     previousValue := ast.Child(con program, previousArgument, 0)
-                    match self.resolveBorrowPlace(con program, previousValue) {
-                        case Ok(previousPlace) {
-                            previous := BorrowPlace{root: token.CopyText(con previousPlace.root), segments: copySegments(con previousPlace.segments), ty: copyType(con previousPlace.ty), exclusive: previousMode == "mut",}
-                            if borrowPlacesOverlap(con current, con previous) &&(current.exclusive || previous.exclusive) {
-                                message := strings.join(con []string{"borrow of `", borrowPlaceText(con current), "` overlaps with an active borrow in this call",}, con "")
-                                return Err(newError(message, ast.Span(con program, argument)))
+                    if isDirectBorrowExpression(con program, previousValue) {
+                        match self.resolveBorrowPlace(con program, previousValue) {
+                            case Ok(previousPlace) {
+                                previous := BorrowPlace{root: token.CopyText(con previousPlace.root), segments: copySegments(con previousPlace.segments), ty: copyType(con previousPlace.ty), exclusive: previousMode == "mut",}
+                                if borrowPlacesOverlap(con current, con previous) &&(current.exclusive || previous.exclusive) {
+                                    message := strings.join(con []string{"borrow of `", borrowPlaceText(con current), "` overlaps with an active borrow in this call",}, con "")
+                                    return Err(newError(message, ast.Span(con program, argument)))
+                                }
                             }
-                        }
-                        case Err(error) {
-                            return Err(error)
+                            case Err(error) {
+                                return Err(error)
+                            }
                         }
                     }
                 }

@@ -18,8 +18,10 @@ commands:
   check_test_workflow: scripts/check-test-workflow.sh target/debug/mlg
   check_streaming_file_io: scripts/check-streaming-file-io-runtime.sh
   check_self_hosting_bootstrap: scripts/check-self-hosting-bootstrap.sh
+  check_self_hosting_gate_interface: scripts/check-self-hosting-gate-interface.sh
   check_self_hosting_lexer: scripts/check-self-hosting-lexer.sh
   check_self_hosting_fast: scripts/check-self-hosting-lexer.sh --fast
+  check_self_hosting_focused: scripts/check-self-hosting-lexer.sh --focus <area>
   check_self_hosting_string_cursor: scripts/check-self-hosting-string-cursor.sh target/mallang/string-cursor.c
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg

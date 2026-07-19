@@ -563,19 +563,35 @@ mod tests {
         let mut sources = SourceMap::new();
         let main = sources.add_file(
             "cursor.mlg",
-            "import \"std/strings\"\nfunc main() { text := \"A가\"; first := strings.byteAt(con text, 0); prefix := strings.slice(con text, 0, 1); print(first); print(prefix) }\n",
+            "import \"std/strings\"\nfunc main() { text := \"A가\"; size := strings.byteLen(con text); first := strings.byteAt(con text, 0); prefix := strings.slice(con text, 0, 1); print(size); print(first); print(prefix) }\n",
         );
 
         let ir = lower_sources(&sources, &[main]).unwrap();
         let debug = format!("{ir:?}");
+        assert!(debug.contains("StringsByteLen"));
         assert!(debug.contains("StringsByteAt"));
         assert!(debug.contains("StringsSlice"));
 
         let c = generate_c_sources(&sources, &[main]).unwrap();
+        assert!(c.contains("mallang_std_strings_byte_len"));
         assert!(c.contains("mallang_std_strings_byte_at"));
         assert!(c.contains("mallang_std_strings_slice"));
         assert!(c.contains("string byte index out of bounds"));
         assert!(c.contains("string slice boundary splits a UTF-8 scalar"));
+
+        for helper in [
+            "mallang_std_strings_byte_len(",
+            "mallang_std_strings_byte_at(",
+        ] {
+            let start = c.find(helper).expect("missing string cursor helper");
+            let body = &c[start..];
+            let end = body
+                .find("\n}\n\n")
+                .expect("unterminated string cursor helper");
+            let body = &body[..end];
+            assert!(body.contains("mallang_validate_string_layout(*mlg_text);"));
+            assert!(!body.contains("mallang_validate_string(*mlg_text);"));
+        }
     }
 
     #[test]

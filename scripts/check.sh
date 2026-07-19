@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 scripts/check-agent-harness-interface.sh
+scripts/check-self-hosting-gate-interface.sh
 python3 scripts/check-v1-conformance.py
 scripts/check-self-hosting-bootstrap.sh
 scripts/check-self-hosting-lexer.sh
