@@ -1,0 +1,25 @@
+type Counter struct {
+    value int
+}
+
+func inspect(con values []string, con suffix string, con count int) int {
+    if suffix == "" {
+        return len(values) + count
+    } else {
+        return count
+    }
+}
+
+func (con self Counter) valueOf() int {
+    return self.value
+}
+
+func borrowedTemporaries() int {
+    return inspect(con []string{"value"}, con "", con 1)
+}
+
+func methodTemporary() int {
+    return Counter{value: 2}.valueOf()
+}
+
+func main() {}

@@ -704,18 +704,18 @@ specialization and function-body checking until later P176 slices.
   sixty-seven parser corpus sources and two hundred sixty-three Mallang project
   tests cover this boundary. A follow-up fixes call-scoped `con`/`mut`
   temporary arguments in Stage1 and adds their differential fixture. The
-  quadratic byte-cursor path is removed and independent fixture, corpus and
-  generated-test compilation work uses bounded concurrency. Focused gates take
-  38-46 seconds, the fast gate takes 101 seconds and the complete Stage1,
-  strict-accounting and ASan/UBSan gate takes 375 seconds on the same local host
-  class, down from 2,317 seconds. The complete twelve-file compiler source now
-  matches Stage0 for link, prepare and semantic-check output, while a direct
-  augmentation completes in about 9.6 seconds instead of exceeding fifteen
-  minutes. Full compiler-source typed IR exposes remaining cleanup insertion
-  differences and is not claimed complete.
-  Stage0 match-arm shadow cleanup identity
-  remains tracked separately in
-  `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.
+  quadratic byte-cursor path is removed and independent fixture, corpus,
+  generated-profile and compiler-source differential work uses bounded
+  concurrency. The complete twelve-file compiler source matches Stage0 for
+  link, prepare, semantic-check and all 675 normalized typed-IR functions. Six
+  focused regression fixtures close assignment reactivation, borrowed
+  full-expression arguments, computed places, partial field moves, return
+  pre-evaluation and Copy pattern shadowing. The C backend preserves pattern
+  binding identity by arm span, so same-named inner bindings cannot redirect an
+  outer cleanup drop. The IR-focused, fast and full gates complete in observed
+  host-local times of 26, 40 and 83 seconds while retaining 263 project tests,
+  48 IR fixtures, 167 parser corpus sources, strict accounting and ASan/UBSan.
+  B2 implementation is complete and canonical publication acceptance remains.
 
 ## B2 Completion Criteria
 

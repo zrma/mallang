@@ -1,0 +1,15 @@
+func preserve(input Result[int, bool]) int {
+    value := "outer"
+    match input {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {}
+    }
+    return 0
+}
+
+func main() {
+    print(preserve(Ok(7)))
+    print(preserve(Err(true)))
+}

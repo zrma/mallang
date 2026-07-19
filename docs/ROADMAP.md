@@ -1697,7 +1697,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 
 ## P176: B2 Self-Hosting Semantics And Typed IR
 
-상태: in progress (2026-07-19)
+상태: implementation complete; canonical publication acceptance pending (2026-07-19)
 
 - [x] B2 checker/AST ownership boundary와 stable semantic normalization 계약
 - [x] 비제네릭 struct, enum, function, method declaration collection
@@ -1772,9 +1772,9 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] compiler-owned standard package registry, opaque/generic declaration inventory와 unknown rejection
 - [x] cross-project source root, direct dependency edge와 undeclared transitive import rejection
 - [x] package visibility 검증과 package-qualified declaration/type/body link rewrite
-- [ ] nested shadow cleanup binding identity를 C backend까지 보존
+- [x] nested shadow cleanup binding identity를 C backend까지 보존
 - [x] compiler-owned standard declaration augmentation과 intrinsic specialization semantics
-- [ ] full typed IR, deterministic drop insertion과 complete differential corpus
+- [x] full typed IR, deterministic drop insertion과 complete differential corpus
 - [ ] B2 canonical, publication과 supported-platform CI acceptance
 
 Exact scope and decisions are owned by `docs/todo-self-hosting-semantics/`.

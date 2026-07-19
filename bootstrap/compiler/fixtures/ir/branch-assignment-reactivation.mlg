@@ -1,0 +1,23 @@
+func select(flag bool) int {
+    mut left := []int{}
+    mut right := []int{}
+    if flag {
+        left = append(left, 1)
+    } else {
+        right = append(right, 2)
+    }
+    return len(left) + len(right)
+}
+
+func selectNested(kind int) int {
+    mut first := []int{}
+    mut second := []int{}
+    if kind == 1 {
+        first = append(first, kind)
+    } else if kind == 2 {
+        second = append(second, kind)
+    } else {}
+    return len(first) + len(second)
+}
+
+func main() {}

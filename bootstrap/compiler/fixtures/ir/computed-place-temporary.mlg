@@ -1,0 +1,25 @@
+type Rune struct {
+    value int
+}
+
+type Bag struct {
+    values []int
+}
+
+func makeRune() Rune {
+    return Rune{value: 7}
+}
+
+func makeBag() Bag {
+    return Bag{values: []int{3}}
+}
+
+func readComputedField() int {
+    return makeRune().value
+}
+
+func readComputedIndex() int {
+    return makeBag().values[0]
+}
+
+func main() {}

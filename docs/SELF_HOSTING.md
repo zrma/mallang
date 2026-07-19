@@ -1,6 +1,7 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B1 complete, B2 semantics in progress
+Status: active long-term program; B0-B1 complete, B2 implementation complete
+with canonical publication acceptance pending
 
 ## Objective
 
@@ -67,18 +68,16 @@ Mallang to specific 1.x versions.
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer/parser plus declaration/type checking, primitive body
-  checking, direct/indirect calls, field/index places and the incremental
-  typed-IR subset with nested if statements and expressions, plus local
-  move/borrow state, call-scoped place overlap checking, project package graph
-  construction and package-qualified AST linking.
+  the complete lexer/parser, semantic and ownership checker, specialization,
+  project package graph/linker and typed IR needed by the twelve-file compiler
+  source set.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
   accounting and sanitizer gate. The argument-free command remains the full
-  milestone gate; `--fast` keeps complete Stage0/Stage1 differential coverage
-  with one exact project test per compiler phase, focused accounting and
-  representative sanitizer smoke for integration loops. `--focus <area>` keeps
+  milestone gate; `--fast` keeps complete Stage0/Stage1 differential coverage,
+  runs the complete compiler project test suite once, and retains focused
+  accounting and representative sanitizer smoke. `--focus <area>` keeps
   edit loops to representative tests, differentials and one sanitizer path;
   `--jobs` controls bounded concurrency. The historical filename remains stable
   while the compiler gate grows through B2.
@@ -271,12 +270,18 @@ invocations, one hundred sixty-seven parser corpus sources and two hundred
   in a separate child process. The complete 263-test compiler suite now takes
   about 3.2-3.4 seconds instead of roughly 250 seconds and produces a 9.9 MB
   artifact directory instead of about 1.76 GB of generated C. Representative
-  focused gates complete in 38-46 seconds, and measured fast and complete gates
-  both complete in about 100 seconds on the same local host class. The complete
-  path is down from 375 seconds immediately before the runner change and 2,317
-  seconds earlier. The twelve-file compiler source now matches Stage0 for link,
-  prepare and semantic-check output; a direct augment pass completes in about
-  9.6 seconds instead of exceeding fifteen minutes.
-  Full compiler-source typed IR still differs in cleanup insertion, so full
-  typed IR, deterministic drop closure and the B2 canonical gate remain
-  incomplete. No complete typed-IR or Stage1 compiler claim is made.
+  A function-indexed IR comparator and rebuildable diagnostic loop isolate the
+  first compiler-source mismatch in about 20 seconds. Assignment reactivation,
+  borrowed full-expression arguments, computed places, partial field moves,
+  return pre-evaluation and Copy pattern shadowing are fixed by six new fixtures.
+  All 675 normalized functions from the twelve-file compiler source now match
+  Stage0 typed IR, and the full gate enforces link, prepare, check and IR parity.
+  The C backend also gives pattern bindings arm-span identities so an inner Copy
+  binding cannot redirect an outer cleanup drop.
+
+  Generated Stage1/profile builds now run concurrently, and fast mode runs the
+  complete 263-test suite once instead of rebuilding 24 selected runners. On the
+  same local host, the IR-focused gate completed in 26 seconds, fast in 40
+  seconds and the full 48-fixture, 167-source gate in 83 seconds. These are
+  host-local observations, not thresholds. B2 implementation is complete; the
+  canonical publication and supported-platform CI acceptance remains pending.

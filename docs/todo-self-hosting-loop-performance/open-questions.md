@@ -12,8 +12,9 @@ close a logical B2 change by itself.
 
 Fast mode may reduce repeated execution configurations, not Stage0/Stage1
 source coverage. Every discovered repository source still receives Rust/Mallang
-differential comparison. The complete project-test suite and full-corpus
-accounting/sanitizer matrix remain full-gate responsibilities.
+differential comparison. The complete project-test suite runs once in both fast
+and full modes because the shared runner is faster than repeated exact
+selections. Full-corpus accounting/sanitizer remains a full-gate responsibility.
 
 ## Which Optimization Levels Are Allowed?
 
@@ -25,10 +26,11 @@ oracle parity, accounting, sanitizer and full-gate timing evidence.
 
 Yes, for independent work with deterministic output ownership. Fixture and
 parser-corpus jobs use separate result paths and run with a default cap of four.
-The complete compiler-source link, prepare and check differentials also run as
-independent background jobs. Each worker preserves exact oracle comparison,
-stderr checks and failure status; sanitizer/profile variants of one fixture
-remain inside the same worker so attribution stays local.
+The generated Stage1, accounting, sanitizer and Rust oracle builds run
+independently, as do complete compiler-source link, prepare, check and IR
+differentials. Each worker preserves exact oracle comparison, stderr checks and
+failure status; sanitizer/profile variants of one fixture remain inside the
+same worker so attribution stays local.
 
 ## What Is The Next Performance Boundary?
 
@@ -39,6 +41,7 @@ fell from roughly 250 seconds and 1.76 GB of generated C to 3.2-3.4 seconds and
 a 9.9 MB artifact directory.
 
 The remaining full-gate work is distributed across Stage1/profile preparation,
-fixture and project differentials, and the parser corpus. Lower-level
-incremental caching is deferred until new measurements show that this roughly
-100-second publication gate materially limits B2 delivery again.
+fixture/project differentials and the parser corpus. Function-indexed IR
+diagnosis gives compiler-core edits a roughly 20-second fresh rebuild loop, while
+the stronger publication gate currently takes about 83 seconds. Lower-level
+incremental caching is deferred until new measurements justify its complexity.

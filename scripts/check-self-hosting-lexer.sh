@@ -137,36 +137,8 @@ report_phase() {
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
 "$STAGE0" fmt --check "$PROJECT"
 "$STAGE0" check "$PROJECT" >/dev/null
-if [[ "$MODE" == "full" ]]; then
+if [[ "$MODE" == "full" || "$MODE" == "fast" ]]; then
   "$STAGE0" test "$PROJECT" >/dev/null
-elif [[ "$MODE" == "fast" ]]; then
-  for test_id in \
-    bootstrap_compiler/frontend/lexer::NormalizesKeywordsOperatorsAndPayloads \
-    bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
-    bootstrap_compiler/frontend/parser::MergesSourceAwareProgramsByDeclarationGroup \
-    bootstrap_compiler/packages::BuildsCrossProjectDependencyGraph \
-    bootstrap_compiler/packages::BuildsSourcePackageIdentity \
-    bootstrap_compiler/packages::BuildsStandardPackageInventory \
-    bootstrap_compiler/packages::RejectsDuplicatePackageDeclarations \
-    bootstrap_compiler/packages::RejectsPackageImportCycle \
-    bootstrap_compiler/packages::RejectsInvalidImportPath \
-    bootstrap_compiler/packages::RejectsUndeclaredTransitiveProjectImport \
-    bootstrap_compiler/packages::RejectsUnknownStandardPackage \
-    bootstrap_compiler/linker::PreservesStandardFunctionIdentity \
-    bootstrap_compiler/linker::RejectsMethodsOnImportedReceiverTypes \
-    bootstrap_compiler/linker::RejectsPrivateImportedFunctions \
-    bootstrap_compiler/linker::RejectsPrivateTypesExposedByPublicApis \
-    bootstrap_compiler/linker::RewritesPackageSymbolsAndPreservesLexicalShadowing \
-    bootstrap_compiler/semantic::ChecksPrintStatementReads \
-    bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
-    bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
-    bootstrap_compiler/specialize::RestoresSymbolicGenericBodyDiagnostics \
-    bootstrap_compiler/standard::AugmentsCompilerOwnedStandardDeclarations \
-    bootstrap_compiler/standard::PreservesIntrinsicIdentityThroughTypedIr \
-    bootstrap_compiler/standard::RejectsUnsupportedMapKeyTypes \
-    bootstrap_compiler/ir::NormalizesMatchExpressionOuterCleanup; do
-    "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
-  done
 else
   case "$FOCUS" in
     lexer)
@@ -234,15 +206,6 @@ if [[ "$MODE" != "focused" ]]; then
     exit 1
   fi
 fi
-"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$GENERATED_C" -o "$STAGE1"
-
-"${RUSTC[@]}" \
-  --edition=2021 \
-  tools/bootstrap-frontend-oracle.rs \
-  --extern mallang=target/debug/libmallang.rlib \
-  -L dependency=target/debug/deps \
-  -o "$ORACLE"
-
 GENERATED_C_ABS="$(cd "$(dirname "$GENERATED_C")" && pwd)/$(basename "$GENERATED_C")"
 cat >"$WORK/accounting.c" <<EOF
 #define main mallang_bootstrap_frontend_main
@@ -270,8 +233,31 @@ int main(int argc, char **argv) {
 }
 EOF
 
-"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting"
-"$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting-san"
+bootstrap_build_pids=()
+"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$GENERATED_C" -o "$STAGE1" &
+bootstrap_build_pids+=("$!")
+"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting" &
+bootstrap_build_pids+=("$!")
+"$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$WORK/accounting.c" -o "$WORK/accounting-san" &
+bootstrap_build_pids+=("$!")
+"${RUSTC[@]}" \
+  --edition=2021 \
+  tools/bootstrap-frontend-oracle.rs \
+  --extern mallang=target/debug/libmallang.rlib \
+  -L dependency=target/debug/deps \
+  -o "$ORACLE" &
+bootstrap_build_pids+=("$!")
+
+bootstrap_build_failed=0
+for pid in "${bootstrap_build_pids[@]}"; do
+  if ! wait "$pid"; then
+    bootstrap_build_failed=1
+  fi
+done
+if [[ "$bootstrap_build_failed" -ne 0 ]]; then
+  echo "self-hosting bootstrap artifact build failed" >&2
+  exit 1
+fi
 
 export SELF_HOSTING_WORK="$WORK"
 export SELF_HOSTING_STAGE1="$STAGE1"
@@ -532,6 +518,12 @@ if [[ "$MODE" == "focused" ]]; then
     ir)
       for fixture in \
         "$IR_FIXTURES/primitives.mlg" \
+        "$IR_FIXTURES/branch-assignment-reactivation.mlg" \
+        "$IR_FIXTURES/call-borrow-full-expression.mlg" \
+        "$IR_FIXTURES/computed-place-temporary.mlg" \
+        "$IR_FIXTURES/nested-cleanup-return-temp.mlg" \
+        "$IR_FIXTURES/partial-field-move-cleanup.mlg" \
+        "$IR_FIXTURES/pattern-copy-shadow-cleanup.mlg" \
         "$IR_FIXTURES/place-overwrite-cleanup.mlg" \
         "$IR_FIXTURES/match-nested-patterns.mlg" \
         "$IR_FIXTURES/closure-nested.mlg" \
@@ -805,7 +797,7 @@ if [[ "$MODE" == "full" ]]; then
     -- \
     "${compiler_link_sources[@]}" &
   compiler_check_pids+=("$!")
-  for operation in prepare check; do
+  for operation in prepare check ir; do
     compare_project_invocation \
       "compiler-source-$operation" \
       stage1 \
@@ -878,15 +870,21 @@ if [[ "$MODE" != "focused" ]]; then
     append-match
     append-match-loop
     match-arm-return-temp
+    pattern-copy-shadow-cleanup
     string-equality-temporaries
   )
-elif [[ "$FOCUS" == "semantic" || "$FOCUS" == "ir" ]]; then
+elif [[ "$FOCUS" == "ir" ]]; then
+  cleanup_regressions=(append-match pattern-copy-shadow-cleanup)
+elif [[ "$FOCUS" == "semantic" ]]; then
   cleanup_regressions=(append-match)
 fi
 
 if ((${#cleanup_regressions[@]} > 0)); then
 for regression in "${cleanup_regressions[@]}"; do
   fixture="tests/fixtures/self-hosting/$regression.mlg"
+  if [[ "$regression" == "pattern-copy-shadow-cleanup" ]]; then
+    fixture="$IR_FIXTURES/$regression.mlg"
+  fi
   binary="$WORK/$regression"
   "$STAGE0" build "$fixture" -o "$binary" >/dev/null
   generated_c="target/mallang/$regression.c"
@@ -938,6 +936,7 @@ if [[ "$MODE" != "focused" ]]; then
   if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
     [[ "$(cat "$WORK/append-match-loop.stdout")" != "1" ]] || \
     [[ "$(cat "$WORK/match-arm-return-temp.stdout")" != "7" ]] || \
+    [[ "$(cat "$WORK/pattern-copy-shadow-cleanup.stdout")" != $'7\n0' ]] || \
     [[ "$(cat "$WORK/string-equality-temporaries.stdout")" != $'true\ntrue' ]]; then
     echo "self-hosting lexer cleanup regression output mismatch" >&2
     exit 1
@@ -946,6 +945,10 @@ elif [[ "${#cleanup_regressions[@]}" -gt 0 && \
   "$(cat "$WORK/append-match.stdout")" != "2" ]]; then
   echo "self-hosting focused cleanup regression output mismatch" >&2
   exit 1
+elif [[ "$FOCUS" == "ir" && \
+  "$(cat "$WORK/pattern-copy-shadow-cleanup.stdout")" != $'7\n0' ]]; then
+  echo "self-hosting focused pattern shadow cleanup output mismatch" >&2
+  exit 1
 fi
 
 report_phase cleanup-regressions
@@ -953,5 +956,5 @@ report_phase cleanup-regressions
 if [[ "$MODE" == "focused" ]]; then
   echo "self-hosting B2 focused gate passed: focus=$FOCUS fixture-tasks=$FIXTURE_TASK_COUNT jobs=$JOBS elapsed=$((SECONDS - gate_started))s"
 else
-  echo "self-hosting B2e4c1 $MODE gate passed: parser-corpus=$parser_corpus_count jobs=$JOBS elapsed=$((SECONDS - gate_started))s"
+  echo "self-hosting B2 $MODE gate passed: parser-corpus=$parser_corpus_count jobs=$JOBS elapsed=$((SECONDS - gate_started))s"
 fi

@@ -1443,6 +1443,36 @@ return if flag { Some(7) } else { None }
 }
 
 #[test]
+fn preserves_outer_cleanup_identity_under_pattern_shadowing() {
+    let program = parse(
+        r#"
+func preserve(input Result[int, bool]) int {
+    value := "outer"
+    match input {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {}
+    }
+    return 0
+}
+
+func main() {}
+"#,
+    )
+    .unwrap();
+    let checked = check(&program).unwrap();
+    let ir = lower(&checked).unwrap();
+    let c = generate_c_from_ir(&ir).unwrap();
+
+    assert!(c.contains("mlg_String mlg_value ="));
+    assert!(c.contains("int64_t mallang_pattern_0_"));
+    assert!(c.contains("_mlg_value = (mlg_input).mlg_payload.mlg_Ok;"));
+    assert!(c.contains("mlg_drop_string(&(mlg_value));"));
+    assert!(!c.contains("mlg_drop_string(&(mallang_pattern_"));
+}
+
+#[test]
 fn generates_c_for_struct_literals_and_field_access() {
     let program = parse(
         r#"

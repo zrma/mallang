@@ -14,9 +14,9 @@ use super::{
     utils::{
         condition_temp_name, finish_with_full_expr, finish_with_prelude, for_post_label,
         index_assign_value_temp_name, index_value_temp_name, is_blank_identifier,
-        match_scrutinee_temp_name, overwrite_target_temp_name, print_temp_name,
-        push_indented_lines, range_index_temp_name, range_source_temp_name, return_expr_temp_name,
-        runtime_error_call, runtime_guard,
+        is_pattern_binding_temp_name, match_scrutinee_temp_name, overwrite_target_temp_name,
+        pattern_binding_env_key, print_temp_name, push_indented_lines, range_index_temp_name,
+        range_source_temp_name, return_expr_temp_name, runtime_error_call, runtime_guard,
     },
     CExpr, CGenerator, CompileError,
 };
@@ -747,7 +747,8 @@ impl<'a> CGenerator<'a> {
         }
 
         for (index, arm) in arms.iter().enumerate() {
-            let plan = self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            let plan =
+                self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, arm.span, env)?;
             if index == 0 {
                 output.push_str(&format!("if ({}) {{\n", plan.condition));
             } else {
@@ -1017,11 +1018,29 @@ impl<'a> CGenerator<'a> {
             )));
         }
 
+        let mut cleanup_env = None;
+        if let IrExprKind::Var(name) = &expr.kind {
+            let identity_key = pattern_binding_env_key(name, expr.span);
+            if let Some(binding) = env.get(&identity_key) {
+                let mut resolved = env.clone();
+                resolved.insert(name.clone(), binding.clone());
+                cleanup_env = Some(resolved);
+            } else if env
+                .get(name)
+                .is_some_and(|binding| is_pattern_binding_temp_name(binding))
+            {
+                let mut resolved = env.clone();
+                resolved.remove(name);
+                cleanup_env = Some(resolved);
+            }
+        }
+        let cleanup_env = cleanup_env.as_ref().unwrap_or(env);
+
         let CExpr {
             prelude,
             code,
             postlude,
-        } = self.emit_borrow_lvalue_expr(expr, env)?;
+        } = self.emit_borrow_lvalue_expr(expr, cleanup_env)?;
         if !postlude.is_empty() {
             return Err(CompileError::new(
                 "IR invariant violation: drop target cannot own full-expression temporaries",

@@ -723,7 +723,7 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
                         }
                     }
                 } else {
-                    match self.lowerReadExpression(con syntax, enumBase, con checked) {
+                    match self.lowerTemporaryPlaceExpression(con syntax, enumBase, con checked) {
                         case Ok(value) {
                             loweredReceiver = value
                         }
@@ -923,6 +923,37 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         }
     }
 
+    if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
+        match self.lowerTemporaryPlaceExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(base) {
+                return Ok(self.addNode("E", "Expr.FieldAccess", token.CopyText(con value), token.CopyText(con ty), ast.Span(con syntax, expression), []int{base}, cleanup))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
+    if kind == "Expr.Index" && ast.ChildCount(con syntax, expression) == 2 {
+        mut base := -1
+        match self.lowerTemporaryPlaceExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(lowered) {
+                base = lowered
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+            case Ok(index) {
+                return Ok(self.addNode("E", "Expr.Index", "", token.CopyText(con ty), ast.Span(con syntax, expression), []int{base, index}, cleanup))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+
     if kind == "Expr.StructLiteral" {
         fieldCount := semantic.StructFieldCount(con checked, con value)
         if fieldCount < 0 {
@@ -1096,14 +1127,27 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
             return Err(newError("checked argument expression type is missing", ast.Span(con syntax, argument)))
         }
     }
-    return match self.lowerExpression(con syntax, expression, con checked) {
-        case Ok(child) {
-            Ok(self.addNode("A", ast.Kind(con syntax, argument), "", ty, ast.Span(con syntax, argument), []int{child}, false))
+    mut lowered := -1
+    if ast.Kind(con syntax, argument) == "Arg.Owned" {
+        match self.lowerExpression(con syntax, expression, con checked) {
+            case Ok(child) {
+                lowered = child
+            }
+            case Err(error) {
+                return Err(error)
+            }
         }
-        case Err(error) {
-            Err(error)
+    } else {
+        match self.lowerTemporaryPlaceExpression(con syntax, expression, con checked) {
+            case Ok(child) {
+                lowered = child
+            }
+            case Err(error) {
+                return Err(error)
+            }
         }
     }
+    return Ok(self.addNode("A", ast.Kind(con syntax, argument), "", ty, ast.Span(con syntax, argument), []int{lowered}, false))
 }
 
 func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
@@ -1117,8 +1161,8 @@ func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression i
 
     mut lowered := -1
     match self.lowerExpression(con syntax, expression, con checked) {
-        case Ok(value) {
-            lowered = value
+        case Ok(child) {
+            lowered = child
         }
         case Err(error) {
             return Err(error)
@@ -1194,13 +1238,17 @@ func (mut self Lowerer) lowerTemporaryPlaceExpression(con syntax ast.Program, ex
             return Err(error)
         }
     }
-    return self.wrapFullExpressionTemporary(con syntax, expression, lowered, con checked)
+    return self.wrapAddressableFullExpressionTemporary(con syntax, expression, lowered, con checked)
 }
 
 func (mut self Lowerer) wrapFullExpressionTemporary(con syntax ast.Program, expression int, lowered int, con checked semantic.CheckedProgram) Result[int, Error] {
     if !semantic.NodeNeedsCleanup(con checked, expression) {
         return Ok(lowered)
     }
+    return self.wrapAddressableFullExpressionTemporary(con syntax, expression, lowered, con checked)
+}
+
+func (mut self Lowerer) wrapAddressableFullExpressionTemporary(con syntax ast.Program, expression int, lowered int, con checked semantic.CheckedProgram) Result[int, Error] {
     mut ty := ""
     match semantic.NodeType(con checked, expression) {
         case Ok(resolved) {
@@ -1542,8 +1590,9 @@ func (mut self Lowerer) insertCleanupDrops(con body []int, initial []CleanupBind
             expressionSpan := source.Copy(con self.nodes[expression].span)
             expressionType := token.CopyText(con self.nodes[expression].ty)
             expressionCleanup := self.nodes[expression].cleanup
-            if expressionType != "unit" && len(remaining) > 0 {
-                name := returnValueTempName(con statementSpan)
+            name := returnValueTempName(con statementSpan)
+            alreadyPreEvaluated := self.nodes[expression].kind == "Expr.Var" && self.nodes[expression].value == name
+            if expressionType != "unit" && len(remaining) > 0 && !alreadyPreEvaluated {
                 temporary := self.addNode("S", "Stmt.Let.Immutable", token.CopyText(con name), token.CopyText(con expressionType), source.Copy(con statementSpan), []int{expression}, expressionCleanup)
                 output = append(output, temporary)
                 output = self.pushCleanupDrops(output, con remaining, con statementSpan)
@@ -1728,10 +1777,35 @@ func (con self Lowerer) analyzeCleanupFlow(con body []int, con initial []Cleanup
 
         moved := self.movedCleanupRoots(statement, con active)
         movedInBody = appendUniqueTexts(movedInBody, con moved)
-        active = removeCleanupRoots(active, con moved)
+        remaining := removeCleanupRoots(copyCleanupBindings(con active), con moved)
         if self.nodes[statement].kind == "Stmt.Return" || self.nodes[statement].kind == "Stmt.Break" || self.nodes[statement].kind == "Stmt.Continue" {
             return CleanupFlow{moved: appendUniqueTexts([]string{}, con movedInBody), continues: false}
         }
+        if self.nodes[statement].kind == "Stmt.Assign" && len(self.nodes[statement].children) == 1 {
+            expression := self.nodes[statement].children[0]
+            if self.nodes[expression].cleanup {
+                name := token.CopyText(con self.nodes[statement].value)
+                previous := cleanupBindingIndex(con active, con name)
+                previousRoot := cleanupRootIndexForName(con movedInBody, con name)
+                if previous >= 0 || previousRoot >= 0 {
+                    mut key := ""
+                    if previous >= 0 {
+                        key = token.CopyText(con active[previous].key)
+                    } else {
+                        key = token.CopyText(con movedInBody[previousRoot])
+                    }
+                    movedInBody = cleanupRootsExcludingName(movedInBody, con name)
+                    active = copyCleanupBindings(con remaining)
+                    if cleanupBindingIndex(con active, con name) < 0 {
+                        mut reactivated := newCleanupBinding(con name, con self.nodes[expression].ty, source.Copy(con self.nodes[statement].span))
+                        reactivated.key = key
+                        active = append(active, reactivated)
+                    }
+                    continue
+                }
+            }
+        }
+        active = remaining
         letBinding := self.nodes[statement].kind == "Stmt.Let.Immutable" || self.nodes[statement].kind == "Stmt.Let.Mutable"
         if letBinding && self.nodes[statement].cleanup {
             active = append(active, newCleanupBinding(con self.nodes[statement].value, con self.nodes[statement].ty, source.Copy(con self.nodes[statement].span)))
@@ -1766,6 +1840,9 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
     if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.IndexAssign" {
         return self.movedCleanupRoots(self.nodes[node].children[2], con active)
     }
+    if self.nodes[node].category == "S" && self.nodes[node].kind == "Stmt.Overwrite" {
+        return self.movedCleanupRoots(self.nodes[node].children[1], con active)
+    }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.SliceAppend" && len(self.nodes[node].children) == 2 {
         slice := self.nodes[node].children[0]
         item := self.nodes[node].children[1]
@@ -1778,7 +1855,13 @@ func (con self Lowerer) movedCleanupRoots(node int, con active []CleanupBinding)
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.ArrayLen" {
         return self.movedPlaceCleanupRoots(self.nodes[node].children[0], con active)
     }
+    if self.nodes[node].category == "E" &&(self.nodes[node].kind == "Expr.FieldAccess" || self.nodes[node].kind == "Expr.Index") {
+        return []string{}
+    }
     if self.nodes[node].category == "E" && self.nodes[node].kind == "Expr.Var" {
+        if !self.nodes[node].cleanup {
+            return []string{}
+        }
         binding := cleanupBindingIndex(con active, con self.nodes[node].value)
         if binding >= 0 {
             return []string{token.CopyText(con active[binding].key)}
@@ -1925,6 +2008,45 @@ func cleanupBindingIndex(con active []CleanupBinding, con name string) int {
         }
     }
     return - 1
+}
+
+func cleanupRootIndexForName(con roots []string, con name string) int {
+    mut index := len(roots)
+    for index > 0 {
+        index = index - 1
+        if cleanupRootHasName(con roots[index], con name) {
+            return index
+        }
+    }
+    return - 1
+}
+
+func cleanupRootsExcludingName(roots []string, con name string) []string {
+    mut remaining := []string{}
+    for mut index := 0; index < len(roots); index = index + 1 {
+        if !cleanupRootHasName(con roots[index], con name) {
+            remaining = append(remaining, token.CopyText(con roots[index]))
+        }
+    }
+    return remaining
+}
+
+func cleanupRootHasName(con root string, con name string) bool {
+    if root == name {
+        return true
+    }
+    prefix := strings.join(con []string{token.CopyText(con name), "@",}, con "")
+    if strings.byteLen(con root) < strings.byteLen(con prefix) {
+        return false
+    }
+    return match strings.slice(con root, 0, strings.byteLen(con prefix)) {
+        case Ok(value) {
+            value == prefix
+        }
+        case Err(_) {
+            false
+        }
+    }
 }
 
 func persistentBranchMoves(con active []CleanupBinding, con thenFlow CleanupFlow, con elseFlow CleanupFlow) []string {

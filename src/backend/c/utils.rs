@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{BinaryOp, ParamMode},
     ir::{IrExpr, IrForPost, IrFunction},
+    token::Span,
 };
 
 use super::{
@@ -207,6 +208,29 @@ pub(super) fn push_indented_lines(output: &mut String, code: &str, level: usize)
 
 pub(super) fn match_scrutinee_temp_name(expr: &IrExpr) -> String {
     format!("mallang_match_tmp_{}", expr.span.start)
+}
+
+pub(super) fn pattern_binding_temp_name(name: &str, span: Span) -> String {
+    format!(
+        "mallang_pattern_{}_{}_{}_{}",
+        span.source.index(),
+        span.start,
+        span.end,
+        c_ident(name)
+    )
+}
+
+pub(super) fn pattern_binding_env_key(name: &str, span: Span) -> String {
+    format!(
+        "{name}@mallang-pattern-{}-{}-{}",
+        span.source.index(),
+        span.start,
+        span.end
+    )
+}
+
+pub(super) fn is_pattern_binding_temp_name(name: &str) -> bool {
+    name.starts_with("mallang_pattern_")
 }
 
 pub(super) fn for_post_label(post: &IrForPost) -> String {

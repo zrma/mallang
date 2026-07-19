@@ -20,9 +20,9 @@ sanitizer configurations dominated every B2 iteration.
   through generated Stage1, strict allocation accounting and ASan/UBSan.
 - `scripts/check-self-hosting-lexer.sh --fast` is an inner-loop gate. It keeps
   complete Stage0/Stage1 differential coverage, runs focused fixtures through
-  strict allocation accounting, runs one project test and sanitizer smoke for
-  each lexer, parser, semantic and typed-IR boundary, and leaves the complete
-  project suite to the full gate.
+  strict allocation accounting, runs the complete compiler project suite in one
+  shared native runner, and retains sanitizer smoke for each lexer, parser,
+  semantic and typed-IR boundary.
 - `scripts/check-self-hosting-lexer.sh --focus <area>` is the edit-loop gate for
   `lexer`, `parser`, `packages`, `linker`, `specialize`, `semantic`, `ir` or
   `standard`. It runs two or three exact compiler tests, representative
@@ -53,7 +53,7 @@ optimization profile but are not compatibility promises or CI thresholds.
 - [x] add an explicit `--fast` inner-loop profile
 - [x] keep complete Stage0/Stage1 repository differential coverage in fast mode
 - [x] retain focused allocation accounting and representative ASan/UBSan smoke
-- [x] retain one exact project test per compiler phase in fast mode
+- [x] run the complete compiler project suite once in fast mode
 - [x] compile generated self-hosting binaries with strict optimized C flags
 - [x] pass shell syntax, fast, full, Rust and documentation gates
 - [x] record the resulting full-gate wall-time observation
@@ -134,3 +134,18 @@ the earlier 2,317-second observation. These remain host-local observations, not
 portable thresholds. The next optimization boundary, if development evidence
 requires it, is the remaining Stage1/profile preparation and parser-corpus work;
 it no longer blocks B2 feature work.
+
+## 2026-07-19 B2 Closure Result
+
+The full compiler-source IR diagnostic now indexes normalized output by function
+and reports only the first mismatch. A fresh Stage1 rebuild plus all 675 compiler
+functions takes about 20 seconds; explicit artifact reuse takes about 10 seconds
+and is non-gating. The full gate permanently compares compiler-source
+`link-project`, `prepare-project`, `check-project` and `ir-project` output.
+
+Independent Stage1, strict-accounting, sanitizer and Rust oracle builds now run
+concurrently. Fast mode no longer rebuilds 24 exact test runners after the shared
+runner made that approach slower than executing all 263 tests once. On the same
+local host, IR focus fell from 41 to 26 seconds, fast from 90 to 40 seconds and
+the stronger full gate completed in 83 seconds. The measurements remain
+host-local observations rather than performance thresholds.

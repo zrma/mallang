@@ -1134,7 +1134,8 @@ impl<'a> CGenerator<'a> {
         let mut block = String::new();
         prelude.push(format!("{} {temp};", expr.ty.c_name()));
         for (index, arm) in arms.iter().enumerate() {
-            let plan = self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, env)?;
+            let plan =
+                self.plan_adt_pattern(&arm.pattern, scrutinee_ty, scrutinee, arm.span, env)?;
             let emitted = self.emit_stmt_expr_with_env(&arm.expr, &plan.env)?;
             let cleanup = self.emit_cleanup_stmts(&arm.cleanup, &plan.env)?;
             if index == 0 {

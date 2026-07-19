@@ -51,6 +51,9 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - 기본 full gate: `scripts/check.sh`.
 - self-hosting inner loop: `scripts/check-self-hosting-lexer.sh --fast`; logical
   B2 change publication 전에는 인자 없는 full self-hosting gate를 실행한다.
+- compiler-source IR 진단: `scripts/diagnose-self-hosting-compiler-ir.sh
+  --rebuild-bootstrap`; `--reuse-bootstrap`은 stale artifact를 허용하는 비게이트
+  탐색에만 사용한다.
 - frontend 변경: lexer/parser/semantic targeted tests와 example diagnostics.
 - backend/runtime 변경: generated C warning/sanitizer 검사와 native smoke.
 - 최종 증거에는 acceptance별 test, planned/implemented 문서 상태, local/remote bookmark, CI를 포함한다.

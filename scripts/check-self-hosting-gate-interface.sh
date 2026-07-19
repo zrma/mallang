@@ -40,6 +40,36 @@ grep -Fq 'self-hosting jobs must be a positive integer' "$work/invalid-jobs.stde
 expect_status_2 missing-worker-args scripts/check-self-hosting-fixture.sh
 grep -Fq 'usage: scripts/check-self-hosting-fixture.sh' "$work/missing-worker-args.stderr"
 
+scripts/diagnose-self-hosting-compiler-ir.sh --help \
+  >"$work/compiler-ir-help.stdout" 2>"$work/compiler-ir-help.stderr"
+grep -Fq -- '--rebuild-bootstrap' "$work/compiler-ir-help.stderr"
+grep -Fq -- '--reuse-bootstrap' "$work/compiler-ir-help.stderr"
+
+cat >"$work/ir-expected.txt" <<'EOF'
+IR|2
+FUNCTION|first|unit|0|1
+I|0|S|Stmt.Return|0|0|0||unit|0
+FUNCTION|second|unit|0|1
+I|0|S|Stmt.Return|0|0|0||unit|0
+EOF
+cp "$work/ir-expected.txt" "$work/ir-actual.txt"
+scripts/compare-self-hosting-ir.py \
+  "$work/ir-expected.txt" "$work/ir-actual.txt" \
+  >"$work/ir-match.stdout" 2>"$work/ir-match.stderr"
+grep -Fq 'matching=2 mismatching=0' "$work/ir-match.stdout"
+
+sed 's/FUNCTION|second|unit|0|1/FUNCTION|second|unit|0|2/' \
+  "$work/ir-expected.txt" >"$work/ir-actual.txt"
+if scripts/compare-self-hosting-ir.py \
+  --max-diff-lines 8 \
+  "$work/ir-expected.txt" "$work/ir-actual.txt" \
+  >"$work/ir-mismatch.stdout" 2>"$work/ir-mismatch.stderr"; then
+  echo "self-hosting IR mismatch comparison unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -Fq 'matching=1 mismatching=1' "$work/ir-mismatch.stdout"
+grep -Fq 'first mismatching function: second' "$work/ir-mismatch.stderr"
+
 scripts/check-v08-acceptance.sh --help \
   >"$work/v08-help.stdout" 2>"$work/v08-help.stderr"
 scripts/check-v1x-acceptance.sh --help \

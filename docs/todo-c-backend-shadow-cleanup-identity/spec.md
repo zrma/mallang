@@ -1,6 +1,6 @@
 # C Backend Shadow Cleanup Identity
 
-Status: pending
+Status: complete (2026-07-19)
 
 ## Objective
 
@@ -12,17 +12,18 @@ Status: pending
 
 ## Evidence
 
-- A cleanup-bearing outer string and an integer match-arm binding with the same
-  source name can currently map to one C identifier. Cleanup emitted inside the
-  arm then resolves to the inner C binding and produces an invalid drop call.
-- The self-hosted compiler avoids the collision with distinct arm binding names,
-  but that workaround is not a language or backend contract.
+- Pattern bindings use a deterministic C identifier derived from their arm span
+  and retain an identity-keyed environment entry alongside the current lexical
+  name mapping.
+- Cleanup variable spans select the matching pattern identity. A cleanup for an
+  outer ordinary binding bypasses an unrelated inner pattern mapping.
 
 ## Acceptance
 
-- Add IR/backend and native generated-C regressions for different-typed nested
+- [x] Add IR/backend and native generated-C regressions for different-typed nested
   shadow bindings with outer cleanup on return and branch exit.
-- Carry binding identity through cleanup IR or an equivalent scoped C-name map;
+- [x] Carry binding identity through cleanup IR or an equivalent scoped C-name map;
   source names alone must not select cleanup targets.
-- Pass warning-clean generated C, allocation accounting, ASan/UBSan, repository
-  publication gates and supported-platform CI.
+- [x] Pass warning-clean generated C, allocation accounting and ASan/UBSan local
+  gates. Repository publication and supported-platform CI are owned by the B2
+  canonical acceptance change.

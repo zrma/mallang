@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use crate::{
     ir::{IrEnumStorage, IrMatchPattern},
     semantic::Type,
+    token::Span,
 };
 
 use super::{
-    names::{c_field, c_ident, variant_payload_member, TypeCName},
+    names::{c_field, variant_payload_member, TypeCName},
+    utils::{pattern_binding_env_key, pattern_binding_temp_name},
     CGenerator, CompileError,
 };
 
@@ -16,25 +18,32 @@ pub(super) struct CPatternPlan {
     pub(super) env: HashMap<String, String>,
 }
 
+struct PatternPlanContext<'a> {
+    binding_span: Span,
+    conditions: &'a mut Vec<String>,
+    setup: &'a mut Vec<String>,
+    env: &'a mut HashMap<String, String>,
+}
+
 impl<'a> CGenerator<'a> {
     pub(super) fn plan_adt_pattern(
         &self,
         pattern: &IrMatchPattern,
         expected: &Type,
         value: &str,
+        binding_span: Span,
         env: &HashMap<String, String>,
     ) -> Result<CPatternPlan, CompileError> {
         let mut conditions = Vec::new();
         let mut setup = Vec::new();
         let mut arm_env = env.clone();
-        self.plan_pattern(
-            pattern,
-            expected,
-            value,
-            &mut conditions,
-            &mut setup,
-            &mut arm_env,
-        )?;
+        let mut context = PatternPlanContext {
+            binding_span,
+            conditions: &mut conditions,
+            setup: &mut setup,
+            env: &mut arm_env,
+        };
+        self.plan_pattern(pattern, expected, value, &mut context)?;
         Ok(CPatternPlan {
             condition: if conditions.is_empty() {
                 "true".to_string()
@@ -51,9 +60,7 @@ impl<'a> CGenerator<'a> {
         pattern: &IrMatchPattern,
         expected: &Type,
         value: &str,
-        conditions: &mut Vec<String>,
-        setup: &mut Vec<String>,
-        env: &mut HashMap<String, String>,
+        context: &mut PatternPlanContext<'_>,
     ) -> Result<(), CompileError> {
         match pattern {
             IrMatchPattern::Wildcard(ty) => {
@@ -61,10 +68,15 @@ impl<'a> CGenerator<'a> {
             }
             IrMatchPattern::Binding { name, ty } => {
                 self.expect_pattern_type(ty, expected)?;
-                let binding = c_ident(name);
-                setup.push(format!("{} {binding} = {value};", ty.c_name()));
-                setup.push(format!("(void)&{binding};"));
-                env.insert(name.clone(), binding);
+                let binding = pattern_binding_temp_name(name, context.binding_span);
+                context
+                    .setup
+                    .push(format!("{} {binding} = {value};", ty.c_name()));
+                context.setup.push(format!("(void)&{binding};"));
+                context.env.insert(name.clone(), binding.clone());
+                context
+                    .env
+                    .insert(pattern_binding_env_key(name, context.binding_span), binding);
             }
             IrMatchPattern::Variant {
                 ty,
@@ -78,13 +90,13 @@ impl<'a> CGenerator<'a> {
                     IrEnumStorage::Inline => (format!("({value}).tag"), None),
                     IrEnumStorage::Owned => {
                         let node = format!("({value}).{}", c_field("node"));
-                        conditions.push(format!(
+                        context.conditions.push(format!(
                             "({node} != NULL || (mallang_runtime_error(\"invalid recursive enum handle\"), false))"
                         ));
                         (format!("{node}->tag"), Some(node))
                     }
                 };
-                conditions.push(format!("{tag_value} == {tag}"));
+                context.conditions.push(format!("{tag_value} == {tag}"));
                 if payload_types.len() != payloads.len() {
                     return Err(CompileError::new(
                         "IR invariant violation: ADT pattern payload mismatch",
@@ -98,18 +110,11 @@ impl<'a> CGenerator<'a> {
                         Some(node) => format!("{node}->{member}"),
                         None => format!("({value}).{member}"),
                     };
-                    self.plan_pattern(
-                        payload_pattern,
-                        payload_ty,
-                        &payload_value,
-                        conditions,
-                        setup,
-                        env,
-                    )?;
+                    self.plan_pattern(payload_pattern, payload_ty, &payload_value, context)?;
                 }
                 if let Some(node) = node {
-                    setup.push(format!("mallang_dealloc({node});"));
-                    setup.push(format!("{node} = NULL;"));
+                    context.setup.push(format!("mallang_dealloc({node});"));
+                    context.setup.push(format!("{node} = NULL;"));
                 }
             }
         }

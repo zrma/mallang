@@ -1,0 +1,51 @@
+func resolve(ok bool) Result[string, bool] {
+    return if ok { Ok("value") } else { Err(false) }
+}
+
+func prepare(flag bool) Result[int, string] {
+    kind := "kind"
+    value := "value"
+    mut ty := "unit"
+    if flag {
+        match resolve(flag) {
+            case Ok(resolved) {
+                ty = resolved
+            }
+            case Err(_) {
+                return Err("missing")
+            }
+        }
+    } else {}
+    print(kind)
+    print(value)
+    print(ty)
+    return Ok(1)
+}
+
+func prepareNested(flag bool, input Result[int, bool]) Result[int, string] {
+    kind := "kind"
+    value := "value"
+    match input {
+        case Ok(child) {
+            mut ty := "unit"
+            if flag {
+                match resolve(flag) {
+                    case Ok(resolved) {
+                        ty = resolved
+                    }
+                    case Err(_) {
+                        return Err("missing")
+                    }
+                }
+            } else {}
+            print(child)
+            print(ty)
+        }
+        case Err(_) {}
+    }
+    print(kind)
+    print(value)
+    return Ok(1)
+}
+
+func main() {}
