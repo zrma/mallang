@@ -1,0 +1,15 @@
+func main() {
+    base := 10
+    total := add(base, 20)
+    print(total)
+    print(isPositive(total))
+}
+
+func add(left int, right int) int {
+    return left + right
+}
+
+func isPositive(value int) bool {
+    return !(value <= 0
+    )
+}

@@ -508,6 +508,7 @@ target/mallang/match-statement
 - `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
 - `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
+- `docs/todo-self-hosting-backend/`: active B3 Mallang C backend contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
@@ -713,7 +714,12 @@ drop을 가리키는 문제를 제거했다. Generated Stage1/accounting/sanitiz
 fast mode의 24회 exact runner 재빌드를 전체 263-test 단일 실행으로 교체했다. 같은 local host에서
 IR-focused gate는 26초, fast gate는 40초, complete 48-IR-fixture/167-source gate는 83초에
 통과했다. Canonical repository gate와 public `main` publication, macOS arm64/Linux x86_64
-CI acceptance도 통과해 B2를 닫았으며 다음 단계는 B3 C backend다.
+CI acceptance도 통과해 B2를 닫았다. B3 P177a는 typed-IR read-only API,
+Mallang scalar C emitter와 standalone `c` mode를 추가했다. Scalar fixture의
+Stage0/Stage1 generated C는 byte-identical하고 strict native, allocation accounting,
+ASan/UBSan을 통과한다. Compiler source 713개 normalized IR function도 Stage0과
+일치한다. B3 전체는 아직 active이며 owned values/control flow, callable/project
+surface와 complete compiler-source C generation이 남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -727,6 +733,14 @@ lexer/parser/semantic/typed-IR sanitizer smoke를 실행한다. 인자 없는 fu
 compiler-source link/prepare/check/IR와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
+
+B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
+`scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
+loop는 약 2초다. Compiler source 또는 Stage0가 바뀌면 인자 없는 backend gate로
+Stage1을 다시 만들며 관측된 integration loop는 약 14초다. Ownership/typed-IR
+변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
+self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
+host-local 관측값이며 gate threshold가 아니다.
 
 Publish helper note: the real publish path fetches `origin` before verification
 and again before bookmark movement, with Homebrew Git preferred when available,

@@ -1,0 +1,467 @@
+package backend
+
+import "std/strings"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/ir"
+
+type EmittedExpr struct {
+    lines []string
+    value string
+}
+
+func copyLines(target []string, con values []string) []string {
+    mut output := target
+    for mut index := 0; index < len(values); index = index + 1 {
+        output = append(output, token.CopyText(con values[index]))
+    }
+    return output
+}
+
+func cType(con ty string) string {
+    if ty == "int" {
+        return "int64_t"
+    }
+    if ty == "bool" {
+        return "bool"
+    }
+    if ty == "unit" {
+        return "void"
+    }
+    return ""
+}
+
+func cFunctionName(con name string) string {
+    if name == "main" {
+        return "main"
+    }
+    return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
+}
+
+func cVariableName(con name string) string {
+    return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
+}
+
+func unsupported(con kind string) string {
+    return strings.join(con []string{"B3 C backend does not yet support ", token.CopyText(con kind),}, con "")
+}
+
+func runtimePrelude() []string {
+    return []string{"#include <errno.h>", "#include <stdbool.h>", "#include <stdint.h>", "#include <stdio.h>", "#include <stdlib.h>", "#include <string.h>", "", "#if defined(__GNUC__) || defined(__clang__)", "#define MLG_UNUSED __attribute__((unused))", "#else", "#define MLG_UNUSED", "#endif", "", "static _Noreturn void MLG_UNUSED mallang_runtime_error(const char *message) {", "    fprintf(stderr, \"mallang runtime error: %s\\n\", message);", "    exit(1);", "}", "", "#ifndef MLG_ALLOCATION_FAIL_AFTER", "#define MLG_ALLOCATION_FAIL_AFTER UINT64_MAX", "#endif", "", "static uint64_t mallang_allocation_attempts = 0;", "static uint64_t mallang_live_allocations = 0;", "", "static bool MLG_UNUSED mallang_should_fail_allocation(void) {", "    bool mlg_should_fail = mallang_allocation_attempts == MLG_ALLOCATION_FAIL_AFTER;", "    mallang_allocation_attempts = mallang_allocation_attempts + 1;", "    return mlg_should_fail;", "}", "", "static void *MLG_UNUSED mallang_alloc(size_t mlg_size, const char *mlg_failure_message) {", "    if (mallang_should_fail_allocation()) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    void *mlg_allocation = malloc(mlg_size);", "    if (mlg_allocation == NULL) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    mallang_live_allocations = mallang_live_allocations + 1;", "    return mlg_allocation;", "}", "", "static void *MLG_UNUSED mallang_realloc(", "    void *mlg_allocation,", "    size_t mlg_size,", "    const char *mlg_failure_message", ") {", "    bool mlg_creates_allocation = mlg_allocation == NULL;", "    if (mallang_should_fail_allocation()) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    void *mlg_resized = realloc(mlg_allocation, mlg_size);", "    if (mlg_resized == NULL) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    if (mlg_creates_allocation) {", "        mallang_live_allocations = mallang_live_allocations + 1;", "    }", "    return mlg_resized;", "}", "", "static void MLG_UNUSED mallang_dealloc(void *mlg_allocation) {", "    if (mlg_allocation == NULL) {", "        return;", "    }", "    if (mallang_live_allocations == 0) {", "        mallang_runtime_error(\"allocation accounting underflow\");", "    }", "    mallang_live_allocations = mallang_live_allocations - 1;", "    free(mlg_allocation);", "}", "", "static uint64_t MLG_UNUSED mallang_allocation_attempt_count(void) {", "    return mallang_allocation_attempts;", "}", "", "static uint64_t MLG_UNUSED mallang_live_allocation_count(void) {", "    return mallang_live_allocations;", "}", "", "static int64_t MLG_UNUSED mallang_check_index(int64_t index, int64_t len) {", "    if (index < 0 || index >= len) {", "        mallang_runtime_error(\"array index out of bounds\");", "    }", "    return index;", "}",}
+}
+
+func functionParams(con program ir.Program, function int, thunk bool) Result[string, string] {
+    mut params := []string{}
+    if thunk {
+        params = append(params, "void *mlg_env")
+    }
+    for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
+        mode := ir.FunctionParamMode(con program, function, param)
+        if mode != "owned" {
+            return Err(unsupported(con strings.join(con []string{mode, " parameter",}, con "")))
+        }
+        ty := cType(con ir.FunctionParamType(con program, function, param))
+        if ty == "" || ty == "void" {
+            return Err(unsupported(con ir.FunctionParamType(con program, function, param)))
+        }
+        mut name := cVariableName(con ir.FunctionParamName(con program, function, param))
+        if thunk {
+            name = strings.join(con []string{"mlg_arg_", strings.fromInt(param),}, con "")
+        }
+        params = append(params, strings.join(con []string{ty, " ", name,}, con ""))
+    }
+    if len(params) == 0 {
+        return Ok("void")
+    }
+    return Ok(strings.join(con params, con ", "))
+}
+
+func functionSignature(con program ir.Program, function int) Result[string, string] {
+    name := ir.FunctionName(con program, function)
+    if name == "main" {
+        if ir.FunctionParamCount(con program, function) != 0 || ir.FunctionReturnType(con program, function) != "unit" {
+            return Err("B3 C backend requires func main()")
+        }
+        return Ok("int main(void)")
+    }
+    returnType := cType(con ir.FunctionReturnType(con program, function))
+    if returnType == "" {
+        return Err(unsupported(con ir.FunctionReturnType(con program, function)))
+    }
+    match functionParams(con program, function, false) {
+        case Ok(params) {
+            return Ok(strings.join(con []string{returnType, " ", cFunctionName(con name), "(", params, ")",}, con ""))
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func spanSuffix(con program ir.Program, node int) string {
+    span := ir.NodeSpan(con program, node)
+    return strings.join(con []string{strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
+}
+
+func emitCall(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    name := ir.NodeValue(con program, node)
+    if name == "print" {
+        return Err("B3 C backend print is statement-only")
+    }
+    mut lines := []string{}
+    mut args := []string{}
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        argument := ir.NodeChild(con program, node, child)
+        if ir.NodeChildCount(con program, argument) != 1 {
+            return Err("B3 C backend received malformed call argument IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, argument, 0), con indent) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted.lines)
+                args = append(args, token.CopyText(con emitted.value))
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{cFunctionName(con name), "(", strings.join(con args, con ", "), ")",}, con ""),})
+}
+
+func emitCheckedBinary(con program ir.Program, node int, con indent string, con builtin string) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 2 {
+        return Err("B3 C backend received malformed checked binary IR")
+    }
+    mut lines := []string{}
+    mut leftValue := ""
+    mut rightValue := ""
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+        case Ok(left) {
+            lines = copyLines(lines, con left.lines)
+            leftValue = token.CopyText(con left.value)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent) {
+        case Ok(right) {
+            lines = copyLines(lines, con right.lines)
+            rightValue = token.CopyText(con right.value)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    suffix := spanSuffix(con program, node)
+    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
+    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
+    resultName := strings.join(con []string{"mallang_checked_result_", token.CopyText(con suffix),}, con "")
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con leftName), " = ", leftValue, ";",}, con ""))
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con rightName), " = ", rightValue, ";",}, con ""))
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con resultName), ";",}, con ""))
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con builtin), "(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), ", &", token.CopyText(con resultName), ")) {",}, con ""))
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+    return Ok(EmittedExpr{lines: lines, value: resultName,})
+}
+
+func emitBinary(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Expr.Binary.Add" {
+        return emitCheckedBinary(con program, node, con indent, con "__builtin_add_overflow")
+    }
+    if kind == "Expr.Binary.Subtract" {
+        return emitCheckedBinary(con program, node, con indent, con "__builtin_sub_overflow")
+    }
+    if kind == "Expr.Binary.Multiply" {
+        return emitCheckedBinary(con program, node, con indent, con "__builtin_mul_overflow")
+    }
+    if ir.NodeChildCount(con program, node) != 2 {
+        return Err("B3 C backend received malformed binary IR")
+    }
+    mut lines := []string{}
+    mut leftValue := ""
+    mut rightValue := ""
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+        case Ok(left) {
+            lines = copyLines(lines, con left.lines)
+            leftValue = token.CopyText(con left.value)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent) {
+        case Ok(right) {
+            lines = copyLines(lines, con right.lines)
+            rightValue = token.CopyText(con right.value)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    mut operator := ""
+    if kind == "Expr.Binary.Equal" {
+        operator = "=="
+    } else if kind == "Expr.Binary.NotEqual" {
+        operator = "!="
+    } else if kind == "Expr.Binary.Less" {
+        operator = "<"
+    } else if kind == "Expr.Binary.LessEqual" {
+        operator = "<="
+    } else if kind == "Expr.Binary.Greater" {
+        operator = ">"
+    } else if kind == "Expr.Binary.GreaterEqual" {
+        operator = ">="
+    } else if kind == "Expr.Binary.And" {
+        operator = "&&"
+    } else if kind == "Expr.Binary.Or" {
+        operator = "||"
+    } else {
+        return Err(unsupported(con kind))
+    }
+    return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{"(", leftValue, " ", operator, " ", rightValue, ")",}, con ""),})
+}
+
+func emitExpression(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Expr.Int" || kind == "Expr.Bool" {
+        return Ok(EmittedExpr{lines: []string{}, value: ir.NodeValue(con program, node),})
+    }
+    if kind == "Expr.Var" {
+        return Ok(EmittedExpr{lines: []string{}, value: cVariableName(con ir.NodeValue(con program, node)),})
+    }
+    if kind == "Expr.Call" {
+        return emitCall(con program, node, con indent)
+    }
+    if kind == "Expr.Unary.Not" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed unary IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+            case Ok(emitted) {
+                return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{"(!", token.CopyText(con emitted.value), ")",}, con ""),})
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Expr.Binary.Add" || kind == "Expr.Binary.Subtract" || kind == "Expr.Binary.Multiply" || kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual" || kind == "Expr.Binary.Less" || kind == "Expr.Binary.LessEqual" || kind == "Expr.Binary.Greater" || kind == "Expr.Binary.GreaterEqual" || kind == "Expr.Binary.And" || kind == "Expr.Binary.Or" {
+        return emitBinary(con program, node, con indent)
+    }
+    return Err(unsupported(con kind))
+}
+
+func emitPrint(con program ir.Program, call int, con indent string) Result[[]string, string] {
+    if ir.NodeChildCount(con program, call) != 1 {
+        return Err("B3 C backend received malformed print IR")
+    }
+    argument := ir.NodeChild(con program, call, 0)
+    if ir.NodeChildCount(con program, argument) != 1 {
+        return Err("B3 C backend received malformed print argument IR")
+    }
+    match emitExpression(con program, ir.NodeChild(con program, argument, 0), con indent) {
+        case Ok(emitted) {
+            mut lines := []string{}
+            lines = copyLines(lines, con emitted.lines)
+            ty := ir.NodeType(con program, argument)
+            if ty == "int" {
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"%lld\\n\", (long long)(", token.CopyText(con emitted.value), "));",}, con ""))
+                return Ok(lines)
+            } else if ty == "bool" {
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"%s\\n\", (", token.CopyText(con emitted.value), ") ? \"true\" : \"false\");",}, con ""))
+                return Ok(lines)
+            } else {
+                return Err(unsupported(con strings.join(con []string{"print ", ty,}, con "")))
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitStatement(con program ir.Program, node int, con indent string) Result[[]string, string] {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed let IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+            case Ok(emitted) {
+                mut lines := []string{}
+                lines = copyLines(lines, con emitted.lines)
+                ty := cType(con ir.NodeType(con program, node))
+                if ty == "" || ty == "void" {
+                    return Err(unsupported(con ir.NodeType(con program, node)))
+                }
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", cVariableName(con ir.NodeValue(con program, node)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Stmt.Assign" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed assignment IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+            case Ok(emitted) {
+                mut lines := []string{}
+                lines = copyLines(lines, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), cVariableName(con ir.NodeValue(con program, node)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Stmt.Return" {
+        if ir.NodeChildCount(con program, node) == 0 {
+            return Ok([]string{strings.join(con []string{token.CopyText(con indent), "return;",}, con ""),})
+        }
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed return IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+            case Ok(emitted) {
+                mut lines := []string{}
+                lines = copyLines(lines, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "return ", token.CopyText(con emitted.value), ";",}, con ""))
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Stmt.Expr" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed expression statement IR")
+        }
+        expression := ir.NodeChild(con program, node, 0)
+        if ir.NodeKind(con program, expression) == "Expr.Call" && ir.NodeValue(con program, expression) == "print" {
+            return emitPrint(con program, expression, con indent)
+        }
+        match emitExpression(con program, expression, con indent) {
+            case Ok(emitted) {
+                mut lines := []string{}
+                lines = copyLines(lines, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con emitted.value), ";",}, con ""))
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Err(unsupported(con kind))
+}
+
+func emitThunk(con program ir.Program, function int) Result[[]string, string] {
+    returnType := cType(con ir.FunctionReturnType(con program, function))
+    if returnType == "" {
+        return Err(unsupported(con ir.FunctionReturnType(con program, function)))
+    }
+    match functionParams(con program, function, true) {
+        case Ok(params) {
+            name := cFunctionName(con ir.FunctionName(con program, function))
+            mut args := []string{}
+            for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
+                args = append(args, strings.join(con []string{"mlg_arg_", strings.fromInt(param),}, con ""))
+            }
+            mut lines := []string{strings.join(con []string{"static ", token.CopyText(con returnType), " MLG_UNUSED mallang_callable_thunk_", token.CopyText(con name), "(", params, ") {",}, con ""), "    (void)mlg_env;",}
+            call := strings.join(con []string{name, "(", strings.join(con args, con ", "), ")",}, con "")
+            if returnType == "void" {
+                lines = append(lines, strings.join(con []string{"    ", call, ";",}, con ""))
+            } else {
+                lines = append(lines, strings.join(con []string{"    return ", call, ";",}, con ""))
+            }
+            lines = append(lines, "}")
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitFunction(con program ir.Program, function int) Result[[]string, string] {
+    match functionSignature(con program, function) {
+        case Ok(signature) {
+            mut lines := []string{strings.join(con []string{signature, " {",}, con ""),}
+            name := ir.FunctionName(con program, function)
+            for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
+                lines = append(lines, strings.join(con []string{"    (void)", cVariableName(con ir.FunctionParamName(con program, function, param)), ";",}, con ""))
+            }
+            for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+                match emitStatement(con program, ir.FunctionBodyNode(con program, function, statement), con "    ") {
+                    case Ok(emitted) {
+                        lines = copyLines(lines, con emitted)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            if name == "main" {
+                lines = append(lines, "    return 0;")
+            }
+            lines = append(lines, "}")
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+pub func Generate(con program ir.Program) Result[string, string] {
+    if ir.ClosureCount(con program) != 0 {
+        return Err("B3 C backend does not yet support closures")
+    }
+    mut lines := runtimePrelude()
+    lines = append(lines, "")
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        match functionSignature(con program, function) {
+            case Ok(signature) {
+                lines = append(lines, strings.join(con []string{signature, ";",}, con ""))
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    lines = append(lines, "")
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        if ir.FunctionName(con program, function) != "main" {
+            match emitThunk(con program, function) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted)
+                    lines = append(lines, "")
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+    }
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        match emitFunction(con program, function) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted)
+                lines = append(lines, "")
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    lines = append(lines, "")
+    return Ok(strings.join(con lines, con "\n"))
+}

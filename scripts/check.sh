@@ -9,6 +9,7 @@ scripts/check-self-hosting-gate-interface.sh
 python3 scripts/check-v1-conformance.py
 scripts/check-self-hosting-bootstrap.sh
 scripts/check-self-hosting-lexer.sh
+scripts/check-self-hosting-backend.sh --assume-bootstrap
 
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)

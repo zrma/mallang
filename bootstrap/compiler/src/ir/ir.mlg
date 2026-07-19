@@ -201,6 +201,78 @@ pub func NormalizeError(con error Error) string {
     return strings.join(con []string{"IERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con error.message),}, con "")
 }
 
+pub func FunctionCount(con program Program) int {
+    return len(program.functions)
+}
+
+pub func FunctionName(con program Program, function int) string {
+    return token.CopyText(con program.functions[function].name)
+}
+
+pub func FunctionReturnType(con program Program, function int) string {
+    return token.CopyText(con program.functions[function].returnType)
+}
+
+pub func FunctionParamCount(con program Program, function int) int {
+    return len(program.functions[function].params)
+}
+
+pub func FunctionParamName(con program Program, function int, param int) string {
+    return token.CopyText(con program.functions[function].params[param].name)
+}
+
+pub func FunctionParamMode(con program Program, function int, param int) string {
+    return token.CopyText(con program.functions[function].params[param].mode)
+}
+
+pub func FunctionParamType(con program Program, function int, param int) string {
+    return token.CopyText(con program.functions[function].params[param].ty)
+}
+
+pub func FunctionBodyCount(con program Program, function int) int {
+    return len(program.functions[function].body)
+}
+
+pub func FunctionBodyNode(con program Program, function int, statement int) int {
+    return program.functions[function].body[statement]
+}
+
+pub func ClosureCount(con program Program) int {
+    return len(program.closures)
+}
+
+pub func NodeCategory(con program Program, node int) string {
+    return token.CopyText(con program.nodes[node].category)
+}
+
+pub func NodeKind(con program Program, node int) string {
+    return token.CopyText(con program.nodes[node].kind)
+}
+
+pub func NodeValue(con program Program, node int) string {
+    return token.CopyText(con program.nodes[node].value)
+}
+
+pub func NodeType(con program Program, node int) string {
+    return token.CopyText(con program.nodes[node].ty)
+}
+
+pub func NodeSpan(con program Program, node int) source.Span {
+    return source.Copy(con program.nodes[node].span)
+}
+
+pub func NodeChildCount(con program Program, node int) int {
+    return len(program.nodes[node].children)
+}
+
+pub func NodeChild(con program Program, node int, child int) int {
+    return program.nodes[node].children[child]
+}
+
+pub func NodeNeedsCleanup(con program Program, node int) bool {
+    return program.nodes[node].cleanup
+}
+
 func (mut self Lowerer) lowerFunction(con syntax ast.Program, declaration int, con checked semantic.CheckedProgram) Result[bool, Error] {
     name := ast.Value(con syntax, declaration)
     mut block := -1

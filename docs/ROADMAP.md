@@ -1784,6 +1784,26 @@ adds direct/indirect calls and named function values. P176b3-P176e extend
 places, nested scopes, ownership,
 specialization and typed IR in independently differential-tested slices.
 
+## P177: B3 Self-Hosting C Backend
+
+상태: active; P177a complete (2026-07-19)
+
+- [x] Mallang typed-IR read-only backend API
+- [x] standalone Mallang `c` host mode
+- [x] scalar function, call, binding, assignment과 return C emission
+- [x] checked scalar arithmetic, comparison, logical operator와 statement-only print
+- [x] Stage0/Stage1 generated C byte identity와 deterministic repeat
+- [x] strict C11 native, allocation accounting과 ASan/UBSan scalar gate
+- [x] match cleanup payload가 outer root를 claim하지 않는 Rust regression
+- [x] artifact-reuse edit loop와 fresh integration/publication gate 분리
+- [ ] string, array, slice, struct, ADT와 control-flow backend
+- [ ] method, callable, closure, specialization과 project backend
+- [ ] complete compiler-source C generation과 B3 canonical acceptance
+
+Exact scope, gate layering and current evidence are owned by
+`docs/todo-self-hosting-backend/`. P177a does not claim Stage2 generation or a
+fixed point; those remain B4 work.
+
 ## Deferred 2.0 Naming Conventions
 
 - [x] keep visibility controlled only by explicit `pub`

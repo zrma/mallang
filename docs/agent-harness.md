@@ -51,6 +51,9 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - 기본 full gate: `scripts/check.sh`.
 - self-hosting inner loop: `scripts/check-self-hosting-lexer.sh --fast`; logical
   B2 change publication 전에는 인자 없는 full self-hosting gate를 실행한다.
+- B3 backend edit loop:
+  `scripts/check-self-hosting-backend.sh --assume-bootstrap`; compiler source가
+  바뀌면 인자 없는 backend gate로 Stage1을 재생성한다.
 - compiler-source IR 진단: `scripts/diagnose-self-hosting-compiler-ir.sh
   --rebuild-bootstrap`; `--reuse-bootstrap`은 stale artifact를 허용하는 비게이트
   탐색에만 사용한다.

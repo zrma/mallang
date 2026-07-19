@@ -2846,7 +2846,7 @@ fn insert_cleanup_drops(
                 active.iter().any(|active| active.name == binding.name)
                     || moved_in_body
                         .iter()
-                        .any(|root| cleanup_root_has_name(root, &binding.name))
+                        .any(|root| cleanup_binding_root_has_name(root, &binding.name))
             })
             .map(|mut binding| {
                 if let Some(previous) = active
@@ -2857,7 +2857,7 @@ fn insert_cleanup_drops(
                     binding.key = previous.key.clone();
                 } else if let Some(previous) = moved_in_body
                     .iter()
-                    .find(|root| cleanup_root_has_name(root, &binding.name))
+                    .find(|root| cleanup_binding_root_has_name(root, &binding.name))
                 {
                     binding.key = previous.clone();
                 }
@@ -3270,6 +3270,11 @@ fn cleanup_root_has_name(root: &str, name: &str) -> bool {
         || root
             .strip_prefix(name)
             .is_some_and(|suffix| suffix.starts_with('@'))
+}
+
+fn cleanup_binding_root_has_name(root: &str, name: &str) -> bool {
+    root.strip_prefix(name)
+        .is_some_and(|suffix| suffix.starts_with('@'))
 }
 
 fn merged_cleanup_roots<'a>(
@@ -6668,6 +6673,74 @@ func main() {
             )
         }));
         assert_drop_of(main.body.last().unwrap(), "values");
+    }
+
+    #[test]
+    fn nested_loop_match_reassignment_keeps_outer_cleanup_root() {
+        let program = parse(
+            r#"
+func nextValue(ok bool) Result[[]string, string] {
+    return if ok { Ok([]string{"value"}) } else { Err("missing") }
+}
+
+func copyValues(target []string, con values []string) []string {
+    return target
+}
+
+func render(ok bool) int {
+    mut values := []string{}
+    for mut index := 0; index < 1; index = index + 1 {
+        if index == 0 {
+            match nextValue(ok) {
+                case Ok(value) {
+                    values = copyValues(values, con value)
+                    values = append(values, "")
+                }
+                case Err(message) {
+                    print(message)
+                    return 0
+                }
+            }
+        }
+    }
+    return len(values)
+}
+
+func main() {}
+"#,
+        )
+        .unwrap();
+        let checked = check(&program).unwrap();
+        let ir = lower(&checked).unwrap();
+        let render = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "render")
+            .unwrap();
+        let IrStmtKind::For { body, .. } = &render.body[1].kind else {
+            panic!("expected for statement");
+        };
+        let IrStmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &body[0].kind
+        else {
+            panic!("expected nested if statement");
+        };
+        let IrStmtKind::Match { arms, .. } = &then_body[0].kind else {
+            panic!("expected nested match statement");
+        };
+
+        let drops_values = |body: &[IrStmt]| {
+            body.iter().any(
+                |stmt| matches!(&stmt.kind, IrStmtKind::Drop { expr } if matches!(&expr.kind, IrExprKind::Var(name) if name == "values")),
+            )
+        };
+        assert!(!drops_values(else_body));
+        assert!(!drops_values(&arms[0].body));
+        assert!(drops_values(&arms[1].body));
+        assert_drop_of(&render.body[3], "values");
     }
 
     #[test]

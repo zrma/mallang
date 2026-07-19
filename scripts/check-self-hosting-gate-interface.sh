@@ -45,6 +45,13 @@ scripts/diagnose-self-hosting-compiler-ir.sh --help \
 grep -Fq -- '--rebuild-bootstrap' "$work/compiler-ir-help.stderr"
 grep -Fq -- '--reuse-bootstrap' "$work/compiler-ir-help.stderr"
 
+scripts/check-self-hosting-backend.sh --help \
+  >"$work/backend-help.stdout" 2>"$work/backend-help.stderr"
+grep -Fq -- '--assume-bootstrap' "$work/backend-help.stderr"
+expect_status_2 invalid-backend-mode scripts/check-self-hosting-backend.sh --fast
+grep -Fq 'usage: scripts/check-self-hosting-backend.sh' \
+  "$work/invalid-backend-mode.stderr"
+
 cat >"$work/ir-expected.txt" <<'EOF'
 IR|2
 FUNCTION|first|unit|0|1
@@ -92,5 +99,7 @@ if [[ "$(grep -Fc 'scripts/check.sh' .github/workflows/ci.yml)" -ne 1 ]] || \
   echo "CI must run one canonical core check and platform-only release acceptance" >&2
   exit 1
 fi
+
+grep -Fq 'scripts/check-self-hosting-backend.sh --assume-bootstrap' scripts/check.sh
 
 echo "self-hosting gate interface and CI role separation passed"

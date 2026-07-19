@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B2 complete, B3 next
+Status: active long-term program; B0-B2 complete, B3 active
 
 ## Objective
 
@@ -68,8 +68,7 @@ Mallang to specific 1.x versions.
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
 - `bootstrap/compiler/`: active Mallang compiler source, currently containing
   the complete lexer/parser, semantic and ownership checker, specialization,
-  project package graph/linker and typed IR needed by the twelve-file compiler
-  source set.
+  project package graph/linker, typed IR and the first scalar C backend slice.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
@@ -80,12 +79,30 @@ Mallang to specific 1.x versions.
   edit loops to representative tests, differentials and one sanitizer path;
   `--jobs` controls bounded concurrency. The historical filename remains stable
   while the compiler gate grows through B2.
+- `scripts/check-self-hosting-backend.sh`: B3 Stage0/Stage1 generated-C
+  identity, determinism, strict native, allocation-accounting and sanitizer
+  gate. `--assume-bootstrap` is the explicit artifact-reuse edit loop.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
+- `docs/todo-self-hosting-backend/`: active B3 work breakdown and decisions.
 - `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
+
+## B3 Current Slice
+
+P177a exposes read-only typed-IR metadata to Mallang and adds a Mallang-owned
+scalar C emitter plus standalone `c` host mode. Its fixture covers scalar
+functions, checked arithmetic, calls, bindings, assignment, `print`, comparison
+and unary logic. Stage0 and Stage1 produce byte-identical deterministic C; the
+strict native, allocation-accounting and ASan/UBSan paths pass. The complete
+compiler source set also matches across 713 normalized typed-IR functions.
+
+P177b-P177d still need owned values, control flow, callable/project surfaces and
+complete compiler-source C generation before B3 can close. Exact scope and the
+layered edit/integration/publication gates are owned by
+`docs/todo-self-hosting-backend/`.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
