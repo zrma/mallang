@@ -70,7 +70,8 @@ Mallang to specific 1.x versions.
   the complete lexer/parser plus declaration/type checking, primitive body
   checking, direct/indirect calls, field/index places and the incremental
   typed-IR subset with nested if statements and expressions, plus local
-  move/borrow state and call-scoped place overlap checking.
+  move/borrow state, call-scoped place overlap checking, project package graph
+  construction and package-qualified AST linking.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
@@ -251,6 +252,11 @@ roots and direct dependency edges in the compiler input. The transitive
 of undeclared `shared` matches the Rust source, span and message. Three valid and
 eleven rejection layout sets, one hundred sixty-three parser corpus sources and
 two hundred fifty-five Mallang project tests cover this boundary. Package
-visibility/link rewriting, standard-intrinsic specialization and the remaining
-full-expression backend boundary are incomplete, so
+visibility and package-qualified declaration/type/body rewriting are complete
+in P176e4b3b. Five focused linker tests, six project differential invocations
+and the complete eleven-file compiler source link match Rust Stage0; the
+integrated parser corpus is one hundred sixty-five sources and the Mallang
+project suite is two hundred sixty tests. Compiler-owned standard declaration
+augmentation, intrinsic specialization and the remaining full-expression
+backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

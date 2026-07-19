@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e2c3z complete
+Status: in progress; P176a-P176e4b3b complete
 
 ## Objective
 
@@ -184,6 +184,10 @@ agrees.
   (complete)
 - P176e2c3z: normalize expression-form `match` outer branch moves after each
   arm's pattern cleanup
+  (complete)
+- P176e4b3b: validate package visibility and receiver/public-API boundaries,
+  then rewrite declarations, types, patterns, function values and calls to
+  deterministic package-qualified symbols across project dependencies
   (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
@@ -677,7 +681,16 @@ specialization and function-body checking until later P176 slices.
   matches the Rust source, span and message. Three valid and eleven rejection
   layout sets, one hundred sixty-three parser corpus sources and two hundred
   fifty-five Mallang project tests cover this boundary. Package visibility/link
-  rewriting and standard-intrinsic specialization continue in P176e.
+  rewriting is complete in P176e4b3b. Five focused Mallang linker tests cover
+  package symbols, lexical qualifier shadowing, standard function identity and
+  three rejection classes. Six same-project/cross-project differential
+  invocations compare linked AST or `LERR` output through generated Stage1,
+  strict allocation accounting and representative ASan/UBSan execution. The
+  complete eleven-file Mallang compiler source set also matches Rust Stage0
+  over 80,831 normalized linked-AST lines. The integrated corpus now contains
+  one hundred sixty-five parser sources and two hundred sixty Mallang project
+  tests. Compiler-owned standard declaration augmentation and intrinsic
+  specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

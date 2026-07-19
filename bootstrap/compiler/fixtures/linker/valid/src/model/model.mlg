@@ -1,0 +1,22 @@
+package model
+
+pub type Message struct {
+    text string
+}
+
+pub type State[T] enum {
+    Empty
+    Ready(T)
+}
+
+pub func Identity[T](value T) T {
+    return value
+}
+
+pub func New(text string) Message {
+    return Message{text: text}
+}
+
+pub func (con self Message) Text() string {
+    return self.text
+}

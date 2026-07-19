@@ -10,6 +10,7 @@ import "bootstrap_compiler/frontend/parser"
 import "bootstrap_compiler/frontend/source"
 import "bootstrap_compiler/frontend/token"
 import "bootstrap_compiler/ir"
+import "bootstrap_compiler/linker"
 import "bootstrap_compiler/packages"
 import "bootstrap_compiler/semantic"
 import "bootstrap_compiler/specialize"
@@ -181,18 +182,22 @@ func parseCliCount(con value string) int {
     return 0
 }
 
-func runProjectPackageLayout(con args []string) {
+func runProjectPackage(con args []string, linkProgram bool) {
     if len(args) < 7 {
-        fail(con "usage: bootstrap-frontend package-layout-project <unit-count> (<name> <source-root> <dependency-count> <dependency>...)* <source>...\n")
+        fail(con "usage: bootstrap-frontend <package-layout-project|link-project> <unit-count> (<name> <source-root> <dependency-count> <dependency>...)* <source>...\n")
     }
     unitCount := parseCliCount(con args[2])
     mut argument := 3
     mut units := []packages.ProjectUnit{}
+    mut rootName := ""
     for mut unitIndex := 0; unitIndex < unitCount; unitIndex = unitIndex + 1 {
         if argument + 2 >= len(args) {
             fail(con "bootstrap frontend received an incomplete project unit\n")
         }
         name := token.CopyText(con args[argument])
+        if unitIndex == 0 {
+            rootName = token.CopyText(con name)
+        }
         sourceRoot := token.CopyText(con args[argument + 1])
         dependencyCount := parseCliCount(con args[argument + 2])
         argument = argument + 3
@@ -218,7 +223,18 @@ func runProjectPackageLayout(con args []string) {
             project := packages.NewProject(con units)
             match packages.BuildProject(con program, con project, con paths) {
                 case Ok(layout) {
-                    print(packages.Normalize(con layout))
+                    if linkProgram {
+                        match linker.LinkProject(con rootName, con layout, con program) {
+                            case Ok(linked) {
+                                print(ast.Normalize(con linked))
+                            }
+                            case Err(error) {
+                                print(linker.NormalizeError(con error))
+                            }
+                        }
+                    } else {
+                        print(packages.Normalize(con layout))
+                    }
                 }
                 case Err(error) {
                     print(packages.NormalizeError(con error))
@@ -378,8 +394,12 @@ func runMode(con mode string, text string) {
 func main() {
     match os.args() {
         case Ok(args) {
+            if len(args) >= 2 && args[1]== "link-project" {
+                runProjectPackage(con args, true)
+                os.exit(0)
+            }
             if len(args) >= 2 && args[1]== "package-layout-project" {
-                runProjectPackageLayout(con args)
+                runProjectPackage(con args, false)
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "package-layout" {

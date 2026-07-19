@@ -1,0 +1,138 @@
+package linker
+
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/packages"
+
+func parseLinkSources(con texts []string) Result[ast.Program, bool] {
+    mut programs := []ast.Program{}
+    for mut sourceId := 0; sourceId < len(texts); sourceId = sourceId + 1 {
+        match lexer.LexWithSource(token.CopyText(con texts[sourceId]), sourceId) {
+            case Ok(tokens) {
+                match parser.Parse(tokens) {
+                    case Ok(program) {
+                        programs = append(programs, program)
+                    }
+                    case Err(_) {
+                        return Err(false)
+                    }
+                }
+            }
+            case Err(_) {
+                return Err(false)
+            }
+        }
+    }
+    return match ast.MergePrograms(programs) {
+        case Ok(program) {
+            Ok(program)
+        }
+        case Err(_) {
+            Err(false)
+        }
+    }
+}
+
+func linkTestProject(con texts []string, con paths []string) Result[ast.Program, string] {
+    match parseLinkSources(con texts) {
+        case Ok(program) {
+            match packages.Build(con program, con "hello", con "project/src", con paths) {
+                case Ok(layout) {
+                    return match LinkProject(con "hello", con layout, con program) {
+                        case Ok(linked) {
+                            Ok(linked)
+                        }
+                        case Err(error) {
+                            Err(ErrorMessage(con error))
+                        }
+                    }
+                }
+                case Err(error) {
+                    return Err(packages.ErrorMessage(con error))
+                }
+            }
+        }
+        case Err(_) {
+            return Err("parse error")
+        }
+    }
+}
+
+func hasLinkedNode(con program ast.Program, con kind string, con value string) bool {
+    for mut node := 0; node < ast.NodeCount(con program); node = node + 1 {
+        if ast.Kind(con program, node) == kind && ast.Value(con program, node) == value {
+            return true
+        }
+    }
+    return false
+}
+
+test RewritesPackageSymbolsAndPreservesLexicalShadowing() {
+    texts := []string{"package main\nimport \"hello/greet\"\ntype Local struct {}\nfunc (con self Local) Print() {}\nfunc main() { greet.Print(); greet := Local{}; greet.Print() }\n", "package greet\npub type Message struct {}\npub func Print() {}\n",}
+    paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(linked) {
+            assert(hasLinkedNode(con linked, con "StructDecl.Public", con internalSymbol(con "hello/greet", con "Message")))
+            assert(hasLinkedNode(con linked, con "FunctionDecl.Public", con internalSymbol(con "hello/greet", con "Print")))
+            assert(hasLinkedNode(con linked, con "StructDecl.Package", con internalSymbol(con "hello", con "Local")))
+            assert(hasLinkedNode(con linked, con "Expr.FieldAccess", con "Print"))
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test PreservesStandardFunctionIdentity() {
+    texts := []string{"package main\nimport \"std/strings\"\nfunc main() { read := strings.byteLen; text := \"hello\"; size := read(con text); print(size) }\n",}
+    paths := []string{"project/src/main.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(linked) {
+            assert(hasLinkedNode(con linked, con "Expr.Var", con internalSymbol(con "std/strings", con "byteLen")))
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsPrivateImportedFunctions() {
+    texts := []string{"package main\nimport \"hello/greet\"\nfunc main() { greet.secret() }\n", "package greet\nfunc secret() {}\n",}
+    paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(message) {
+            assert(message == "`greet.secret` is private to package `hello/greet`")
+        }
+    }
+}
+
+test RejectsPrivateTypesExposedByPublicApis() {
+    texts := []string{"package main\nfunc main() {}\n", "package greet\ntype Secret struct {}\npub func Reveal() Secret { return Secret{} }\n",}
+    paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(message) {
+            assert(message == "public declaration `Reveal` exposes private type `Secret`")
+        }
+    }
+}
+
+test RejectsMethodsOnImportedReceiverTypes() {
+    texts := []string{"package main\nimport \"hello/greet\"\nfunc (con self greet.Message) Extend() {}\nfunc main() {}\n", "package greet\npub type Message struct {}\n",}
+    paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(message) {
+            assert(message == "method receiver type must be declared in the same package")
+        }
+    }
+}

@@ -223,6 +223,50 @@ pub func ErrorMessage(con error LayoutError) string {
     return token.CopyText(con error.message)
 }
 
+pub func SourcePackagePath(con layout Layout, sourceId int) string {
+    return sourcePackagePath(con layout.sources, sourceId)
+}
+
+pub func HasPackage(con layout Layout, con packagePath string) bool {
+    return findPackage(con layout.packages, con packagePath) >= 0
+}
+
+pub func DeclarationKind(con layout Layout, con packagePath string, con name string) string {
+    packageIndex := findPackage(con layout.packages, con packagePath)
+    if packageIndex < 0 {
+        return ""
+    }
+    declarationIndex := findDeclaration(con layout.packages[packageIndex].declarations, con name)
+    if declarationIndex < 0 {
+        return ""
+    }
+    return token.CopyText(con layout.packages[packageIndex].declarations[declarationIndex].kind)
+}
+
+pub func DeclarationVisibility(con layout Layout, con packagePath string, con name string) string {
+    packageIndex := findPackage(con layout.packages, con packagePath)
+    if packageIndex < 0 {
+        return ""
+    }
+    declarationIndex := findDeclaration(con layout.packages[packageIndex].declarations, con name)
+    if declarationIndex < 0 {
+        return ""
+    }
+    return token.CopyText(con layout.packages[packageIndex].declarations[declarationIndex].visibility)
+}
+
+pub func DeclarationTypeParams(con layout Layout, con packagePath string, con name string) []string {
+    packageIndex := findPackage(con layout.packages, con packagePath)
+    if packageIndex < 0 {
+        return []string{}
+    }
+    declarationIndex := findDeclaration(con layout.packages[packageIndex].declarations, con name)
+    if declarationIndex < 0 {
+        return []string{}
+    }
+    return copyTexts(con layout.packages[packageIndex].declarations[declarationIndex].typeParams)
+}
+
 func collectFileImports(con program ast.Program, sourceUnit int, con packagePath string) Result[[]PendingImport, LayoutError] {
     mut paths := []string{}
     mut qualifiers := []string{}

@@ -13,7 +13,7 @@ use mallang::ir::{
     IrForPost, IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
 use mallang::{
-    build_package_graph, check, discover_project, lex, lower, lower_test,
+    build_package_graph, check, discover_project, lex, link_project, lower, lower_test,
     parse_sources_with_diagnostics, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
     LexError, PackageDeclarationKind, SourceMap, Span, Token, TokenKind,
 };
@@ -63,7 +63,8 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    if first == "package-layout" || first == "package-layout-project" {
+    if first == "package-layout" || first == "package-layout-project" || first == "link-project" {
+        let link_mode = first == "link-project";
         let (source_root, paths) = if first == "package-layout" {
             let Some(_project_name) = args.next() else {
                 eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
@@ -162,6 +163,19 @@ fn main() -> ExitCode {
         };
         match build_package_graph(&project, &sources, &program) {
             Ok(graph) => {
+                if link_mode {
+                    match link_project(&project, &graph, &program) {
+                        Ok(linked) => println!("{}", normalize_program(&linked).normalize(0)),
+                        Err(error) => println!(
+                            "LERR|{}|{}|{}|{}",
+                            error.span.source.index(),
+                            error.span.start,
+                            error.span.end,
+                            encode_bytes(&error.message)
+                        ),
+                    }
+                    return ExitCode::SUCCESS;
+                }
                 println!("LAYOUT|{}|{}", source_ids.len(), graph.packages().len());
                 for source_id in &source_ids {
                     let package = graph

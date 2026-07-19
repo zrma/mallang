@@ -50,6 +50,7 @@ IR_FIXTURES="$PROJECT/fixtures/ir"
 IR_TEST_FIXTURES="$PROJECT/fixtures/ir-test"
 MULTI_SOURCE_FIXTURES="$PROJECT/fixtures/multi-source"
 PACKAGE_LAYOUT_FIXTURES="$PROJECT/fixtures/package-layout"
+LINKER_FIXTURES="$PROJECT/fixtures/linker"
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -82,6 +83,11 @@ else
     bootstrap_compiler/packages::RejectsInvalidImportPath \
     bootstrap_compiler/packages::RejectsUndeclaredTransitiveProjectImport \
     bootstrap_compiler/packages::RejectsUnknownStandardPackage \
+    bootstrap_compiler/linker::PreservesStandardFunctionIdentity \
+    bootstrap_compiler/linker::RejectsMethodsOnImportedReceiverTypes \
+    bootstrap_compiler/linker::RejectsPrivateImportedFunctions \
+    bootstrap_compiler/linker::RejectsPrivateTypesExposedByPublicApis \
+    bootstrap_compiler/linker::RewritesPackageSymbolsAndPreservesLexicalShadowing \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
@@ -269,7 +275,7 @@ compare_source_set() {
   fi
 }
 
-compare_package_layout_invocation() {
+compare_project_invocation() {
   local stem="$1"
   local profile="$2"
   shift 2
@@ -296,7 +302,7 @@ compare_package_layout_invocation() {
 
   for actual in "${actual_outputs[@]}"; do
     if ! cmp -s "$oracle_output" "$actual"; then
-      echo "self-hosting package layout differential mismatch: $stem" >&2
+      echo "self-hosting project differential mismatch: $stem" >&2
       diff -u "$oracle_output" "$actual" >&2 || true
       exit 1
     fi
@@ -319,7 +325,7 @@ compare_package_layout() {
   local project_name="$3"
   local source_root="$4"
   shift 4
-  compare_package_layout_invocation \
+  compare_project_invocation \
     "$stem" \
     "$profile" \
     package-layout \
@@ -350,10 +356,40 @@ compare_project_package_layout() {
     exit 2
   fi
 
-  compare_package_layout_invocation \
+  compare_project_invocation \
     "$stem" \
     "$profile" \
     package-layout-project \
+    "${project_args[@]}" \
+    "${fixtures[@]}"
+}
+
+compare_project_link() {
+  local stem="$1"
+  local profile="$2"
+  shift 2
+  local -a project_args=()
+  local -a fixtures=()
+  local in_fixtures=false
+  local argument
+  for argument in "$@"; do
+    if [[ "$argument" == "--" ]]; then
+      in_fixtures=true
+    elif [[ "$in_fixtures" == "true" ]]; then
+      fixtures+=("$argument")
+    else
+      project_args+=("$argument")
+    fi
+  done
+  if [[ ${#project_args[@]} -eq 0 || ${#fixtures[@]} -eq 0 ]]; then
+    echo "self-hosting project link requires graph and source arguments" >&2
+    exit 2
+  fi
+
+  compare_project_invocation \
+    "$stem" \
+    "$profile" \
+    link-project \
     "${project_args[@]}" \
     "${fixtures[@]}"
 }
@@ -501,6 +537,66 @@ compare_project_package_layout \
   "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/deps/text/src/library.mlg" \
   "$PACKAGE_LAYOUT_FIXTURES/undeclared-transitive/src/main.mlg"
 
+compare_project_link \
+  linker-valid \
+  "$fixture_profile" \
+  1 hello "$LINKER_FIXTURES/valid/src" 0 \
+  -- \
+  "$LINKER_FIXTURES/valid/src/main.mlg" \
+  "$LINKER_FIXTURES/valid/src/model/model.mlg"
+compare_project_link \
+  linker-cross-project \
+  "$fixture_profile" \
+  3 \
+  app "$PACKAGE_LAYOUT_FIXTURES/cross-project/src" 1 text \
+  text "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/text/src" 1 shared \
+  shared "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/shared/src" 0 \
+  -- \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/shared/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/deps/text/src/library.mlg" \
+  "$PACKAGE_LAYOUT_FIXTURES/cross-project/src/main.mlg"
+compare_project_link \
+  linker-private-function \
+  "$fixture_profile" \
+  1 hello "$LINKER_FIXTURES/private-function/src" 0 \
+  -- \
+  "$LINKER_FIXTURES/private-function/src/main.mlg" \
+  "$LINKER_FIXTURES/private-function/src/greet/greet.mlg"
+compare_project_link \
+  linker-private-type-api \
+  "$fixture_profile" \
+  1 hello "$LINKER_FIXTURES/private-type-api/src" 0 \
+  -- \
+  "$LINKER_FIXTURES/private-type-api/src/main.mlg" \
+  "$LINKER_FIXTURES/private-type-api/src/model/model.mlg"
+compare_project_link \
+  linker-foreign-receiver \
+  "$fixture_profile" \
+  1 hello "$LINKER_FIXTURES/foreign-receiver/src" 0 \
+  -- \
+  "$LINKER_FIXTURES/foreign-receiver/src/main.mlg" \
+  "$LINKER_FIXTURES/foreign-receiver/src/greet/greet.mlg"
+compare_project_link \
+  linker-wrong-kind \
+  "$fixture_profile" \
+  1 hello "$LINKER_FIXTURES/wrong-kind/src" 0 \
+  -- \
+  "$LINKER_FIXTURES/wrong-kind/src/main.mlg" \
+  "$LINKER_FIXTURES/wrong-kind/src/model/model.mlg"
+
+if [[ "$MODE" == "full" ]]; then
+  compiler_link_sources=()
+  while IFS= read -r source_path; do
+    compiler_link_sources+=("$source_path")
+  done < <(find bootstrap/compiler/src -type f -name '*.mlg' -print | LC_ALL=C sort)
+  compare_project_link \
+    linker-compiler-source \
+    stage1 \
+    1 bootstrap_compiler bootstrap/compiler/src 0 \
+    -- \
+    "${compiler_link_sources[@]}"
+fi
+
 if [[ "$MODE" == "fast" ]]; then
   compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
   compare_fixture parser "$PARSER_FIXTURES/control-expressions.mlg" fast-sanitizer-parser full
@@ -509,6 +605,13 @@ if [[ "$MODE" == "fast" ]]; then
     fast-sanitizer-semantic \
     full
   compare_fixture ir "$IR_FIXTURES/place-overwrite-cleanup.mlg" fast-sanitizer-ir full
+  compare_project_link \
+    fast-sanitizer-linker \
+    full \
+    1 hello "$LINKER_FIXTURES/valid/src" 0 \
+    -- \
+    "$LINKER_FIXTURES/valid/src/main.mlg" \
+    "$LINKER_FIXTURES/valid/src/model/model.mlg"
 fi
 
 PARSER_CORPUS_LIST="$WORK/parser-corpus.list"
@@ -587,4 +690,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4b3a $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4b3b $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

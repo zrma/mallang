@@ -1,0 +1,27 @@
+package main
+
+import "hello/model"
+import "std/strings"
+
+type Local struct {}
+
+func (con self Local) Read() {}
+
+func main() {
+    direct := model.Message{text: "direct"}
+    message := model.New("hello")
+    identity := model.Identity[string]
+    text := identity("value")
+    state := model.State[string].Ready(text)
+    result := match state {
+        case model.State.Ready(value) { value }
+        case model.State.Empty { "" }
+    }
+    read := strings.byteLen
+    size := read(con result)
+    model := Local{}
+    model.Read()
+    print(size)
+    print(direct.text)
+    print(message.Text())
+}

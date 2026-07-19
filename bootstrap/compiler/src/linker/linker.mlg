@@ -1,0 +1,1697 @@
+package linker
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/packages"
+
+pub type LinkError struct {
+    message string
+    span source.Span
+}
+
+type Import struct {
+    qualifier string
+    path string
+}
+
+type FileContext struct {
+    sourceId int
+    packagePath string
+    imports []Import
+}
+
+type Scope struct {
+    names []string
+}
+
+type QualifiedName struct {
+    found bool
+    invalid bool
+    qualifier string
+    name string
+}
+
+type DeclarationInfo struct {
+    packagePath string
+    name string
+    kind string
+    visibility string
+}
+
+type Linker struct {
+    nodes []ast.Node
+    contexts []FileContext
+    scopes []Scope
+    rootPackage string
+    internalizeRoot bool
+}
+
+pub func LinkProject(con rootPackage string, con layout packages.Layout, con program ast.Program) Result[ast.Program, LinkError] {
+    return link(con rootPackage, true, con layout, con program)
+}
+
+pub func LinkStandalone(con layout packages.Layout, con program ast.Program) Result[ast.Program, LinkError] {
+    return link(con "__standalone__", false, con layout, con program)
+}
+
+pub func NormalizeError(con error LinkError) string {
+    span := source.Copy(con error.span)
+    parts := []string{"LERR|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con error.message),}
+    return strings.join(con parts, con "")
+}
+
+pub func ErrorMessage(con error LinkError) string {
+    return token.CopyText(con error.message)
+}
+
+func link(con rootPackage string, internalizeRoot bool, con layout packages.Layout, con program ast.Program) Result[ast.Program, LinkError] {
+    mut contexts := []FileContext{}
+    match buildContexts(con layout, con program) {
+        case Ok(value) {
+            contexts = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    mut linker := Linker{nodes: []ast.Node{}, contexts: contexts, scopes: []Scope{}, rootPackage: token.CopyText(con rootPackage), internalizeRoot: internalizeRoot,}
+    match linker.validate(con layout, con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return linker.rewriteProgram(con layout, con program)
+}
+
+func buildContexts(con layout packages.Layout, con program ast.Program) Result[[]FileContext, LinkError] {
+    mut contexts := []FileContext{}
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        unit := ast.Child(con program, root, child)
+        if ast.Kind(con program, unit) != "SourceUnit" {
+            continue
+        }
+        span := ast.Span(con program, unit)
+        sourceId := source.Source(con span)
+        packagePath := packages.SourcePackagePath(con layout, sourceId)
+        if packagePath == "" {
+            message := strings.join(con []string{"source ID ", strings.fromInt(sourceId), " is not part of the package graph",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        mut imports := []Import{}
+        for mut item := 0; item < ast.ChildCount(con program, unit); item = item + 1 {
+            declaration := ast.Child(con program, unit, item)
+            if ast.Kind(con program, declaration) != "ImportDecl" {
+                continue
+            }
+            path := ast.Value(con program, declaration)
+            imports = append(imports, Import{qualifier: importQualifier(con path), path: path,})
+        }
+        contexts = append(contexts, FileContext{sourceId: sourceId, packagePath: packagePath, imports: imports,})
+    }
+    return Ok(contexts)
+}
+
+func (mut self Linker) validate(con layout packages.Layout, con program ast.Program) Result[bool, LinkError] {
+    match self.validateDeclarationNames(con layout, con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match self.validateMethodReceivers(con layout, con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return self.validatePublicApi(con layout, con program)
+}
+
+func (con self Linker) validateDeclarationNames(con layout packages.Layout, con program ast.Program) Result[bool, LinkError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if !isDeclarationKind(con kind) || isMethodDeclaration(con program, declaration) {
+            continue
+        }
+        name := ast.Value(con program, declaration)
+        span := ast.Span(con program, declaration)
+        if isBuiltinType(con name) {
+            message := strings.join(con []string{"`", token.CopyText(con name), "` is a built-in type name",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        if isBuiltinValue(con name) {
+            message := strings.join(con []string{"`", token.CopyText(con name), "` is a reserved built-in value name",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        context := self.contextIndex(source.Source(con span))
+        if context < 0 {
+            return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+        }
+        if startsWith(con kind, con "FunctionDecl.") && name == "main" && self.contexts[context].packagePath != self.rootPackage {
+            return Err(newError("`main` may only be declared in the project root package", source.Copy(con span)))
+        }
+    }
+    return Ok(true)
+}
+
+func (con self Linker) validateMethodReceivers(con layout packages.Layout, con program ast.Program) Result[bool, LinkError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        if !startsWith(con ast.Kind(con program, declaration), con "FunctionDecl.") {
+            continue
+        }
+        receiver := receiverNode(con program, declaration)
+        if receiver < 0 {
+            continue
+        }
+        param := ast.Child(con program, receiver, 0)
+        ty := ast.Child(con program, param, 0)
+        name := ast.Value(con program, ty)
+        span := ast.Span(con program, ty)
+        context := self.contextIndex(source.Source(con span))
+        if context < 0 {
+            return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+        }
+        if containsDot(con name) || packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name) != "Struct" {
+            return Err(newError("method receiver type must be declared in the same package", source.Copy(con span)))
+        }
+    }
+    return Ok(true)
+}
+
+func (con self Linker) validatePublicApi(con layout packages.Layout, con program ast.Program) Result[bool, LinkError] {
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, declaration)
+        if !endsWith(con kind, con ".Public") {
+            continue
+        }
+        span := ast.Span(con program, declaration)
+        context := self.contextIndex(source.Source(con span))
+        if context < 0 {
+            return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+        }
+        mut typeParams := declarationTypeParams(con program, declaration)
+        receiver := receiverNode(con program, declaration)
+        if receiver >= 0 {
+            param := ast.Child(con program, receiver, 0)
+            ty := ast.Child(con program, param, 0)
+            receiverName := ast.Value(con program, ty)
+            inherited := packages.DeclarationTypeParams(con layout, con self.contexts[context].packagePath, con receiverName)
+            typeParams = appendMissing(typeParams, con inherited)
+        }
+        declarationName := ast.Value(con program, declaration)
+        for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+            node := ast.Child(con program, declaration, item)
+            match self.validatePublicNode(con layout, con program, node, context, con declarationName, con typeParams) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (con self Linker) validatePublicNode(con layout packages.Layout, con program ast.Program, node int, context int, con declarationName string, con typeParams []string) Result[bool, LinkError] {
+    kind := ast.Kind(con program, node)
+    if kind == "Block" {
+        return Ok(true)
+    }
+    if isTypeKind(con kind) {
+        return self.validatePublicType(con layout, con program, node, context, con declarationName, con typeParams)
+    }
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.validatePublicNode(con layout, con program, ast.Child(con program, node, child), context, con declarationName, con typeParams) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (con self Linker) validatePublicType(con layout packages.Layout, con program ast.Program, node int, context int, con declarationName string, con typeParams []string) Result[bool, LinkError] {
+    kind := ast.Kind(con program, node)
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.validatePublicNode(con layout, con program, ast.Child(con program, node, child), context, con declarationName, con typeParams) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind != "Type.Named" {
+        return Ok(true)
+    }
+    mut name := ast.Value(con program, node)
+    if containsText(con typeParams, con name) {
+        return Ok(true)
+    }
+    mut info := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+    qualified := splitQualified(con name)
+    if qualified.found {
+        match self.importedDeclaration(con layout, context, con qualified.qualifier, con qualified.name, ast.Span(con program, node)) {
+            case Ok(value) {
+                info = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    } else {
+        packagePath := token.CopyText(con self.contexts[context].packagePath)
+        info = declarationInfo(con layout, con packagePath, con name)
+    }
+    if isNominalKind(con info.kind) && info.visibility != "" && info.visibility != "Public" {
+        message := strings.join(con []string{"public declaration `", token.CopyText(con declarationName), "` exposes private type `", token.CopyText(con name), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, node)))
+    }
+    return Ok(true)
+}
+
+func (mut self Linker) rewriteProgram(con layout packages.Layout, con program ast.Program) Result[ast.Program, LinkError] {
+    root := ast.Root(con program)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        node := ast.Child(con program, root, child)
+        mut rewritten := -1
+        match self.rewriteTopLevel(con layout, con program, node) {
+            case Ok(value) {
+                rewritten = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, rewritten)
+    }
+    linkedRoot := self.addNode(ast.Kind(con program, root), ast.Value(con program, root), ast.Span(con program, root), children)
+    return Ok(ast.NewProgram(self.nodes, linkedRoot))
+}
+
+func (mut self Linker) rewriteTopLevel(con layout packages.Layout, con program ast.Program, node int) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if startsWith(con kind, con "StructDecl.") {
+        return self.rewriteNominalDeclaration(con layout, con program, node)
+    }
+    if startsWith(con kind, con "EnumDecl.") {
+        return self.rewriteNominalDeclaration(con layout, con program, node)
+    }
+    if startsWith(con kind, con "FunctionDecl.") {
+        return self.rewriteFunction(con layout, con program, node)
+    }
+    if kind == "TestDecl" {
+        return self.rewriteTest(con layout, con program, node)
+    }
+    return Ok(self.copyNode(con program, node))
+}
+
+func (mut self Linker) rewriteNominalDeclaration(con layout packages.Layout, con program ast.Program, node int) Result[int, LinkError] {
+    span := ast.Span(con program, node)
+    context := self.contextIndex(source.Source(con span))
+    if context < 0 {
+        return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+    }
+    mut typeParams := declarationTypeParams(con program, node)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        mut rewritten := -1
+        if ast.Kind(con program, item) == "TypeParam" {
+            rewritten = self.copyNode(con program, item)
+        } else {
+            match self.rewriteTypeContainer(con layout, con program, item, context, con typeParams) {
+                case Ok(value) {
+                    rewritten = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        children = append(children, rewritten)
+    }
+    name := self.declarationSymbol(con self.contexts[context].packagePath, con ast.Value(con program, node))
+    return Ok(self.addNode(ast.Kind(con program, node), name, span, children))
+}
+
+func (mut self Linker) rewriteFunction(con layout packages.Layout, con program ast.Program, node int) Result[int, LinkError] {
+    span := ast.Span(con program, node)
+    context := self.contextIndex(source.Source(con span))
+    if context < 0 {
+        return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+    }
+    mut typeParams := declarationTypeParams(con program, node)
+    receiver := receiverNode(con program, node)
+    if receiver >= 0 {
+        param := ast.Child(con program, receiver, 0)
+        ty := ast.Child(con program, param, 0)
+        inherited := packages.DeclarationTypeParams(con layout, con self.contexts[context].packagePath, con ast.Value(con program, ty))
+        typeParams = appendMissing(typeParams, con inherited)
+    }
+    self.scopes = []Scope{Scope{names: functionBindings(con program, node),},}
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        mut rewritten := -1
+        if ast.Kind(con program, item) == "Block" {
+            match self.rewriteBlock(con layout, con program, item, context, con typeParams, false) {
+                case Ok(value) {
+                    rewritten = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else if ast.Kind(con program, item) == "TypeParam" {
+            rewritten = self.copyNode(con program, item)
+        } else {
+            match self.rewriteTypeContainer(con layout, con program, item, context, con typeParams) {
+                case Ok(value) {
+                    rewritten = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        children = append(children, rewritten)
+    }
+    mut name := ast.Value(con program, node)
+    if receiver < 0 {
+        name = self.functionSymbol(con self.contexts[context].packagePath, con name)
+    }
+    self.scopes = []Scope{}
+    return Ok(self.addNode(ast.Kind(con program, node), name, span, children))
+}
+
+func (mut self Linker) rewriteTest(con layout packages.Layout, con program ast.Program, node int) Result[int, LinkError] {
+    span := ast.Span(con program, node)
+    context := self.contextIndex(source.Source(con span))
+    if context < 0 {
+        return Err(self.missingContext(source.Source(con span), source.Copy(con span)))
+    }
+    self.scopes = []Scope{Scope{names: []string{},},}
+    block := ast.Child(con program, node, 0)
+    mut rewritten := -1
+    match self.rewriteBlock(con layout, con program, block, context, con []string {}
+    , false){case Ok(value) {
+            rewritten = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    self.scopes = []Scope{}
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), span, []int{rewritten}))
+}
+
+func (mut self Linker) rewriteTypeContainer(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if isTypeKind(con kind) {
+        return self.rewriteType(con layout, con program, node, context, con typeParams)
+    }
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        mut rewritten := -1
+        match self.rewriteTypeContainer(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+            case Ok(value) {
+                rewritten = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, rewritten)
+    }
+    return Ok(self.addNode(kind, ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteType(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        mut rewritten := -1
+        match self.rewriteTypeContainer(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+            case Ok(value) {
+                rewritten = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, rewritten)
+    }
+    if kind != "Type.Named" {
+        return Ok(self.addNode(token.CopyText(con kind), ast.Value(con program, node), ast.Span(con program, node), copyIndexes(con children)))
+    }
+    mut name := ast.Value(con program, node)
+    if containsText(con typeParams, con name) {
+        return Ok(self.addNode(token.CopyText(con kind), token.CopyText(con name), ast.Span(con program, node), copyIndexes(con children)))
+    }
+    qualified := splitQualified(con name)
+    if qualified.invalid {
+        message := strings.join(con []string{"invalid qualified type `", token.CopyText(con name), "`",}, con "")
+        return Err(newError(message, ast.Span(con program, node)))
+    }
+    if qualified.found {
+        mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+        match self.importedDeclaration(con layout, context, con qualified.qualifier, con qualified.name, ast.Span(con program, node)) {
+            case Ok(value) {
+                declaration = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match requireTypeKind(con declaration, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match requirePublic(con declaration, con qualified.qualifier, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        name = internalSymbol(con declaration.packagePath, con declaration.name)
+    } else {
+        kindName := packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name)
+        if isNominalKind(con kindName) {
+            name = self.declarationSymbol(con self.contexts[context].packagePath, con name)
+        }
+    }
+    return Ok(self.addNode(kind, name, ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteBlock(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string, push bool) Result[int, LinkError] {
+    if push {
+        self.pushScope([]string{})
+    }
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        mut rewritten := -1
+        match self.rewriteStatement(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+            case Ok(value) {
+                rewritten = value
+            }
+            case Err(error) {
+                if push {
+                    self.popScope()
+                }
+                return Err(error)
+            }
+        }
+        children = append(children, rewritten)
+    }
+    if push {
+        self.popScope()
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteStatement(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if startsWith(con kind, con "Stmt.Let.") {
+        mut expression := -1
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                expression = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        self.bind(ast.Value(con program, node))
+        return Ok(self.addNode(token.CopyText(con kind), ast.Value(con program, node), ast.Span(con program, node), []int{expression}))
+    }
+    if kind == "Stmt.If" {
+        mut children := []int{}
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteBlock(con layout, con program, ast.Child(con program, node, child), context, con typeParams, true) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), "", ast.Span(con program, node), copyIndexes(con children)))
+    }
+    if kind == "Stmt.For" {
+        return self.rewriteFor(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Stmt.RangeFor" {
+        return self.rewriteRangeFor(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Stmt.Match" {
+        return self.rewriteStatementMatch(con layout, con program, node, context, con typeParams)
+    }
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        mut rewritten := -1
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+            case Ok(value) {
+                rewritten = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        children = append(children, rewritten)
+    }
+    return Ok(self.addNode(kind, ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteFor(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    self.pushScope([]string{})
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        kind := ast.Kind(con program, item)
+        mut rewritten := -1
+        if startsWith(con kind, con "ForInit.Let.") {
+            match self.rewriteExpression(con layout, con program, ast.Child(con program, item, 0), context, con typeParams) {
+                case Ok(value) {
+                    rewritten = self.addNode(kind, ast.Value(con program, item), ast.Span(con program, item), []int{value})
+                }
+                case Err(error) {
+                    self.popScope()
+                    return Err(error)
+                }
+            }
+            self.bind(ast.Value(con program, item))
+        } else if kind == "Block" {
+            match self.rewriteBlock(con layout, con program, item, context, con typeParams, true) {
+                case Ok(value) {
+                    rewritten = value
+                }
+                case Err(error) {
+                    self.popScope()
+                    return Err(error)
+                }
+            }
+        } else {
+            mut itemChildren := []int{}
+            for mut itemChild := 0; itemChild < ast.ChildCount(con program, item); itemChild = itemChild + 1 {
+                match self.rewriteExpression(con layout, con program, ast.Child(con program, item, itemChild), context, con typeParams) {
+                    case Ok(value) {
+                        itemChildren = append(itemChildren, value)
+                    }
+                    case Err(error) {
+                        self.popScope()
+                        return Err(error)
+                    }
+                }
+            }
+            rewritten = self.addNode(kind, ast.Value(con program, item), ast.Span(con program, item), itemChildren)
+        }
+        children = append(children, rewritten)
+    }
+    self.popScope()
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteRangeFor(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    mut sourceNode := -1
+    match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+        case Ok(value) {
+            sourceNode = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    bindings := splitRangeBindings(con ast.Value(con program, node))
+    self.pushScope(bindings)
+    mut body := -1
+    match self.rewriteBlock(con layout, con program, ast.Child(con program, node, 1), context, con typeParams, false) {
+        case Ok(value) {
+            body = value
+        }
+        case Err(error) {
+            self.popScope()
+            return Err(error)
+        }
+    }
+    self.popScope()
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), []int{sourceNode, body}))
+}
+
+func (mut self Linker) rewriteStatementMatch(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    mut children := []int{}
+    match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+        case Ok(value) {
+            children = append(children, value)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+        arm := ast.Child(con program, node, child)
+        pattern := ast.Child(con program, arm, 0)
+        mut linkedPattern := -1
+        match self.rewritePattern(con layout, con program, pattern, context) {
+            case Ok(value) {
+                linkedPattern = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        self.pushScope(patternBindings(con program, pattern))
+        mut block := -1
+        match self.rewriteBlock(con layout, con program, ast.Child(con program, arm, 1), context, con typeParams, false) {
+            case Ok(value) {
+                block = value
+            }
+            case Err(error) {
+                self.popScope()
+                return Err(error)
+            }
+        }
+        self.popScope()
+        children = append(children, self.addNode(ast.Kind(con program, arm), ast.Value(con program, arm), ast.Span(con program, arm), []int{linkedPattern, block}))
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteExpression(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if self.isEnumConstructor(con layout, con program, node, context) {
+        return self.rewriteEnumConstructor(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.Var" {
+        mut name := ast.Value(con program, node)
+        if !containsText(con typeParams, con name) && !self.isBound(con name) && packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name) == "Function" {
+            name = self.functionSymbol(con self.contexts[context].packagePath, con name)
+        }
+        return Ok(self.addNode(token.CopyText(con kind), name, ast.Span(con program, node), []int{}))
+    }
+    if startsWith(con kind, con "Expr.FunctionLiteral.") {
+        return self.rewriteFunctionLiteral(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.Match" {
+        return self.rewriteExpressionMatch(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.StructLiteral" {
+        return self.rewriteStructLiteral(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.ArrayLiteral" {
+        mut children := []int{}
+        match self.rewriteType(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteExpression(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), ast.Value(con program, node), ast.Span(con program, node), copyIndexes(con children)))
+    }
+    if kind == "Expr.FieldAccess" {
+        return self.rewriteFieldAccess(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.Call" {
+        return self.rewriteCall(con layout, con program, node, context, con typeParams)
+    }
+    if kind == "Expr.Index" {
+        mut children := []int{}
+        base := ast.Child(con program, node, 0)
+        match self.rewriteExpression(con layout, con program, base, context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        if self.isGenericFunctionExpression(con layout, con program, base, context) {
+            match self.rewriteTypeExpression(con layout, con program, ast.Child(con program, node, 1), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 1), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), "", ast.Span(con program, node), copyIndexes(con children)))
+    }
+    if kind == "Expr.TypeApply" {
+        mut children := []int{}
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteType(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), "", ast.Span(con program, node), copyIndexes(con children)))
+    }
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Ok(self.addNode(kind, ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteFunctionLiteral(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    mut names := []string{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        if startsWith(con ast.Kind(con program, item), con "Param.") {
+            names = append(names, ast.Value(con program, item))
+        }
+    }
+    self.pushScope(names)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        if ast.Kind(con program, item) == "Block" {
+            match self.rewriteBlock(con layout, con program, item, context, con typeParams, false) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    self.popScope()
+                    return Err(error)
+                }
+            }
+        } else {
+            match self.rewriteTypeContainer(con layout, con program, item, context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    self.popScope()
+                    return Err(error)
+                }
+            }
+        }
+    }
+    self.popScope()
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteExpressionMatch(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    mut children := []int{}
+    match self.rewriteExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+        case Ok(value) {
+            children = append(children, value)
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+        arm := ast.Child(con program, node, child)
+        pattern := ast.Child(con program, arm, 0)
+        mut linkedPattern := -1
+        match self.rewritePattern(con layout, con program, pattern, context) {
+            case Ok(value) {
+                linkedPattern = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        self.pushScope(patternBindings(con program, pattern))
+        mut expression := -1
+        match self.rewriteExpression(con layout, con program, ast.Child(con program, arm, 1), context, con typeParams) {
+            case Ok(value) {
+                expression = value
+            }
+            case Err(error) {
+                self.popScope()
+                return Err(error)
+            }
+        }
+        self.popScope()
+        children = append(children, self.addNode(ast.Kind(con program, arm), ast.Value(con program, arm), ast.Span(con program, arm), []int{linkedPattern, expression}))
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteStructLiteral(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    mut name := ast.Value(con program, node)
+    qualified := splitQualified(con name)
+    if qualified.found {
+        mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+        match self.importedDeclaration(con layout, context, con qualified.qualifier, con qualified.name, ast.Span(con program, node)) {
+            case Ok(value) {
+                declaration = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        if declaration.kind == "Opaque" {
+            message := strings.join(con []string{"type `", name, "` is opaque and cannot be constructed directly",}, con "")
+            return Err(newError(message, ast.Span(con program, node)))
+        }
+        match requireKind(con declaration, con "Struct", con "struct", ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match requirePublic(con declaration, con qualified.qualifier, ast.Span(con program, node)) {
+            case Ok(_) {}
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        name = internalSymbol(con declaration.packagePath, con declaration.name)
+    } else if !containsText(con typeParams, con name) && packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name) == "Struct" {
+        name = self.declarationSymbol(con self.contexts[context].packagePath, con name)
+    }
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        if isTypeKind(con ast.Kind(con program, item)) {
+            match self.rewriteType(con layout, con program, item, context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        } else {
+            mut fieldChildren := []int{}
+            for mut fieldChild := 0; fieldChild < ast.ChildCount(con program, item); fieldChild = fieldChild + 1 {
+                match self.rewriteExpression(con layout, con program, ast.Child(con program, item, fieldChild), context, con typeParams) {
+                    case Ok(value) {
+                        fieldChildren = append(fieldChildren, value)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            }
+            children = append(children, self.addNode(ast.Kind(con program, item), ast.Value(con program, item), ast.Span(con program, item), fieldChildren))
+        }
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), name, ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteFieldAccess(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    base := ast.Child(con program, node, 0)
+    if ast.Kind(con program, base) == "Expr.Var" {
+        qualifier := ast.Value(con program, base)
+        if !self.isBound(con qualifier) && self.importPath(context, con qualifier) != "" {
+            mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+            match self.importedDeclaration(con layout, context, con qualifier, con ast.Value(con program, node), ast.Span(con program, node)) {
+                case Ok(value) {
+                    declaration = value
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match requireKind(con declaration, con "Function", con "function", ast.Span(con program, node)) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            match requirePublic(con declaration, con qualifier, ast.Span(con program, node)) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+            name := self.functionSymbol(con declaration.packagePath, con declaration.name)
+            return Ok(self.addNode("Expr.Var", name, ast.Span(con program, node), []int{}))
+        }
+    }
+    mut linkedBase := -1
+    match self.rewriteExpression(con layout, con program, base, context, con typeParams) {
+        case Ok(value) {
+            linkedBase = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), []int{linkedBase}))
+}
+
+func (mut self Linker) rewriteCall(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    callee := ast.Child(con program, node, 0)
+    mut linkedCallee := -1
+    if ast.Kind(con program, callee) == "Expr.FieldAccess" {
+        base := ast.Child(con program, callee, 0)
+        if ast.Kind(con program, base) == "Expr.Var" {
+            qualifier := ast.Value(con program, base)
+            if !self.isBound(con qualifier) && self.importPath(context, con qualifier) != "" {
+                mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+                match self.importedDeclaration(con layout, context, con qualifier, con ast.Value(con program, callee), ast.Span(con program, callee)) {
+                    case Ok(value) {
+                        declaration = value
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requireKind(con declaration, con "Function", con "function", ast.Span(con program, callee)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requirePublic(con declaration, con qualifier, ast.Span(con program, callee)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                linkedCallee = self.addNode("Expr.Var", self.functionSymbol(con declaration.packagePath, con declaration.name), ast.Span(con program, callee), []int{})
+            }
+        }
+    }
+    if linkedCallee < 0 {
+        match self.rewriteExpression(con layout, con program, callee, context, con typeParams) {
+            case Ok(value) {
+                linkedCallee = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    mut children := []int{linkedCallee}
+    for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        mut argumentChildren := []int{}
+        for mut argumentChild := 0; argumentChild < ast.ChildCount(con program, item); argumentChild = argumentChild + 1 {
+            match self.rewriteExpression(con layout, con program, ast.Child(con program, item, argumentChild), context, con typeParams) {
+                case Ok(value) {
+                    argumentChildren = append(argumentChildren, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        children = append(children, self.addNode(ast.Kind(con program, item), ast.Value(con program, item), ast.Span(con program, item), argumentChildren))
+    }
+    return Ok(self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (con self Linker) isEnumConstructor(con layout packages.Layout, con program ast.Program, node int, context int) bool {
+    mut base := -1
+    kind := ast.Kind(con program, node)
+    if kind == "Expr.FieldAccess" {
+        base = ast.Child(con program, node, 0)
+    } else if kind == "Expr.Call" && ast.ChildCount(con program, node) > 0 {
+        callee := ast.Child(con program, node, 0)
+        if ast.Kind(con program, callee) == "Expr.FieldAccess" {
+            base = ast.Child(con program, callee, 0)
+        }
+    }
+    return base >= 0 && self.isEnumTypeExpression(con layout, con program, base, context)
+}
+
+func (con self Linker) isEnumTypeExpression(con layout packages.Layout, con program ast.Program, node int, context int) bool {
+    kind := ast.Kind(con program, node)
+    if kind == "Expr.Index" || kind == "Expr.TypeApply" {
+        return self.isEnumTypeExpression(con layout, con program, ast.Child(con program, node, 0), context)
+    }
+    if kind == "Expr.Var" {
+        mut name := ast.Value(con program, node)
+        return !self.isBound(con name) && packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name) == "Enum"
+    }
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, node, 0)
+        if ast.Kind(con program, base) != "Expr.Var" {
+            return false
+        }
+        qualifier := ast.Value(con program, base)
+        path := self.importPath(context, con qualifier)
+        return !self.isBound(con qualifier) && path != "" && packages.DeclarationKind(con layout, con path, con ast.Value(con program, node)) == "Enum"
+    }
+    return false
+}
+
+func (mut self Linker) rewriteEnumConstructor(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if kind == "Expr.FieldAccess" {
+        mut base := -1
+        match self.rewriteTypeExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), ast.Value(con program, node), ast.Span(con program, node), []int{base}))
+    }
+    callee := ast.Child(con program, node, 0)
+    mut base := -1
+    match self.rewriteTypeExpression(con layout, con program, ast.Child(con program, callee, 0), context, con typeParams) {
+        case Ok(value) {
+            base = value
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    linkedCallee := self.addNode(ast.Kind(con program, callee), ast.Value(con program, callee), ast.Span(con program, callee), []int{base})
+    mut children := []int{linkedCallee}
+    for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+        item := ast.Child(con program, node, child)
+        mut argumentChildren := []int{}
+        for mut argumentChild := 0; argumentChild < ast.ChildCount(con program, item); argumentChild = argumentChild + 1 {
+            match self.rewriteExpression(con layout, con program, ast.Child(con program, item, argumentChild), context, con typeParams) {
+                case Ok(value) {
+                    argumentChildren = append(argumentChildren, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        children = append(children, self.addNode(ast.Kind(con program, item), ast.Value(con program, item), ast.Span(con program, item), argumentChildren))
+    }
+    return Ok(self.addNode(kind, ast.Value(con program, node), ast.Span(con program, node), children))
+}
+
+func (mut self Linker) rewriteTypeExpression(con layout packages.Layout, con program ast.Program, node int, context int, con typeParams []string) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    if kind == "Expr.Var" {
+        mut name := ast.Value(con program, node)
+        if !containsText(con typeParams, con name) && isNominalKind(con packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name)) {
+            name = self.declarationSymbol(con self.contexts[context].packagePath, con name)
+        }
+        return Ok(self.addNode(token.CopyText(con kind), name, ast.Span(con program, node), []int{}))
+    }
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, node, 0)
+        if ast.Kind(con program, base) == "Expr.Var" {
+            qualifier := ast.Value(con program, base)
+            if self.importPath(context, con qualifier) != "" {
+                mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+                match self.importedDeclaration(con layout, context, con qualifier, con ast.Value(con program, node), ast.Span(con program, node)) {
+                    case Ok(value) {
+                        declaration = value
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requireTypeKind(con declaration, ast.Span(con program, node)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requirePublic(con declaration, con qualifier, ast.Span(con program, node)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                return Ok(self.addNode("Expr.Var", internalSymbol(con declaration.packagePath, con declaration.name), ast.Span(con program, node), []int{}))
+            }
+        }
+        return Err(newError("type argument must use a known type name", ast.Span(con program, node)))
+    }
+    if kind == "Expr.Index" {
+        mut children := []int{}
+        for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteTypeExpression(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), "", ast.Span(con program, node), copyIndexes(con children)))
+    }
+    if kind == "Expr.TypeApply" {
+        mut children := []int{}
+        match self.rewriteTypeExpression(con layout, con program, ast.Child(con program, node, 0), context, con typeParams) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con program, node); child = child + 1 {
+            match self.rewriteType(con layout, con program, ast.Child(con program, node, child), context, con typeParams) {
+                case Ok(value) {
+                    children = append(children, value)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode(token.CopyText(con kind), "", ast.Span(con program, node), copyIndexes(con children)))
+    }
+    return Err(newError("type argument must be a type", ast.Span(con program, node)))
+}
+
+func (con self Linker) isGenericFunctionExpression(con layout packages.Layout, con program ast.Program, node int, context int) bool {
+    kind := ast.Kind(con program, node)
+    if kind == "Expr.Var" {
+        name := ast.Value(con program, node)
+        return !self.isBound(con name) && packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con name) == "Function" && len(packages.DeclarationTypeParams(con layout, con self.contexts[context].packagePath, con name)) > 0
+    }
+    if kind == "Expr.FieldAccess" {
+        base := ast.Child(con program, node, 0)
+        if ast.Kind(con program, base) != "Expr.Var" {
+            return false
+        }
+        qualifier := ast.Value(con program, base)
+        path := self.importPath(context, con qualifier)
+        name := ast.Value(con program, node)
+        return !self.isBound(con qualifier) && path != "" && packages.DeclarationKind(con layout, con path, con name) == "Function" && len(packages.DeclarationTypeParams(con layout, con path, con name)) > 0
+    }
+    return false
+}
+
+func (mut self Linker) rewritePattern(con layout packages.Layout, con program ast.Program, node int, context int) Result[int, LinkError] {
+    kind := ast.Kind(con program, node)
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        match self.rewritePattern(con layout, con program, ast.Child(con program, node, child), context) {
+            case Ok(value) {
+                children = append(children, value)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    mut value := ast.Value(con program, node)
+    if kind == "Pattern.Variant" {
+        variant := splitVariant(con value)
+        if variant.found {
+            qualified := splitQualified(con variant.qualifier)
+            if qualified.found {
+                mut declaration := DeclarationInfo{packagePath: "", name: "", kind: "", visibility: "",}
+                match self.importedDeclaration(con layout, context, con qualified.qualifier, con qualified.name, ast.Span(con program, node)) {
+                    case Ok(item) {
+                        declaration = item
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requireKind(con declaration, con "Enum", con "enum", ast.Span(con program, node)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match requirePublic(con declaration, con qualified.qualifier, ast.Span(con program, node)) {
+                    case Ok(_) {}
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                value = strings.join(con []string{internalSymbol(con declaration.packagePath, con declaration.name), ".", token.CopyText(con variant.name),}, con "")
+            } else if packages.DeclarationKind(con layout, con self.contexts[context].packagePath, con variant.qualifier) == "Enum" {
+                value = strings.join(con []string{self.declarationSymbol(con self.contexts[context].packagePath, con variant.qualifier), ".", token.CopyText(con variant.name),}, con "")
+            }
+        }
+    }
+    return Ok(self.addNode(kind, value, ast.Span(con program, node), children))
+}
+
+func (con self Linker) importedDeclaration(con layout packages.Layout, context int, con qualifier string, con name string, span source.Span) Result[DeclarationInfo, LinkError] {
+    path := self.importPath(context, con qualifier)
+    if path == "" {
+        message := strings.join(con []string{"unknown import qualifier `", token.CopyText(con qualifier), "`",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    kind := packages.DeclarationKind(con layout, con path, con name)
+    if kind == "" {
+        message := strings.join(con []string{"package `", token.CopyText(con path), "` has no declaration `", token.CopyText(con name), "`",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    return Ok(DeclarationInfo{packagePath: token.CopyText(con path), name: token.CopyText(con name), kind: token.CopyText(con kind), visibility: packages.DeclarationVisibility(con layout, con path, con name),})
+}
+
+func declarationInfo(con layout packages.Layout, con packagePath string, con name string) DeclarationInfo {
+    return DeclarationInfo{packagePath: token.CopyText(con packagePath), name: token.CopyText(con name), kind: packages.DeclarationKind(con layout, con packagePath, con name), visibility: packages.DeclarationVisibility(con layout, con packagePath, con name),}
+}
+
+func requireKind(con declaration DeclarationInfo, con expected string, con expectedName string, span source.Span) Result[bool, LinkError] {
+    if declaration.kind != expected {
+        message := strings.join(con []string{"`", token.CopyText(con declaration.name), "` is not a ", token.CopyText(con expectedName), " declaration",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    return Ok(true)
+}
+
+func requireTypeKind(con declaration DeclarationInfo, span source.Span) Result[bool, LinkError] {
+    if !isNominalKind(con declaration.kind) {
+        message := strings.join(con []string{"`", token.CopyText(con declaration.name), "` is not a type declaration",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    return Ok(true)
+}
+
+func requirePublic(con declaration DeclarationInfo, con qualifier string, span source.Span) Result[bool, LinkError] {
+    if declaration.visibility != "Public" {
+        message := strings.join(con []string{"`", token.CopyText(con qualifier), ".", token.CopyText(con declaration.name), "` is private to package `", token.CopyText(con declaration.packagePath), "`",}, con "")
+        return Err(newError(message, source.Copy(con span)))
+    }
+    return Ok(true)
+}
+
+func (con self Linker) functionSymbol(con packagePath string, con name string) string {
+    if packagePath == self.rootPackage && name == "main" {
+        return "main"
+    }
+    if packagePath == self.rootPackage && !self.internalizeRoot {
+        return token.CopyText(con name)
+    }
+    return internalSymbol(con packagePath, con name)
+}
+
+func (con self Linker) declarationSymbol(con packagePath string, con name string) string {
+    if packagePath == self.rootPackage && !self.internalizeRoot {
+        return token.CopyText(con name)
+    }
+    return internalSymbol(con packagePath, con name)
+}
+
+func internalSymbol(con packagePath string, con name string) string {
+    mut encoded := ""
+    for mut index := 0; index < strings.byteLen(con packagePath); index = index + 1 {
+        match strings.byteAt(con packagePath, index) {
+            case Ok(value) {
+                encoded = strings.join(con []string{encoded, hexDigit(value / 16), hexDigit(value % 16),}, con "")
+            }
+            case Err(_) {}
+        }
+    }
+    return strings.join(con []string{"__mlg_pkg_", encoded, "_", token.CopyText(con name),}, con "")
+}
+
+func hexDigit(value int) string {
+    return match strings.slice(con "0123456789abcdef", value, value + 1) {
+        case Ok(text) {
+            text
+        }
+        case Err(_) {
+            "0"
+        }
+    }
+}
+
+func (mut self Linker) addNode(kind string, value string, span source.Span, children []int) int {
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, ast.NewNode(kind, value, span, children))
+    return index
+}
+
+func (mut self Linker) copyNode(con program ast.Program, node int) int {
+    mut children := []int{}
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        children = append(children, self.copyNode(con program, ast.Child(con program, node, child)))
+    }
+    return self.addNode(ast.Kind(con program, node), ast.Value(con program, node), ast.Span(con program, node), children)
+}
+
+func (con self Linker) contextIndex(sourceId int) int {
+    for mut index := 0; index < len(self.contexts); index = index + 1 {
+        if self.contexts[index].sourceId == sourceId {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self Linker) missingContext(sourceId int, span source.Span) LinkError {
+    message := strings.join(con []string{"source ID ", strings.fromInt(sourceId), " has no package link context",}, con "")
+    return newError(message, span)
+}
+
+func (con self Linker) importPath(context int, con qualifier string) string {
+    for mut index := 0; index < len(self.contexts[context].imports); index = index + 1 {
+        if self.contexts[context].imports[index].qualifier == qualifier {
+            return token.CopyText(con self.contexts[context].imports[index].path)
+        }
+    }
+    return ""
+}
+
+func (mut self Linker) pushScope(names []string) {
+    self.scopes = append(self.scopes, Scope{names: copyTexts(con names),})
+}
+
+func (mut self Linker) popScope() {
+    mut scopes := []Scope{}
+    for mut index := 0; index + 1 < len(self.scopes); index = index + 1 {
+        scopes = append(scopes, Scope{names: copyTexts(con self.scopes[index].names),})
+    }
+    self.scopes = scopes
+}
+
+func (mut self Linker) bind(name string) {
+    if len(self.scopes) > 0 {
+        last := len(self.scopes) - 1
+        if !containsText(con self.scopes[last].names, con name) {
+            self.scopes[last].names = append(self.scopes[last].names, token.CopyText(con name))
+        }
+    }
+}
+
+func (con self Linker) isBound(con name string) bool {
+    for mut index := 0; index < len(self.scopes); index = index + 1 {
+        if containsText(con self.scopes[index].names, con name) {
+            return true
+        }
+    }
+    return false
+}
+
+func receiverNode(con program ast.Program, declaration int) int {
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "Receiver" {
+            return node
+        }
+    }
+    return - 1
+}
+
+func isMethodDeclaration(con program ast.Program, declaration int) bool {
+    return receiverNode(con program, declaration) >= 0
+}
+
+func functionBindings(con program ast.Program, declaration int) []string {
+    mut names := []string{}
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        kind := ast.Kind(con program, node)
+        if startsWith(con kind, con "Param.") {
+            names = append(names, ast.Value(con program, node))
+        } else if kind == "Receiver" && ast.ChildCount(con program, node) > 0 {
+            names = append(names, ast.Value(con program, ast.Child(con program, node, 0)))
+        }
+    }
+    return names
+}
+
+func declarationTypeParams(con program ast.Program, declaration int) []string {
+    mut params := []string{}
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "TypeParam" {
+            params = append(params, ast.Value(con program, node))
+        }
+    }
+    return params
+}
+
+func patternBindings(con program ast.Program, pattern int) []string {
+    return collectPatternBindings(con program, pattern, con []string{})
+}
+
+func collectPatternBindings(con program ast.Program, pattern int, con bindings []string) []string {
+    mut collected := copyTexts(con bindings)
+    kind := ast.Kind(con program, pattern)
+    if kind == "Pattern.Binding" || kind == "Pattern.Some" || kind == "Pattern.Ok" || kind == "Pattern.Err" {
+        value := ast.Value(con program, pattern)
+        if value != "" {
+            collected = append(collected, value)
+        }
+    }
+    for mut child := 0; child < ast.ChildCount(con program, pattern); child = child + 1 {
+        collected = collectPatternBindings(con program, ast.Child(con program, pattern, child), con collected)
+    }
+    return collected
+}
+
+func splitRangeBindings(con value string) []string {
+    match strings.find(con value, con ",") {
+        case Some(offset) {
+            mut bindings := []string{}
+            match strings.slice(con value, 0, offset) {
+                case Ok(indexName) {
+                    bindings = append(bindings, indexName)
+                }
+                case Err(_) {}
+            }
+            match strings.slice(con value, offset + 1, strings.byteLen(con value)) {
+                case Ok(valueName) {
+                    bindings = append(bindings, valueName)
+                }
+                case Err(_) {}
+            }
+            return bindings
+        }
+        case None {
+            return []string{token.CopyText(con value),}
+        }
+    }
+}
+
+func splitQualified(con value string) QualifiedName {
+    match strings.find(con value, con ".") {
+        case Some(offset) {
+            mut qualifier := ""
+            mut name := ""
+            match strings.slice(con value, 0, offset) {
+                case Ok(text) {
+                    qualifier = text
+                }
+                case Err(_) {}
+            }
+            match strings.slice(con value, offset + 1, strings.byteLen(con value)) {
+                case Ok(text) {
+                    name = text
+                }
+                case Err(_) {}
+            }
+            return QualifiedName{found: true, invalid: containsDot(con name), qualifier: qualifier, name: name,}
+        }
+        case None {
+            return QualifiedName{found: false, invalid: false, qualifier: "", name: token.CopyText(con value),}
+        }
+    }
+}
+
+func splitVariant(con value string) QualifiedName {
+    mut separator := -1
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        match strings.byteAt(con value, index) {
+            case Ok(byte) {
+                if byte == 46 {
+                    separator = index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    if separator < 0 {
+        return QualifiedName{found: false, invalid: false, qualifier: "", name: token.CopyText(con value),}
+    }
+    mut typeName := ""
+    mut variant := ""
+    match strings.slice(con value, 0, separator) {
+        case Ok(text) {
+            typeName = text
+        }
+        case Err(_) {}
+    }
+    match strings.slice(con value, separator + 1, strings.byteLen(con value)) {
+        case Ok(text) {
+            variant = text
+        }
+        case Err(_) {}
+    }
+    return QualifiedName{found: true, invalid: false, qualifier: typeName, name: variant,}
+}
+
+func importQualifier(con path string) string {
+    mut separator := -1
+    for mut index := 0; index < strings.byteLen(con path); index = index + 1 {
+        match strings.byteAt(con path, index) {
+            case Ok(byte) {
+                if byte == 47 {
+                    separator = index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    match strings.slice(con path, separator + 1, strings.byteLen(con path)) {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {
+            return ""
+        }
+    }
+}
+
+func isBuiltinType(con name string) bool {
+    return name == "int" || name == "bool" || name == "string" || name == "unit" || name == "Option" || name == "Result" || name == "Array" || name == "Slice"
+}
+
+func isBuiltinValue(con name string) bool {
+    return name == "print" || name == "len" || name == "append" || name == "Some" || name == "None" || name == "Ok" || name == "Err"
+}
+
+func isDeclarationKind(con kind string) bool {
+    return startsWith(con kind, con "StructDecl.") || startsWith(con kind, con "EnumDecl.") || startsWith(con kind, con "FunctionDecl.")
+}
+
+func isTypeKind(con kind string) bool {
+    return startsWith(con kind, con "Type.")
+}
+
+func isNominalKind(con kind string) bool {
+    return kind == "Struct" || kind == "Opaque" || kind == "Enum"
+}
+
+func containsDot(con value string) bool {
+    return match strings.find(con value, con ".") {
+        case Some(_) {
+            true
+        }
+        case None {
+            false
+        }
+    }
+}
+
+func startsWith(con value string, con prefix string) bool {
+    if strings.byteLen(con prefix) > strings.byteLen(con value) {
+        return false
+    }
+    return match strings.slice(con value, 0, strings.byteLen(con prefix)) {
+        case Ok(candidate) {
+            candidate == prefix
+        }
+        case Err(_) {
+            false
+        }
+    }
+}
+
+func endsWith(con value string, con suffix string) bool {
+    if strings.byteLen(con suffix) > strings.byteLen(con value) {
+        return false
+    }
+    start := strings.byteLen(con value) - strings.byteLen(con suffix)
+    return match strings.slice(con value, start, strings.byteLen(con value)) {
+        case Ok(candidate) {
+            candidate == suffix
+        }
+        case Err(_) {
+            false
+        }
+    }
+}
+
+func containsText(con values []string, con value string) bool {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index]== value {
+            return true
+        }
+    }
+    return false
+}
+
+func appendMissing(values []string, con added []string) []string {
+    mut output := copyTexts(con values)
+    for mut index := 0; index < len(added); index = index + 1 {
+        if !containsText(con output, con added[index]) {
+            output = append(output, token.CopyText(con added[index]))
+        }
+    }
+    return output
+}
+
+func copyTexts(con values []string) []string {
+    mut copied := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, token.CopyText(con values[index]))
+    }
+    return copied
+}
+
+func copyIndexes(con values []int) []int {
+    mut copied := []int{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        copied = append(copied, values[index])
+    }
+    return copied
+}
+
+func newError(message string, span source.Span) LinkError {
+    return LinkError{message: message, span: span}
+}

@@ -1,0 +1,7 @@
+package model
+
+type Secret struct {}
+
+pub func Reveal() Secret {
+    return Secret{}
+}
