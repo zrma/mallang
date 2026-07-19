@@ -507,7 +507,7 @@ target/mallang/match-statement
 - `docs/SELF_HOSTING.md`: active B0-B5 self-hosting and fixed-point contract
 - `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
-- `docs/todo-self-hosting-semantics/`: active B2 semantics and typed-IR contract
+- `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
@@ -529,7 +529,7 @@ target/mallang/match-statement
 Mallang probe를 format/check/test/build/run하고 same-input generated C identity를
 검증했다. B1은 frozen v1 frontend와 bounded recovery를 완성하고 155개 repository
 source를 Rust Stage0, generated Stage1, strict accounting, sanitizer 네 경로에서
-byte-for-byte differential 검증해 닫았다. 현재 B2는 비제네릭 선언과 resolved type
+byte-for-byte differential 검증해 닫았다. B2는 비제네릭 선언과 resolved type
 signature, primitive function body, named function value와 direct/indirect call을
 Mallang으로 검사하고 field/index read까지 incremental typed IR을 Rust Stage0과
 비교하며 mutable field/index assignment place도 검사한다. integrated gate는 159개
@@ -712,7 +712,8 @@ backend는 pattern arm span 기반 binding identity를 사용해 inner Copy bind
 drop을 가리키는 문제를 제거했다. Generated Stage1/accounting/sanitizer/oracle 빌드를 병렬화하고
 fast mode의 24회 exact runner 재빌드를 전체 263-test 단일 실행으로 교체했다. 같은 local host에서
 IR-focused gate는 26초, fast gate는 40초, complete 48-IR-fixture/167-source gate는 83초에
-통과했다. B2 구현은 완료됐고 canonical publication 및 supported-platform CI acceptance가 남았다.
+통과했다. Canonical repository gate와 public `main` publication, macOS arm64/Linux x86_64
+CI acceptance도 통과해 B2를 닫았으며 다음 단계는 B3 C backend다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

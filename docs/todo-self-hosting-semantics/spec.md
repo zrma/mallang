@@ -715,7 +715,8 @@ specialization and function-body checking until later P176 slices.
   outer cleanup drop. The IR-focused, fast and full gates complete in observed
   host-local times of 26, 40 and 83 seconds while retaining 263 project tests,
   48 IR fixtures, 167 parser corpus sources, strict accounting and ASan/UBSan.
-  B2 implementation is complete and canonical publication acceptance remains.
+  The canonical repository gate, public `main` publication and supported-platform
+  CI acceptance also pass, completing B2. B3 C backend work is next.
 
 ## B2 Completion Criteria
 

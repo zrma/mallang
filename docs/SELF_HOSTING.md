@@ -1,7 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B1 complete, B2 implementation complete
-with canonical publication acceptance pending
+Status: active long-term program; B0-B2 complete, B3 next
 
 ## Objective
 
@@ -83,14 +82,14 @@ Mallang to specific 1.x versions.
   while the compiler gate grows through B2.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
-- `docs/todo-self-hosting-semantics/`: active B2 work breakdown and decisions.
+- `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
 - `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
-strict-accounting and sanitizer execution. B2 is active: P176a provides the
+strict-accounting and sanitizer execution. B2 is complete: P176a provides the
 declaration/type checker, P176b1 adds primitive bodies and typed IR, and P176b2
 adds named function values plus direct/indirect calls. P176b3a adds field/index
 reads, and P176b3b adds mutable field/index assignment places. P176b4a adds
@@ -283,5 +282,6 @@ invocations, one hundred sixty-seven parser corpus sources and two hundred
   complete 263-test suite once instead of rebuilding 24 selected runners. On the
   same local host, the IR-focused gate completed in 26 seconds, fast in 40
   seconds and the full 48-fixture, 167-source gate in 83 seconds. These are
-  host-local observations, not thresholds. B2 implementation is complete; the
-  canonical publication and supported-platform CI acceptance remains pending.
+  host-local observations, not thresholds. The canonical repository gate,
+  public `main` publication and supported-platform CI acceptance all pass, so
+  B2 is complete and B3 C backend work is next.
