@@ -66,6 +66,10 @@ pub func ErrorMessage(con error LinkError) string {
     return token.CopyText(con error.message)
 }
 
+pub func InternalSymbol(con packagePath string, con name string) string {
+    return internalSymbol(con packagePath, con name)
+}
+
 func link(con rootPackage string, internalizeRoot bool, con layout packages.Layout, con program ast.Program) Result[ast.Program, LinkError] {
     mut contexts := []FileContext{}
     match buildContexts(con layout, con program) {

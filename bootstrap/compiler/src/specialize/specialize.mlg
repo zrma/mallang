@@ -251,7 +251,12 @@ func (mut self Specializer) collect(con program ast.Program) {
 
 func (mut self Specializer) run(con program ast.Program) Result[SpecializedProgram, SpecializationError] {
     root := ast.Root(con program)
-    mut children := []int{}
+    mut sourceUnits := []int{}
+    mut structs := []int{}
+    mut enums := []int{}
+    mut functions := []int{}
+    mut tests := []int{}
+    mut other := []int{}
     for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
         declaration := ast.Child(con program, root, child)
         if self.isGenericDeclaration(con program, declaration) || self.isGenericMethod(declaration) {
@@ -259,7 +264,20 @@ func (mut self Specializer) run(con program ast.Program) Result[SpecializedProgr
         }
         match self.rewriteNode(con program, declaration, con []Substitution {}
         ){case Ok(rewritten) {
-                children = append(children, rewritten)
+                kind := ast.NodeKind(con self.nodes[rewritten])
+                if kind == "SourceUnit" {
+                    sourceUnits = append(sourceUnits, rewritten)
+                } else if isStructKind(con kind) {
+                    structs = append(structs, rewritten)
+                } else if isEnumKind(con kind) {
+                    enums = append(enums, rewritten)
+                } else if isFunctionKind(con kind) {
+                    functions = append(functions, rewritten)
+                } else if kind == "TestDecl" {
+                    tests = append(tests, rewritten)
+                } else {
+                    other = append(other, rewritten)
+                }
             }
             case Err(error) {
                 return Err(error)
@@ -275,13 +293,20 @@ func (mut self Specializer) run(con program ast.Program) Result[SpecializedProgr
         }
     }
     for mut index := 0; index < len(self.generatedStructs); index = index + 1 {
-        children = append(children, self.generatedStructs[index])
+        structs = append(structs, self.generatedStructs[index])
     }
     for mut index := 0; index < len(self.generatedEnums); index = index + 1 {
-        children = append(children, self.generatedEnums[index])
+        enums = append(enums, self.generatedEnums[index])
     }
     for mut index := 0; index < len(self.generatedFunctions); index = index + 1 {
-        children = append(children, self.generatedFunctions[index])
+        functions = append(functions, self.generatedFunctions[index])
+    }
+    mut children := []int{}
+    groups := [][]int{sourceUnits, structs, enums, functions, tests, other,}
+    for mut group := 0; group < len(groups); group = group + 1 {
+        for mut index := 0; index < len(groups[group]); index = index + 1 {
+            children = append(children, groups[group][index])
+        }
     }
     rootNode := self.addNode(ast.Kind(con program, root), ast.Value(con program, root), ast.Span(con program, root), children)
     return Ok(SpecializedProgram{program: ast.NewProgram(self.nodes, rootNode), mappings: self.mappings,})
@@ -637,7 +662,7 @@ func (mut self Specializer) specializeStruct(con program ast.Program, con name s
     for mut method := 0; method < len(self.genericMethods); method = method + 1 {
         if self.genericMethods[method].owner == name {
             methodName := ast.Value(con program, self.genericMethods[method].node)
-            match self.rewriteFunctionDecl(con program, self.genericMethods[method].node, con substitutions, con methodName) {
+            match self.rewriteFunctionDecl(con program, self.genericMethods[method].node, con substitutions, con methodName, ast.Span(con program, self.genericMethods[method].node), false) {
                 case Ok(function) {
                     self.generatedFunctions = append(self.generatedFunctions, function)
                 }
@@ -727,7 +752,8 @@ func (mut self Specializer) specializeFunction(con program ast.Program, con name
     active := len(self.activeFunctions)
     self.activeFunctions = append(self.activeFunctions, ActiveInstance{declaration: copyText(con name), key: copyText(con key), active: true})
     substitutions := makeSubstitutions(con self.genericFunctions[declarationIndex].params, con arguments)
-    match self.rewriteFunctionDecl(con program, declarationNode, con substitutions, con specialized) {
+    intrinsic := hasMetadata(con program, declarationNode, con "Intrinsic.Function")
+    match self.rewriteFunctionDecl(con program, declarationNode, con substitutions, con specialized, source.Copy(con span), intrinsic) {
         case Ok(function) {
             self.generatedFunctions = append(self.generatedFunctions, function)
         }
@@ -739,7 +765,7 @@ func (mut self Specializer) specializeFunction(con program ast.Program, con name
     return Ok(specialized)
 }
 
-func (mut self Specializer) rewriteFunctionDecl(con program ast.Program, declaration int, con substitutions []Substitution, con name string) Result[int, SpecializationError] {
+func (mut self Specializer) rewriteFunctionDecl(con program ast.Program, declaration int, con substitutions []Substitution, con name string, signatureSpan source.Span, replaceSignatureSpan bool) Result[int, SpecializationError] {
     mut children := []int{}
     for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
         item := ast.Child(con program, declaration, child)
@@ -748,14 +774,42 @@ func (mut self Specializer) rewriteFunctionDecl(con program ast.Program, declara
         }
         match self.rewriteNode(con program, item, con substitutions) {
             case Ok(rewritten) {
-                children = append(children, rewritten)
+                mut child := rewritten
+                itemKind := ast.Kind(con program, item)
+                if replaceSignatureSpan && itemKind == "Intrinsic.Function" {
+                    child = self.cloneOutputNode(rewritten, source.Copy(con signatureSpan), true)
+                } else if replaceSignatureSpan &&(itemKind == "Param.Owned" || itemKind == "Param.Con" || itemKind == "Param.Mut" || itemKind == "ReturnType") {
+                    child = self.replaceTypeChildSpan(rewritten, source.Copy(con signatureSpan), itemKind == "ReturnType")
+                }
+                children = append(children, child)
             }
             case Err(error) {
                 return Err(error)
             }
         }
     }
-    return Ok(self.addNode(ast.Kind(con program, declaration), copyText(con name), ast.Span(con program, declaration), children))
+    mut declarationSpan := ast.Span(con program, declaration)
+    if replaceSignatureSpan {
+        declarationSpan = source.Copy(con signatureSpan)
+    }
+    return Ok(self.addNode(ast.Kind(con program, declaration), copyText(con name), declarationSpan, children))
+}
+
+func (mut self Specializer) replaceTypeChildSpan(node int, span source.Span, replaceNodeSpan bool) int {
+    mut children := []int{}
+    for mut child := 0; child < ast.NodeChildCount(con self.nodes[node]); child = child + 1 {
+        sourceChild := ast.NodeChild(con self.nodes[node], child)
+        if child == 0 {
+            children = append(children, self.cloneOutputNode(sourceChild, source.Copy(con span), true))
+        } else {
+            children = append(children, sourceChild)
+        }
+    }
+    mut nodeSpan := ast.NodeSpan(con self.nodes[node])
+    if replaceNodeSpan {
+        nodeSpan = source.Copy(con span)
+    }
+    return self.addNode(ast.NodeKind(con self.nodes[node]), ast.NodeValue(con self.nodes[node]), nodeSpan, children)
 }
 
 func (con self Specializer) specializationKey(con name string, con arguments []int) string {
@@ -913,6 +967,15 @@ func receiverOwner(con program ast.Program, declaration int) string {
         }
     }
     return ""
+}
+
+func hasMetadata(con program ast.Program, declaration int, con kind string) bool {
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        if ast.Kind(con program, ast.Child(con program, declaration, child)) == kind {
+            return true
+        }
+    }
+    return false
 }
 
 func makeSubstitutions(con params []string, con arguments []int) []Substitution {

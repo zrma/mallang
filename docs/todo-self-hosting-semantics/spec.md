@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e4b3b complete
+Status: in progress; P176a-P176e4c1 complete
 
 ## Objective
 
@@ -189,6 +189,10 @@ agrees.
   then rewrite declarations, types, patterns, function values and calls to
   deterministic package-qualified symbols across project dependencies
   (complete)
+- P176e4c1: augment linked programs with compiler-owned standard declarations,
+  preserve intrinsic type/function metadata through generic specialization,
+  enforce opaque `Map` key semantics and lower intrinsic calls and function
+  values with stable intrinsic identity (complete)
 - insert deterministic drops and full-expression temporaries
 - normalize checked declarations, diagnostics and typed IR independently of C
 - run the full positive, semantic-rejection and ownership-rejection corpus
@@ -689,8 +693,20 @@ specialization and function-body checking until later P176 slices.
   complete eleven-file Mallang compiler source set also matches Rust Stage0
   over 80,831 normalized linked-AST lines. The integrated corpus now contains
   one hundred sixty-five parser sources and two hundred sixty Mallang project
-  tests. Compiler-owned standard declaration augmentation and intrinsic
-  specialization continue in P176e.
+  tests. P176e4c1 augments linked programs with three compiler-owned intrinsic
+  types and twenty-seven intrinsic functions. Generic `Map` and collection
+  function specializations preserve use-site spans and intrinsic metadata;
+  semantic checking rejects unsupported map keys and skips synthetic intrinsic
+  bodies; typed IR excludes intrinsic declarations while retaining direct-call
+  and function-value intrinsic identity. The valid project's augment, prepare,
+  check and IR outputs and the map-key rejection match Rust Stage0 byte for
+  byte. Three focused tests, five project differential invocations, one hundred
+  sixty-seven parser corpus sources and two hundred sixty-three Mallang project
+  tests cover this boundary. The B2e4c1 fast gate passed in 392 seconds and the
+  complete Stage1, strict-accounting and ASan/UBSan gate passed in 2,317
+  seconds. A separate twelve-file compiler-source augmentation measurement
+  exceeded the fifteen-minute local budget and was stopped, so it remains
+  performance debt rather than claimed correctness evidence.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

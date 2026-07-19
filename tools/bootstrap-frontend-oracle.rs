@@ -12,10 +12,11 @@ use mallang::ir::{
     IrArg, IrClosureCaptureValue, IrEnumStorage, IrExpr, IrExprKind, IrFieldValue, IrForInit,
     IrForPost, IrMatchArm, IrMatchBlockArm, IrMatchPattern, IrStmt, IrStmtKind,
 };
+use mallang::standard::augment_program;
 use mallang::{
-    build_package_graph, check, discover_project, lex, link_project, lower, lower_test,
-    parse_sources_with_diagnostics, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
-    LexError, PackageDeclarationKind, SourceMap, Span, Token, TokenKind,
+    build_package_graph, check, check_project, discover_project, lex, link_project, lower,
+    lower_test, parse_sources_with_diagnostics, parse_with_diagnostics, specialize, CheckedProgram,
+    IrProgram, Keyword, LexError, PackageDeclarationKind, SourceMap, Span, Token, TokenKind,
 };
 
 fn main() -> ExitCode {
@@ -63,8 +64,15 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    if first == "package-layout" || first == "package-layout-project" || first == "link-project" {
-        let link_mode = first == "link-project";
+    if first == "package-layout"
+        || first == "package-layout-project"
+        || first == "link-project"
+        || first == "augment-project"
+        || first == "prepare-project"
+        || first == "check-project"
+        || first == "ir-project"
+    {
+        let operation = first.clone();
         let (source_root, paths) = if first == "package-layout" {
             let Some(_project_name) = args.next() else {
                 eprintln!("usage: bootstrap-frontend-oracle package-layout <project-name> <source-root> <source>...");
@@ -163,11 +171,63 @@ fn main() -> ExitCode {
         };
         match build_package_graph(&project, &sources, &program) {
             Ok(graph) => {
-                if link_mode {
-                    match link_project(&project, &graph, &program) {
-                        Ok(linked) => println!("{}", normalize_program(&linked).normalize(0)),
-                        Err(error) => println!(
+                if operation != "package-layout" && operation != "package-layout-project" {
+                    let mut linked = match link_project(&project, &graph, &program) {
+                        Ok(linked) => linked,
+                        Err(error) => {
+                            println!(
                             "LERR|{}|{}|{}|{}",
+                            error.span.source.index(),
+                            error.span.start,
+                            error.span.end,
+                            encode_bytes(&error.message)
+                            );
+                            return ExitCode::SUCCESS;
+                        }
+                    };
+                    if operation == "link-project" {
+                        println!("{}", normalize_program(&linked).normalize(0));
+                        return ExitCode::SUCCESS;
+                    }
+                    augment_program(&mut linked, &graph);
+                    if operation == "augment-project" {
+                        println!("{}", normalize_program(&linked).normalize(0));
+                        return ExitCode::SUCCESS;
+                    }
+                    if operation == "prepare-project" {
+                        match specialize(&linked) {
+                            Ok(prepared) => {
+                                println!("{}", normalize_program(&prepared).normalize(0))
+                            }
+                            Err(error) => println!(
+                                "SERR|{}|{}|{}|{}",
+                                error.span.source.index(),
+                                error.span.start,
+                                error.span.end,
+                                encode_bytes(&error.message)
+                            ),
+                        }
+                        return ExitCode::SUCCESS;
+                    }
+                    match check_project(&linked, &graph) {
+                        Ok(checked) => {
+                            if operation == "check-project" {
+                                println!("{}", normalize_checked(&checked));
+                            } else {
+                                match lower(&checked) {
+                                    Ok(ir) => println!("{}", normalize_ir(&ir)),
+                                    Err(error) => println!(
+                                        "IERR|{}|{}|{}|{}",
+                                        error.span.source.index(),
+                                        error.span.start,
+                                        error.span.end,
+                                        encode_bytes(&error.message)
+                                    ),
+                                }
+                            }
+                        }
+                        Err(error) => println!(
+                            "SERR|{}|{}|{}|{}",
                             error.span.source.index(),
                             error.span.start,
                             error.span.end,
@@ -799,6 +859,11 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         IrExprKind::FunctionValue { function } => {
             ("Expr.FunctionValue", function.clone(), Vec::new())
         }
+        IrExprKind::IntrinsicFunctionValue { intrinsic } => (
+            "Expr.IntrinsicFunctionValue",
+            format!("{intrinsic:?}"),
+            Vec::new(),
+        ),
         IrExprKind::ClosureValue { closure, captures } => (
             "Expr.ClosureValue",
             closure.clone(),
@@ -810,6 +875,13 @@ fn normalize_ir_expression(expression: &IrExpr, depth: usize) -> String {
         IrExprKind::Call { callee, args } => (
             "Expr.Call",
             callee.clone(),
+            args.iter()
+                .map(|arg| normalize_ir_argument(arg, depth + 1))
+                .collect(),
+        ),
+        IrExprKind::IntrinsicCall { intrinsic, args } => (
+            "Expr.IntrinsicCall",
+            format!("{intrinsic:?}"),
             args.iter()
                 .map(|arg| normalize_ir_argument(arg, depth + 1))
                 .collect(),
@@ -1164,6 +1236,18 @@ fn normalize_struct(declaration: &StructDecl) -> NormalizedNode {
         .iter()
         .map(normalize_type_param)
         .collect::<Vec<_>>();
+    if let Some(intrinsic) = declaration.intrinsic {
+        children.push(NormalizedNode::new(
+            "Intrinsic.Type",
+            format!("{intrinsic:?}"),
+            declaration.span,
+            declaration
+                .intrinsic_args
+                .iter()
+                .map(normalize_type_ref)
+                .collect(),
+        ));
+    }
     children.extend(declaration.fields.iter().map(normalize_field));
     NormalizedNode::new(
         format!("StructDecl.{}", visibility_name(declaration.visibility)),
@@ -1179,6 +1263,22 @@ fn normalize_enum(declaration: &EnumDecl) -> NormalizedNode {
         .iter()
         .map(normalize_type_param)
         .collect::<Vec<_>>();
+    if let Some(intrinsic) = declaration.intrinsic {
+        children.push(NormalizedNode::new(
+            "Intrinsic.Type",
+            format!("{intrinsic:?}"),
+            declaration.span,
+            Vec::new(),
+        ));
+    }
+    if let Some(origin) = &declaration.specialization_origin {
+        children.push(NormalizedNode::new(
+            "SpecializationOrigin",
+            origin,
+            declaration.span,
+            Vec::new(),
+        ));
+    }
     children.extend(declaration.variants.iter().map(|variant| {
         NormalizedNode::new(
             "EnumVariant",
@@ -1214,6 +1314,14 @@ fn normalize_function(function: &Function) -> NormalizedNode {
         .iter()
         .map(normalize_type_param)
         .collect::<Vec<_>>();
+    if let Some(intrinsic) = function.intrinsic {
+        children.push(NormalizedNode::new(
+            "Intrinsic.Function",
+            format!("{intrinsic:?}"),
+            function.span,
+            Vec::new(),
+        ));
+    }
     if let Some(receiver) = &function.receiver {
         children.push(NormalizedNode::new(
             "Receiver",

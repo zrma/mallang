@@ -1,0 +1,9 @@
+package main
+
+import "std/collections"
+
+type Key struct {}
+
+func main() {
+    collections.newMap[Key, int]()
+}

@@ -1,0 +1,341 @@
+package standard
+
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/linker"
+import "bootstrap_compiler/packages"
+
+type Augmenter struct {
+    nodes []ast.Node
+}
+
+pub func Augment(con layout packages.Layout, con program ast.Program) ast.Program {
+    mut augmenter := Augmenter{nodes: ast.CloneNodes(con program),}
+    root := ast.Root(con program)
+    span := ast.Span(con program, root)
+    mut sourceUnits := []int{}
+    mut structs := []int{}
+    mut enums := []int{}
+    mut functions := []int{}
+    mut tests := []int{}
+
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        node := ast.Child(con program, root, child)
+        kind := ast.Kind(con program, node)
+        if kind == "SourceUnit" {
+            sourceUnits = append(sourceUnits, node)
+        } else if isStructKind(con kind) {
+            structs = append(structs, node)
+        } else if isEnumKind(con kind) {
+            enums = append(enums, node)
+        } else if isFunctionKind(con kind) {
+            functions = append(functions, node)
+        } else if kind == "TestDecl" {
+            tests = append(tests, node)
+        }
+    }
+
+    needsErrors := packages.HasPackage(con layout, con "std/errors") || packages.HasPackage(con layout, con "std/fs") || packages.HasPackage(con layout, con "std/io") || packages.HasPackage(con layout, con "std/os") || packages.HasPackage(con layout, con "std/strings")
+    if needsErrors {
+        structs = append(structs, augmenter.errorStruct(source.Copy(con span)))
+        enums = append(enums, augmenter.errorKindEnum(source.Copy(con span)))
+    }
+    if packages.HasPackage(con layout, con "std/collections") {
+        structs = append(structs, augmenter.mapStruct(source.Copy(con span)))
+    }
+    if packages.HasPackage(con layout, con "std/fs") {
+        functions = augmenter.addFsFunctions(functions, source.Copy(con span))
+    }
+    if packages.HasPackage(con layout, con "std/io") {
+        functions = augmenter.addIoFunctions(functions, source.Copy(con span))
+    }
+    if packages.HasPackage(con layout, con "std/os") {
+        functions = augmenter.addOsFunctions(functions, source.Copy(con span))
+    }
+    if packages.HasPackage(con layout, con "std/strings") {
+        functions = augmenter.addStringFunctions(functions, source.Copy(con span))
+    }
+    if packages.HasPackage(con layout, con "std/collections") {
+        functions = augmenter.addCollectionFunctions(functions, source.Copy(con span))
+    }
+
+    mut children := []int{}
+    children = appendNodes(children, con sourceUnits)
+    children = appendNodes(children, con structs)
+    children = appendNodes(children, con enums)
+    children = appendNodes(children, con functions)
+    children = appendNodes(children, con tests)
+    augmentedRoot := augmenter.addNode("Program", "", source.Copy(con span), children)
+    return ast.NewProgram(augmenter.nodes, augmentedRoot)
+}
+
+func (mut self Augmenter) errorStruct(span source.Span) int {
+    kindType := self.namedType(linker.InternalSymbol(con "std/errors", con "Kind"), source.Copy(con span))
+    messageType := self.namedType("string", source.Copy(con span))
+    intrinsic := self.addNode("Intrinsic.Type", "Error", source.Copy(con span), []int{})
+    kindField := self.addNode("FieldDecl", "kind", source.Copy(con span), []int{kindType})
+    messageField := self.addNode("FieldDecl", "message", source.Copy(con span), []int{messageType})
+    return self.addNode("StructDecl.Public", linker.InternalSymbol(con "std/errors", con "Error"), source.Copy(con span), []int{intrinsic, kindField, messageField})
+}
+
+func (mut self Augmenter) errorKindEnum(span source.Span) int {
+    mut children := []int{self.addNode("Intrinsic.Type", "ErrorKind", source.Copy(con span), []int{}),}
+    variants := []string{"NotFound", "PermissionDenied", "AlreadyExists", "InvalidInput", "InvalidData", "Interrupted", "Other",}
+    for mut index := 0; index < len(variants); index = index + 1 {
+        children = append(children, self.addNode("EnumVariant", token.CopyText(con variants[index]), source.Copy(con span), []int{}))
+    }
+    return self.addNode("EnumDecl.Public", linker.InternalSymbol(con "std/errors", con "Kind"), source.Copy(con span), children)
+}
+
+func (mut self Augmenter) mapStruct(span source.Span) int {
+    keyParam := self.addNode("TypeParam", "K", source.Copy(con span), []int{})
+    valueParam := self.addNode("TypeParam", "V", source.Copy(con span), []int{})
+    keyType := self.namedType("K", source.Copy(con span))
+    valueType := self.namedType("V", source.Copy(con span))
+    intrinsic := self.addNode("Intrinsic.Type", "Map", source.Copy(con span), []int{keyType, valueType})
+    return self.addNode("StructDecl.Public", linker.InternalSymbol(con "std/collections", con "Map"), source.Copy(con span), []int{keyParam, valueParam, intrinsic})
+}
+
+func (mut self Augmenter) addFsFunctions(functions []int, span source.Span) []int {
+    mut output := appendNodes([]int{}, con functions)
+    path := self.param("path", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    readResult := self.resultType(self.namedType("string", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/fs", "readText", "FsReadText", []string{}, []int{path}, readResult, true, source.Copy(con span)))
+
+    writePath := self.param("path", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    text := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    writeResult := self.resultType(self.namedType("unit", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/fs", "writeText", "FsWriteText", []string{}, []int{writePath, text}, writeResult, true, source.Copy(con span)))
+
+    linePath := self.param("path", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    context := self.param("context", "con", self.namedType("C", source.Copy(con span)), source.Copy(con span))
+    state := self.param("state", "mut", self.namedType("S", source.Copy(con span)), source.Copy(con span))
+    callbackModes := []string{"con", "mut", "owned", "con",}
+    callbackTypes := []int{self.namedType("C", source.Copy(con span)), self.namedType("S", source.Copy(con span)), self.namedType("int", source.Copy(con span)), self.namedType("string", source.Copy(con span)),}
+    callback := self.callbackType(false, callbackModes, callbackTypes, self.namedType("unit", source.Copy(con span)), source.Copy(con span))
+    visit := self.param("visit", "con", callback, source.Copy(con span))
+    lineResult := self.resultType(self.namedType("unit", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/fs", "forEachLine", "FsForEachLine", []string{"C", "S",}, []int{linePath, context, state, visit}, lineResult, true, source.Copy(con span)))
+    return output
+}
+
+func (mut self Augmenter) addIoFunctions(functions []int, span source.Span) []int {
+    mut output := appendNodes([]int{}, con functions)
+    readResult := self.resultType(self.namedType("string", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/io", "readStdin", "IoReadStdin", []string{}, []int{}, readResult, true, source.Copy(con span)))
+
+    stdoutText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    stdoutResult := self.resultType(self.namedType("unit", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/io", "writeStdout", "IoWriteStdout", []string{}, []int{stdoutText}, stdoutResult, true, source.Copy(con span)))
+
+    stderrText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    stderrResult := self.resultType(self.namedType("unit", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/io", "writeStderr", "IoWriteStderr", []string{}, []int{stderrText}, stderrResult, true, source.Copy(con span)))
+    return output
+}
+
+func (mut self Augmenter) addOsFunctions(functions []int, span source.Span) []int {
+    mut output := appendNodes([]int{}, con functions)
+    argsResult := self.resultType(self.sliceType(self.namedType("string", source.Copy(con span)), source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/os", "args", "OsArgs", []string{}, []int{}, argsResult, true, source.Copy(con span)))
+
+    name := self.param("name", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    envResult := self.resultType(self.optionType(self.namedType("string", source.Copy(con span)), source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/os", "env", "OsEnv", []string{}, []int{name}, envResult, true, source.Copy(con span)))
+
+    code := self.param("code", "owned", self.namedType("int", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/os", "exit", "OsExit", []string{}, []int{code}, -1, false, source.Copy(con span)))
+    return output
+}
+
+func (mut self Augmenter) addStringFunctions(functions []int, span source.Span) []int {
+    mut output := appendNodes([]int{}, con functions)
+    byteText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "byteLen", "StringsByteLen", []string{}, []int{byteText}, self.namedType("int", source.Copy(con span)), true, source.Copy(con span)))
+    scalarText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "scalarCount", "StringsScalarCount", []string{}, []int{scalarText}, self.namedType("int", source.Copy(con span)), true, source.Copy(con span)))
+
+    byteAtText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    byteAtIndex := self.param("index", "owned", self.namedType("int", source.Copy(con span)), source.Copy(con span))
+    byteAtResult := self.resultType(self.namedType("int", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "byteAt", "StringsByteAt", []string{}, []int{byteAtText, byteAtIndex}, byteAtResult, true, source.Copy(con span)))
+
+    sliceText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    sliceStart := self.param("start", "owned", self.namedType("int", source.Copy(con span)), source.Copy(con span))
+    sliceEnd := self.param("end", "owned", self.namedType("int", source.Copy(con span)), source.Copy(con span))
+    sliceResult := self.resultType(self.namedType("string", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "slice", "StringsSlice", []string{}, []int{sliceText, sliceStart, sliceEnd}, sliceResult, true, source.Copy(con span)))
+
+    containsParams := self.textPairParams(source.Copy(con span))
+    output = append(output, self.function("std/strings", "contains", "StringsContains", []string{}, containsParams, self.namedType("bool", source.Copy(con span)), true, source.Copy(con span)))
+    findParams := self.textPairParams(source.Copy(con span))
+    output = append(output, self.function("std/strings", "find", "StringsFind", []string{}, findParams, self.optionType(self.namedType("int", source.Copy(con span)), source.Copy(con span)), true, source.Copy(con span)))
+
+    splitText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    splitSeparator := self.param("separator", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    splitResult := self.sliceType(self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "split", "StringsSplit", []string{}, []int{splitText, splitSeparator}, splitResult, true, source.Copy(con span)))
+
+    joinParts := self.param("parts", "con", self.sliceType(self.namedType("string", source.Copy(con span)), source.Copy(con span)), source.Copy(con span))
+    joinSeparator := self.param("separator", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "join", "StringsJoin", []string{}, []int{joinParts, joinSeparator}, self.namedType("string", source.Copy(con span)), true, source.Copy(con span)))
+
+    fromIntValue := self.param("value", "owned", self.namedType("int", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "fromInt", "StringsFromInt", []string{}, []int{fromIntValue}, self.namedType("string", source.Copy(con span)), true, source.Copy(con span)))
+    fromBoolValue := self.param("value", "owned", self.namedType("bool", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "fromBool", "StringsFromBool", []string{}, []int{fromBoolValue}, self.namedType("string", source.Copy(con span)), true, source.Copy(con span)))
+
+    parseIntText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    parseIntResult := self.resultType(self.namedType("int", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "parseInt", "StringsParseInt", []string{}, []int{parseIntText}, parseIntResult, true, source.Copy(con span)))
+    parseBoolText := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    parseBoolResult := self.resultType(self.namedType("bool", source.Copy(con span)), self.errorType(source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/strings", "parseBool", "StringsParseBool", []string{}, []int{parseBoolText}, parseBoolResult, true, source.Copy(con span)))
+    return output
+}
+
+func (mut self Augmenter) addCollectionFunctions(functions []int, span source.Span) []int {
+    mut output := appendNodes([]int{}, con functions)
+    newResult := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/collections", "newMap", "CollectionsNewMap", []string{"K", "V",}, []int{}, newResult, true, source.Copy(con span)))
+
+    countMap := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    countParam := self.param("map", "con", countMap, source.Copy(con span))
+    output = append(output, self.function("std/collections", "count", "CollectionsCount", []string{"K", "V",}, []int{countParam}, self.namedType("int", source.Copy(con span)), true, source.Copy(con span)))
+
+    insertMapType := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    insertMap := self.param("map", "mut", insertMapType, source.Copy(con span))
+    insertKey := self.param("key", "owned", self.namedType("K", source.Copy(con span)), source.Copy(con span))
+    insertValue := self.param("value", "owned", self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    insertResult := self.optionType(self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/collections", "insert", "CollectionsInsert", []string{"K", "V",}, []int{insertMap, insertKey, insertValue}, insertResult, true, source.Copy(con span)))
+
+    withMapType := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    withMap := self.param("map", "con", withMapType, source.Copy(con span))
+    withKey := self.param("key", "con", self.namedType("K", source.Copy(con span)), source.Copy(con span))
+    withCallback := self.functionType("con", self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    withVisit := self.param("visit", "con", withCallback, source.Copy(con span))
+    output = append(output, self.function("std/collections", "with", "CollectionsWith", []string{"K", "V",}, []int{withMap, withKey, withVisit}, self.namedType("bool", source.Copy(con span)), true, source.Copy(con span)))
+
+    updateMapType := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    updateMap := self.param("map", "mut", updateMapType, source.Copy(con span))
+    updateKey := self.param("key", "con", self.namedType("K", source.Copy(con span)), source.Copy(con span))
+    updateCallback := self.functionType("mut", self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    updateEdit := self.param("edit", "con", updateCallback, source.Copy(con span))
+    output = append(output, self.function("std/collections", "update", "CollectionsUpdate", []string{"K", "V",}, []int{updateMap, updateKey, updateEdit}, self.namedType("bool", source.Copy(con span)), true, source.Copy(con span)))
+
+    removeMapType := self.mapType(self.namedType("K", source.Copy(con span)), self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    removeMap := self.param("map", "mut", removeMapType, source.Copy(con span))
+    removeKey := self.param("key", "con", self.namedType("K", source.Copy(con span)), source.Copy(con span))
+    removeResult := self.optionType(self.namedType("V", source.Copy(con span)), source.Copy(con span))
+    output = append(output, self.function("std/collections", "remove", "CollectionsRemove", []string{"K", "V",}, []int{removeMap, removeKey}, removeResult, true, source.Copy(con span)))
+    return output
+}
+
+func (mut self Augmenter) function(packagePath string, name string, intrinsic string, typeParams []string, params []int, returnType int, hasReturn bool, span source.Span) int {
+    mut children := []int{}
+    for mut index := 0; index < len(typeParams); index = index + 1 {
+        children = append(children, self.addNode("TypeParam", token.CopyText(con typeParams[index]), source.Copy(con span), []int{}))
+    }
+    children = append(children, self.addNode("Intrinsic.Function", token.CopyText(con intrinsic), source.Copy(con span), []int{}))
+    children = appendNodes(children, con params)
+    if hasReturn {
+        children = append(children, self.addNode("ReturnType", "", source.Copy(con span), []int{returnType}))
+    }
+    children = append(children, self.addNode("Block", "", source.Copy(con span), []int{}))
+    return self.addNode("FunctionDecl.Public", linker.InternalSymbol(con packagePath, con name), source.Copy(con span), children)
+}
+
+func (mut self Augmenter) textPairParams(span source.Span) []int {
+    text := self.param("text", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    needle := self.param("needle", "con", self.namedType("string", source.Copy(con span)), source.Copy(con span))
+    return []int{text, needle,}
+}
+
+func (mut self Augmenter) param(name string, mode string, ty int, span source.Span) int {
+    mut kind := "Param.Owned"
+    if mode == "con" {
+        kind = "Param.Con"
+    } else if mode == "mut" {
+        kind = "Param.Mut"
+    }
+    return self.addNode(kind, token.CopyText(con name), source.Copy(con span), []int{ty})
+}
+
+func (mut self Augmenter) namedType(name string, span source.Span) int {
+    return self.addNode("Type.Named", token.CopyText(con name), source.Copy(con span), []int{})
+}
+
+func (mut self Augmenter) appliedType(name string, arguments []int, span source.Span) int {
+    return self.addNode("Type.Named", token.CopyText(con name), source.Copy(con span), appendNodes([]int{}, con arguments))
+}
+
+func (mut self Augmenter) sliceType(element int, span source.Span) int {
+    return self.addNode("Type.Slice", "", source.Copy(con span), []int{element})
+}
+
+func (mut self Augmenter) optionType(inner int, span source.Span) int {
+    return self.appliedType("Option", []int{inner}, source.Copy(con span))
+}
+
+func (mut self Augmenter) resultType(ok int, error int, span source.Span) int {
+    return self.appliedType("Result", []int{ok, error}, source.Copy(con span))
+}
+
+func (mut self Augmenter) errorType(span source.Span) int {
+    return self.namedType(linker.InternalSymbol(con "std/errors", con "Error"), source.Copy(con span))
+}
+
+func (mut self Augmenter) mapType(key int, value int, span source.Span) int {
+    return self.appliedType(linker.InternalSymbol(con "std/collections", con "Map"), []int{key, value}, source.Copy(con span))
+}
+
+func (mut self Augmenter) functionType(mode string, ty int, span source.Span) int {
+    return self.callbackType(false, []string{token.CopyText(con mode),}, []int{ty}, self.namedType("unit", source.Copy(con span)), source.Copy(con span))
+}
+
+func (mut self Augmenter) callbackType(mutable bool, modes []string, types []int, returnType int, span source.Span) int {
+    mut children := []int{}
+    for mut index := 0; index < len(types); index = index + 1 {
+        mut kind := "FunctionTypeParam.Owned"
+        if modes[index]== "con" {
+            kind = "FunctionTypeParam.Con"
+        } else if modes[index]== "mut" {
+            kind = "FunctionTypeParam.Mut"
+        }
+        children = append(children, self.addNode(kind, "", source.Copy(con span), []int{types[index]}))
+    }
+    children = append(children, self.addNode("FunctionReturnType", "", source.Copy(con span), []int{returnType}))
+    mut kind := "Type.Function.Immutable"
+    if mutable {
+        kind = "Type.Function.Mutable"
+    }
+    return self.addNode(kind, "", source.Copy(con span), children)
+}
+
+func (mut self Augmenter) addNode(kind string, value string, span source.Span, children []int) int {
+    index := len(self.nodes)
+    self.nodes = append(self.nodes, ast.NewNode(kind, value, span, children))
+    return index
+}
+
+func appendNodes(values []int, con additions []int) []int {
+    mut output := values
+    for mut index := 0; index < len(additions); index = index + 1 {
+        output = append(output, additions[index])
+    }
+    return output
+}
+
+func isStructKind(con kind string) bool {
+    return kind == "StructDecl.Package" || kind == "StructDecl.Public"
+}
+
+func isEnumKind(con kind string) bool {
+    return kind == "EnumDecl.Package" || kind == "EnumDecl.Public"
+}
+
+func isFunctionKind(con kind string) bool {
+    return kind == "FunctionDecl.Package" || kind == "FunctionDecl.Public"
+}

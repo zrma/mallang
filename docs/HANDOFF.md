@@ -693,17 +693,25 @@ valid 및 열한 rejection layout set, 163개 parser corpus source와 전체 255
 internal symbol로 rewrite하고 imported visibility/kind, public API와 receiver 경계를 Rust
 linker와 같은 span/message로 검증한다. 다섯 focused linker test, 여섯 project differential
 invocation과 전체 11-file compiler source link가 Stage0과 일치하며, 165개 parser corpus
-source와 전체 260개 project test가 이 경계를 고정한다. 다음 slice는 compiler-owned
-standard declaration augmentation과 intrinsic specialization이다. public language 또는
-standard-library
-addition은
-representative compiler blocker가 확인되기 전에는 포함하지 않는다.
+source와 전체 260개 project test가 이 경계를 고정한다. P176e4c1은 linked program에
+compiler-owned intrinsic type 3개와 function 27개를 주입하고 generic `Map` 및 collection
+function specialization의 metadata와 use-site span을 보존한다. Semantic checker는 synthetic
+intrinsic body를 건너뛰고 지원하지 않는 map key를 거부하며, typed IR은 intrinsic declaration을
+제외한 채 direct call과 function value의 intrinsic identity를 유지한다. Valid project의
+augment/prepare/check/IR 네 출력과 map-key rejection이 Stage0과 일치한다. 세 focused test,
+다섯 project differential invocation, 167개 parser corpus source와 전체 263개 project test가
+이를 고정하며 B2e4c1 fast gate는 392초, complete Stage1/strict-accounting/ASan/UBSan
+gate는 2,317초에 통과했다. 12-file compiler-source augmentation은 15분 local budget을
+넘겨 중단했으므로 performance debt이지 성공 evidence가 아니다. 다음
+기능 slice는 full typed IR과 deterministic drop insertion/corpus closure이다. public language
+또는 standard-library addition은 representative compiler blocker가 확인되기 전에는 포함하지
+않는다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 260개 project test, complete
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 263개 project test, complete
 compiler-source link와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.

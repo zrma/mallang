@@ -1,0 +1,145 @@
+package standard
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/frontend/token"
+import "bootstrap_compiler/ir"
+import "bootstrap_compiler/linker"
+import "bootstrap_compiler/packages"
+import "bootstrap_compiler/semantic"
+import "bootstrap_compiler/specialize"
+
+func augmentTestSource(con text string) Result[ast.Program, bool] {
+    match lexer.LexWithSource(token.CopyText(con text), 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    paths := []string{"project/src/main.mlg",}
+                    match packages.Build(con program, con "standard_test", con "project/src", con paths) {
+                        case Ok(layout) {
+                            match linker.LinkProject(con "standard_test", con layout, con program) {
+                                case Ok(linked) {
+                                    return Ok(Augment(con layout, con linked))
+                                }
+                                case Err(_) {
+                                    return Err(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            return Err(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    return Err(false)
+                }
+            }
+        }
+        case Err(_) {
+            return Err(false)
+        }
+    }
+}
+
+test AugmentsCompilerOwnedStandardDeclarations() {
+    text := "package main\nimport \"std/errors\"\nimport \"std/fs\"\nimport \"std/io\"\nimport \"std/os\"\nimport \"std/strings\"\nimport \"std/collections\"\nfunc main() {}\n"
+    match augmentTestSource(con text) {
+        case Ok(program) {
+            mut intrinsicTypes := 0
+            mut intrinsicFunctions := 0
+            mut errorKinds := 0
+            mut errors := 0
+            mut maps := 0
+            for mut node := 0; node < ast.NodeCount(con program); node = node + 1 {
+                kind := ast.Kind(con program, node)
+                if kind == "Intrinsic.Type" {
+                    intrinsicTypes = intrinsicTypes + 1
+                    value := ast.Value(con program, node)
+                    if value == "ErrorKind" {
+                        errorKinds = errorKinds + 1
+                    } else if value == "Error" {
+                        errors = errors + 1
+                    } else if value == "Map" {
+                        maps = maps + 1
+                        assert(ast.ChildCount(con program, node) == 2)
+                    }
+                } else if kind == "Intrinsic.Function" {
+                    intrinsicFunctions = intrinsicFunctions + 1
+                }
+            }
+            assert(intrinsicTypes == 3)
+            assert(intrinsicFunctions == 27)
+            assert(errorKinds == 1)
+            assert(errors == 1)
+            assert(maps == 1)
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test PreservesIntrinsicIdentityThroughTypedIr() {
+    text := "package main\nimport \"std/strings\"\nimport \"std/collections\"\nfunc main() { text := \"mallang\"; print(strings.byteLen(con text)); byteLen := strings.byteLen; print(byteLen(con text)); newMap := collections.newMap[int, string]; mut values := newMap(); collections.insert[int, string](mut values, 1, \"one\"); print(collections.count[int, string](con values)) }\n"
+    match augmentTestSource(con text) {
+        case Ok(augmented) {
+            match specialize.Specialize(con augmented) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match ir.Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    normalized := ir.Normalize(con lowered)
+                                    assert(strings.contains(con normalized, con "Expr.IntrinsicCall"))
+                                    assert(strings.contains(con normalized, con "Expr.IntrinsicFunctionValue"))
+                                    assert(!strings.contains(con normalized, con "FUNCTION|__mlg_pkg_"))
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUnsupportedMapKeyTypes() {
+    text := "package main\nimport \"std/collections\"\ntype Key struct {}\nfunc main() { collections.newMap[Key, int]() }\n"
+    match augmentTestSource(con text) {
+        case Ok(augmented) {
+            match specialize.Specialize(con augmented) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(strings.contains(con semantic.ErrorMessage(con error), con "collections.Map key type must be `int`, `bool`, or `string`"))
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}

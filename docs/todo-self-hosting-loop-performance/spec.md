@@ -63,3 +63,15 @@ gate took 3,211 seconds on the same host, so the full path improved by about
 These observations compare adjacent repository revisions on one host. They are
 evidence that the loop bottleneck was removed, not portable performance
 thresholds.
+
+## Follow-Up Observation
+
+P176e4c1 increased the discovered parser corpus to 167 sources. The optimized
+fast gate completed in 392 seconds and the complete Stage1,
+strict-accounting and ASan/UBSan gate completed in 2,317 seconds on the same
+class of local host. A direct Stage1 `augment-project` run over the complete
+twelve-file compiler source set still had not completed after fifteen minutes
+and was stopped. The standard augmentation arena copy is flat, so the remaining
+cost is in the combined multi-source parse/link/normalize path. This is tracked
+as residual performance debt and is not recorded as a successful augmentation
+result.

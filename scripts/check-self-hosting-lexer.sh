@@ -51,6 +51,7 @@ IR_TEST_FIXTURES="$PROJECT/fixtures/ir-test"
 MULTI_SOURCE_FIXTURES="$PROJECT/fixtures/multi-source"
 PACKAGE_LAYOUT_FIXTURES="$PROJECT/fixtures/package-layout"
 LINKER_FIXTURES="$PROJECT/fixtures/linker"
+STANDARD_FIXTURES="$PROJECT/fixtures/standard"
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -92,6 +93,9 @@ else
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
     bootstrap_compiler/specialize::RestoresSymbolicGenericBodyDiagnostics \
+    bootstrap_compiler/standard::AugmentsCompilerOwnedStandardDeclarations \
+    bootstrap_compiler/standard::PreservesIntrinsicIdentityThroughTypedIr \
+    bootstrap_compiler/standard::RejectsUnsupportedMapKeyTypes \
     bootstrap_compiler/ir::NormalizesMatchExpressionOuterCleanup; do
     "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
   done
@@ -584,6 +588,21 @@ compare_project_link \
   "$LINKER_FIXTURES/wrong-kind/src/main.mlg" \
   "$LINKER_FIXTURES/wrong-kind/src/model/model.mlg"
 
+for operation in augment prepare check ir; do
+  compare_project_invocation \
+    "standard-valid-$operation" \
+    "$fixture_profile" \
+    "$operation-project" \
+    1 standard_valid "$STANDARD_FIXTURES/valid/src" 0 \
+    "$STANDARD_FIXTURES/valid/src/main.mlg"
+done
+compare_project_invocation \
+  standard-map-key \
+  "$fixture_profile" \
+  check-project \
+  1 standard_map_key "$STANDARD_FIXTURES/map-key/src" 0 \
+  "$STANDARD_FIXTURES/map-key/src/main.mlg"
+
 if [[ "$MODE" == "full" ]]; then
   compiler_link_sources=()
   while IFS= read -r source_path; do
@@ -690,4 +709,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4b3b $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4c1 $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

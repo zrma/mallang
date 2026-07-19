@@ -256,7 +256,16 @@ visibility and package-qualified declaration/type/body rewriting are complete
 in P176e4b3b. Five focused linker tests, six project differential invocations
 and the complete eleven-file compiler source link match Rust Stage0; the
 integrated parser corpus is one hundred sixty-five sources and the Mallang
-project suite is two hundred sixty tests. Compiler-owned standard declaration
-augmentation, intrinsic specialization and the remaining full-expression
-backend boundary are incomplete, so
-no complete semantic, typed-IR or Stage1 compiler claim is made.
+project suite is two hundred sixty tests. P176e4c1 adds compiler-owned standard
+declaration augmentation, intrinsic generic specialization and semantic
+metadata, plus typed intrinsic calls and function values. The valid project's
+augment, prepare, check and typed-IR outputs and the unsupported-map-key
+rejection match Rust Stage0. Three focused tests, five project differential
+invocations, one hundred sixty-seven parser corpus sources and two hundred
+sixty-three Mallang project tests cover this boundary. The B2e4c1 fast gate
+passed in 392 seconds and the complete Stage1, strict-accounting and
+ASan/UBSan gate passed in 2,317 seconds. A twelve-file compiler-source
+augmentation measurement was stopped after exceeding a fifteen-minute local
+budget and remains performance debt. Full typed IR, deterministic drop closure
+and the B2 canonical gate remain incomplete, so no complete semantic, typed-IR
+or Stage1 compiler claim is made.

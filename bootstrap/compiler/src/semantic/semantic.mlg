@@ -25,6 +25,8 @@ pub type FieldSig struct {
 
 pub type StructSig struct {
     name string
+    intrinsic string
+    intrinsicArgs []ResolvedType
     fields []FieldSig
 }
 
@@ -35,6 +37,7 @@ pub type EnumVariantSig struct {
 
 pub type EnumSig struct {
     name string
+    intrinsic string
     patternName string
     variants []EnumVariantSig
 }
@@ -47,6 +50,7 @@ pub type ParamSig struct {
 
 pub type FunctionSig struct {
     name string
+    intrinsic string
     mutable bool
     params []ParamSig
     returnType ResolvedType
@@ -480,6 +484,23 @@ pub func FunctionReferenceDirect(con checked CheckedProgram, node int) bool {
     return index >= 0 && checked.functionReferences[index].direct
 }
 
+pub func FunctionReferenceIntrinsic(con checked CheckedProgram, node int) string {
+    index := checked.functionReferenceIndex(node)
+    if index < 0 || checked.functionReferences[index].function < 0 {
+        return ""
+    }
+    function := checked.functionReferences[index].function
+    return token.CopyText(con checked.functions[function].intrinsic)
+}
+
+pub func FunctionIntrinsic(con checked CheckedProgram, con name string) string {
+    function := checked.functionIndex(con name)
+    if function < 0 {
+        return ""
+    }
+    return token.CopyText(con checked.functions[function].intrinsic)
+}
+
 pub func ClosureCount(con checked CheckedProgram) int {
     return len(checked.closures)
 }
@@ -621,7 +642,8 @@ func (mut self CheckedProgram) collectEnumNames(con program ast.Program) Result[
                     patternName = ast.Value(con program, metadata)
                 }
             }
-            self.enums = append(self.enums, EnumSig{name: name, patternName: patternName, variants: []EnumVariantSig{}})
+            intrinsic := declarationMetadata(con program, declaration, con "Intrinsic.Type")
+            self.enums = append(self.enums, EnumSig{name: name, intrinsic: intrinsic, patternName: patternName, variants: []EnumVariantSig{}})
         }
     }
     return Ok(true)
@@ -646,7 +668,8 @@ func (mut self CheckedProgram) collectStructNames(con program ast.Program) Resul
             if self.hasStruct(con name) {
                 return Err(newError(strings.join(con []string{"duplicate struct `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
             }
-            self.structs = append(self.structs, StructSig{name: name, fields: []FieldSig{}})
+            intrinsic := declarationMetadata(con program, declaration, con "Intrinsic.Type")
+            self.structs = append(self.structs, StructSig{name: name, intrinsic: intrinsic, intrinsicArgs: []ResolvedType{}, fields: []FieldSig{}})
         }
     }
     return Ok(true)
@@ -659,6 +682,7 @@ func (mut self CheckedProgram) collectStructFields(con program ast.Program) Resu
         declaration := ast.Child(con program, root, child)
         kind := ast.Kind(con program, declaration)
         if isStructKind(con kind) {
+            mut intrinsicArgs := []ResolvedType{}
             for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
                 fieldNode := ast.Child(con program, declaration, item)
                 fieldKind := ast.Kind(con program, fieldNode)
@@ -680,6 +704,28 @@ func (mut self CheckedProgram) collectStructFields(con program ast.Program) Resu
                             return Err(error)
                         }
                     }
+                } else if fieldKind == "Intrinsic.Type" {
+                    for mut argument := 0; argument < ast.ChildCount(con program, fieldNode); argument = argument + 1 {
+                        match self.resolveType(con program, ast.Child(con program, fieldNode, argument)) {
+                            case Ok(ty) {
+                                intrinsicArgs = append(intrinsicArgs, ty)
+                            }
+                            case Err(error) {
+                                return Err(error)
+                            }
+                        }
+                    }
+                }
+            }
+            self.structs[structIndex].intrinsicArgs = intrinsicArgs
+            if self.structs[structIndex].intrinsic == "Map" {
+                if len(self.structs[structIndex].intrinsicArgs) != 2 {
+                    return Err(newError("compiler-owned collections.Map must have two type arguments", ast.Span(con program, declaration)))
+                }
+                key := copyType(con self.structs[structIndex].intrinsicArgs[0])
+                if key.kind != "int" && key.kind != "bool" && key.kind != "string" && !startsWith(con key.text, con "__mlg_symbolic_type_") {
+                    message := strings.join(con []string{"collections.Map key type must be `int`, `bool`, or `string`, got `", token.CopyText(con key.text), "`",}, con "")
+                    return Err(newError(message, ast.Span(con program, declaration)))
                 }
             }
             structIndex = structIndex + 1
@@ -828,7 +874,8 @@ func (mut self CheckedProgram) collectFunctionSignatures(con program ast.Program
                 if self.hasFunction(con name) {
                     return Err(newError(strings.join(con []string{"duplicate function `", token.CopyText(con name), "`",}, con ""), ast.Span(con program, declaration)))
                 }
-                self.functions = append(self.functions, FunctionSig{name: name, mutable: false, params: params, returnType: returnType})
+                intrinsic := declarationMetadata(con program, declaration, con "Intrinsic.Function")
+                self.functions = append(self.functions, FunctionSig{name: name, intrinsic: intrinsic, mutable: false, params: params, returnType: returnType})
             }
         }
     }
@@ -884,6 +931,9 @@ func (mut self CheckedProgram) checkFunctionBodies(con program ast.Program) Resu
                 functionIndex := self.functionIndex(con name)
                 if functionIndex < 0 {
                     return Err(newError("checked function signature is missing", ast.Span(con program, declaration)))
+                }
+                if self.functions[functionIndex].intrinsic != "" {
+                    continue
                 }
                 for mut param := 0; param < len(self.functions[functionIndex].params); param = param + 1 {
                     mut local := localFromParam(con self.functions[functionIndex].params[param])
@@ -1999,7 +2049,7 @@ func (mut self CheckedProgram) checkFunctionLiteral(con program ast.Program, exp
     }
 
     syntheticName := strings.join(con []string{"__mlg_closure_", strings.fromInt(len(self.functionTypes)),}, con "")
-    self.functionTypes = append(self.functionTypes, FunctionSig{name: syntheticName, mutable: mutable, params: copyParams(con params), returnType: copyType(con returnType),})
+    self.functionTypes = append(self.functionTypes, FunctionSig{name: syntheticName, intrinsic: "", mutable: mutable, params: copyParams(con params), returnType: copyType(con returnType),})
     function := encodeFunctionTypeIndex(len(self.functionTypes) - 1)
     ty := self.functionType(function)
     self.recordType(expression, con ty)
@@ -4526,7 +4576,7 @@ func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Re
         match self.resolveType(con program, returnNode) {
             case Ok(returnType) {
                 ty := ResolvedType{text: strings.join(con []string{"func", mutable, "(", strings.join(con params, con ", "), ") ", token.CopyText(con returnType.text),}, con ""), kind: "function", copy: false, cleanup: true,}
-                self.functionTypes = append(self.functionTypes, FunctionSig{name: "", mutable: functionMutable, params: signatureParams, returnType: copyType(con returnType),})
+                self.functionTypes = append(self.functionTypes, FunctionSig{name: "", intrinsic: "", mutable: functionMutable, params: signatureParams, returnType: copyType(con returnType),})
                 return Ok(ty)
             }
             case Err(error) {
@@ -4593,6 +4643,10 @@ func (mut self CheckedProgram) resolveType(con program ast.Program, node int) Re
     if self.hasEnum(con name) {
         if childCount != 0 {
             return Err(newError(strings.join(con []string{"enum type `", token.CopyText(con name), "` does not take type arguments",}, con ""), source.Copy(con span)))
+        }
+        enumeration := self.enumIndex(con name)
+        if enumeration >= 0 && self.enums[enumeration].intrinsic == "ErrorKind" {
+            return Ok(ResolvedType{text: token.CopyText(con name), kind: "enum", copy: true, cleanup: false,})
         }
         return Ok(ResolvedType{text: token.CopyText(con name), kind: "enum", copy: false, cleanup: true,})
     }
@@ -5163,6 +5217,30 @@ func isBuiltinTypeName(con name string) bool {
 
 func isBuiltinValueName(con name string) bool {
     return name == "print" || name == "len" || name == "append" || name == "Some" || name == "None" || name == "Ok" || name == "Err"
+}
+
+func declarationMetadata(con program ast.Program, declaration int, con kind string) string {
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == kind {
+            return ast.Value(con program, node)
+        }
+    }
+    return ""
+}
+
+func startsWith(con value string, con prefix string) bool {
+    if strings.byteLen(con value) < strings.byteLen(con prefix) {
+        return false
+    }
+    return match strings.slice(con value, 0, strings.byteLen(con prefix)) {
+        case Ok(head) {
+            head == prefix
+        }
+        case Err(_) {
+            false
+        }
+    }
 }
 
 func unitType() ResolvedType {

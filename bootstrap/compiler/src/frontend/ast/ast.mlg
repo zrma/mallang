@@ -32,6 +32,18 @@ pub func NewProgram(nodes []Node, root int) Program {
     return Program{nodes: nodes, root: root}
 }
 
+pub func CloneNodes(con program Program) []Node {
+    mut nodes := []Node{}
+    for mut index := 0; index < len(program.nodes); index = index + 1 {
+        mut children := []int{}
+        for mut child := 0; child < len(program.nodes[index].children); child = child + 1 {
+            children = append(children, program.nodes[index].children[child])
+        }
+        nodes = append(nodes, NewNode(copyText(con program.nodes[index].kind), copyText(con program.nodes[index].value), source.Copy(con program.nodes[index].span), children))
+    }
+    return nodes
+}
+
 pub func NewError(message string, span source.Span) ParseError {
     return ParseError{message: message, span: span}
 }

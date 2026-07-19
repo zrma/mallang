@@ -141,7 +141,7 @@ func (mut self Lowerer) lowerProgramDeclarations(con syntax ast.Program, con che
     for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
         declaration := ast.Child(con syntax, root, child)
         declarationKind := ast.Kind(con syntax, declaration)
-        if declarationKind == "FunctionDecl.Package" || declarationKind == "FunctionDecl.Public" {
+        if(declarationKind == "FunctionDecl.Package" || declarationKind == "FunctionDecl.Public") && semantic.FunctionIntrinsic(con checked, con ast.Value(con syntax, declaration)) == "" {
             match self.lowerFunction(con syntax, declaration, con checked) {
                 case Ok(_) {}
                 case Err(error) {
@@ -586,6 +586,17 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         expression := ast.Child(con syntax, statement, 0)
         match self.lowerExpression(con syntax, expression, con checked) {
             case Ok(child) {
+                mut loweredChild := child
+                if kind == "Stmt.Expr" {
+                    match self.wrapFullExpressionTemporary(con syntax, expression, child, con checked) {
+                        case Ok(wrapped) {
+                            loweredChild = wrapped
+                        }
+                        case Err(error) {
+                            return Err(error)
+                        }
+                    }
+                }
                 mut ty := "unit"
                 if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" {
                     match semantic.NodeType(con checked, expression) {
@@ -599,7 +610,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                 }
                 letBinding := kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable"
                 cleanup := letBinding && semantic.NodeNeedsCleanup(con checked, expression)
-                return Ok(self.addNode("S", kind, value, ty, ast.Span(con syntax, statement), []int{child}, cleanup))
+                return Ok(self.addNode("S", kind, value, ty, ast.Span(con syntax, statement), []int{loweredChild}, cleanup))
             }
             case Err(error) {
                 return Err(error)
@@ -839,13 +850,19 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
         mut callKind := "Expr.IndirectCall"
         mut callValue := ""
         if semantic.FunctionReferenceDirect(con checked, callee) {
-            callKind = "Expr.Call"
-            match semantic.FunctionReferenceName(con checked, callee) {
-                case Ok(name) {
-                    callValue = name
-                }
-                case Err(_) {
-                    return Err(newError("checked direct function reference is missing", ast.Span(con syntax, callee)))
+            intrinsic := semantic.FunctionReferenceIntrinsic(con checked, callee)
+            if intrinsic != "" {
+                callKind = "Expr.IntrinsicCall"
+                callValue = intrinsic
+            } else {
+                callKind = "Expr.Call"
+                match semantic.FunctionReferenceName(con checked, callee) {
+                    case Ok(name) {
+                        callValue = name
+                    }
+                    case Err(_) {
+                        return Err(newError("checked direct function reference is missing", ast.Span(con syntax, callee)))
+                    }
                 }
             }
         } else {
@@ -892,6 +909,10 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
     }
 
     if kind == "Expr.Var" && semantic.FunctionReferenceDirect(con checked, expression) {
+        intrinsic := semantic.FunctionReferenceIntrinsic(con checked, expression)
+        if intrinsic != "" {
+            return Ok(self.addNode("E", "Expr.IntrinsicFunctionValue", intrinsic, token.CopyText(con ty), ast.Span(con syntax, expression), []int{}, cleanup))
+        }
         return match semantic.FunctionReferenceName(con checked, expression) {
             case Ok(name) {
                 Ok(self.addNode("E", "Expr.FunctionValue", name, token.CopyText(con ty), ast.Span(con syntax, expression), []int{}, cleanup))

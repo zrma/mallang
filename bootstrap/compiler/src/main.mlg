@@ -14,6 +14,7 @@ import "bootstrap_compiler/linker"
 import "bootstrap_compiler/packages"
 import "bootstrap_compiler/semantic"
 import "bootstrap_compiler/specialize"
+import "bootstrap_compiler/standard"
 
 func fail(con message string) {
     match io.writeStderr(con message) {
@@ -182,7 +183,7 @@ func parseCliCount(con value string) int {
     return 0
 }
 
-func runProjectPackage(con args []string, linkProgram bool) {
+func runProjectPackage(con args []string, operation string) {
     if len(args) < 7 {
         fail(con "usage: bootstrap-frontend <package-layout-project|link-project> <unit-count> (<name> <source-root> <dependency-count> <dependency>...)* <source>...\n")
     }
@@ -223,10 +224,50 @@ func runProjectPackage(con args []string, linkProgram bool) {
             project := packages.NewProject(con units)
             match packages.BuildProject(con program, con project, con paths) {
                 case Ok(layout) {
-                    if linkProgram {
+                    if operation != "layout" {
                         match linker.LinkProject(con rootName, con layout, con program) {
-                            case Ok(linked) {
-                                print(ast.Normalize(con linked))
+                            case Ok(linkedProgram) {
+                                if operation == "link" {
+                                    print(ast.Normalize(con linkedProgram))
+                                } else {
+                                    augmented := standard.Augment(con layout, con linkedProgram)
+                                    if operation == "augment" {
+                                        print(ast.Normalize(con augmented))
+                                    } else {
+                                        match prepareProgram(con augmented) {
+                                            case Ok(specialized) {
+                                                concrete := specialize.Program(con specialized)
+                                                if operation == "prepare" {
+                                                    print(ast.Normalize(con concrete))
+                                                } else {
+                                                    match semantic.Check(con concrete) {
+                                                        case Ok(checked) {
+                                                            if operation == "check" {
+                                                                print(semantic.Normalize(con checked))
+                                                            } else {
+                                                                match ir.Lower(con concrete, con checked) {
+                                                                    case Ok(lowered) {
+                                                                        print(ir.Normalize(con lowered))
+                                                                    }
+                                                                    case Err(error) {
+                                                                        print(ir.NormalizeError(con error))
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        case Err(error) {
+                                                            message := semantic.ErrorMessage(con error)
+                                                            print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            case Err(message) {
+                                                print(message)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             case Err(error) {
                                 print(linker.NormalizeError(con error))
@@ -394,12 +435,28 @@ func runMode(con mode string, text string) {
 func main() {
     match os.args() {
         case Ok(args) {
+            if len(args) >= 2 && args[1]== "ir-project" {
+                runProjectPackage(con args, "ir")
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "check-project" {
+                runProjectPackage(con args, "check")
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "prepare-project" {
+                runProjectPackage(con args, "prepare")
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "augment-project" {
+                runProjectPackage(con args, "augment")
+                os.exit(0)
+            }
             if len(args) >= 2 && args[1]== "link-project" {
-                runProjectPackage(con args, true)
+                runProjectPackage(con args, "link")
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "package-layout-project" {
-                runProjectPackage(con args, false)
+                runProjectPackage(con args, "layout")
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "package-layout" {
