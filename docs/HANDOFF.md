@@ -675,9 +675,12 @@ stage, span, message로 거부한다. 세 package-layout fixture set, 163개 par
 root project의 source package를 묶고 file-local import path/qualifier 중복, unresolved target,
 cycle을 Rust package graph와 같은 진단으로 거부하며 package/import를 lexical order로,
 build order를 dependency-first로 정규화한다. valid 및 일곱 rejection layout set, 163개
-parser corpus source와 전체 250개 project test가 이 경계를 고정한다. 다음 slice는
-declaration inventory, standard/cross-project package 연결, visibility/link rewrite와 standard
-intrinsic specialization이다. public language 또는
+parser corpus source와 전체 250개 project test가 이 경계를 고정한다. P176e4b2b는
+struct/enum/function declaration을 package별로, method를 receiver별로 수집하고 visibility와
+type parameter를 보존한다. 일반 declaration과 receiver method collision은 Rust와 같은
+source span에서 거부한다. valid 및 아홉 rejection layout set, 163개 parser corpus source와
+전체 251개 project test가 이를 고정한다. 다음 slice는 standard/cross-project package 연결,
+visibility/link rewrite와 standard intrinsic specialization이다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
@@ -686,7 +689,7 @@ B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 250개 project test와
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 251개 project test와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
 

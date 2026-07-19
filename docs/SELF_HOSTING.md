@@ -236,7 +236,11 @@ import paths and qualifiers, rejects unresolved imports and cycles, and emits
 lexical package/import plus dependency-first build order matching Rust. One
 valid and seven rejection layout sets, one hundred sixty-three parser corpus
 sources and two hundred fifty Mallang project tests cover this boundary.
-Declaration inventory, standard and cross-project package construction,
+P176e4b2b collects struct, enum and function declarations per package, groups
+methods by receiver, preserves visibility and type parameters, and matches Rust
+duplicate declaration diagnostics. One valid and nine rejection layout sets,
+one hundred sixty-three parser corpus sources and two hundred fifty-one Mallang
+project tests cover this boundary. Standard and cross-project package construction,
 visibility/link rewriting and standard-intrinsic specialization plus the remaining
 full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

@@ -1,0 +1,3 @@
+package a
+
+type Open struct {}

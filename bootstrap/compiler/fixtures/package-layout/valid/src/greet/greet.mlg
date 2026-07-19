@@ -1,3 +1,12 @@
 package greet
 
+pub type Message struct {}
+
+pub type State[T] enum {
+    Empty
+    Full(T)
+}
+
+pub func (con self Message) Show() {}
+
 pub func Print() {}

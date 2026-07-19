@@ -15,7 +15,7 @@ use mallang::ir::{
 use mallang::{
     build_package_graph, check, discover_project, lex, lower, lower_test,
     parse_sources_with_diagnostics, parse_with_diagnostics, CheckedProgram, IrProgram, Keyword,
-    LexError, SourceMap, Span, Token, TokenKind,
+    LexError, PackageDeclarationKind, SourceMap, Span, Token, TokenKind,
 };
 
 fn main() -> ExitCode {
@@ -137,12 +137,15 @@ fn main() -> ExitCode {
                     );
                 }
                 for package in graph.packages().values() {
+                    let method_count = package.methods.values().map(|methods| methods.len()).sum::<usize>();
                     println!(
-                        "PACKAGE|{}|{}|{}|{}",
+                        "PACKAGE|{}|{}|{}|{}|{}|{}",
                         package.path,
                         package.name,
                         package.source_ids.len(),
-                        package.imports.len()
+                        package.imports.len(),
+                        package.declarations.len(),
+                        method_count
                     );
                     for source_id in &package.source_ids {
                         println!("PSOURCE|{}|{}", package.path, source_id.index());
@@ -152,6 +155,37 @@ fn main() -> ExitCode {
                             "IMPORT|{}|{}|{}",
                             package.path, import.path, import.qualifier
                         );
+                    }
+                    for declaration in package.declarations.values() {
+                        print!(
+                            "DECL|{}|{}|{:?}|{}|{}",
+                            package.path,
+                            package_declaration_kind(declaration.kind),
+                            declaration.visibility,
+                            declaration.name,
+                            declaration.type_params.len()
+                        );
+                        for type_param in &declaration.type_params {
+                            print!("|{type_param}");
+                        }
+                        println!();
+                    }
+                    for (receiver, methods) in &package.methods {
+                        for declaration in methods.values() {
+                            print!(
+                                "METHOD|{}|{}|{}|{:?}|{}|{}",
+                                package.path,
+                                receiver,
+                                package_declaration_kind(declaration.kind),
+                                declaration.visibility,
+                                declaration.name,
+                                declaration.type_params.len()
+                            );
+                            for type_param in &declaration.type_params {
+                                print!("|{type_param}");
+                            }
+                            println!();
+                        }
                     }
                 }
                 print!("ORDER|{}", graph.build_order().len());
@@ -1719,5 +1753,15 @@ fn keyword_kind(keyword: Keyword) -> &'static str {
         Keyword::Enum => "Keyword.Enum",
         Keyword::Type => "Keyword.Type",
         Keyword::Nil => "Keyword.Nil",
+    }
+}
+
+fn package_declaration_kind(kind: PackageDeclarationKind) -> &'static str {
+    match kind {
+        PackageDeclarationKind::Struct => "Struct",
+        PackageDeclarationKind::Opaque => "Opaque",
+        PackageDeclarationKind::Enum => "Enum",
+        PackageDeclarationKind::Function => "Function",
+        PackageDeclarationKind::Method => "Method",
     }
 }

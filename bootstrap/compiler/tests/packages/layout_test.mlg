@@ -21,7 +21,7 @@ test BuildsSourcePackageIdentity() {
             assert(false)
         }
     }
-    match lexer.LexWithSource("package greet\npub func Print() {}\n", 1) {
+    match lexer.LexWithSource("package greet\npub type Message struct {}\npub type State[T] enum { Empty Full(T) }\npub func (con self Message) Show() {}\npub func Print() {}\n", 1) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
@@ -41,7 +41,7 @@ test BuildsSourcePackageIdentity() {
             paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
             match Build(con program, con "hello", con "project/src", con paths) {
                 case Ok(layout) {
-                    assert(Normalize(con layout) == "LAYOUT|2|2\nSOURCE|0|hello|main\nSOURCE|1|hello/greet|greet\nPACKAGE|hello|main|1|1\nPSOURCE|hello|0\nIMPORT|hello|hello/greet|greet\nPACKAGE|hello/greet|greet|1|0\nPSOURCE|hello/greet|1\nORDER|2|hello/greet|hello")
+                    assert(Normalize(con layout) == "LAYOUT|2|2\nSOURCE|0|hello|main\nSOURCE|1|hello/greet|greet\nPACKAGE|hello|main|1|1|1|0\nPSOURCE|hello|0\nIMPORT|hello|hello/greet|greet\nDECL|hello|Function|Package|main|0\nPACKAGE|hello/greet|greet|1|0|3|1\nPSOURCE|hello/greet|1\nDECL|hello/greet|Struct|Public|Message|0\nDECL|hello/greet|Function|Public|Print|0\nDECL|hello/greet|Enum|Public|State|1|T\nMETHOD|hello/greet|Message|Method|Public|Show|0\nORDER|2|hello/greet|hello")
                 }
                 case Err(_) {
                     assert(false)
@@ -162,6 +162,71 @@ test RejectsInvalidImportPath() {
                 }
                 case Err(_) {
                     assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsDuplicatePackageDeclarations() {
+    mut programs := []ast.Program{}
+    match lexer.LexWithSource("package main\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match lexer.LexWithSource("package a\nfunc Open() {}\n", 1) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match lexer.LexWithSource("package a\ntype Open struct {}\n", 2) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    programs = append(programs, program)
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+    match ast.MergePrograms(programs) {
+        case Ok(program) {
+            paths := []string{"project/src/main.mlg", "project/src/a/first.mlg", "project/src/a/second.mlg",}
+            match Build(con program, con "hello", con "project/src", con paths) {
+                case Ok(_) {
+                    assert(false)
+                }
+                case Err(error) {
+                    assert(ErrorMessage(con error) == "duplicate declaration `Open` in package `hello/a`")
                 }
             }
         }

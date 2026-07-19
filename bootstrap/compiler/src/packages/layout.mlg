@@ -17,11 +17,26 @@ pub type PackageImport struct {
     span source.Span
 }
 
+pub type Declaration struct {
+    name string
+    kind string
+    visibility string
+    typeParams []string
+    span source.Span
+}
+
+pub type MethodGroup struct {
+    receiver string
+    declarations []Declaration
+}
+
 pub type Package struct {
     path string
     name string
     sources []int
     imports []PackageImport
+    declarations []Declaration
+    methods []MethodGroup
 }
 
 pub type Layout struct {
@@ -90,7 +105,7 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
         sourcePackages = append(sourcePackages, SourcePackage{source: sourceId, path: token.CopyText(con identity.path), name: token.CopyText(con identity.name)})
         packageIndex := findPackage(con packageItems, con identity.path)
         if packageIndex < 0 {
-            packageItems = append(packageItems, Package{path: token.CopyText(con identity.path), name: token.CopyText(con identity.name), sources: []int{sourceId}, imports: []PackageImport{},})
+            packageItems = append(packageItems, Package{path: token.CopyText(con identity.path), name: token.CopyText(con identity.name), sources: []int{sourceId}, imports: []PackageImport{}, declarations: []Declaration{}, methods: []MethodGroup{},})
         } else {
             packageItems[packageIndex].sources = append(packageItems[packageIndex].sources, sourceId)
         }
@@ -114,6 +129,14 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
             return Err(error)
         }
     }
+    match collectDeclarations(con packageItems, con sourcePackages, con program) {
+        case Ok(collected) {
+            packageItems = collected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
     mut buildOrder := []string{}
     match topologicalOrder(con packageItems) {
         case Ok(order) {
@@ -132,12 +155,20 @@ pub func Normalize(con layout Layout) string {
         lines = append(lines, strings.join(con []string{"SOURCE|", strings.fromInt(layout.sources[index].source), "|", token.CopyText(con layout.sources[index].path), "|", token.CopyText(con layout.sources[index].name),}, con ""))
     }
     for mut packageIndex := 0; packageIndex < len(layout.packages); packageIndex = packageIndex + 1 {
-        lines = append(lines, strings.join(con []string{"PACKAGE|", token.CopyText(con layout.packages[packageIndex].path), "|", token.CopyText(con layout.packages[packageIndex].name), "|", strings.fromInt(len(layout.packages[packageIndex].sources)), "|", strings.fromInt(len(layout.packages[packageIndex].imports)),}, con ""))
+        lines = append(lines, strings.join(con []string{"PACKAGE|", token.CopyText(con layout.packages[packageIndex].path), "|", token.CopyText(con layout.packages[packageIndex].name), "|", strings.fromInt(len(layout.packages[packageIndex].sources)), "|", strings.fromInt(len(layout.packages[packageIndex].imports)), "|", strings.fromInt(len(layout.packages[packageIndex].declarations)), "|", strings.fromInt(methodCount(con layout.packages[packageIndex])),}, con ""))
         for mut sourceIndex := 0; sourceIndex < len(layout.packages[packageIndex].sources); sourceIndex = sourceIndex + 1 {
             lines = append(lines, strings.join(con []string{"PSOURCE|", token.CopyText(con layout.packages[packageIndex].path), "|", strings.fromInt(layout.packages[packageIndex].sources[sourceIndex]),}, con ""))
         }
         for mut importIndex := 0; importIndex < len(layout.packages[packageIndex].imports); importIndex = importIndex + 1 {
             lines = append(lines, strings.join(con []string{"IMPORT|", token.CopyText(con layout.packages[packageIndex].path), "|", token.CopyText(con layout.packages[packageIndex].imports[importIndex].path), "|", token.CopyText(con layout.packages[packageIndex].imports[importIndex].qualifier),}, con ""))
+        }
+        for mut declarationIndex := 0; declarationIndex < len(layout.packages[packageIndex].declarations); declarationIndex = declarationIndex + 1 {
+            lines = append(lines, normalizeDeclaration(con layout.packages[packageIndex].path, con "DECL", con "", con layout.packages[packageIndex].declarations[declarationIndex]))
+        }
+        for mut groupIndex := 0; groupIndex < len(layout.packages[packageIndex].methods); groupIndex = groupIndex + 1 {
+            for mut declarationIndex := 0; declarationIndex < len(layout.packages[packageIndex].methods[groupIndex].declarations); declarationIndex = declarationIndex + 1 {
+                lines = append(lines, normalizeDeclaration(con layout.packages[packageIndex].path, con "METHOD", con layout.packages[packageIndex].methods[groupIndex].receiver, con layout.packages[packageIndex].methods[groupIndex].declarations[declarationIndex]))
+            }
         }
     }
     mut order := strings.join(con []string{"ORDER|", strings.fromInt(len(layout.buildOrder)),}, con "")
@@ -213,6 +244,189 @@ func connectImports(con packages []Package, con pending []PendingImport) Result[
         connected[index].imports = sortImports(con connected[index].imports)
     }
     return Ok(connected)
+}
+
+func collectDeclarations(con packages []Package, con sourcePackages []SourcePackage, con program ast.Program) Result[[]Package, LayoutError] {
+    mut collected := copyPackages(con packages)
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        node := ast.Child(con program, root, child)
+        nodeKind := ast.Kind(con program, node)
+        mut declarationKind := ""
+        if startsWith(con nodeKind, con "StructDecl.") {
+            declarationKind = "Struct"
+        } else if startsWith(con nodeKind, con "EnumDecl.") {
+            declarationKind = "Enum"
+        } else if startsWith(con nodeKind, con "FunctionDecl.") {
+            declarationKind = "Function"
+        } else {
+            continue
+        }
+        span := ast.Span(con program, node)
+        packagePath := sourcePackagePath(con sourcePackages, source.Source(con span))
+        packageIndex := findPackage(con collected, con packagePath)
+        if packageIndex < 0 {
+            message := strings.join(con []string{"declaration source ID ", strings.fromInt(source.Source(con span)), " is not part of the package layout",}, con "")
+            return Err(newError(message, source.Copy(con span)))
+        }
+        receiver := methodReceiver(con program, node)
+        if receiver != "" {
+            declarationKind = "Method"
+        }
+        declaration := Declaration{name: ast.Value(con program, node), kind: declarationKind, visibility: declarationVisibility(con nodeKind), typeParams: declarationTypeParams(con program, node), span: source.Copy(con span),}
+        if receiver == "" {
+            if findDeclaration(con collected[packageIndex].declarations, con declaration.name) >= 0 {
+                message := strings.join(con []string{"duplicate declaration `", token.CopyText(con declaration.name), "` in package `", token.CopyText(con collected[packageIndex].path), "`",}, con "")
+                return Err(newError(message, source.Copy(con declaration.span)))
+            }
+            collected[packageIndex].declarations = append(collected[packageIndex].declarations, declaration)
+        } else {
+            mut groupIndex := findMethodGroup(con collected[packageIndex].methods, con receiver)
+            if groupIndex < 0 {
+                collected[packageIndex].methods = append(collected[packageIndex].methods, MethodGroup{receiver: token.CopyText(con receiver), declarations: []Declaration{},})
+                groupIndex = len(collected[packageIndex].methods) - 1
+            }
+            if findDeclaration(con collected[packageIndex].methods[groupIndex].declarations, con declaration.name) >= 0 {
+                message := strings.join(con []string{"duplicate declaration `", token.CopyText(con declaration.name), "` in package `", token.CopyText(con collected[packageIndex].path), "`",}, con "")
+                return Err(newError(message, source.Copy(con declaration.span)))
+            }
+            collected[packageIndex].methods[groupIndex].declarations = append(collected[packageIndex].methods[groupIndex].declarations, declaration)
+        }
+    }
+    for mut packageIndex := 0; packageIndex < len(collected); packageIndex = packageIndex + 1 {
+        collected[packageIndex].declarations = sortDeclarations(con collected[packageIndex].declarations)
+        collected[packageIndex].methods = sortMethodGroups(con collected[packageIndex].methods)
+    }
+    return Ok(collected)
+}
+
+func sourcePackagePath(con sources []SourcePackage, sourceId int) string {
+    for mut index := 0; index < len(sources); index = index + 1 {
+        if sources[index].source == sourceId {
+            return token.CopyText(con sources[index].path)
+        }
+    }
+    return ""
+}
+
+func declarationVisibility(con kind string) string {
+    if kind == "StructDecl.Public" || kind == "EnumDecl.Public" || kind == "FunctionDecl.Public" {
+        return "Public"
+    }
+    return "Package"
+}
+
+func declarationTypeParams(con program ast.Program, declaration int) []string {
+    mut params := []string{}
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        node := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, node) == "TypeParam" {
+            params = append(params, ast.Value(con program, node))
+        }
+    }
+    return params
+}
+
+func methodReceiver(con program ast.Program, declaration int) string {
+    for mut child := 0; child < ast.ChildCount(con program, declaration); child = child + 1 {
+        receiver := ast.Child(con program, declaration, child)
+        if ast.Kind(con program, receiver) != "Receiver" || ast.ChildCount(con program, receiver) == 0 {
+            continue
+        }
+        param := ast.Child(con program, receiver, 0)
+        if ast.ChildCount(con program, param) == 0 {
+            return ""
+        }
+        ty := ast.Child(con program, param, 0)
+        return ast.Value(con program, ty)
+    }
+    return ""
+}
+
+func findDeclaration(con declarations []Declaration, con name string) int {
+    for mut index := 0; index < len(declarations); index = index + 1 {
+        if declarations[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func findMethodGroup(con groups []MethodGroup, con receiver string) int {
+    for mut index := 0; index < len(groups); index = index + 1 {
+        if groups[index].receiver == receiver {
+            return index
+        }
+    }
+    return - 1
+}
+
+func sortDeclarations(con values []Declaration) []Declaration {
+    mut used := []bool{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        used = append(used, false)
+    }
+    mut sorted := []Declaration{}
+    for len(sorted) < len(values) {
+        mut best := -1
+        for mut index := 0; index < len(values); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con values[index].name, con values[best].name)) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        sorted = append(sorted, copyDeclaration(con values[best]))
+    }
+    return sorted
+}
+
+func sortMethodGroups(con values []MethodGroup) []MethodGroup {
+    mut used := []bool{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        used = append(used, false)
+    }
+    mut sorted := []MethodGroup{}
+    for len(sorted) < len(values) {
+        mut best := -1
+        for mut index := 0; index < len(values); index = index + 1 {
+            if !used[index]&&(best < 0 || textPrecedes(con values[index].receiver, con values[best].receiver)) {
+                best = index
+            }
+        }
+        if best < 0 {
+            break
+        }
+        used[best]= true
+        mut declarations := sortDeclarations(con values[best].declarations)
+        sorted = append(sorted, MethodGroup{receiver: token.CopyText(con values[best].receiver), declarations: declarations,})
+    }
+    return sorted
+}
+
+func methodCount(con item Package) int {
+    mut count := 0
+    for mut index := 0; index < len(item.methods); index = index + 1 {
+        count = count + len(item.methods[index].declarations)
+    }
+    return count
+}
+
+func normalizeDeclaration(con packagePath string, con category string, con receiver string, con declaration Declaration) string {
+    mut parts := []string{token.CopyText(con category), token.CopyText(con packagePath),}
+    if category == "METHOD" {
+        parts = append(parts, token.CopyText(con receiver))
+    }
+    parts = append(parts, token.CopyText(con declaration.kind))
+    parts = append(parts, token.CopyText(con declaration.visibility))
+    parts = append(parts, token.CopyText(con declaration.name))
+    parts = append(parts, strings.fromInt(len(declaration.typeParams)))
+    for mut index := 0; index < len(declaration.typeParams); index = index + 1 {
+        parts = append(parts, token.CopyText(con declaration.typeParams[index]))
+    }
+    return strings.join(con parts, con "|")
 }
 
 func topologicalOrder(con packages []Package) Result[[]string, LayoutError] {
@@ -466,11 +680,31 @@ func copyPackage(con value Package) Package {
     for mut index := 0; index < len(value.imports); index = index + 1 {
         imports = append(imports, copyImport(con value.imports[index]))
     }
-    return Package{path: token.CopyText(con value.path), name: token.CopyText(con value.name), sources: sources, imports: imports,}
+    mut declarations := []Declaration{}
+    for mut index := 0; index < len(value.declarations); index = index + 1 {
+        declarations = append(declarations, copyDeclaration(con value.declarations[index]))
+    }
+    mut methods := []MethodGroup{}
+    for mut index := 0; index < len(value.methods); index = index + 1 {
+        methods = append(methods, copyMethodGroup(con value.methods[index]))
+    }
+    return Package{path: token.CopyText(con value.path), name: token.CopyText(con value.name), sources: sources, imports: imports, declarations: declarations, methods: methods,}
 }
 
 func copyImport(con value PackageImport) PackageImport {
     return PackageImport{path: token.CopyText(con value.path), qualifier: token.CopyText(con value.qualifier), span: source.Copy(con value.span),}
+}
+
+func copyDeclaration(con value Declaration) Declaration {
+    return Declaration{name: token.CopyText(con value.name), kind: token.CopyText(con value.kind), visibility: token.CopyText(con value.visibility), typeParams: copyTexts(con value.typeParams), span: source.Copy(con value.span),}
+}
+
+func copyMethodGroup(con value MethodGroup) MethodGroup {
+    mut declarations := []Declaration{}
+    for mut index := 0; index < len(value.declarations); index = index + 1 {
+        declarations = append(declarations, copyDeclaration(con value.declarations[index]))
+    }
+    return MethodGroup{receiver: token.CopyText(con value.receiver), declarations: declarations,}
 }
 
 func copyPendingImport(con value PendingImport) PendingImport {

@@ -661,7 +661,11 @@ specialization and function-body checking until later P176 slices.
   lexical package/import plus dependency-first build order matching Rust. One
   valid and seven rejection layout sets, one hundred sixty-three parser corpus
   sources and two hundred fifty Mallang project tests cover this boundary.
-  Declaration inventory, standard and cross-project package construction,
+  P176e4b2b collects struct, enum and function declarations per package, groups
+  methods by receiver, preserves visibility and type parameters, and matches
+  Rust duplicate declaration diagnostics. One valid and nine rejection layout
+  sets, one hundred sixty-three parser corpus sources and two hundred fifty-one
+  Mallang project tests cover this boundary. Standard and cross-project package construction,
   visibility/link rewriting and standard-intrinsic specialization continue in
   P176e.
   Stage0 match-arm shadow cleanup identity

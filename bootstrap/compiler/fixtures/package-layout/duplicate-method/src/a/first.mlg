@@ -1,0 +1,5 @@
+package a
+
+type Item struct {}
+
+func (con self Item) Open() {}
