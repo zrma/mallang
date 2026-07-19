@@ -120,6 +120,14 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
             }
         }
     }
+    match connectStandardPackages(con packageItems, con pendingImports) {
+        case Ok(connected) {
+            packageItems = connected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
     packageItems = sortPackages(con packageItems)
     match connectImports(con packageItems, con pendingImports) {
         case Ok(connected) {
@@ -219,6 +227,71 @@ func collectFileImports(con program ast.Program, sourceUnit int, con packagePath
         imports = append(imports, PendingImport{from: token.CopyText(con packagePath), item: PackageImport{path: path, qualifier: qualifier, span: span,},})
     }
     return Ok(imports)
+}
+
+func connectStandardPackages(con packages []Package, con pending []PendingImport) Result[[]Package, LayoutError] {
+    mut connected := copyPackages(con packages)
+    for mut index := 0; index < len(pending); index = index + 1 {
+        standard := standardPackage(con pending[index].item.path, source.Copy(con pending[index].item.span))
+        if standard.path == "" {
+            continue
+        }
+        existing := findPackage(con connected, con standard.path)
+        if existing >= 0 {
+            if len(connected[existing].sources) > 0 {
+                message := strings.join(con []string{"source package `", token.CopyText(con standard.path), "` shadows a reserved standard package",}, con "")
+                return Err(newError(message, source.Copy(con pending[index].item.span)))
+            }
+            continue
+        }
+        connected = append(connected, standard)
+    }
+    return Ok(connected)
+}
+
+func standardPackage(con path string, span source.Span) Package {
+    mut declarations := []Declaration{}
+    mut name := ""
+    if path == "std/errors" {
+        name = "errors"
+        declarations = append(declarations, standardDeclaration(con "Kind", con "Enum", con []string{}, source.Copy(con span)))
+        declarations = append(declarations, standardDeclaration(con "Error", con "Struct", con []string{}, source.Copy(con span)))
+    } else if path == "std/fs" {
+        name = "fs"
+        declarations = standardFunctions(con []string{"readText", "writeText",}, con []string{}, source.Copy(con span))
+        declarations = append(declarations, standardDeclaration(con "forEachLine", con "Function", con []string{"C", "S",}, source.Copy(con span)))
+    } else if path == "std/io" {
+        name = "io"
+        declarations = standardFunctions(con []string{"readStdin", "writeStdout", "writeStderr",}, con []string{}, source.Copy(con span))
+    } else if path == "std/os" {
+        name = "os"
+        declarations = standardFunctions(con []string{"args", "env", "exit",}, con []string{}, source.Copy(con span))
+    } else if path == "std/strings" {
+        name = "strings"
+        declarations = standardFunctions(con []string{"byteLen", "byteAt", "slice", "scalarCount", "contains", "find", "split", "join", "fromInt", "parseInt", "fromBool", "parseBool",}, con []string{}, source.Copy(con span))
+    } else if path == "std/collections" {
+        name = "collections"
+        declarations = append(declarations, standardDeclaration(con "Map", con "Opaque", con []string{"K", "V",}, source.Copy(con span)))
+        functions := standardFunctions(con []string{"newMap", "count", "insert", "with", "update", "remove",}, con []string{"K", "V",}, source.Copy(con span))
+        for mut index := 0; index < len(functions); index = index + 1 {
+            declarations = append(declarations, copyDeclaration(con functions[index]))
+        }
+    } else {
+        return Package{path: "", name: "", sources: []int{}, imports: []PackageImport{}, declarations: []Declaration{}, methods: []MethodGroup{},}
+    }
+    return Package{path: token.CopyText(con path), name: name, sources: []int{}, imports: []PackageImport{}, declarations: declarations, methods: []MethodGroup{},}
+}
+
+func standardFunctions(con names []string, con typeParams []string, span source.Span) []Declaration {
+    mut declarations := []Declaration{}
+    for mut index := 0; index < len(names); index = index + 1 {
+        declarations = append(declarations, standardDeclaration(con names[index], con "Function", con typeParams, source.Copy(con span)))
+    }
+    return declarations
+}
+
+func standardDeclaration(con name string, con kind string, con typeParams []string, span source.Span) Declaration {
+    return Declaration{name: token.CopyText(con name), kind: token.CopyText(con kind), visibility: "Public", typeParams: copyTexts(con typeParams), span: source.Copy(con span),}
 }
 
 func connectImports(con packages []Package, con pending []PendingImport) Result[[]Package, LayoutError] {

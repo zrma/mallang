@@ -75,9 +75,11 @@ else
     bootstrap_compiler/frontend/parser::RecoversMultipleParserDiagnostics \
     bootstrap_compiler/frontend/parser::MergesSourceAwareProgramsByDeclarationGroup \
     bootstrap_compiler/packages::BuildsSourcePackageIdentity \
+    bootstrap_compiler/packages::BuildsStandardPackageInventory \
     bootstrap_compiler/packages::RejectsDuplicatePackageDeclarations \
     bootstrap_compiler/packages::RejectsPackageImportCycle \
     bootstrap_compiler/packages::RejectsInvalidImportPath \
+    bootstrap_compiler/packages::RejectsUnknownStandardPackage \
     bootstrap_compiler/semantic::ChecksPrintStatementReads \
     bootstrap_compiler/specialize::SpecializesGenericStructsFunctionsAndReceivers \
     bootstrap_compiler/specialize::SpecializesGenericEnumsAndPreservesPatternOrigins \
@@ -419,6 +421,18 @@ compare_package_layout \
   "$PACKAGE_LAYOUT_FIXTURES/duplicate-method/src/main.mlg" \
   "$PACKAGE_LAYOUT_FIXTURES/duplicate-method/src/a/first.mlg" \
   "$PACKAGE_LAYOUT_FIXTURES/duplicate-method/src/a/second.mlg"
+compare_package_layout \
+  package-layout-standard \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/standard/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/standard/src/main.mlg"
+compare_package_layout \
+  package-layout-unknown-standard \
+  "$fixture_profile" \
+  hello \
+  "$PACKAGE_LAYOUT_FIXTURES/unknown-standard/src" \
+  "$PACKAGE_LAYOUT_FIXTURES/unknown-standard/src/main.mlg"
 
 if [[ "$MODE" == "fast" ]]; then
   compare_fixture lexer "$FIXTURES/all-tokens.mlg" fast-sanitizer-lexer full
@@ -506,4 +520,4 @@ if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
   exit 1
 fi
 
-echo "self-hosting B2e4b2b $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"
+echo "self-hosting B2e4b2c $MODE gate passed: parser-corpus=$parser_corpus_count elapsed=$((SECONDS - gate_started))s"

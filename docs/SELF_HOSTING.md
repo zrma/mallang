@@ -240,7 +240,12 @@ P176e4b2b collects struct, enum and function declarations per package, groups
 methods by receiver, preserves visibility and type parameters, and matches Rust
 duplicate declaration diagnostics. One valid and nine rejection layout sets,
 one hundred sixty-three parser corpus sources and two hundred fifty-one Mallang
-project tests cover this boundary. Standard and cross-project package construction,
-visibility/link rewriting and standard-intrinsic specialization plus the remaining
+project tests cover this boundary. P176e4b2c synthesizes the six compiler-owned
+standard packages at their import spans and preserves all thirty public declaration
+kinds and generic parameters in Rust registry order. Unknown `std/*` imports match
+the Rust package error span and message. Two valid and ten rejection layout sets,
+one hundred sixty-three parser corpus sources and two hundred fifty-three Mallang
+project tests cover this boundary. Cross-project package construction,
+visibility/link rewriting, standard-intrinsic specialization and the remaining
 full-expression backend boundary are incomplete, so
 no complete semantic, typed-IR or Stage1 compiler claim is made.

@@ -1,0 +1,10 @@
+package main
+
+import "std/errors"
+import "std/fs"
+import "std/io"
+import "std/os"
+import "std/strings"
+import "std/collections"
+
+func main() {}

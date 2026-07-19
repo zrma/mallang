@@ -54,6 +54,58 @@ test BuildsSourcePackageIdentity() {
     }
 }
 
+test BuildsStandardPackageInventory() {
+    match lexer.LexWithSource("package main\nimport \"std/fs\"\nimport \"std/collections\"\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    paths := []string{"project/src/main.mlg",}
+                    match Build(con program, con "hello", con "project/src", con paths) {
+                        case Ok(layout) {
+                            assert(Normalize(con layout) == "LAYOUT|1|3\nSOURCE|0|hello|main\nPACKAGE|hello|main|1|2|1|0\nPSOURCE|hello|0\nIMPORT|hello|std/collections|collections\nIMPORT|hello|std/fs|fs\nDECL|hello|Function|Package|main|0\nPACKAGE|std/collections|collections|0|0|7|0\nDECL|std/collections|Opaque|Public|Map|2|K|V\nDECL|std/collections|Function|Public|count|2|K|V\nDECL|std/collections|Function|Public|insert|2|K|V\nDECL|std/collections|Function|Public|newMap|2|K|V\nDECL|std/collections|Function|Public|remove|2|K|V\nDECL|std/collections|Function|Public|update|2|K|V\nDECL|std/collections|Function|Public|with|2|K|V\nPACKAGE|std/fs|fs|0|0|3|0\nDECL|std/fs|Function|Public|forEachLine|2|C|S\nDECL|std/fs|Function|Public|readText|0\nDECL|std/fs|Function|Public|writeText|0\nORDER|3|std/collections|std/fs|hello")
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUnknownStandardPackage() {
+    match lexer.LexWithSource("package main\nimport \"std/future\"\nfunc main() {}\n", 0) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    paths := []string{"project/src/main.mlg",}
+                    match Build(con program, con "hello", con "project/src", con paths) {
+                        case Ok(_) {
+                            assert(false)
+                        }
+                        case Err(error) {
+                            assert(ErrorMessage(con error) == "unknown standard package `std/future`")
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test RejectsMismatchedPackageDeclaration() {
     match lexer.LexWithSource("package other\nfunc main() {}\n", 0) {
         case Ok(tokens) {

@@ -1767,6 +1767,7 @@ the next self-hosting stage is B2 semantic checking and typed IR.
 - [x] project source path의 package identity와 package declaration 검증
 - [x] same-project import validation, cycle rejection과 dependency-first package order
 - [x] package declaration/method inventory, visibility와 generic parameter 보존
+- [x] compiler-owned standard package registry, opaque/generic declaration inventory와 unknown rejection
 - [ ] nested shadow cleanup binding identity를 C backend까지 보존
 - [ ] standard/cross-project package graph, visibility/link rewrite와 standard intrinsic specialization semantics
 - [ ] full typed IR, deterministic drop insertion과 complete differential corpus

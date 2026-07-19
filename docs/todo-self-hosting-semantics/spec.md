@@ -665,9 +665,14 @@ specialization and function-body checking until later P176 slices.
   methods by receiver, preserves visibility and type parameters, and matches
   Rust duplicate declaration diagnostics. One valid and nine rejection layout
   sets, one hundred sixty-three parser corpus sources and two hundred fifty-one
-  Mallang project tests cover this boundary. Standard and cross-project package construction,
-  visibility/link rewriting and standard-intrinsic specialization continue in
-  P176e.
+  Mallang project tests cover this boundary. P176e4b2c synthesizes all six
+  compiler-owned standard packages at their import spans and preserves thirty
+  public declaration kinds and generic parameters in Rust registry order.
+  Unknown `std/*` imports match the Rust package error span and message. Two
+  valid and ten rejection layout sets, one hundred sixty-three parser corpus
+  sources and two hundred fifty-three Mallang project tests cover this boundary.
+  Cross-project package construction, visibility/link rewriting and
+  standard-intrinsic specialization continue in P176e.
   Stage0 match-arm shadow cleanup identity
   remains tracked separately in
   `docs/todo-c-backend-shadow-cleanup-identity/spec.md`.

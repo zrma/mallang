@@ -679,8 +679,14 @@ parser corpus source와 전체 250개 project test가 이 경계를 고정한다
 struct/enum/function declaration을 package별로, method를 receiver별로 수집하고 visibility와
 type parameter를 보존한다. 일반 declaration과 receiver method collision은 Rust와 같은
 source span에서 거부한다. valid 및 아홉 rejection layout set, 163개 parser corpus source와
-전체 251개 project test가 이를 고정한다. 다음 slice는 standard/cross-project package 연결,
-visibility/link rewrite와 standard intrinsic specialization이다. public language 또는
+전체 251개 project test가 이를 고정한다. P176e4b2c는 source가 없는 compiler-owned
+`std/errors`, `std/fs`, `std/io`, `std/os`, `std/strings`, `std/collections` package를 import
+span에서 합성하고 30개 public declaration의 struct/enum/function/opaque kind와 generic
+parameter를 Rust registry와 같은 lexical order로 보존한다. 존재하지 않는 `std/*` import는
+Rust와 같은 span/message로 거부한다. 두 valid 및 열 rejection layout set, 163개 parser
+corpus source와 전체 253개 project test가 이를 고정한다. 다음 slice는 cross-project package
+graph와 dependency edge이며, 그 뒤 visibility/link rewrite와 standard intrinsic
+specialization을 연결한다. public language 또는
 standard-library
 addition은
 representative compiler blocker가 확인되기 전에는 포함하지 않는다.
@@ -689,7 +695,7 @@ B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로
 ASan/UBSan 경로를 `-O1`로 실행한다. `scripts/check-self-hosting-lexer.sh --fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
 accounting, compiler phase별 exact project test와 lexer/parser/semantic/typed-IR
-sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 251개 project test와
+sanitizer smoke를 실행한다. 인자 없는 full gate만 전체 253개 project test와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
 인정한다.
 
