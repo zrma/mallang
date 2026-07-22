@@ -759,6 +759,12 @@ buffer를 할당하고 기존 string drop으로 정확히 한 번 정리된다. 
 rejection/0 boundary 경로가 byte identity, deterministic repeat, strict native, accounting과
 ASan/UBSan을 통과하고 compiler source 855개 normalized IR function이 일치한다. P177b는
 완료됐고 P177c-P177d가 남아 있다.
+P177c1은 `con`/`mut` parameter pointer ABI, borrowed parameter dereference environment,
+single-evaluation var/field/array/slice borrowed argument와 qualified receiver method를
+Stage0와 동일하게 구현했다. `borrowed-callables`를 포함한 아홉 positive/네 runtime
+rejection/하나의 function-value boundary가 differential, strict native, accounting과
+ASan/UBSan을 통과하고 compiler source 857개 normalized IR function이 일치한다. Function
+value, closure, remaining intrinsic과 broader project surface가 다음 P177c slice다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -775,9 +781,9 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
 `scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177b7의 여덟 positive/네 rejection path 기준 약 18초다. Compiler
+loop는 P177c1의 아홉 positive/다섯 rejection path 기준 약 30초다. Compiler
 source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
-관측된 integration loop는 약 28초다. Ownership/typed-IR
+관측된 integration loop는 약 32초다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.

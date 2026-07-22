@@ -1,0 +1,42 @@
+type Counter struct {
+    name string
+    value int
+}
+
+func (con self Counter) current() int {
+    return self.value
+}
+
+func (mut self Counter) increment() {
+    self.value = self.value + 1
+}
+
+func inspect(con value string) {
+    print(value)
+}
+
+func rename(mut value string) {
+    value = "lee"
+}
+
+func increment(mut value int) {
+    value = value + 1
+}
+
+func main() {
+    mut counter := Counter{name: "kim", value: 1}
+    print(counter.current())
+    counter.increment()
+    print(counter.current())
+    inspect(con counter.name)
+    rename(mut counter.name)
+    print(counter.name)
+
+    mut fixed := [2]int{1, 2}
+    increment(mut fixed[0])
+    print(fixed[0])
+
+    mut dynamic := []int{3}
+    increment(mut dynamic[0])
+    print(dynamic[0])
+}

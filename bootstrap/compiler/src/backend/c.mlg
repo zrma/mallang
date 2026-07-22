@@ -328,6 +328,29 @@ func cTypeFor(con program ir.Program, con ty string) string {
     return ""
 }
 
+func cParamType(con program ir.Program, con ty string, con mode string) string {
+    valueType := cTypeFor(con program, con ty)
+    if valueType == "" {
+        return ""
+    }
+    if mode == "owned" {
+        return token.CopyText(con valueType)
+    }
+    if mode == "con" {
+        if valueType == "void" {
+            return "const void *"
+        }
+        return strings.join(con []string{"const ", token.CopyText(con valueType), " *",}, con "")
+    }
+    if mode == "mut" {
+        if valueType == "void" {
+            return "void *"
+        }
+        return strings.join(con []string{token.CopyText(con valueType), " *",}, con "")
+    }
+    return ""
+}
+
 func cField(con name string) string {
     return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
 }
@@ -943,7 +966,7 @@ func cFunctionName(con name string) string {
     if name == "main" {
         return "main"
     }
-    return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
+    return strings.join(con []string{"mlg_", cTypeIdent(con name),}, con "")
 }
 
 func cVariableName(con name string) string {
@@ -1101,11 +1124,8 @@ func functionParams(con program ir.Program, function int, thunk bool) Result[str
     }
     for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
         mode := ir.FunctionParamMode(con program, function, param)
-        if mode != "owned" {
-            return Err(unsupported(con strings.join(con []string{mode, " parameter",}, con "")))
-        }
-        ty := cTypeFor(con program, con ir.FunctionParamType(con program, function, param))
-        if ty == "" || ty == "void" {
+        ty := cParamType(con program, con ir.FunctionParamType(con program, function, param), con mode)
+        if ty == "" {
             return Err(unsupported(con ir.FunctionParamType(con program, function, param)))
         }
         mut name := cVariableName(con ir.FunctionParamName(con program, function, param))
@@ -1147,6 +1167,21 @@ func spanSuffix(con program ir.Program, node int) string {
     return strings.join(con []string{strings.fromInt(source.Start(con span)), "_", strings.fromInt(source.End(con span)),}, con "")
 }
 
+func emitCallArgument(con program ir.Program, argument int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, argument) != 1 {
+        return Err("B3 C backend received malformed call argument IR")
+    }
+    kind := ir.NodeKind(con program, argument)
+    expression := ir.NodeChild(con program, argument, 0)
+    if kind == "Arg.Owned" ||((kind == "Arg.Con" || kind == "Arg.Mut") && ir.NodeKind(con program, expression) == "Expr.FullExprTemporary") {
+        return emitExpression(con program, expression, con indent, con env)
+    }
+    if kind == "Arg.Con" || kind == "Arg.Mut" {
+        return emitBorrowLvalue(con program, expression, con indent, con env)
+    }
+    return Err("B3 C backend received invalid call argument mode")
+}
+
 func emitCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
     name := ir.NodeValue(con program, node)
     if name == "print" {
@@ -1157,13 +1192,15 @@ func emitCall(con program ir.Program, node int, con indent string, con env EmitE
     mut postLines := []string{}
     for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
         argument := ir.NodeChild(con program, node, child)
-        if ir.NodeChildCount(con program, argument) != 1 {
-            return Err("B3 C backend received malformed call argument IR")
-        }
-        match emitExpression(con program, ir.NodeChild(con program, argument, 0), con indent, con env) {
+        argumentKind := ir.NodeKind(con program, argument)
+        match emitCallArgument(con program, argument, con indent, con env) {
             case Ok(emitted) {
                 lines = copyLines(lines, con emitted.lines)
-                args = append(args, token.CopyText(con emitted.value))
+                mut value := token.CopyText(con emitted.value)
+                if argumentKind == "Arg.Con" || argumentKind == "Arg.Mut" {
+                    value = strings.join(con []string{"&(", token.CopyText(con value), ")",}, con "")
+                }
+                args = append(args, value)
                 postLines = copyLines(emitted.postLines, con postLines)
             }
             case Err(message) {
@@ -3092,10 +3129,15 @@ func emitFunction(con program ir.Program, function int) Result[[]string, string]
     match functionSignature(con program, function) {
         case Ok(signature) {
             mut lines := []string{strings.join(con []string{signature, " {",}, con ""),}
-            env := EmitEnv{bindings: []EmitBinding{},}
+            mut env := EmitEnv{bindings: []EmitBinding{},}
             name := ir.FunctionName(con program, function)
             for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
-                lines = append(lines, strings.join(con []string{"    (void)", cVariableName(con ir.FunctionParamName(con program, function, param)), ";",}, con ""))
+                paramName := ir.FunctionParamName(con program, function, param)
+                cName := cVariableName(con paramName)
+                lines = append(lines, strings.join(con []string{"    (void)", token.CopyText(con cName), ";",}, con ""))
+                if ir.FunctionParamMode(con program, function, param) != "owned" {
+                    env = envSet(con env, con paramName, con strings.join(con []string{"(*", token.CopyText(con cName), ")",}, con ""))
+                }
             }
             for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
                 match emitStatement(con program, ir.FunctionBodyNode(con program, function, statement), con "    ", con env) {

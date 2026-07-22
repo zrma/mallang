@@ -168,6 +168,16 @@ Stage0 C byte-for-byte before strict native, allocation-accounting and
 ASan/UBSan execution. The compiler source matches across 855 normalized
 typed-IR functions. P177b is complete; P177c-P177d remain open.
 
+P177c1 adds the Stage0 pointer ABI for `con` and `mut` parameters, borrowed
+parameter dereferencing, single-evaluation borrowed direct-call arguments and
+qualified receiver methods. The ninth positive fixture covers receiver calls,
+string field borrows and mutable array/slice element borrows. Four runtime
+rejections and an explicit function-value boundary keep the next slice visible.
+All paths pass the applicable differential, strict native, accounting and
+sanitizer checks, and the compiler source matches across 857 normalized
+typed-IR functions. Function values, closures, remaining intrinsics and the
+broader project surface remain in P177c.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the
