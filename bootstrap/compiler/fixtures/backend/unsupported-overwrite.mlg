@@ -1,5 +1,0 @@
-func main() {
-    mut values := []int{1}
-    values = []int{2}
-    print(len(values))
-}

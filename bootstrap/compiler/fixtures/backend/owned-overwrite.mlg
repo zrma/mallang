@@ -1,0 +1,18 @@
+type User struct {
+    name string
+}
+
+func main() {
+    mut values := []int{1}
+    values = []int{2, 3}
+    print(len(values))
+
+    mut user := User{name: "kim"}
+    user.name = "lee"
+    print(user.name)
+
+    mut users := []User{User{name: "first"}}
+    users[0] = User{name: "park"}
+    users[0].name = "choi"
+    print(users[0].name)
+}

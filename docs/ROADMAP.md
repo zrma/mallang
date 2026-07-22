@@ -1786,7 +1786,7 @@ specialization and typed IR in independently differential-tested slices.
 
 ## P177: B3 Self-Hosting C Backend
 
-상태: active; P177a, P177b1-P177b4 complete (2026-07-22)
+상태: active; P177a, P177b1-P177b5 complete (2026-07-23)
 
 - [x] Mallang typed-IR read-only backend API
 - [x] standalone Mallang `c` host mode
@@ -1808,7 +1808,9 @@ specialization and typed IR in independently differential-tested slices.
 - [x] 4 positive/4 rejection backend paths와 expanded compiler source 831-function IR parity
 - [x] range/three-clause loop, post-preserving `continue`, loop/range owner cleanup
 - [x] 5 positive/4 rejection backend paths와 expanded compiler source 845-function IR parity
-- [ ] overwrite cleanup, slice append와 dynamic owned string backend
+- [x] single-evaluation local/field/index owned overwrite cleanup
+- [x] 6 positive/3 rejection backend paths와 expanded compiler source 846-function IR parity
+- [ ] slice append와 dynamic owned string backend
 - [ ] method, callable, closure, specialization과 project backend
 - [ ] complete compiler-source C generation과 B3 canonical acceptance
 

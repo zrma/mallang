@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a and P177b1-P177b4 complete
+Status: active; P177a and P177b1-P177b5 complete
 
 ## Objective
 
@@ -82,8 +82,18 @@ two runtime-rejection and two boundary-rejection paths pass byte parity,
 strict C, native, accounting and sanitizer checks where applicable. The
 compiler source matches Stage0 across 845 normalized typed-IR functions.
 
-P177b remains active. Overwrite cleanup, slice append and dynamic owned-string
-construction remain in later slices.
+P177b5 is complete. Cleanup-bearing assignment RHS values remain fully
+evaluated before replacement, while local, field and indexed targets are
+evaluated once before their old value is dropped and the owned temporary is
+moved into place. Indexed field targets retain the Stage0 slice-source snapshot
+and bounds-check order. The `owned-overwrite` fixture covers slice-root, string
+field, slice-element struct and indexed-field replacement. Six positive, two
+runtime-rejection and one boundary-rejection paths pass byte parity, strict C,
+native, allocation-accounting and sanitizer checks where applicable. The
+compiler source matches Stage0 across 846 normalized typed-IR functions.
+
+P177b remains active. Slice append and dynamic owned-string construction remain
+in later slices.
 
 ### P177c: Callable And Project Surface
 
@@ -116,9 +126,9 @@ the publication cost on every edit.
    `scripts/check.sh`; the backend slice reuses the fresh Stage1 produced by the
    preceding compiler gate.
 
-On one development host, the five-positive/four-rejection P177b4 reuse gate took
-about sixteen seconds, the fresh backend gate about twenty-four seconds and a
-fresh compiler-source IR comparison about twenty-two seconds.
+On one development host, the six-positive/three-rejection P177b5 reuse gate took
+about fourteen seconds, the fresh backend gate about twenty-eight seconds and a
+fresh compiler-source IR comparison about twenty-six seconds.
 These observations justify the layer split; they are not portable performance
 thresholds.
 
@@ -139,7 +149,9 @@ thresholds.
 - [x] four positive, two runtime-rejection and two boundary-rejection fixtures
 - [x] P177b4 three-clause/range loops, cleanup and post-preserving `continue`
 - [x] five positive, two runtime-rejection and two boundary-rejection fixtures
-- [ ] remaining overwrite, append and dynamic-string owned values
+- [x] P177b5 single-evaluation local/field/index owned overwrite cleanup
+- [x] six positive, two runtime-rejection and one boundary-rejection fixtures
+- [ ] remaining append and dynamic-string owned values
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

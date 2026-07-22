@@ -138,9 +138,17 @@ remain short-circuited. The fifth positive fixture combines condition/post
 preludes, indexed post targets, array/slice/temporary ranges and control flow;
 all five positive and four rejection paths pass the applicable differential,
 strict native, accounting and sanitizer gates. The compiler source matches
-across 845 normalized typed-IR functions. P177b remains active for overwrite
-cleanup, slice append and dynamic owned-string construction. P177c-P177d
-remain open.
+across 845 normalized typed-IR functions. At the P177b4 boundary, overwrite
+cleanup, slice append and dynamic owned-string construction remained open.
+
+P177b5 emits cleanup-bearing overwrite nodes after their owned RHS temporary is
+fully evaluated. Local, field, slice index and indexed-field targets are
+evaluated once before dropping the old value and moving the replacement; slice
+base snapshots and bounds checks remain byte-identical to Stage0. The sixth
+positive fixture passes strict native, allocation-accounting and ASan/UBSan
+execution, leaving one explicit unsupported-node boundary. The compiler source
+matches across 846 normalized typed-IR functions. P177b remains active for
+slice append and dynamic owned-string construction. P177c-P177d remain open.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
