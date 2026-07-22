@@ -1,0 +1,10 @@
+package main
+
+import "std/strings"
+
+func main() {
+    integer := strings.fromInt(42)
+    truth := strings.fromBool(true)
+    print(integer)
+    print(truth)
+}

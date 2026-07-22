@@ -514,7 +514,8 @@ func (mut self TypeEmitter) emitTypeDefinition(con program ir.Program, con ty st
         self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
     } else if kind == "struct" {
         structure := structIndex(con program, con ty)
-        if ir.StructIntrinsic(con program, structure) != "" {
+        intrinsic := ir.StructIntrinsic(con program, structure)
+        if intrinsic != "" && intrinsic != "Error" {
             return Err(unsupported(con strings.join(con []string{"intrinsic struct ", token.CopyText(con ty),}, con "")))
         }
         self.lines = append(self.lines, "typedef struct {")
@@ -713,7 +714,8 @@ func (mut self TypeEmitter) emitDropHelper(con program ir.Program, con ty string
         }
     } else if kind == "struct" {
         structure := structIndex(con program, con ty)
-        if ir.StructIntrinsic(con program, structure) != "" {
+        intrinsic := ir.StructIntrinsic(con program, structure)
+        if intrinsic != "" && intrinsic != "Error" {
             return Err(unsupported(con strings.join(con []string{"intrinsic struct cleanup ", token.CopyText(con ty),}, con "")))
         }
         mut cleanupFields := 0
@@ -1058,6 +1060,40 @@ func programUsesString(con program ir.Program) bool {
     return false
 }
 
+func nodeUsesIntrinsic(con program ir.Program, node int, con intrinsic string) bool {
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicCall" && ir.NodeValue(con program, node) == intrinsic {
+        return true
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        if nodeUsesIntrinsic(con program, ir.NodeChild(con program, node, child), con intrinsic) {
+            return true
+        }
+    }
+    return false
+}
+
+func programUsesIntrinsic(con program ir.Program, con intrinsic string) bool {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            if nodeUsesIntrinsic(con program, ir.FunctionBodyNode(con program, function, statement), con intrinsic) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func dynamicStringRuntime(con program ir.Program) []string {
+    mut lines := []string{}
+    if programUsesIntrinsic(con program, con "StringsFromInt") {
+        lines = copyLines(lines, con []string{"static mlg_String MLG_UNUSED mallang_std_strings_from_int(", "    int64_t mlg_value", ") {", "    char mlg_buffer[32];", "    int mlg_written = snprintf(", "        mlg_buffer,", "        sizeof(mlg_buffer),", "        \"%lld\",", "        (long long)mlg_value", "    );", "    if (mlg_written < 0 || (size_t)mlg_written >= sizeof(mlg_buffer)) {", "        mallang_runtime_error(\"integer formatting failed\");", "    }", "    return mallang_string_owned_from_bytes(mlg_buffer, (size_t)mlg_written);", "}", "",})
+    }
+    if programUsesIntrinsic(con program, con "StringsFromBool") {
+        lines = copyLines(lines, con []string{"static mlg_String MLG_UNUSED mallang_std_strings_from_bool(", "    bool mlg_value", ") {", "    const char *mlg_text = mlg_value ? \"true\" : \"false\";", "    size_t mlg_len = mlg_value ? 4 : 5;", "    return mallang_string_owned_from_bytes(mlg_text, mlg_len);", "}", "",})
+    }
+    return lines
+}
+
 func functionParams(con program ir.Program, function int, thunk bool) Result[string, string] {
     mut params := []string{}
     if thunk {
@@ -1136,6 +1172,40 @@ func emitCall(con program ir.Program, node int, con indent string, con env EmitE
         }
     }
     return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{cFunctionName(con name), "(", strings.join(con args, con ", "), ")",}, con ""), postLines: postLines,})
+}
+
+func emitDynamicStringCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    intrinsic := ir.NodeValue(con program, node)
+    mut helper := ""
+    mut argumentType := ""
+    if intrinsic == "StringsFromInt" {
+        helper = "mallang_std_strings_from_int"
+        argumentType = "int"
+    } else if intrinsic == "StringsFromBool" {
+        helper = "mallang_std_strings_from_bool"
+        argumentType = "bool"
+    } else {
+        return Err(unsupported(con strings.join(con []string{"intrinsic ", token.CopyText(con intrinsic),}, con "")))
+    }
+    if ir.NodeType(con program, node) != "string" || ir.NodeChildCount(con program, node) != 1 {
+        return Err("B3 C backend received malformed dynamic string intrinsic IR")
+    }
+    argument := ir.NodeChild(con program, node, 0)
+    if ir.NodeKind(con program, argument) != "Arg.Owned" || ir.NodeChildCount(con program, argument) != 1 {
+        return Err("B3 C backend received invalid dynamic string intrinsic argument")
+    }
+    argumentExpression := ir.NodeChild(con program, argument, 0)
+    if ir.NodeType(con program, argumentExpression) != argumentType {
+        return Err("B3 C backend received mismatched dynamic string intrinsic argument")
+    }
+    match emitExpression(con program, argumentExpression, con indent, con env) {
+        case Ok(emitted) {
+            return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{helper, "(", token.CopyText(con emitted.value), ")",}, con ""), postLines: emitted.postLines,})
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
 }
 
 func emitCheckedBinary(con program ir.Program, node int, con indent string, con builtin string, con env EmitEnv) Result[EmittedExpr, string] {
@@ -1843,6 +1913,9 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
     }
     if kind == "Expr.Call" {
         return emitCall(con program, node, con indent, con env)
+    }
+    if kind == "Expr.IntrinsicCall" {
+        return emitDynamicStringCall(con program, node, con indent, con env)
     }
     if kind == "Expr.If" {
         return emitIfExpression(con program, node, con indent, con env)
@@ -3078,6 +3151,11 @@ pub func Generate(con program ir.Program) Result[string, string] {
         case Err(message) {
             return Err(message)
         }
+    }
+    dynamicStringHelpers := dynamicStringRuntime(con program)
+    if len(dynamicStringHelpers) > 0 {
+        lines = copyLines(lines, con dynamicStringHelpers)
+        lines = append(lines, "")
     }
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match functionSignature(con program, function) {

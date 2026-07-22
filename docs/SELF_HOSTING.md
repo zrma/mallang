@@ -157,8 +157,16 @@ self-consuming assignments bypass overwrite drop. The seventh positive fixture
 and a forced realloc failure pass differential, strict native,
 allocation-accounting and ASan/UBSan checks; no unsupported-node boundary
 fixture remains. The compiler source matches across 851 normalized typed-IR
-functions. P177b remains active only for dynamic owned-string construction.
-P177c-P177d remain open.
+functions. At the P177b6 boundary, only dynamic owned-string construction
+remained.
+
+P177b7 adds an internal linked-project C operation and demand-driven
+`strings.fromInt`/`strings.fromBool` runtime helpers. Both dynamic results own
+their allocated UTF-8 buffer and use the existing exact-once string cleanup.
+The eighth positive fixture and forced first string-allocation failure match
+Stage0 C byte-for-byte before strict native, allocation-accounting and
+ASan/UBSan execution. The compiler source matches across 855 normalized
+typed-IR functions. P177b is complete; P177c-P177d remain open.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

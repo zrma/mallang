@@ -53,8 +53,10 @@ STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
 FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append)
+PROJECT_FIXTURES=(dynamic-owned-string)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
+PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure)
 BOUNDARY_REJECTION_FIXTURES=()
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
@@ -198,6 +200,97 @@ EOF
   fi
 done
 
+for name in "${PROJECT_FIXTURES[@]}"; do
+  fixture_root="$PROJECT/fixtures/backend/$name/src"
+  fixture="$fixture_root/main.mlg"
+  unit_name="${name//-/_}"
+  oracle_c="$WORK/$name.stage0.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
+
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  cp target/mallang/main.c "$oracle_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"
+
+  if ! cmp -s "$oracle_c" "$stage1_c"; then
+    echo "self-hosting backend generated project C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  fi
+  if ! cmp -s "$stage1_c" "$stage1_c_second"; then
+    echo "self-hosting backend generated project C is not deterministic: $name" >&2
+    exit 1
+  fi
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  generated_c_abs="$(cd "$(dirname "$stage1_c")" && pwd)/$(basename "$stage1_c")"
+  cat >"$WORK/$name-accounting.c" <<EOF
+#define main mallang_fixture_main
+#include "$generated_c_abs"
+#undef main
+
+int main(void) {
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(stderr, "self-hosting backend accounting did not start at zero\n");
+        return 2;
+    }
+    if (mallang_fixture_main() != 0) {
+        fprintf(stderr, "self-hosting backend fixture returned a non-zero status\n");
+        return 3;
+    }
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(stderr, "self-hosting backend fixture leaked allocations\n");
+        return 4;
+    }
+    return 0;
+}
+EOF
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
+    "$WORK/$name-accounting.c" -o "$WORK/$name-accounting"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" \
+    "$WORK/$name-accounting.c" -o "$WORK/$name-accounting-san"
+
+  "$WORK/$name.stage0" >"$WORK/$name.stage0.stdout"
+  "$WORK/$name.stage1" >"$WORK/$name.stage1.stdout"
+  "$WORK/$name.stage1-san" >"$WORK/$name.stage1-san.stdout" \
+    2>"$WORK/$name.stage1-san.stderr"
+  "$WORK/$name-accounting" >"$WORK/$name-accounting.stdout" \
+    2>"$WORK/$name-accounting.stderr"
+  "$WORK/$name-accounting-san" >"$WORK/$name-accounting-san.stdout" \
+    2>"$WORK/$name-accounting-san.stderr"
+
+  for output in \
+    "$WORK/$name.stage1.stdout" \
+    "$WORK/$name.stage1-san.stdout" \
+    "$WORK/$name-accounting.stdout" \
+    "$WORK/$name-accounting-san.stdout"; do
+    if ! cmp -s "$WORK/$name.stage0.stdout" "$output"; then
+      echo "self-hosting backend project native output mismatch: $output" >&2
+      exit 1
+    fi
+  done
+
+  expected=$'42\ntrue'
+  if [[ "$(cat "$WORK/$name.stage0.stdout")" != "$expected" ]]; then
+    echo "self-hosting backend project fixture output mismatch: $name" >&2
+    exit 1
+  fi
+  if [[ -s "$WORK/$name.stage1-san.stderr" || \
+        -s "$WORK/$name-accounting.stderr" || \
+        -s "$WORK/$name-accounting-san.stderr" ]]; then
+    echo "self-hosting backend project runtime emitted unexpected stderr: $name" >&2
+    cat \
+      "$WORK/$name.stage1-san.stderr" \
+      "$WORK/$name-accounting.stderr" \
+      "$WORK/$name-accounting-san.stderr" >&2
+    exit 1
+  fi
+done
+
 for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
   fixture="$PROJECT/fixtures/backend/$name.mlg"
   oracle_c="target/mallang/$name.c"
@@ -303,6 +396,57 @@ for name in "${ALLOCATION_REJECTION_FIXTURES[@]}"; do
   done
 done
 
+for name in "${PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}"; do
+  fixture_root="$PROJECT/fixtures/backend/$name/src"
+  fixture="$fixture_root/main.mlg"
+  unit_name="${name//-/_}"
+  oracle_c="$WORK/$name.stage0.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
+
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
+  cp target/mallang/main.c "$oracle_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"
+  if ! cmp -s "$oracle_c" "$stage1_c"; then
+    echo "self-hosting backend project allocation rejection C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  fi
+  if ! cmp -s "$stage1_c" "$stage1_c_second"; then
+    echo "self-hosting backend project allocation rejection C is not deterministic: $name" >&2
+    exit 1
+  fi
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$oracle_c" -o "$WORK/$name.stage0"
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  expected="mallang runtime error: string allocation failed"
+  for binary in stage0 stage1 stage1-san; do
+    set +e
+    "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \
+      2>"$WORK/$name.$binary.stderr"
+    status=$?
+    set -e
+    if [[ $status -ne 1 ]]; then
+      echo "self-hosting backend project allocation rejection returned $status instead of 1: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ -s "$WORK/$name.$binary.stdout" ]]; then
+      echo "self-hosting backend project allocation rejection emitted unexpected stdout: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != "$expected" ]]; then
+      echo "self-hosting backend project allocation rejection stderr mismatch: $name.$binary" >&2
+      exit 1
+    fi
+  done
+done
+
 for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   fixture="$PROJECT/fixtures/backend/$name.mlg"
   first="$WORK/$name.first.stdout"
@@ -333,5 +477,6 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   fi
 done
 
-runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]}))
-echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"
+fixture_count=$((${#FIXTURES[@]} + ${#PROJECT_FIXTURES[@]}))
+runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]} + ${#PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}))
+echo "self-hosting B3 backend gate passed: fixtures=$fixture_count runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"

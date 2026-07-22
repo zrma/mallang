@@ -752,7 +752,13 @@ direct/field/indexed-field `SliceAppend`, field source empty-header reset, capac
 overflow와 realloc failure를 Stage0와 동일하게 구현했다. 일곱 positive/세 runtime
 rejection 경로가 differential, strict native, accounting과 ASan/UBSan을 통과하며 미지원
 node boundary fixture는 0개다. Compiler source 851개 normalized IR function이 일치하고,
-P177b에는 dynamic owned string만 남아 있다.
+P177b에는 dynamic owned string만 남아 있었다. P177b7은 linked project를 specialization,
+semantic check와 typed IR 뒤 Mallang backend로 보내는 internal `c-project` operation과
+demand-driven `strings.fromInt`/`strings.fromBool` runtime을 추가했다. 두 결과는 owned UTF-8
+buffer를 할당하고 기존 string drop으로 정확히 한 번 정리된다. 여덟 positive/네 runtime
+rejection/0 boundary 경로가 byte identity, deterministic repeat, strict native, accounting과
+ASan/UBSan을 통과하고 compiler source 855개 normalized IR function이 일치한다. P177b는
+완료됐고 P177c-P177d가 남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -769,9 +775,9 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
 `scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177b6의 일곱 positive/세 rejection path 기준 약 16초다. Compiler
+loop는 P177b7의 여덟 positive/네 rejection path 기준 약 18초다. Compiler
 source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
-관측된 integration loop는 약 31초다. Ownership/typed-IR
+관측된 integration loop는 약 28초다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.
