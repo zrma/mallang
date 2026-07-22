@@ -1,4 +1,4 @@
 func main() {
-    values := append([]int{1}, 2)
+    values := append([]int{}, 1)
     print(len(values))
 }

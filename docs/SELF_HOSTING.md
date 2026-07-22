@@ -147,8 +147,18 @@ evaluated once before dropping the old value and moving the replacement; slice
 base snapshots and bounds checks remain byte-identical to Stage0. The sixth
 positive fixture passes strict native, allocation-accounting and ASan/UBSan
 execution, leaving one explicit unsupported-node boundary. The compiler source
-matches across 846 normalized typed-IR functions. P177b remains active for
-slice append and dynamic owned-string construction. P177c-P177d remain open.
+matches across 846 normalized typed-IR functions. At the P177b5 boundary,
+slice append and dynamic owned-string construction remained open.
+
+P177b6 implements consuming slice growth for direct values and local-rooted
+field/index places. Field sources are reset to an empty header after transfer,
+capacity growth preserves overflow and allocation failure diagnostics, and
+self-consuming assignments bypass overwrite drop. The seventh positive fixture
+and a forced realloc failure pass differential, strict native,
+allocation-accounting and ASan/UBSan checks; no unsupported-node boundary
+fixture remains. The compiler source matches across 851 normalized typed-IR
+functions. P177b remains active only for dynamic owned-string construction.
+P177c-P177d remain open.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

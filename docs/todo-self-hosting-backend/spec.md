@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a and P177b1-P177b5 complete
+Status: active; P177a and P177b1-P177b6 complete
 
 ## Objective
 
@@ -92,8 +92,20 @@ runtime-rejection and one boundary-rejection paths pass byte parity, strict C,
 native, allocation-accounting and sanitizer checks where applicable. The
 compiler source matches Stage0 across 846 normalized typed-IR functions.
 
-P177b remains active. Slice append and dynamic owned-string construction remain
-in later slices.
+P177b6 is complete. `SliceAppend` preserves source-before-item evaluation,
+single ownership of the reallocating buffer, field-source empty-header reset,
+capacity growth and length/allocation overflow checks. Ordinary field and index
+assignment emitters keep self-consuming direct and indexed-field append paths
+outside overwrite cleanup, preventing a double drop. The `slice-append` fixture
+covers direct growth, same-field replacement, indexed-field replacement,
+field-take growth and non-Copy elements. A forced first realloc failure is a
+deterministic runtime-rejection path. Seven positive and three runtime-rejection
+paths pass byte parity, strict C, native, allocation-accounting and sanitizer
+checks where applicable, with no unsupported-node boundary fixture remaining.
+The compiler source matches Stage0 across 851 normalized typed-IR functions.
+
+P177b remains active. Dynamic owned-string construction remains in a later
+slice.
 
 ### P177c: Callable And Project Surface
 
@@ -126,8 +138,8 @@ the publication cost on every edit.
    `scripts/check.sh`; the backend slice reuses the fresh Stage1 produced by the
    preceding compiler gate.
 
-On one development host, the six-positive/three-rejection P177b5 reuse gate took
-about fourteen seconds, the fresh backend gate about twenty-eight seconds and a
+On one development host, the seven-positive/three-rejection P177b6 reuse gate
+took about sixteen seconds, the fresh backend gate about thirty-one seconds and a
 fresh compiler-source IR comparison about twenty-six seconds.
 These observations justify the layer split; they are not portable performance
 thresholds.
@@ -151,7 +163,9 @@ thresholds.
 - [x] five positive, two runtime-rejection and two boundary-rejection fixtures
 - [x] P177b5 single-evaluation local/field/index owned overwrite cleanup
 - [x] six positive, two runtime-rejection and one boundary-rejection fixtures
-- [ ] remaining append and dynamic-string owned values
+- [x] P177b6 direct/field/index slice append growth, reset and failure handling
+- [x] seven positive, three runtime-rejection and zero boundary-rejection fixtures
+- [ ] remaining dynamic-string owned values
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

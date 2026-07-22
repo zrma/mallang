@@ -52,10 +52,10 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite)
+FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds)
-ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure)
-BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append)
+ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
+BOUNDARY_REJECTION_FIXTURES=()
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -174,6 +174,9 @@ EOF
     owned-overwrite)
       expected=$'2\nlee\nchoi'
       ;;
+    slice-append)
+      expected=$'2\n4\n6\n0\n8\nkim'
+      ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
       exit 1
@@ -265,6 +268,20 @@ for name in "${ALLOCATION_REJECTION_FIXTURES[@]}"; do
   "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
     "$stage1_c" -o "$WORK/$name.stage1-san"
 
+  expected=""
+  case "$name" in
+    adt-allocation-failure)
+      expected="mallang runtime error: recursive enum allocation failed"
+      ;;
+    slice-append-allocation-failure)
+      expected="mallang runtime error: slice allocation failed"
+      ;;
+    *)
+      echo "self-hosting backend allocation rejection has no expected diagnostic: $name" >&2
+      exit 1
+      ;;
+  esac
+
   for binary in stage0 stage1 stage1-san; do
     set +e
     "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \
@@ -279,8 +296,7 @@ for name in "${ALLOCATION_REJECTION_FIXTURES[@]}"; do
       echo "self-hosting backend allocation rejection emitted unexpected stdout: $name.$binary" >&2
       exit 1
     fi
-    if [[ "$(cat "$WORK/$name.$binary.stderr")" != \
-          "mallang runtime error: recursive enum allocation failed" ]]; then
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != "$expected" ]]; then
       echo "self-hosting backend allocation rejection stderr mismatch: $name.$binary" >&2
       exit 1
     fi
@@ -298,9 +314,6 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   "$STAGE1" c "$fixture" >"$second" 2>"$second_stderr"
   expected=""
   case "$name" in
-    unsupported-slice-append)
-      expected="B3 C backend does not yet support Expr.SliceAppend"
-      ;;
     *)
       echo "self-hosting backend boundary fixture has no expected diagnostic: $name" >&2
       exit 1

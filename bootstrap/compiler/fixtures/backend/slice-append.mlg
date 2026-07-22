@@ -1,0 +1,35 @@
+type User struct {
+    name string
+}
+
+type Bag struct {
+    values []int
+}
+
+type Store struct {
+    bags []Bag
+}
+
+func main() {
+    mut values := []int{}
+    values = append(values, 1)
+    values = append(values, 2)
+    print(len(values))
+
+    mut bag := Bag{values: []int{3}}
+    bag.values = append(bag.values, 4)
+    print(bag.values[1])
+
+    mut store := Store{bags: []Bag{Bag{values: []int{5}}}}
+    store.bags[0].values = append(store.bags[0].values, 6)
+    print(store.bags[0].values[1])
+
+    mut source := Bag{values: []int{7}}
+    grown := append(source.values, 8)
+    print(len(source.values))
+    print(grown[1])
+
+    mut users := []User{}
+    users = append(users, User{name: "kim"})
+    print(users[0].name)
+}
