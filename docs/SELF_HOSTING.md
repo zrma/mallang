@@ -114,11 +114,22 @@ field access, checked indexing and `len` match Stage0 byte-for-byte in the
 composite fixture. The backend gate now covers three positive fixtures, a
 dynamic bounds rejection and an explicit unsupported-node rejection before
 strict native, accounting and sanitizer execution. The compiler source matches
-Stage0 across 806 normalized typed-IR functions. P177b remains active for ADTs,
+Stage0 across 806 normalized typed-IR functions. At the P177b2 boundary, ADTs,
 expression control flow, match/range forms, overwrite cleanup and dynamic
-construction. P177c-P177d still need callable/project surfaces and complete
-compiler-source C generation before B3 can close. Exact scope and layered gates
-are owned by `docs/todo-self-hosting-backend/`.
+construction remained open.
+
+P177b3 uses the retained metadata for built-in and user ADT definitions,
+inline/owned constructors, recursive drop helpers, expression `if`, both match
+forms and recursive patterns. Its positive fixture executes nested inline and
+owned patterns, multi-payload bindings and cleanup-bearing branches. The gate
+also forces recursive enum allocation failure and preserves `RangeFor` as an
+explicit later-slice boundary. Four positive, two runtime-rejection and two
+boundary-rejection paths pass the applicable byte-identity, deterministic,
+strict native, accounting and ASan/UBSan checks. Broader recursive-enum,
+branch-prelude and nested-pattern examples also match Stage0 C byte-for-byte,
+and the compiler source matches across 831 normalized typed-IR functions.
+P177b remains active for range/three-clause loops, overwrite cleanup, slice
+append and dynamic owned-string construction. P177c-P177d remain open.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

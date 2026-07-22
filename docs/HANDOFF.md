@@ -728,9 +728,17 @@ metadata로 보존하고 fixed array, heap-backed slice, struct layout, composit
 literal, field/index/len과 recursive drop helper를 추가했다. 세 positive
 fixture와 bounds/unsupported-node rejection이 Stage0 byte identity, strict
 native, accounting, ASan/UBSan을 통과하고 compiler source 806개 normalized IR
-function이 일치한다. B3 전체는 아직 active이며 ADT와 나머지 composite
-control flow, callable/project surface와 complete compiler-source C generation이
-남아 있다.
+function이 일치한다. P177b3는 `Option`/`Result`, inline user enum과 recursive
+owned enum의 definition/constructor/drop helper, expression `if`, 두 match form과
+nested pattern binding environment를 Stage0와 동일하게 구현했다. `adt-match`는
+multi-payload, nested inline/owned pattern, recursive node consumption과 string
+cleanup을 실제 실행하고, 강제 recursive allocation failure와 `RangeFor` boundary를
+포함한 4 positive/4 rejection 경로가 byte identity, strict native, accounting과
+ASan/UBSan을 통과한다. 기존 recursive-enum, match-arm-prelude와 nested-pattern
+예제도 Stage0 C와 byte-identical하며 compiler source 831개 normalized IR function이
+일치한다. B3 전체는 아직 active이며 range/three-clause loop, overwrite cleanup,
+slice append, dynamic owned string, callable/project surface와 complete compiler-source
+C generation이 남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -747,9 +755,9 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
 `scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177b2의 세 positive/두 rejection fixture 기준 약 6-8초다. Compiler
+loop는 P177b3의 네 positive/네 rejection path 기준 약 10초다. Compiler
 source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
-관측된 integration loop는 약 18초다. Ownership/typed-IR
+관측된 integration loop는 약 22-25초다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.

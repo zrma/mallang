@@ -1,0 +1,9 @@
+type Chain enum {
+    End
+    Next(Chain)
+}
+
+func main() {
+    value := Chain.End
+    print(1)
+}

@@ -1,0 +1,132 @@
+type Message enum {
+    Empty
+    Text(string)
+    Pair(int, string)
+}
+
+type Chain enum {
+    End
+    Next(string, Chain)
+}
+
+type Status enum {
+    Idle
+    Busy(int)
+}
+
+type Event enum {
+    Missing
+    Changed(Status)
+}
+
+func optionValue(value Option[int]) int {
+    return match value {
+        case None {
+            0
+        }
+        case Some(inner) {
+            inner
+        }
+    }
+}
+
+func resultValue(value Result[int, string]) int {
+    return match value {
+        case Ok(inner) {
+            inner
+        }
+        case Err(_) {
+            0
+        }
+    }
+}
+
+func messageCode(value Message) int {
+    return match value {
+        case Message.Empty {
+            0
+        }
+        case Message.Text(text) {
+            if text == "mallang" {
+                1
+            } else {
+                2
+            }
+        }
+        case Message.Pair(code, _) {
+            code
+        }
+    }
+}
+
+func consume(value Chain) int {
+    return match value {
+        case Chain.End {
+            0
+        }
+        case Chain.Next(_, tail) {
+            1 + consume(tail)
+        }
+    }
+}
+
+func eventCode(value Event) int {
+    return match value {
+        case Event.Missing {
+            0
+        }
+        case Event.Changed(Status.Idle) {
+            1
+        }
+        case Event.Changed(Status.Busy(code)) {
+            code
+        }
+    }
+}
+
+func chainShape(value Chain) int {
+    return match value {
+        case Chain.End {
+            0
+        }
+        case Chain.Next(_, Chain.End) {
+            1
+        }
+        case Chain.Next(_, tail) {
+            2 + consume(tail)
+        }
+    }
+}
+
+func describe(value Message) {
+    match value {
+        case Message.Empty {
+            print("empty")
+        }
+        case Message.Text(text) {
+            print(text)
+        }
+        case Message.Pair(code, text) {
+            print(code)
+            print(text)
+        }
+    }
+}
+
+func main() {
+    print(optionValue(Some(4)))
+    print(optionValue(None))
+    print(resultValue(Ok(7)))
+    print(resultValue(Err("bad")))
+    print(messageCode(Message.Text("mallang")))
+    describe(Message.Pair(9, "pair"))
+    print(eventCode(Event.Changed(Status.Busy(8))))
+
+    nestedTail := Chain.End
+    nested := Chain.Next("nested", nestedTail)
+    print(chainShape(nested))
+
+    tail := Chain.End
+    values := Chain.Next("bottom", tail)
+    print(consume(values))
+}

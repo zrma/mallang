@@ -52,9 +52,10 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values)
+FIXTURES=(scalars owned-control composite-values adt-match)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds)
-BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append)
+ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure)
+BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append unsupported-range-for)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -164,6 +165,9 @@ EOF
     composite-values)
       expected=$'5\n3\n2\nbundle\n7\n1'
       ;;
+    adt-match)
+      expected=$'4\n0\n7\n0\n1\n9\npair\n8\n1\n1'
+      ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
       exit 1
@@ -229,6 +233,54 @@ for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
   done
 done
 
+for name in "${ALLOCATION_REJECTION_FIXTURES[@]}"; do
+  fixture="$PROJECT/fixtures/backend/$name.mlg"
+  oracle_c="target/mallang/$name.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
+
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
+  "$STAGE1" c "$fixture" >"$stage1_c"
+  "$STAGE1" c "$fixture" >"$stage1_c_second"
+  cmp -s "$oracle_c" "$stage1_c" || {
+    echo "self-hosting backend allocation rejection C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  }
+  cmp -s "$stage1_c" "$stage1_c_second" || {
+    echo "self-hosting backend allocation rejection C is not deterministic: $name" >&2
+    exit 1
+  }
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$oracle_c" -o "$WORK/$name.stage0"
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
+    "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  for binary in stage0 stage1 stage1-san; do
+    set +e
+    "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \
+      2>"$WORK/$name.$binary.stderr"
+    status=$?
+    set -e
+    if [[ $status -ne 1 ]]; then
+      echo "self-hosting backend allocation rejection returned $status instead of 1: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ -s "$WORK/$name.$binary.stdout" ]]; then
+      echo "self-hosting backend allocation rejection emitted unexpected stdout: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != \
+          "mallang runtime error: recursive enum allocation failed" ]]; then
+      echo "self-hosting backend allocation rejection stderr mismatch: $name.$binary" >&2
+      exit 1
+    fi
+  done
+done
+
 for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   fixture="$PROJECT/fixtures/backend/$name.mlg"
   first="$WORK/$name.first.stdout"
@@ -238,8 +290,20 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
 
   "$STAGE1" c "$fixture" >"$first" 2>"$first_stderr"
   "$STAGE1" c "$fixture" >"$second" 2>"$second_stderr"
-  if [[ "$(cat "$first")" != \
-        "B3 C backend does not yet support Expr.SliceAppend" ]]; then
+  expected=""
+  case "$name" in
+    unsupported-slice-append)
+      expected="B3 C backend does not yet support Expr.SliceAppend"
+      ;;
+    unsupported-range-for)
+      expected="B3 C backend does not yet support Stmt.RangeFor"
+      ;;
+    *)
+      echo "self-hosting backend boundary fixture has no expected diagnostic: $name" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$(cat "$first")" != "$expected" ]]; then
     echo "self-hosting backend boundary rejection mismatch: $name" >&2
     exit 1
   fi
@@ -253,4 +317,5 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   fi
 done
 
-echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} runtime-rejections=${#RUNTIME_REJECTION_FIXTURES[@]} boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"
+runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]}))
+echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"
