@@ -8,6 +8,7 @@ import "bootstrap_compiler/ir"
 type EmittedExpr struct {
     lines []string
     value string
+    postLines []string
 }
 
 func copyLines(target []string, con values []string) []string {
@@ -25,10 +26,117 @@ func cType(con ty string) string {
     if ty == "bool" {
         return "bool"
     }
+    if ty == "string" {
+        return "mlg_String"
+    }
     if ty == "unit" {
         return "void"
     }
     return ""
+}
+
+func utf8Width(first int) int {
+    if first <= 127 {
+        return 1
+    }
+    if first >= 194 && first <= 223 {
+        return 2
+    }
+    if first >= 224 && first <= 239 {
+        return 3
+    }
+    if first >= 240 && first <= 244 {
+        return 4
+    }
+    return 1
+}
+
+func cStringLiteral(con value string) string {
+    mut parts := []string{"\""}
+    mut index := 0
+    for index < strings.byteLen(con value) {
+        mut first := 0
+        match strings.byteAt(con value, index) {
+            case Ok(byte) {
+                first = byte
+            }
+            case Err(_) {
+                return "\"\""
+            }
+        }
+        if first == 92 {
+            parts = append(parts, "\\\\")
+            index = index + 1
+        } else if first == 34 {
+            parts = append(parts, "\\\"")
+            index = index + 1
+        } else if first == 10 {
+            parts = append(parts, "\\n")
+            index = index + 1
+        } else if first == 13 {
+            parts = append(parts, "\\r")
+            index = index + 1
+        } else if first == 9 {
+            parts = append(parts, "\\t")
+            index = index + 1
+        } else {
+            width := utf8Width(first)
+            match strings.slice(con value, index, index + width) {
+                case Ok(text) {
+                    parts = append(parts, token.CopyText(con text))
+                }
+                case Err(_) {
+                    return "\"\""
+                }
+            }
+            index = index + width
+        }
+    }
+    parts = append(parts, "\"")
+    return strings.join(con parts, con "")
+}
+
+func cStringValue(con value string) string {
+    return strings.join(con []string{"(mlg_String){ .mlg_data = ", cStringLiteral(con value), ", .mlg_len = ", strings.fromInt(strings.byteLen(con value)), ", .mlg_storage = MLG_STRING_STATIC }",}, con "")
+}
+
+func stripOuterParens(con value string) string {
+    length := strings.byteLen(con value)
+    if length < 2 {
+        return token.CopyText(con value)
+    }
+    mut first := -1
+    mut last := -1
+    match strings.byteAt(con value, 0) {
+        case Ok(byte) {
+            first = byte
+        }
+        case Err(_) {}
+    }
+    match strings.byteAt(con value, length - 1) {
+        case Ok(byte) {
+            last = byte
+        }
+        case Err(_) {}
+    }
+    if first != 40 || last != 41 {
+        return token.CopyText(con value)
+    }
+    return match strings.slice(con value, 1, length - 1) {
+        case Ok(inner) {
+            token.CopyText(con inner)
+        }
+        case Err(_) {
+            token.CopyText(con value)
+        }
+    }
+}
+
+func dropLine(con ty string, con value string, con indent string) Result[string, string] {
+    if ty == "string" {
+        return Ok(strings.join(con []string{token.CopyText(con indent), "mlg_drop_string(&(", token.CopyText(con value), "));",}, con ""))
+    }
+    return Err(unsupported(con strings.join(con []string{"drop ", token.CopyText(con ty),}, con "")))
 }
 
 func cFunctionName(con name string) string {
@@ -48,6 +156,41 @@ func unsupported(con kind string) string {
 
 func runtimePrelude() []string {
     return []string{"#include <errno.h>", "#include <stdbool.h>", "#include <stdint.h>", "#include <stdio.h>", "#include <stdlib.h>", "#include <string.h>", "", "#if defined(__GNUC__) || defined(__clang__)", "#define MLG_UNUSED __attribute__((unused))", "#else", "#define MLG_UNUSED", "#endif", "", "static _Noreturn void MLG_UNUSED mallang_runtime_error(const char *message) {", "    fprintf(stderr, \"mallang runtime error: %s\\n\", message);", "    exit(1);", "}", "", "#ifndef MLG_ALLOCATION_FAIL_AFTER", "#define MLG_ALLOCATION_FAIL_AFTER UINT64_MAX", "#endif", "", "static uint64_t mallang_allocation_attempts = 0;", "static uint64_t mallang_live_allocations = 0;", "", "static bool MLG_UNUSED mallang_should_fail_allocation(void) {", "    bool mlg_should_fail = mallang_allocation_attempts == MLG_ALLOCATION_FAIL_AFTER;", "    mallang_allocation_attempts = mallang_allocation_attempts + 1;", "    return mlg_should_fail;", "}", "", "static void *MLG_UNUSED mallang_alloc(size_t mlg_size, const char *mlg_failure_message) {", "    if (mallang_should_fail_allocation()) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    void *mlg_allocation = malloc(mlg_size);", "    if (mlg_allocation == NULL) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    mallang_live_allocations = mallang_live_allocations + 1;", "    return mlg_allocation;", "}", "", "static void *MLG_UNUSED mallang_realloc(", "    void *mlg_allocation,", "    size_t mlg_size,", "    const char *mlg_failure_message", ") {", "    bool mlg_creates_allocation = mlg_allocation == NULL;", "    if (mallang_should_fail_allocation()) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    void *mlg_resized = realloc(mlg_allocation, mlg_size);", "    if (mlg_resized == NULL) {", "        mallang_runtime_error(mlg_failure_message);", "    }", "    if (mlg_creates_allocation) {", "        mallang_live_allocations = mallang_live_allocations + 1;", "    }", "    return mlg_resized;", "}", "", "static void MLG_UNUSED mallang_dealloc(void *mlg_allocation) {", "    if (mlg_allocation == NULL) {", "        return;", "    }", "    if (mallang_live_allocations == 0) {", "        mallang_runtime_error(\"allocation accounting underflow\");", "    }", "    mallang_live_allocations = mallang_live_allocations - 1;", "    free(mlg_allocation);", "}", "", "static uint64_t MLG_UNUSED mallang_allocation_attempt_count(void) {", "    return mallang_allocation_attempts;", "}", "", "static uint64_t MLG_UNUSED mallang_live_allocation_count(void) {", "    return mallang_live_allocations;", "}", "", "static int64_t MLG_UNUSED mallang_check_index(int64_t index, int64_t len) {", "    if (index < 0 || index >= len) {", "        mallang_runtime_error(\"array index out of bounds\");", "    }", "    return index;", "}",}
+}
+
+func stringRuntime() []string {
+    return []string{"", "enum {", "    MLG_STRING_STATIC = 0,", "    MLG_STRING_OWNED = 1", "};", "", "typedef struct {", "    const char *mlg_data;", "    size_t mlg_len;", "    uint8_t mlg_storage;", "} mlg_String;", "", "static size_t MLG_UNUSED mallang_utf8_sequence_length(", "    const char *mlg_data,", "    size_t mlg_remaining", ") {", "    if (mlg_remaining == 0) {", "        return 0;", "    }", "    const unsigned char *mlg_bytes = (const unsigned char *)mlg_data;", "    unsigned char mlg_first = mlg_bytes[0];", "    if (mlg_first <= 0x7f) {", "        return 1;", "    }", "    if (mlg_first >= 0xc2 && mlg_first <= 0xdf) {", "        return mlg_remaining >= 2 &&", "            mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0xbf ? 2 : 0;", "    }", "    if (mlg_first >= 0xe0 && mlg_first <= 0xef) {", "        if (mlg_remaining < 3 ||", "            mlg_bytes[2] < 0x80 || mlg_bytes[2] > 0xbf) {", "            return 0;", "        }", "        bool mlg_second_valid =", "            (mlg_first == 0xe0 && mlg_bytes[1] >= 0xa0 && mlg_bytes[1] <= 0xbf) ||", "            (mlg_first >= 0xe1 && mlg_first <= 0xec &&", "             mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0xbf) ||", "            (mlg_first == 0xed && mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0x9f) ||", "            (mlg_first >= 0xee && mlg_first <= 0xef &&", "             mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0xbf);", "        return mlg_second_valid ? 3 : 0;", "    }", "    if (mlg_first >= 0xf0 && mlg_first <= 0xf4) {", "        if (mlg_remaining < 4 ||", "            mlg_bytes[2] < 0x80 || mlg_bytes[2] > 0xbf ||", "            mlg_bytes[3] < 0x80 || mlg_bytes[3] > 0xbf) {", "            return 0;", "        }", "        bool mlg_second_valid =", "            (mlg_first == 0xf0 && mlg_bytes[1] >= 0x90 && mlg_bytes[1] <= 0xbf) ||", "            (mlg_first >= 0xf1 && mlg_first <= 0xf3 &&", "             mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0xbf) ||", "            (mlg_first == 0xf4 && mlg_bytes[1] >= 0x80 && mlg_bytes[1] <= 0x8f);", "        return mlg_second_valid ? 4 : 0;", "    }", "    return 0;", "}", "", "static bool MLG_UNUSED mallang_utf8_scalar_count_bytes(", "    const char *mlg_data,", "    size_t mlg_len,", "    int64_t *mlg_count_out", ") {", "    size_t mlg_cursor = 0;", "    int64_t mlg_count = 0;", "    while (mlg_cursor < mlg_len) {", "        size_t mlg_width = mallang_utf8_sequence_length(", "            mlg_data + mlg_cursor,", "            mlg_len - mlg_cursor", "        );", "        if (mlg_width == 0 || mlg_count == INT64_MAX) {", "            return false;", "        }", "        mlg_cursor = mlg_cursor + mlg_width;", "        mlg_count = mlg_count + 1;", "    }", "    if (mlg_count_out != NULL) {", "        *mlg_count_out = mlg_count;", "    }", "    return true;", "}", "", "static void MLG_UNUSED mallang_validate_string_layout(mlg_String mlg_value) {", "    if (mlg_value.mlg_storage != MLG_STRING_STATIC &&", "        mlg_value.mlg_storage != MLG_STRING_OWNED) {", "        mallang_runtime_error(\"invalid string storage\");", "    }", "    if (mlg_value.mlg_data == NULL) {", "        mallang_runtime_error(\"invalid string data\");", "    }", "    if (mlg_value.mlg_len > INT64_MAX) {", "        mallang_runtime_error(\"invalid string length\");", "    }", "}", "", "static void MLG_UNUSED mallang_validate_string(mlg_String mlg_value) {", "    mallang_validate_string_layout(mlg_value);", "    if (!mallang_utf8_scalar_count_bytes(", "            mlg_value.mlg_data,", "            mlg_value.mlg_len,", "            NULL)) {", "        mallang_runtime_error(\"invalid UTF-8 string data\");", "    }", "}", "", "static mlg_String MLG_UNUSED mallang_string_owned_from_bytes(", "    const char *mlg_source,", "    size_t mlg_len", ") {", "    if (mlg_source == NULL) {", "        mallang_runtime_error(\"invalid string copy source\");", "    }", "    if (mlg_len == SIZE_MAX) {", "        mallang_runtime_error(\"string allocation size overflow\");", "    }", "    char *mlg_data = mallang_alloc(mlg_len + 1, \"string allocation failed\");", "    if (mlg_len > 0) {", "        memcpy(mlg_data, mlg_source, mlg_len);", "    }", "    mlg_data[mlg_len] = '\\0';", "    return (mlg_String){", "        .mlg_data = mlg_data,", "        .mlg_len = mlg_len,", "        .mlg_storage = MLG_STRING_OWNED", "    };", "}", "", "static mlg_String MLG_UNUSED mallang_string_owned_copy(mlg_String mlg_source) {", "    if (mlg_source.mlg_len == SIZE_MAX) {", "        mallang_runtime_error(\"string allocation size overflow\");", "    }", "    mallang_validate_string(mlg_source);", "    return mallang_string_owned_from_bytes(mlg_source.mlg_data, mlg_source.mlg_len);", "}", "", "static bool MLG_UNUSED mallang_string_equal(mlg_String mlg_left, mlg_String mlg_right) {", "    mallang_validate_string(mlg_left);", "    mallang_validate_string(mlg_right);", "    return mlg_left.mlg_len == mlg_right.mlg_len &&", "        (mlg_left.mlg_len == 0 ||", "         memcmp(mlg_left.mlg_data, mlg_right.mlg_data, mlg_left.mlg_len) == 0);", "}", "", "static void MLG_UNUSED mallang_print_string(mlg_String mlg_value) {", "    mallang_validate_string(mlg_value);", "    if (mlg_value.mlg_len > 0) {", "        (void)fwrite(mlg_value.mlg_data, 1, mlg_value.mlg_len, stdout);", "    }", "}", "", "static void MLG_UNUSED mlg_drop_string(mlg_String *mlg_value);", "", "static void MLG_UNUSED mlg_drop_string(mlg_String *mlg_value) {", "    mallang_validate_string(*mlg_value);", "    if (mlg_value->mlg_storage == MLG_STRING_OWNED) {", "        mallang_dealloc((void *)mlg_value->mlg_data);", "    }", "    *mlg_value = (mlg_String){ .mlg_data = \"\", .mlg_len = 0, .mlg_storage = MLG_STRING_STATIC };", "}", "",}
+}
+
+func nodeUsesString(con program ir.Program, node int) bool {
+    if ir.NodeType(con program, node) == "string" {
+        return true
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        if nodeUsesString(con program, ir.NodeChild(con program, node, child)) {
+            return true
+        }
+    }
+    return false
+}
+
+func programUsesString(con program ir.Program) bool {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        if ir.FunctionReturnType(con program, function) == "string" {
+            return true
+        }
+        for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
+            if ir.FunctionParamType(con program, function, param) == "string" {
+                return true
+            }
+        }
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            if nodeUsesString(con program, ir.FunctionBodyNode(con program, function, statement)) {
+                return true
+            }
+        }
+    }
+    return false
 }
 
 func functionParams(con program ir.Program, function int, thunk bool) Result[string, string] {
@@ -110,6 +253,7 @@ func emitCall(con program ir.Program, node int, con indent string) Result[Emitte
     }
     mut lines := []string{}
     mut args := []string{}
+    mut postLines := []string{}
     for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
         argument := ir.NodeChild(con program, node, child)
         if ir.NodeChildCount(con program, argument) != 1 {
@@ -119,13 +263,14 @@ func emitCall(con program ir.Program, node int, con indent string) Result[Emitte
             case Ok(emitted) {
                 lines = copyLines(lines, con emitted.lines)
                 args = append(args, token.CopyText(con emitted.value))
+                postLines = copyLines(emitted.postLines, con postLines)
             }
             case Err(message) {
                 return Err(message)
             }
         }
     }
-    return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{cFunctionName(con name), "(", strings.join(con args, con ", "), ")",}, con ""),})
+    return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{cFunctionName(con name), "(", strings.join(con args, con ", "), ")",}, con ""), postLines: postLines,})
 }
 
 func emitCheckedBinary(con program ir.Program, node int, con indent string, con builtin string) Result[EmittedExpr, string] {
@@ -135,10 +280,12 @@ func emitCheckedBinary(con program ir.Program, node int, con indent string, con 
     mut lines := []string{}
     mut leftValue := ""
     mut rightValue := ""
+    mut postLines := []string{}
     match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
         case Ok(left) {
             lines = copyLines(lines, con left.lines)
             leftValue = token.CopyText(con left.value)
+            postLines = copyLines(left.postLines, con postLines)
         }
         case Err(message) {
             return Err(message)
@@ -148,6 +295,7 @@ func emitCheckedBinary(con program ir.Program, node int, con indent string, con 
         case Ok(right) {
             lines = copyLines(lines, con right.lines)
             rightValue = token.CopyText(con right.value)
+            postLines = copyLines(right.postLines, con postLines)
         }
         case Err(message) {
             return Err(message)
@@ -163,7 +311,42 @@ func emitCheckedBinary(con program ir.Program, node int, con indent string, con 
     lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con builtin), "(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), ", &", token.CopyText(con resultName), ")) {",}, con ""))
     lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
     lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
-    return Ok(EmittedExpr{lines: lines, value: resultName,})
+    return Ok(EmittedExpr{lines: lines, value: resultName, postLines: postLines,})
+}
+
+func emitStringEquality(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    leftNode := ir.NodeChild(con program, node, 0)
+    rightNode := ir.NodeChild(con program, node, 1)
+    match emitExpression(con program, leftNode, con indent) {
+        case Ok(left) {
+            match emitExpression(con program, rightNode, con indent) {
+                case Ok(right) {
+                    suffix := spanSuffix(con program, node)
+                    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
+                    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
+                    resultName := strings.join(con []string{"mallang_checked_result_", token.CopyText(con suffix),}, con "")
+                    mut lines := copyLines([]string{}, con left.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "mlg_String ", token.CopyText(con leftName), " = ", token.CopyText(con left.value), ";",}, con ""))
+                    lines = copyLines(lines, con right.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "mlg_String ", token.CopyText(con rightName), " = ", token.CopyText(con right.value), ";",}, con ""))
+                    mut comparison := strings.join(con []string{"(mallang_string_equal(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), "))",}, con "")
+                    if ir.NodeKind(con program, node) == "Expr.Binary.NotEqual" {
+                        comparison = strings.join(con []string{"(!mallang_string_equal(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), "))",}, con "")
+                    }
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "bool ", token.CopyText(con resultName), " = ", comparison, ";",}, con ""))
+                    lines = copyLines(lines, con right.postLines)
+                    lines = copyLines(lines, con left.postLines)
+                    return Ok(EmittedExpr{lines: lines, value: resultName, postLines: []string{},})
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
 }
 
 func emitBinary(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
@@ -180,13 +363,18 @@ func emitBinary(con program ir.Program, node int, con indent string) Result[Emit
     if ir.NodeChildCount(con program, node) != 2 {
         return Err("B3 C backend received malformed binary IR")
     }
+    if ir.NodeType(con program, ir.NodeChild(con program, node, 0)) == "string" &&(kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual") {
+        return emitStringEquality(con program, node, con indent)
+    }
     mut lines := []string{}
     mut leftValue := ""
     mut rightValue := ""
+    mut postLines := []string{}
     match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
         case Ok(left) {
             lines = copyLines(lines, con left.lines)
             leftValue = token.CopyText(con left.value)
+            postLines = copyLines(left.postLines, con postLines)
         }
         case Err(message) {
             return Err(message)
@@ -196,11 +384,13 @@ func emitBinary(con program ir.Program, node int, con indent string) Result[Emit
         case Ok(right) {
             lines = copyLines(lines, con right.lines)
             rightValue = token.CopyText(con right.value)
+            postLines = copyLines(right.postLines, con postLines)
         }
         case Err(message) {
             return Err(message)
         }
     }
+    mut resultValue := ""
     mut operator := ""
     if kind == "Expr.Binary.Equal" {
         operator = "=="
@@ -221,16 +411,52 @@ func emitBinary(con program ir.Program, node int, con indent string) Result[Emit
     } else {
         return Err(unsupported(con kind))
     }
-    return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{"(", leftValue, " ", operator, " ", rightValue, ")",}, con ""),})
+    resultValue = strings.join(con []string{"(", token.CopyText(con leftValue), " ", operator, " ", token.CopyText(con rightValue), ")",}, con "")
+    return Ok(EmittedExpr{lines: lines, value: resultValue, postLines: postLines,})
 }
 
 func emitExpression(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
     kind := ir.NodeKind(con program, node)
     if kind == "Expr.Int" || kind == "Expr.Bool" {
-        return Ok(EmittedExpr{lines: []string{}, value: ir.NodeValue(con program, node),})
+        return Ok(EmittedExpr{lines: []string{}, value: ir.NodeValue(con program, node), postLines: []string{},})
+    }
+    if kind == "Expr.String" {
+        return Ok(EmittedExpr{lines: []string{}, value: cStringValue(con ir.NodeValue(con program, node)), postLines: []string{},})
     }
     if kind == "Expr.Var" {
-        return Ok(EmittedExpr{lines: []string{}, value: cVariableName(con ir.NodeValue(con program, node)),})
+        return Ok(EmittedExpr{lines: []string{}, value: cVariableName(con ir.NodeValue(con program, node)), postLines: []string{},})
+    }
+    if kind == "Expr.FullExprTemporary" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed full-expression temporary IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+            case Ok(emitted) {
+                ty := cType(con ir.NodeType(con program, node))
+                if ty == "" || ty == "void" {
+                    return Err(unsupported(con ir.NodeType(con program, node)))
+                }
+                name := cVariableName(con ir.NodeValue(con program, node))
+                mut lines := copyLines([]string{}, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", token.CopyText(con name), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                mut postLines := []string{}
+                if ir.NodeNeedsCleanup(con program, node) {
+                    match dropLine(con ir.NodeType(con program, node), con name, con indent) {
+                        case Ok(line) {
+                            postLines = append(postLines, line)
+                        }
+                        case Err(message) {
+                            return Err(message)
+                        }
+                    }
+                }
+                postLines = copyLines(postLines, con emitted.postLines)
+                return Ok(EmittedExpr{lines: lines, value: name, postLines: postLines,})
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
     }
     if kind == "Expr.Call" {
         return emitCall(con program, node, con indent)
@@ -241,7 +467,7 @@ func emitExpression(con program ir.Program, node int, con indent string) Result[
         }
         match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
             case Ok(emitted) {
-                return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{"(!", token.CopyText(con emitted.value), ")",}, con ""),})
+                return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{"(!", token.CopyText(con emitted.value), ")",}, con ""), postLines: emitted.postLines,})
             }
             case Err(message) {
                 return Err(message)
@@ -269,9 +495,16 @@ func emitPrint(con program ir.Program, call int, con indent string) Result[[]str
             ty := ir.NodeType(con program, argument)
             if ty == "int" {
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"%lld\\n\", (long long)(", token.CopyText(con emitted.value), "));",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             } else if ty == "bool" {
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"%s\\n\", (", token.CopyText(con emitted.value), ") ? \"true\" : \"false\");",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
+                return Ok(lines)
+            } else if ty == "string" {
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "mallang_print_string(", token.CopyText(con emitted.value), ");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"\\n\");",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             } else {
                 return Err(unsupported(con strings.join(con []string{"print ", ty,}, con "")))
@@ -281,6 +514,146 @@ func emitPrint(con program ir.Program, call int, con indent string) Result[[]str
             return Err(message)
         }
     }
+}
+
+func emitBlock(con program ir.Program, block int, con indent string) Result[[]string, string] {
+    if ir.NodeCategory(con program, block) != "B" {
+        return Err("B3 C backend received malformed block IR")
+    }
+    mut lines := []string{}
+    for mut child := 0; child < ir.NodeChildCount(con program, block); child = child + 1 {
+        match emitStatement(con program, ir.NodeChild(con program, block, child), con indent) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Ok(lines)
+}
+
+func emitIf(con program ir.Program, node int, con indent string) Result[[]string, string] {
+    if ir.NodeChildCount(con program, node) != 3 {
+        return Err("B3 C backend received malformed if IR")
+    }
+    condition := ir.NodeChild(con program, node, 0)
+    thenBlock := ir.NodeChild(con program, node, 1)
+    elseBlock := ir.NodeChild(con program, node, 2)
+    if ir.NodeKind(con program, thenBlock) != "Block.Then" || ir.NodeKind(con program, elseBlock) != "Block.Else" {
+        return Err("B3 C backend received malformed if blocks")
+    }
+    match emitExpression(con program, condition, con indent) {
+        case Ok(emitted) {
+            mut lines := copyLines([]string{}, con emitted.lines)
+            mut value := stripOuterParens(con emitted.value)
+            if len(emitted.postLines) > 0 {
+                temp := strings.join(con []string{"mallang_condition_", spanSuffix(con program, condition),}, con "")
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "bool ", token.CopyText(con temp), " = ", token.CopyText(con value), ";",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
+                value = temp
+            }
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con value), ") {",}, con ""))
+            match emitBlock(con program, thenBlock, con strings.join(con []string {
+                token.CopyText(con indent), "    ",
+            }
+            , con "")){case Ok(body) {
+                    lines = copyLines(lines, con body)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+            if ir.NodeChildCount(con program, elseBlock) == 0 {
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+            } else {
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "} else {",}, con ""))
+                match emitBlock(con program, elseBlock, con strings.join(con []string {
+                    token.CopyText(con indent), "    ",
+                }
+                , con "")){case Ok(body) {
+                        lines = copyLines(lines, con body)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+            }
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitFor(con program ir.Program, node int, con indent string) Result[[]string, string] {
+    mut condition := -1
+    mut body := -1
+    mut cleanup := -1
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        control := ir.NodeChild(con program, node, child)
+        kind := ir.NodeKind(con program, control)
+        if kind == "ForCondition" {
+            if ir.NodeChildCount(con program, control) != 1 {
+                return Err("B3 C backend received malformed for condition IR")
+            }
+            condition = ir.NodeChild(con program, control, 0)
+        } else if kind == "Block.For" {
+            body = control
+        } else if kind == "Block.ForCleanup" {
+            cleanup = control
+        } else {
+            return Err(unsupported(con kind))
+        }
+    }
+    if body < 0 || cleanup < 0 || ir.NodeChildCount(con program, cleanup) != 0 {
+        return Err("B3 C backend requires a simple for body without loop cleanup")
+    }
+    nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
+    mut emittedCondition := EmittedExpr{lines: []string{}, value: "true", postLines: []string{},}
+    if condition >= 0 {
+        match emitExpression(con program, condition, con nestedIndent) {
+            case Ok(emitted) {
+                emittedCondition = emitted
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    mut lines := []string{}
+    conditionValue := stripOuterParens(con emittedCondition.value)
+    if len(emittedCondition.lines) == 0 && len(emittedCondition.postLines) == 0 {
+        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "while (", token.CopyText(con conditionValue), ") {",}, con ""))
+    } else {
+        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "while (true) {",}, con ""))
+        lines = copyLines(lines, con emittedCondition.lines)
+        mut guardedValue := conditionValue
+        if len(emittedCondition.postLines) > 0 {
+            temp := strings.join(con []string{"mallang_condition_", spanSuffix(con program, condition),}, con "")
+            lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "bool ", token.CopyText(con temp), " = ", token.CopyText(con guardedValue), ";",}, con ""))
+            lines = copyLines(lines, con emittedCondition.postLines)
+            guardedValue = temp
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "if (!(", token.CopyText(con guardedValue), ")) {",}, con ""))
+        lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "    break;",}, con ""))
+        lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "}",}, con ""))
+    }
+    match emitBlock(con program, body, con strings.join(con []string {
+        token.CopyText(con indent), "    ",
+    }
+    , con "")){case Ok(emitted) {
+            lines = copyLines(lines, con emitted)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+    return Ok(lines)
 }
 
 func emitStatement(con program ir.Program, node int, con indent string) Result[[]string, string] {
@@ -298,6 +671,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
                     return Err(unsupported(con ir.NodeType(con program, node)))
                 }
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", cVariableName(con ir.NodeValue(con program, node)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             }
             case Err(message) {
@@ -314,6 +688,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
                 mut lines := []string{}
                 lines = copyLines(lines, con emitted.lines)
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), cVariableName(con ir.NodeValue(con program, node)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             }
             case Err(message) {
@@ -332,7 +707,54 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
             case Ok(emitted) {
                 mut lines := []string{}
                 lines = copyLines(lines, con emitted.lines)
-                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "return ", token.CopyText(con emitted.value), ";",}, con ""))
+                if len(emitted.postLines) == 0 {
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "return ", token.CopyText(con emitted.value), ";",}, con ""))
+                } else {
+                    ty := cType(con ir.NodeType(con program, ir.NodeChild(con program, node, 0)))
+                    if ty == "" || ty == "void" {
+                        return Err(unsupported(con ir.NodeType(con program, ir.NodeChild(con program, node, 0))))
+                    }
+                    temp := strings.join(con []string{"mallang_return_value_", spanSuffix(con program, ir.NodeChild(con program, node, 0)),}, con "")
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", token.CopyText(con temp), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                    lines = copyLines(lines, con emitted.postLines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "return ", token.CopyText(con temp), ";",}, con ""))
+                }
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Stmt.If" {
+        return emitIf(con program, node, con indent)
+    }
+    if kind == "Stmt.For" {
+        return emitFor(con program, node, con indent)
+    }
+    if kind == "Stmt.Break" {
+        return Ok([]string{strings.join(con []string{token.CopyText(con indent), "break;",}, con ""),})
+    }
+    if kind == "Stmt.Continue" {
+        return Ok([]string{strings.join(con []string{token.CopyText(con indent), "continue;",}, con ""),})
+    }
+    if kind == "Stmt.Drop" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed drop IR")
+        }
+        expression := ir.NodeChild(con program, node, 0)
+        match emitExpression(con program, expression, con indent) {
+            case Ok(emitted) {
+                mut lines := copyLines([]string{}, con emitted.lines)
+                match dropLine(con ir.NodeType(con program, expression), con emitted.value, con indent) {
+                    case Ok(line) {
+                        lines = append(lines, line)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             }
             case Err(message) {
@@ -353,6 +775,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
                 mut lines := []string{}
                 lines = copyLines(lines, con emitted.lines)
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con emitted.value), ";",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             }
             case Err(message) {
@@ -426,6 +849,9 @@ pub func Generate(con program ir.Program) Result[string, string] {
         return Err("B3 C backend does not yet support closures")
     }
     mut lines := runtimePrelude()
+    if programUsesString(con program) {
+        lines = copyLines(lines, con stringRuntime())
+    }
     lines = append(lines, "")
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match functionSignature(con program, function) {

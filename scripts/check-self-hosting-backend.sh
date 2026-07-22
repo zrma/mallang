@@ -52,10 +52,7 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURE="$PROJECT/fixtures/backend/scalars.mlg"
-ORACLE_C="target/mallang/scalars.c"
-STAGE1_C="$WORK/scalars.stage1.c"
-STAGE1_C_SECOND="$WORK/scalars.stage1.second.c"
+FIXTURES=(scalars owned-control)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -83,25 +80,31 @@ elif [[ ! -x "$STAGE1" ]]; then
   exit 1
 fi
 
-"$STAGE0" build "$FIXTURE" -o "$WORK/scalars.stage0" >/dev/null
-"$STAGE1" c "$FIXTURE" >"$STAGE1_C"
-"$STAGE1" c "$FIXTURE" >"$STAGE1_C_SECOND"
+for name in "${FIXTURES[@]}"; do
+  fixture="$PROJECT/fixtures/backend/$name.mlg"
+  oracle_c="target/mallang/$name.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
 
-if ! cmp -s "$ORACLE_C" "$STAGE1_C"; then
-  echo "self-hosting backend generated C differs from Stage0" >&2
-  diff -u "$ORACLE_C" "$STAGE1_C" >&2 || true
-  exit 1
-fi
-if ! cmp -s "$STAGE1_C" "$STAGE1_C_SECOND"; then
-  echo "self-hosting backend generated C is not deterministic" >&2
-  exit 1
-fi
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE1" c "$fixture" >"$stage1_c"
+  "$STAGE1" c "$fixture" >"$stage1_c_second"
 
-"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$STAGE1_C" -o "$WORK/scalars.stage1"
-"$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$STAGE1_C" -o "$WORK/scalars.stage1-san"
+  if ! cmp -s "$oracle_c" "$stage1_c"; then
+    echo "self-hosting backend generated C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  fi
+  if ! cmp -s "$stage1_c" "$stage1_c_second"; then
+    echo "self-hosting backend generated C is not deterministic: $name" >&2
+    exit 1
+  fi
 
-generated_c_abs="$(cd "$(dirname "$STAGE1_C")" && pwd)/$(basename "$STAGE1_C")"
-cat >"$WORK/scalars-accounting.c" <<EOF
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  generated_c_abs="$(cd "$(dirname "$stage1_c")" && pwd)/$(basename "$stage1_c")"
+  cat >"$WORK/$name-accounting.c" <<EOF
 #define main mallang_fixture_main
 #include "$generated_c_abs"
 #undef main
@@ -123,44 +126,58 @@ int main(void) {
 }
 EOF
 
-"$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
-  "$WORK/scalars-accounting.c" -o "$WORK/scalars-accounting"
-"$CLANG_BIN" "${SANITIZER_FLAGS[@]}" \
-  "$WORK/scalars-accounting.c" -o "$WORK/scalars-accounting-san"
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
+    "$WORK/$name-accounting.c" -o "$WORK/$name-accounting"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" \
+    "$WORK/$name-accounting.c" -o "$WORK/$name-accounting-san"
 
-"$WORK/scalars.stage0" >"$WORK/scalars.stage0.stdout"
-"$WORK/scalars.stage1" >"$WORK/scalars.stage1.stdout"
-"$WORK/scalars.stage1-san" >"$WORK/scalars.stage1-san.stdout" \
-  2>"$WORK/scalars.stage1-san.stderr"
-"$WORK/scalars-accounting" >"$WORK/scalars-accounting.stdout" \
-  2>"$WORK/scalars-accounting.stderr"
-"$WORK/scalars-accounting-san" >"$WORK/scalars-accounting-san.stdout" \
-  2>"$WORK/scalars-accounting-san.stderr"
+  "$WORK/$name.stage0" >"$WORK/$name.stage0.stdout"
+  "$WORK/$name.stage1" >"$WORK/$name.stage1.stdout"
+  "$WORK/$name.stage1-san" >"$WORK/$name.stage1-san.stdout" \
+    2>"$WORK/$name.stage1-san.stderr"
+  "$WORK/$name-accounting" >"$WORK/$name-accounting.stdout" \
+    2>"$WORK/$name-accounting.stderr"
+  "$WORK/$name-accounting-san" >"$WORK/$name-accounting-san.stdout" \
+    2>"$WORK/$name-accounting-san.stderr"
 
-for output in \
-  "$WORK/scalars.stage1.stdout" \
-  "$WORK/scalars.stage1-san.stdout" \
-  "$WORK/scalars-accounting.stdout" \
-  "$WORK/scalars-accounting-san.stdout"; do
-  if ! cmp -s "$WORK/scalars.stage0.stdout" "$output"; then
-    echo "self-hosting backend native output mismatch: $output" >&2
+  for output in \
+    "$WORK/$name.stage1.stdout" \
+    "$WORK/$name.stage1-san.stdout" \
+    "$WORK/$name-accounting.stdout" \
+    "$WORK/$name-accounting-san.stdout"; do
+    if ! cmp -s "$WORK/$name.stage0.stdout" "$output"; then
+      echo "self-hosting backend native output mismatch: $output" >&2
+      exit 1
+    fi
+  done
+
+  expected=""
+  case "$name" in
+    scalars)
+      expected=$'30\ntrue'
+      ;;
+    owned-control)
+      expected=$'ready\nmiddle\nready\nready\nequal\ndifferent\n말랑'
+      ;;
+    *)
+      echo "self-hosting backend fixture has no expected output: $name" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$(cat "$WORK/$name.stage0.stdout")" != "$expected" ]]; then
+    echo "self-hosting backend fixture output mismatch: $name" >&2
+    exit 1
+  fi
+  if [[ -s "$WORK/$name.stage1-san.stderr" || \
+        -s "$WORK/$name-accounting.stderr" || \
+        -s "$WORK/$name-accounting-san.stderr" ]]; then
+    echo "self-hosting backend runtime emitted unexpected stderr: $name" >&2
+    cat \
+      "$WORK/$name.stage1-san.stderr" \
+      "$WORK/$name-accounting.stderr" \
+      "$WORK/$name-accounting-san.stderr" >&2
     exit 1
   fi
 done
 
-if [[ "$(cat "$WORK/scalars.stage0.stdout")" != $'30\ntrue' ]]; then
-  echo "self-hosting backend fixture output mismatch" >&2
-  exit 1
-fi
-if [[ -s "$WORK/scalars.stage1-san.stderr" || \
-      -s "$WORK/scalars-accounting.stderr" || \
-      -s "$WORK/scalars-accounting-san.stderr" ]]; then
-  echo "self-hosting backend runtime emitted unexpected stderr" >&2
-  cat \
-    "$WORK/scalars.stage1-san.stderr" \
-    "$WORK/scalars-accounting.stderr" \
-    "$WORK/scalars-accounting-san.stderr" >&2
-  exit 1
-fi
-
-echo "self-hosting B3 scalar backend gate passed: elapsed=$((SECONDS - started))s"
+echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} elapsed=$((SECONDS - started))s"

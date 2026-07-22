@@ -99,10 +99,16 @@ and unary logic. Stage0 and Stage1 produce byte-identical deterministic C; the
 strict native, allocation-accounting and ASan/UBSan paths pass. The complete
 compiler source set also matches across 713 normalized typed-IR functions.
 
-P177b-P177d still need owned values, control flow, callable/project surfaces and
-complete compiler-source C generation before B3 can close. Exact scope and the
-layered edit/integration/publication gates are owned by
-`docs/todo-self-hosting-backend/`.
+P177b1 adds the string runtime, static UTF-8 literals, owned string
+return/local/drop behavior, print/equality full-expression cleanup, statement
+`if`/`else`, condition loops, `break` and `continue`. The scalar and
+owned-control fixtures both match Stage0 C byte-for-byte and pass strict native,
+allocation-accounting and ASan/UBSan execution. The expanded compiler source
+matches Stage0 across 725 normalized typed-IR functions. P177b remains active
+for arrays, slices, structs, ADTs, expression control flow and the remaining
+cleanup surfaces. P177c-P177d still need callable/project surfaces and complete
+compiler-source C generation before B3 can close. Exact scope and layered gates
+are owned by `docs/todo-self-hosting-backend/`.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

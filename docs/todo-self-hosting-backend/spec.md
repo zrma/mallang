@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a complete
+Status: active; P177a and P177b1 complete
 
 ## Objective
 
@@ -35,6 +35,20 @@ functions.
 - preserve evaluation order, checked runtime failures and ownership cleanup
 - add positive, rejection, native, accounting and sanitizer fixtures per slice
 
+P177b1 is complete. The Mallang backend now emits the string runtime, static
+UTF-8 literals, owned string function returns and locals, read-only string
+printing/equality, full-expression temporary cleanup and explicit string drops.
+Statement `if`/`else`, condition loops, `break` and `continue` share the same
+recursive block emitter. The `owned-control` fixture combines these paths,
+including non-ASCII and equality literals, and matches Stage0 C byte-for-byte
+before strict native, allocation-accounting and ASan/UBSan execution. The
+expanded compiler source also matches Stage0 across 725 normalized typed-IR
+functions.
+
+P177b remains active. Arrays, slices, structs, inline/owned ADTs, expression
+`if`, match forms, range and three-clause loops, overwrite cleanup and dynamic
+owned-string construction remain in later slices.
+
 ### P177c: Callable And Project Surface
 
 - add methods, function values, closures, captures and indirect calls
@@ -58,7 +72,7 @@ the publication cost on every edit.
    `scripts/check-self-hosting-backend.sh --assume-bootstrap`. This reuses an
    explicitly existing Stage1 and is not milestone evidence.
 2. Integration loop: run `scripts/check-self-hosting-backend.sh`. This rebuilds
-   Stage1 from current sources before the complete scalar backend gate.
+   Stage1 from current sources before the complete tracked backend fixture gate.
 3. Compiler-core differential: run
    `scripts/diagnose-self-hosting-compiler-ir.sh --rebuild-bootstrap` after IR,
    ownership or cleanup changes. `--reuse-bootstrap` is diagnostic only.
@@ -66,10 +80,10 @@ the publication cost on every edit.
    `scripts/check.sh`; the backend slice reuses the fresh Stage1 produced by the
    preceding compiler gate.
 
-On one development host, the P177a reuse gate took about two seconds, the fresh
-backend gate about fourteen seconds and a complete compiler-source IR reuse
-comparison about eleven seconds. These observations justify the layer split;
-they are not portable performance thresholds.
+On one development host, the two-fixture P177b1 reuse gate took about four
+seconds, the fresh backend gate about sixteen seconds and a complete
+compiler-source IR reuse comparison about eleven seconds. These observations
+justify the layer split; they are not portable performance thresholds.
 
 ## Acceptance
 
@@ -79,7 +93,9 @@ they are not portable performance thresholds.
 - [x] byte-identical Stage0/Stage1 scalar C
 - [x] strict native, accounting and ASan/UBSan scalar gate
 - [x] compiler-source Stage0/Stage1 typed-IR parity after cleanup regression fix
-- [x] sub-two-second artifact-reuse edit loop on the observed host
+- [x] P177a sub-two-second artifact-reuse edit loop on the observed host
+- [x] P177b1 owned strings, statement control flow and explicit cleanup
+- [x] two-fixture byte parity, native, accounting and sanitizer gate
 - [ ] owned values and control flow
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation

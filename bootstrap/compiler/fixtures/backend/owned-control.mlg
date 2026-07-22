@@ -1,0 +1,31 @@
+func choose(flag bool) string {
+    if flag {
+        return "ready"
+    } else {
+        return "waiting"
+    }
+}
+
+func main() {
+    mut count := 0
+    message := choose(true)
+    for count < 4 {
+        count = count + 1
+        if count == 2 {
+            print("middle")
+            continue
+        }
+        if count == 4 {
+            break
+        }
+        print(message)
+    }
+    print(message)
+    if message == "ready" {
+        print("equal")
+    }
+    if message != "waiting" {
+        print("different")
+    }
+    print("말랑")
+}
