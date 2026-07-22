@@ -1,0 +1,8 @@
+func invalidIndex() int {
+    return 3
+}
+
+func main() {
+    values := [2]int{10, 20}
+    print(values[invalidIndex()])
+}

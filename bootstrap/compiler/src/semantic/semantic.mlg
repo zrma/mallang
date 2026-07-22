@@ -14,6 +14,9 @@ pub type ResolvedType struct {
 
 pub type TypeShape struct {
     text string
+    kind string
+    copy bool
+    cleanup bool
     arguments []ResolvedType
     arrayLength int
 }
@@ -289,6 +292,66 @@ pub func TypeArgumentNeedsCleanup(con checked CheckedProgram, con name string, a
     return false
 }
 
+pub func TypeShapeCount(con checked CheckedProgram) int {
+    return len(checked.typeShapes)
+}
+
+pub func TypeShapeName(con checked CheckedProgram, shape int) string {
+    return token.CopyText(con checked.typeShapes[shape].text)
+}
+
+pub func TypeShapeKind(con checked CheckedProgram, shape int) string {
+    return token.CopyText(con checked.typeShapes[shape].kind)
+}
+
+pub func TypeShapeIsCopy(con checked CheckedProgram, shape int) bool {
+    return checked.typeShapes[shape].copy
+}
+
+pub func TypeShapeNeedsCleanup(con checked CheckedProgram, shape int) bool {
+    return checked.typeShapes[shape].cleanup
+}
+
+pub func TypeShapeArgumentCount(con checked CheckedProgram, shape int) int {
+    return len(checked.typeShapes[shape].arguments)
+}
+
+pub func TypeShapeArgument(con checked CheckedProgram, shape int, argument int) string {
+    return token.CopyText(con checked.typeShapes[shape].arguments[argument].text)
+}
+
+pub func TypeShapeArgumentNeedsCleanup(con checked CheckedProgram, shape int, argument int) bool {
+    return checked.typeShapes[shape].arguments[argument].cleanup
+}
+
+pub func TypeShapeArrayLength(con checked CheckedProgram, shape int) int {
+    return checked.typeShapes[shape].arrayLength
+}
+
+pub func StructCount(con checked CheckedProgram) int {
+    return len(checked.structs)
+}
+
+pub func StructName(con checked CheckedProgram, structure int) string {
+    return token.CopyText(con checked.structs[structure].name)
+}
+
+pub func StructIntrinsic(con checked CheckedProgram, structure int) string {
+    return token.CopyText(con checked.structs[structure].intrinsic)
+}
+
+pub func StructIntrinsicArgumentCount(con checked CheckedProgram, structure int) int {
+    return len(checked.structs[structure].intrinsicArgs)
+}
+
+pub func StructIntrinsicArgumentType(con checked CheckedProgram, structure int, argument int) string {
+    return token.CopyText(con checked.structs[structure].intrinsicArgs[argument].text)
+}
+
+pub func StructIntrinsicArgumentNeedsCleanup(con checked CheckedProgram, structure int, argument int) bool {
+    return checked.structs[structure].intrinsicArgs[argument].cleanup
+}
+
 pub func StructFieldCount(con checked CheckedProgram, con name string) int {
     structure := checked.structIndex(con name)
     if structure < 0 {
@@ -303,6 +366,46 @@ pub func StructFieldName(con checked CheckedProgram, con name string, field int)
         return ""
     }
     return token.CopyText(con checked.structs[structure].fields[field].name)
+}
+
+pub func StructFieldType(con checked CheckedProgram, con name string, field int) string {
+    structure := checked.structIndex(con name)
+    if structure < 0 || field < 0 || field >= len(checked.structs[structure].fields) {
+        return ""
+    }
+    return token.CopyText(con checked.structs[structure].fields[field].ty.text)
+}
+
+pub func StructFieldNeedsCleanup(con checked CheckedProgram, con name string, field int) bool {
+    structure := checked.structIndex(con name)
+    if structure < 0 || field < 0 || field >= len(checked.structs[structure].fields) {
+        return false
+    }
+    return checked.structs[structure].fields[field].ty.cleanup
+}
+
+pub func EnumCount(con checked CheckedProgram) int {
+    return len(checked.enums)
+}
+
+pub func EnumName(con checked CheckedProgram, enumeration int) string {
+    return token.CopyText(con checked.enums[enumeration].name)
+}
+
+pub func EnumIntrinsic(con checked CheckedProgram, enumeration int) string {
+    return token.CopyText(con checked.enums[enumeration].intrinsic)
+}
+
+pub func EnumPatternName(con checked CheckedProgram, enumeration int) string {
+    return token.CopyText(con checked.enums[enumeration].patternName)
+}
+
+pub func EnumVariantCount(con checked CheckedProgram, enumeration int) int {
+    return len(checked.enums[enumeration].variants)
+}
+
+pub func EnumVariantName(con checked CheckedProgram, enumeration int, variant int) string {
+    return token.CopyText(con checked.enums[enumeration].variants[variant].name)
 }
 
 pub func EnumVariantPayloadCount(con checked CheckedProgram, con name string, con variant string) int {
@@ -4115,7 +4218,7 @@ func (mut self CheckedProgram) recordTypeShape(con ty ResolvedType, con argument
         for mut index := 0; index < len(arguments); index = index + 1 {
             copiedArguments = append(copiedArguments, copyType(con arguments[index]))
         }
-        self.typeShapes = append(self.typeShapes, TypeShape{text: token.CopyText(con ty.text), arguments: copiedArguments, arrayLength: arrayLength,})
+        self.typeShapes = append(self.typeShapes, TypeShape{text: token.CopyText(con ty.text), kind: token.CopyText(con ty.kind), copy: ty.copy, cleanup: ty.cleanup, arguments: copiedArguments, arrayLength: arrayLength,})
     }
 }
 

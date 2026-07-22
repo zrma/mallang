@@ -11,6 +11,12 @@ type EmittedExpr struct {
     postLines []string
 }
 
+type TypeEmitter struct {
+    lines []string
+    emitted []string
+    visiting []string
+}
+
 func copyLines(target []string, con values []string) []string {
     mut output := target
     for mut index := 0; index < len(values); index = index + 1 {
@@ -33,6 +39,456 @@ func cType(con ty string) string {
         return "void"
     }
     return ""
+}
+
+func containsText(con values []string, con value string) bool {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index]== value {
+            return true
+        }
+    }
+    return false
+}
+
+func appendMissingLines(values []string, con added []string) []string {
+    mut output := copyLines([]string{}, con values)
+    for mut index := 0; index < len(added); index = index + 1 {
+        if !containsText(con output, con added[index]) {
+            output = append(output, token.CopyText(con added[index]))
+        }
+    }
+    return output
+}
+
+func typeShapeIndex(con program ir.Program, con ty string) int {
+    for mut shape := 0; shape < ir.TypeShapeCount(con program); shape = shape + 1 {
+        if ir.TypeShapeName(con program, shape) == ty {
+            return shape
+        }
+    }
+    return - 1
+}
+
+func structIndex(con program ir.Program, con name string) int {
+    for mut structure := 0; structure < ir.StructCount(con program); structure = structure + 1 {
+        if ir.StructName(con program, structure) == name {
+            return structure
+        }
+    }
+    return - 1
+}
+
+func enumIndex(con program ir.Program, con name string) int {
+    for mut enumeration := 0; enumeration < ir.EnumCount(con program); enumeration = enumeration + 1 {
+        if ir.EnumName(con program, enumeration) == name {
+            return enumeration
+        }
+    }
+    return - 1
+}
+
+func typeKind(con program ir.Program, con ty string) string {
+    if ty == "int" || ty == "bool" || ty == "string" || ty == "unit" {
+        return token.CopyText(con ty)
+    }
+    shape := typeShapeIndex(con program, con ty)
+    if shape >= 0 {
+        return ir.TypeShapeKind(con program, shape)
+    }
+    if structIndex(con program, con ty) >= 0 {
+        return "struct"
+    }
+    if enumIndex(con program, con ty) >= 0 {
+        return "enum"
+    }
+    return ""
+}
+
+func typeArgument(con program ir.Program, con ty string, argument int) string {
+    shape := typeShapeIndex(con program, con ty)
+    if shape < 0 || argument < 0 || argument >= ir.TypeShapeArgumentCount(con program, shape) {
+        return ""
+    }
+    return ir.TypeShapeArgument(con program, shape, argument)
+}
+
+func typeNeedsCleanup(con program ir.Program, con ty string) bool {
+    if ty == "string" {
+        return true
+    }
+    shape := typeShapeIndex(con program, con ty)
+    if shape >= 0 {
+        return ir.TypeShapeNeedsCleanup(con program, shape)
+    }
+    structure := structIndex(con program, con ty)
+    if structure >= 0 {
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            if ir.StructFieldNeedsCleanup(con program, structure, field) {
+                return true
+            }
+        }
+        return false
+    }
+    enumeration := enumIndex(con program, con ty)
+    if enumeration >= 0 {
+        if ir.EnumStorage(con program, enumeration) == "owned" {
+            return true
+        }
+        for mut variant := 0; variant < ir.EnumVariantCount(con program, enumeration); variant = variant + 1 {
+            for mut payload := 0; payload < ir.EnumVariantPayloadCount(con program, enumeration, variant); payload = payload + 1 {
+                if ir.EnumVariantPayloadNeedsCleanup(con program, enumeration, variant, payload) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+func cTypeIdent(con name string) string {
+    mut parts := []string{}
+    for mut index := 0; index < strings.byteLen(con name); index = index + 1 {
+        mut byte := 0
+        match strings.byteAt(con name, index) {
+            case Ok(value) {
+                byte = value
+            }
+            case Err(_) {
+                return ""
+            }
+        }
+        if(byte >= 48 && byte <= 57) ||(byte >= 65 && byte <= 90) ||(byte >= 97 && byte <= 122) || byte == 95 {
+            match strings.slice(con name, index, index + 1) {
+                case Ok(value) {
+                    parts = append(parts, token.CopyText(con value))
+                }
+                case Err(_) {
+                    return ""
+                }
+            }
+        } else {
+            parts = append(parts, "_")
+        }
+    }
+    return strings.join(con parts, con "")
+}
+
+func mangleType(con program ir.Program, con ty string) string {
+    kind := typeKind(con program, con ty)
+    if kind == "int" || kind == "bool" || kind == "string" || kind == "unit" {
+        return token.CopyText(con kind)
+    }
+    if kind == "array" {
+        shape := typeShapeIndex(con program, con ty)
+        return strings.join(con []string{"Array_", strings.fromInt(ir.TypeShapeArrayLength(con program, shape)), "_", mangleType(con program, con typeArgument(con program, con ty, 0)),}, con "")
+    }
+    if kind == "slice" {
+        return strings.join(con []string{"Slice_", mangleType(con program, con typeArgument(con program, con ty, 0)),}, con "")
+    }
+    if kind == "struct" {
+        return strings.join(con []string{"Struct_", cTypeIdent(con ty),}, con "")
+    }
+    if kind == "enum" {
+        return strings.join(con []string{"Enum_", cTypeIdent(con ty),}, con "")
+    }
+    return ""
+}
+
+func cTypeFor(con program ir.Program, con ty string) string {
+    primitive := cType(con ty)
+    if primitive != "" {
+        return primitive
+    }
+    kind := typeKind(con program, con ty)
+    if kind == "array" || kind == "slice" {
+        return strings.join(con []string{"mlg_", mangleType(con program, con ty),}, con "")
+    }
+    if kind == "struct" {
+        return strings.join(con []string{"mlg_struct_", cTypeIdent(con ty),}, con "")
+    }
+    if kind == "enum" {
+        return strings.join(con []string{"mlg_enum_", cTypeIdent(con ty),}, con "")
+    }
+    return ""
+}
+
+func cField(con name string) string {
+    return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
+}
+
+func dropFunctionName(con program ir.Program, con ty string) string {
+    return strings.join(con []string{"mlg_drop_", mangleType(con program, con ty),}, con "")
+}
+
+func collectType(con program ir.Program, con values []string, con ty string) []string {
+    kind := typeKind(con program, con ty)
+    mut nestedTypes := []string{}
+    if kind == "array" || kind == "slice" {
+        nestedTypes = collectType(con program, con []string{}, con typeArgument(con program, con ty, 0))
+    }
+    types := appendMissingLines(copyLines([]string{}, con values), con nestedTypes)
+    if kind == "int" || kind == "bool" || kind == "unit" || kind == "" {
+        return types
+    } else {
+        return appendMissingLines(types, con []string{token.CopyText(con ty),})
+    }
+}
+
+func collectNodeTypes(con program ir.Program, con values []string, node int) []string {
+    mut types := collectType(con program, con values, con ir.NodeType(con program, node))
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        childTypes := collectNodeTypes(con program, con types, ir.NodeChild(con program, node, child))
+        types = childTypes
+    }
+    return types
+}
+
+func collectDefinedTypes(con program ir.Program) []string {
+    mut types := []string{}
+    for mut structure := 0; structure < ir.StructCount(con program); structure = structure + 1 {
+        structureTypes := collectType(con program, con types, con ir.StructName(con program, structure))
+        types = structureTypes
+        for mut argument := 0; argument < ir.StructIntrinsicArgumentCount(con program, structure); argument = argument + 1 {
+            argumentTypes := collectType(con program, con types, con ir.StructIntrinsicArgument(con program, structure, argument))
+            types = argumentTypes
+        }
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            fieldTypes := collectType(con program, con types, con ir.StructFieldType(con program, structure, field))
+            types = fieldTypes
+        }
+    }
+    for mut enumeration := 0; enumeration < ir.EnumCount(con program); enumeration = enumeration + 1 {
+        enumTypes := collectType(con program, con types, con ir.EnumName(con program, enumeration))
+        types = enumTypes
+        for mut variant := 0; variant < ir.EnumVariantCount(con program, enumeration); variant = variant + 1 {
+            for mut payload := 0; payload < ir.EnumVariantPayloadCount(con program, enumeration, variant); payload = payload + 1 {
+                payloadTypes := collectType(con program, con types, con ir.EnumVariantPayloadType(con program, enumeration, variant, payload))
+                types = payloadTypes
+            }
+        }
+    }
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        returnTypes := collectType(con program, con types, con ir.FunctionReturnType(con program, function))
+        types = returnTypes
+        for mut param := 0; param < ir.FunctionParamCount(con program, function); param = param + 1 {
+            paramTypes := collectType(con program, con types, con ir.FunctionParamType(con program, function, param))
+            types = paramTypes
+        }
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            statementTypes := collectNodeTypes(con program, con types, ir.FunctionBodyNode(con program, function, statement))
+            types = statementTypes
+        }
+    }
+    return types
+}
+
+func (mut self TypeEmitter) emitTypeDefinition(con program ir.Program, con ty string) Result[bool, string] {
+    kind := typeKind(con program, con ty)
+    if kind == "int" || kind == "bool" || kind == "string" || kind == "unit" {
+        return Ok(true)
+    }
+    if containsText(con self.emitted, con ty) {
+        return Ok(true)
+    }
+    if containsText(con self.visiting, con ty) {
+        return Err(unsupported(con strings.join(con []string{"recursive type definition ", token.CopyText(con ty),}, con "")))
+    }
+    self.visiting = append(self.visiting, token.CopyText(con ty))
+
+    if kind == "slice" {
+        match self.emitTypeDefinition(con program, con typeArgument(con program, con ty, 0)) {
+            case Ok(_) {}
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    } else if kind == "struct" {
+        structure := structIndex(con program, con ty)
+        if structure < 0 {
+            return Err("B3 C backend received an unknown struct type")
+        }
+        for mut argument := 0; argument < ir.StructIntrinsicArgumentCount(con program, structure); argument = argument + 1 {
+            match self.emitTypeDefinition(con program, con ir.StructIntrinsicArgument(con program, structure, argument)) {
+                case Ok(_) {}
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            match self.emitTypeDefinition(con program, con ir.StructFieldType(con program, structure, field)) {
+                case Ok(_) {}
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+    } else if kind != "array" {
+        return Err(unsupported(con strings.join(con []string{"type definition ", token.CopyText(con ty),}, con "")))
+    }
+
+    if kind == "array" {
+        shape := typeShapeIndex(con program, con ty)
+        length := ir.TypeShapeArrayLength(con program, shape)
+        self.lines = append(self.lines, "typedef struct {")
+        if length == 0 {
+            self.lines = append(self.lines, "    char mlg_empty;")
+        } else {
+            self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con typeArgument(con program, con ty, 0)), " mlg_data[", strings.fromInt(length), "];",}, con ""))
+        }
+        self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
+    } else if kind == "slice" {
+        self.lines = append(self.lines, "typedef struct {")
+        self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con typeArgument(con program, con ty, 0)), " *mlg_data;",}, con ""))
+        self.lines = append(self.lines, "    int64_t mlg_len;")
+        self.lines = append(self.lines, "    int64_t mlg_cap;")
+        self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
+    } else if kind == "struct" {
+        structure := structIndex(con program, con ty)
+        if ir.StructIntrinsic(con program, structure) != "" {
+            return Err(unsupported(con strings.join(con []string{"intrinsic struct ", token.CopyText(con ty),}, con "")))
+        }
+        self.lines = append(self.lines, "typedef struct {")
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con ir.StructFieldType(con program, structure, field)), " ", cField(con ir.StructFieldName(con program, structure, field)), ";",}, con ""))
+        }
+        self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
+    }
+    self.lines = append(self.lines, "")
+    self.emitted = append(self.emitted, token.CopyText(con ty))
+    return Ok(true)
+}
+
+func emitTypeDefinitions(con program ir.Program, con types []string) Result[[]string, string] {
+    mut emitter := TypeEmitter{lines: []string{}, emitted: []string{}, visiting: []string{},}
+    for mut index := 0; index < len(types); index = index + 1 {
+        match emitter.emitTypeDefinition(con program, con types[index]) {
+            case Ok(_) {}
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Ok(emitter.lines)
+}
+
+func (mut self TypeEmitter) emitDropHelper(con program ir.Program, con ty string) Result[bool, string] {
+    if containsText(con self.emitted, con ty) || !typeNeedsCleanup(con program, con ty) {
+        return Ok(true)
+    }
+    if containsText(con self.visiting, con ty) {
+        return Ok(true)
+    }
+    self.visiting = append(self.visiting, token.CopyText(con ty))
+    kind := typeKind(con program, con ty)
+    if kind == "array" || kind == "slice" {
+        match self.emitDropHelper(con program, con typeArgument(con program, con ty, 0)) {
+            case Ok(_) {}
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    } else if kind == "struct" {
+        structure := structIndex(con program, con ty)
+        for mut argument := 0; argument < ir.StructIntrinsicArgumentCount(con program, structure); argument = argument + 1 {
+            match self.emitDropHelper(con program, con ir.StructIntrinsicArgument(con program, structure, argument)) {
+                case Ok(_) {}
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            match self.emitDropHelper(con program, con ir.StructFieldType(con program, structure, field)) {
+                case Ok(_) {}
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+    } else if kind != "string" {
+        return Err(unsupported(con strings.join(con []string{"drop helper ", token.CopyText(con ty),}, con "")))
+    }
+
+    self.lines = append(self.lines, strings.join(con []string{"static void MLG_UNUSED ", dropFunctionName(con program, con ty), "(", cTypeFor(con program, con ty), " *mlg_value) {",}, con ""))
+    if kind == "string" {
+        self.lines = append(self.lines, "    mallang_validate_string(*mlg_value);")
+        self.lines = append(self.lines, "    if (mlg_value->mlg_storage == MLG_STRING_OWNED) {")
+        self.lines = append(self.lines, "        mallang_dealloc((void *)mlg_value->mlg_data);")
+        self.lines = append(self.lines, "    }")
+        self.lines = append(self.lines, "    *mlg_value = (mlg_String){ .mlg_data = \"\", .mlg_len = 0, .mlg_storage = MLG_STRING_STATIC };")
+    } else if kind == "slice" {
+        element := typeArgument(con program, con ty, 0)
+        if typeNeedsCleanup(con program, con element) {
+            self.lines = append(self.lines, "    for (int64_t mlg_i = 0; mlg_i < mlg_value->mlg_len; mlg_i = mlg_i + 1) {")
+            self.lines = append(self.lines, strings.join(con []string{"        ", dropFunctionName(con program, con element), "(&(mlg_value->mlg_data[mlg_i]));",}, con ""))
+            self.lines = append(self.lines, "    }")
+        }
+        self.lines = append(self.lines, "    mallang_dealloc(mlg_value->mlg_data);")
+        self.lines = append(self.lines, "    mlg_value->mlg_data = NULL;")
+        self.lines = append(self.lines, "    mlg_value->mlg_len = 0;")
+        self.lines = append(self.lines, "    mlg_value->mlg_cap = 0;")
+    } else if kind == "array" {
+        element := typeArgument(con program, con ty, 0)
+        shape := typeShapeIndex(con program, con ty)
+        length := ir.TypeShapeArrayLength(con program, shape)
+        if length > 0 && typeNeedsCleanup(con program, con element) {
+            self.lines = append(self.lines, strings.join(con []string{"    for (int64_t mlg_i = 0; mlg_i < ", strings.fromInt(length), "; mlg_i = mlg_i + 1) {",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"        ", dropFunctionName(con program, con element), "(&(mlg_value->mlg_data[mlg_i]));",}, con ""))
+            self.lines = append(self.lines, "    }")
+        }
+    } else if kind == "struct" {
+        structure := structIndex(con program, con ty)
+        if ir.StructIntrinsic(con program, structure) != "" {
+            return Err(unsupported(con strings.join(con []string{"intrinsic struct cleanup ", token.CopyText(con ty),}, con "")))
+        }
+        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+            if ir.StructFieldNeedsCleanup(con program, structure, field) {
+                fieldType := ir.StructFieldType(con program, structure, field)
+                self.lines = append(self.lines, strings.join(con []string{"    ", dropFunctionName(con program, con fieldType), "(&(mlg_value->", cField(con ir.StructFieldName(con program, structure, field)), "));",}, con ""))
+            }
+        }
+    }
+    self.lines = append(self.lines, "}")
+    self.lines = append(self.lines, "")
+    self.emitted = append(self.emitted, token.CopyText(con ty))
+    return Ok(true)
+}
+
+func emitDropHelpers(con program ir.Program, con types []string) Result[[]string, string] {
+    mut lines := []string{}
+    for mut index := 0; index < len(types); index = index + 1 {
+        if typeNeedsCleanup(con program, con types[index]) {
+            lines = append(lines, strings.join(con []string{"static void MLG_UNUSED ", dropFunctionName(con program, con types[index]), "(", cTypeFor(con program, con types[index]), " *mlg_value);",}, con ""))
+        }
+    }
+    if len(lines) > 0 {
+        lines = append(lines, "")
+    }
+    mut emitter := TypeEmitter{lines: lines, emitted: []string{}, visiting: []string{},}
+    for mut index := 0; index < len(types); index = index + 1 {
+        match emitter.emitDropHelper(con program, con types[index]) {
+            case Ok(_) {}
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Ok(emitter.lines)
+}
+
+func stringRuntimeWithoutDrop() []string {
+    mut lines := []string{}
+    source := stringRuntime()
+    mut stopped := false
+    for mut index := 0; index < len(source); index = index + 1 {
+        if source[index]== "static void MLG_UNUSED mlg_drop_string(mlg_String *mlg_value);" {
+            stopped = true
+        } else if !stopped {
+            lines = append(lines, token.CopyText(con source[index]))
+        }
+    }
+    return lines
 }
 
 func utf8Width(first int) int {
@@ -132,9 +588,9 @@ func stripOuterParens(con value string) string {
     }
 }
 
-func dropLine(con ty string, con value string, con indent string) Result[string, string] {
-    if ty == "string" {
-        return Ok(strings.join(con []string{token.CopyText(con indent), "mlg_drop_string(&(", token.CopyText(con value), "));",}, con ""))
+func dropLine(con program ir.Program, con ty string, con value string, con indent string) Result[string, string] {
+    if typeNeedsCleanup(con program, con ty) {
+        return Ok(strings.join(con []string{token.CopyText(con indent), dropFunctionName(con program, con ty), "(&(", token.CopyText(con value), "));",}, con ""))
     }
     return Err(unsupported(con strings.join(con []string{"drop ", token.CopyText(con ty),}, con "")))
 }
@@ -203,7 +659,7 @@ func functionParams(con program ir.Program, function int, thunk bool) Result[str
         if mode != "owned" {
             return Err(unsupported(con strings.join(con []string{mode, " parameter",}, con "")))
         }
-        ty := cType(con ir.FunctionParamType(con program, function, param))
+        ty := cTypeFor(con program, con ir.FunctionParamType(con program, function, param))
         if ty == "" || ty == "void" {
             return Err(unsupported(con ir.FunctionParamType(con program, function, param)))
         }
@@ -227,7 +683,7 @@ func functionSignature(con program ir.Program, function int) Result[string, stri
         }
         return Ok("int main(void)")
     }
-    returnType := cType(con ir.FunctionReturnType(con program, function))
+    returnType := cTypeFor(con program, con ir.FunctionReturnType(con program, function))
     if returnType == "" {
         return Err(unsupported(con ir.FunctionReturnType(con program, function)))
     }
@@ -415,6 +871,185 @@ func emitBinary(con program ir.Program, node int, con indent string) Result[Emit
     return Ok(EmittedExpr{lines: lines, value: resultValue, postLines: postLines,})
 }
 
+func emitArrayLiteral(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    ty := ir.NodeType(con program, node)
+    kind := typeKind(con program, con ty)
+    if kind == "array" {
+        shape := typeShapeIndex(con program, con ty)
+        length := ir.TypeShapeArrayLength(con program, shape)
+        if ir.NodeChildCount(con program, node) != length {
+            return Err("B3 C backend received an array literal length mismatch")
+        }
+        mut lines := []string{}
+        mut values := []string{}
+        mut postLines := []string{}
+        for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+            match emitExpression(con program, ir.NodeChild(con program, node, child), con indent) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted.lines)
+                    values = append(values, token.CopyText(con emitted.value))
+                    postLines = copyLines(emitted.postLines, con postLines)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        mut value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_empty = 0 }",}, con "")
+        if length > 0 {
+            value = strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_data = { ", strings.join(con values, con ", "), " } }",}, con "")
+        }
+        return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
+    }
+    if kind == "slice" {
+        temp := strings.join(con []string{"mallang_slice_tmp_", strings.fromInt(source.Start(con ir.NodeSpan(con program, node))),}, con "")
+        element := typeArgument(con program, con ty, 0)
+        elementType := cTypeFor(con program, con element)
+        count := ir.NodeChildCount(con program, node)
+        mut lines := []string{strings.join(con []string{token.CopyText(con indent), cTypeFor(con program, con ty), " ", token.CopyText(con temp), ";",}, con ""),}
+        if count == 0 {
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_data = NULL;",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_len = 0;",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_cap = 0;",}, con ""))
+            return Ok(EmittedExpr{lines: lines, value: temp, postLines: []string{},})
+        } else {
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if ((uint64_t)", strings.fromInt(count), " > UINT64_MAX / sizeof(", token.CopyText(con elementType), ")) {",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"slice allocation size overflow\");",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_data = mallang_alloc(sizeof(", token.CopyText(con elementType), ") * ", strings.fromInt(count), ", \"slice allocation failed\");",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_len = ", strings.fromInt(count), ";",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_cap = ", strings.fromInt(count), ";",}, con ""))
+            mut postLines := []string{}
+            for mut child := 0; child < count; child = child + 1 {
+                match emitExpression(con program, ir.NodeChild(con program, node, child), con indent) {
+                    case Ok(emitted) {
+                        lines = copyLines(lines, con emitted.lines)
+                        lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con temp), ".mlg_data[", strings.fromInt(child), "] = ", token.CopyText(con emitted.value), ";",}, con ""))
+                        postLines = copyLines(emitted.postLines, con postLines)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            return Ok(EmittedExpr{lines: lines, value: temp, postLines: postLines,})
+        }
+    }
+    return Err("B3 C backend received an array literal without an array or slice type")
+}
+
+func emitStructLiteral(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    mut lines := []string{}
+    mut fields := []string{}
+    mut postLines := []string{}
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        field := ir.NodeChild(con program, node, child)
+        if ir.NodeKind(con program, field) != "Field.Value" || ir.NodeChildCount(con program, field) != 1 {
+            return Err("B3 C backend received malformed struct literal IR")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, field, 0), con indent) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted.lines)
+                fields = append(fields, strings.join(con []string{".", cField(con ir.NodeValue(con program, field)), " = ", token.CopyText(con emitted.value),}, con ""))
+                postLines = copyLines(emitted.postLines, con postLines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    value := strings.join(con []string{"(", cTypeFor(con program, con ir.NodeType(con program, node)), "){ ", strings.join(con fields, con ", "), " }",}, con "")
+    return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
+}
+
+func emitFieldAccess(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 1 {
+        return Err("B3 C backend received malformed field access IR")
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
+        case Ok(base) {
+            return Ok(EmittedExpr{lines: base.lines, value: strings.join(con []string{"(", token.CopyText(con base.value), ").", cField(con ir.NodeValue(con program, node)),}, con ""), postLines: base.postLines,})
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitIndex(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 2 {
+        return Err("B3 C backend received malformed index IR")
+    }
+    baseNode := ir.NodeChild(con program, node, 0)
+    indexNode := ir.NodeChild(con program, node, 1)
+    match emitExpression(con program, baseNode, con indent) {
+        case Ok(base) {
+            match emitExpression(con program, indexNode, con indent) {
+                case Ok(index) {
+                    suffix := spanSuffix(con program, node)
+                    sourceTemp := strings.join(con []string{"mallang_index_src_", token.CopyText(con suffix),}, con "")
+                    indexTemp := strings.join(con []string{"mallang_index_value_", token.CopyText(con suffix),}, con "")
+                    mut lines := copyLines([]string{}, con base.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), cTypeFor(con program, con ir.NodeType(con program, baseNode)), " ", token.CopyText(con sourceTemp), " = ", token.CopyText(con base.value), ";",}, con ""))
+                    lines = copyLines(lines, con index.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con indexTemp), " = ", token.CopyText(con index.value), ";",}, con ""))
+                    kind := typeKind(con program, con ir.NodeType(con program, baseNode))
+                    mut length := ""
+                    mut message := ""
+                    if kind == "array" {
+                        shape := typeShapeIndex(con program, con ir.NodeType(con program, baseNode))
+                        length = strings.fromInt(ir.TypeShapeArrayLength(con program, shape))
+                        message = "array index out of bounds"
+                    } else if kind == "slice" {
+                        length = strings.join(con []string{"(", token.CopyText(con sourceTemp), ").mlg_len",}, con "")
+                        message = "slice index out of bounds"
+                    } else {
+                        return Err("B3 C backend received an index base without an array or slice type")
+                    }
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con indexTemp), " < 0 || ", token.CopyText(con indexTemp), " >= ", length, ") {",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"", message, "\");",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                    mut postLines := copyLines([]string{}, con index.postLines)
+                    postLines = copyLines(postLines, con base.postLines)
+                    value := strings.join(con []string{"(", token.CopyText(con sourceTemp), ").mlg_data[", token.CopyText(con indexTemp), "]",}, con "")
+                    return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitArrayLen(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 1 {
+        return Err("B3 C backend received malformed len IR")
+    }
+    sourceNode := ir.NodeChild(con program, node, 0)
+    match emitExpression(con program, sourceNode, con indent) {
+        case Ok(emitted) {
+            kind := typeKind(con program, con ir.NodeType(con program, sourceNode))
+            if kind == "array" {
+                shape := typeShapeIndex(con program, con ir.NodeType(con program, sourceNode))
+                mut lines := copyLines([]string{}, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "(void)(", token.CopyText(con emitted.value), ");",}, con ""))
+                return Ok(EmittedExpr{lines: lines, value: strings.fromInt(ir.TypeShapeArrayLength(con program, shape)), postLines: emitted.postLines,})
+            }
+            if kind == "slice" {
+                return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{"(", token.CopyText(con emitted.value), ").mlg_len",}, con ""), postLines: emitted.postLines,})
+            }
+            return Err("B3 C backend received len without an array or slice type")
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
 func emitExpression(con program ir.Program, node int, con indent string) Result[EmittedExpr, string] {
     kind := ir.NodeKind(con program, node)
     if kind == "Expr.Int" || kind == "Expr.Bool" {
@@ -432,7 +1067,7 @@ func emitExpression(con program ir.Program, node int, con indent string) Result[
         }
         match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent) {
             case Ok(emitted) {
-                ty := cType(con ir.NodeType(con program, node))
+                ty := cTypeFor(con program, con ir.NodeType(con program, node))
                 if ty == "" || ty == "void" {
                     return Err(unsupported(con ir.NodeType(con program, node)))
                 }
@@ -441,7 +1076,7 @@ func emitExpression(con program ir.Program, node int, con indent string) Result[
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", token.CopyText(con name), " = ", token.CopyText(con emitted.value), ";",}, con ""))
                 mut postLines := []string{}
                 if ir.NodeNeedsCleanup(con program, node) {
-                    match dropLine(con ir.NodeType(con program, node), con name, con indent) {
+                    match dropLine(con program, con ir.NodeType(con program, node), con name, con indent) {
                         case Ok(line) {
                             postLines = append(postLines, line)
                         }
@@ -460,6 +1095,21 @@ func emitExpression(con program ir.Program, node int, con indent string) Result[
     }
     if kind == "Expr.Call" {
         return emitCall(con program, node, con indent)
+    }
+    if kind == "Expr.ArrayLiteral" {
+        return emitArrayLiteral(con program, node, con indent)
+    }
+    if kind == "Expr.StructLiteral" {
+        return emitStructLiteral(con program, node, con indent)
+    }
+    if kind == "Expr.FieldAccess" {
+        return emitFieldAccess(con program, node, con indent)
+    }
+    if kind == "Expr.Index" {
+        return emitIndex(con program, node, con indent)
+    }
+    if kind == "Expr.ArrayLen" {
+        return emitArrayLen(con program, node, con indent)
     }
     if kind == "Expr.Unary.Not" {
         if ir.NodeChildCount(con program, node) != 1 {
@@ -666,7 +1316,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
             case Ok(emitted) {
                 mut lines := []string{}
                 lines = copyLines(lines, con emitted.lines)
-                ty := cType(con ir.NodeType(con program, node))
+                ty := cTypeFor(con program, con ir.NodeType(con program, node))
                 if ty == "" || ty == "void" {
                     return Err(unsupported(con ir.NodeType(con program, node)))
                 }
@@ -710,7 +1360,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
                 if len(emitted.postLines) == 0 {
                     lines = append(lines, strings.join(con []string{token.CopyText(con indent), "return ", token.CopyText(con emitted.value), ";",}, con ""))
                 } else {
-                    ty := cType(con ir.NodeType(con program, ir.NodeChild(con program, node, 0)))
+                    ty := cTypeFor(con program, con ir.NodeType(con program, ir.NodeChild(con program, node, 0)))
                     if ty == "" || ty == "void" {
                         return Err(unsupported(con ir.NodeType(con program, ir.NodeChild(con program, node, 0))))
                     }
@@ -746,7 +1396,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
         match emitExpression(con program, expression, con indent) {
             case Ok(emitted) {
                 mut lines := copyLines([]string{}, con emitted.lines)
-                match dropLine(con ir.NodeType(con program, expression), con emitted.value, con indent) {
+                match dropLine(con program, con ir.NodeType(con program, expression), con emitted.value, con indent) {
                     case Ok(line) {
                         lines = append(lines, line)
                     }
@@ -787,7 +1437,7 @@ func emitStatement(con program ir.Program, node int, con indent string) Result[[
 }
 
 func emitThunk(con program ir.Program, function int) Result[[]string, string] {
-    returnType := cType(con ir.FunctionReturnType(con program, function))
+    returnType := cTypeFor(con program, con ir.FunctionReturnType(con program, function))
     if returnType == "" {
         return Err(unsupported(con ir.FunctionReturnType(con program, function)))
     }
@@ -849,10 +1499,34 @@ pub func Generate(con program ir.Program) Result[string, string] {
         return Err("B3 C backend does not yet support closures")
     }
     mut lines := runtimePrelude()
+    types := collectDefinedTypes(con program)
     if programUsesString(con program) {
-        lines = copyLines(lines, con stringRuntime())
+        lines = copyLines(lines, con stringRuntimeWithoutDrop())
+    } else {
+        lines = append(lines, "")
     }
-    lines = append(lines, "")
+    match emitTypeDefinitions(con program, con types) {
+        case Ok(definitions) {
+            if len(definitions) > 0 {
+                lines = copyLines(lines, con definitions)
+                lines = append(lines, "")
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    match emitDropHelpers(con program, con types) {
+        case Ok(helpers) {
+            if len(helpers) > 0 {
+                lines = copyLines(lines, con helpers)
+                lines = append(lines, "")
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match functionSignature(con program, function) {
             case Ok(signature) {

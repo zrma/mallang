@@ -105,8 +105,18 @@ return/local/drop behavior, print/equality full-expression cleanup, statement
 owned-control fixtures both match Stage0 C byte-for-byte and pass strict native,
 allocation-accounting and ASan/UBSan execution. The expanded compiler source
 matches Stage0 across 725 normalized typed-IR functions. P177b remains active
-for arrays, slices, structs, ADTs, expression control flow and the remaining
-cleanup surfaces. P177c-P177d still need callable/project surfaces and complete
+for the remaining composite and control-flow surfaces.
+
+P177b2 preserves semantic type shapes and specialized struct/enum declarations
+inside the Mallang IR, then uses them to emit fixed arrays, heap-backed slices,
+structs and recursive cleanup helpers. Array/slice literals, struct literals,
+field access, checked indexing and `len` match Stage0 byte-for-byte in the
+composite fixture. The backend gate now covers three positive fixtures, a
+dynamic bounds rejection and an explicit unsupported-node rejection before
+strict native, accounting and sanitizer execution. The compiler source matches
+Stage0 across 806 normalized typed-IR functions. P177b remains active for ADTs,
+expression control flow, match/range forms, overwrite cleanup and dynamic
+construction. P177c-P177d still need callable/project surfaces and complete
 compiler-source C generation before B3 can close. Exact scope and layered gates
 are owned by `docs/todo-self-hosting-backend/`.
 

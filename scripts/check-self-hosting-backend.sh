@@ -52,7 +52,9 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control)
+FIXTURES=(scalars owned-control composite-values)
+RUNTIME_REJECTION_FIXTURES=(composite-bounds)
+BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -159,6 +161,9 @@ EOF
     owned-control)
       expected=$'ready\nmiddle\nready\nready\nequal\ndifferent\n말랑'
       ;;
+    composite-values)
+      expected=$'5\n3\n2\nbundle\n7\n1'
+      ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
       exit 1
@@ -180,4 +185,72 @@ EOF
   fi
 done
 
-echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} elapsed=$((SECONDS - started))s"
+for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
+  fixture="$PROJECT/fixtures/backend/$name.mlg"
+  oracle_c="target/mallang/$name.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
+
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE1" c "$fixture" >"$stage1_c"
+  "$STAGE1" c "$fixture" >"$stage1_c_second"
+  cmp -s "$oracle_c" "$stage1_c" || {
+    echo "self-hosting backend rejection C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  }
+  cmp -s "$stage1_c" "$stage1_c_second" || {
+    echo "self-hosting backend rejection C is not deterministic: $name" >&2
+    exit 1
+  }
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  for binary in stage0 stage1 stage1-san; do
+    set +e
+    "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \
+      2>"$WORK/$name.$binary.stderr"
+    status=$?
+    set -e
+    if [[ $status -ne 1 ]]; then
+      echo "self-hosting backend rejection returned $status instead of 1: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ -s "$WORK/$name.$binary.stdout" ]]; then
+      echo "self-hosting backend rejection emitted unexpected stdout: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != \
+          "mallang runtime error: array index out of bounds" ]]; then
+      echo "self-hosting backend rejection stderr mismatch: $name.$binary" >&2
+      exit 1
+    fi
+  done
+done
+
+for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
+  fixture="$PROJECT/fixtures/backend/$name.mlg"
+  first="$WORK/$name.first.stdout"
+  second="$WORK/$name.second.stdout"
+  first_stderr="$WORK/$name.first.stderr"
+  second_stderr="$WORK/$name.second.stderr"
+
+  "$STAGE1" c "$fixture" >"$first" 2>"$first_stderr"
+  "$STAGE1" c "$fixture" >"$second" 2>"$second_stderr"
+  if [[ "$(cat "$first")" != \
+        "B3 C backend does not yet support Expr.SliceAppend" ]]; then
+    echo "self-hosting backend boundary rejection mismatch: $name" >&2
+    exit 1
+  fi
+  if ! cmp -s "$first" "$second"; then
+    echo "self-hosting backend boundary rejection is not deterministic: $name" >&2
+    exit 1
+  fi
+  if [[ -s "$first_stderr" || -s "$second_stderr" ]]; then
+    echo "self-hosting backend boundary rejection emitted unexpected stderr: $name" >&2
+    exit 1
+  fi
+done
+
+echo "self-hosting B3 backend gate passed: fixtures=${#FIXTURES[@]} runtime-rejections=${#RUNTIME_REJECTION_FIXTURES[@]} boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"

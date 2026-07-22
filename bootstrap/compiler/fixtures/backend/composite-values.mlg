@@ -1,0 +1,23 @@
+type Bundle struct {
+    title string
+    fixed [2]int
+    labels []string
+}
+
+func main() {
+    fixed := [3]int{4, 5, 6}
+    print(fixed[1])
+    print(len(fixed))
+
+    labels := []string{"north", "south"}
+    print(len(labels))
+
+    bundle := Bundle{
+        title: "bundle",
+        fixed: [2]int{7, 8},
+        labels: []string{"inside"},
+    }
+    print(bundle.title)
+    print(bundle.fixed[0])
+    print(len(bundle.labels))
+}

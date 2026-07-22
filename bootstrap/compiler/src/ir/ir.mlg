@@ -44,7 +44,52 @@ pub type Closure struct {
     body []int
 }
 
+pub type TypeShape struct {
+    name string
+    kind string
+    copy bool
+    cleanup bool
+    arguments []string
+    argumentCleanup []bool
+    arrayLength int
+}
+
+pub type StructField struct {
+    name string
+    ty string
+    cleanup bool
+}
+
+pub type StructDef struct {
+    name string
+    intrinsic string
+    intrinsicArguments []string
+    intrinsicArgumentCleanup []bool
+    fields []StructField
+}
+
+pub type EnumPayload struct {
+    ty string
+    cleanup bool
+}
+
+pub type EnumVariant struct {
+    name string
+    payloads []EnumPayload
+}
+
+pub type EnumDef struct {
+    name string
+    intrinsic string
+    patternName string
+    storage string
+    variants []EnumVariant
+}
+
 pub type Program struct {
+    typeShapes []TypeShape
+    structs []StructDef
+    enums []EnumDef
     nodes []Node
     functions []Function
     closures []Closure
@@ -83,7 +128,7 @@ pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Resu
     mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
     match lowerer.lowerProgramDeclarations(con syntax, con checked) {
         case Ok(_) {
-            return Ok(Program{nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
+            return Ok(Program{typeShapes: copyTypeShapes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
         }
         case Err(error) {
             return Err(error)
@@ -133,7 +178,70 @@ pub func LowerTest(con syntax ast.Program, con checked semantic.CheckedProgram, 
         }
     }
     functions = append(functions, Function{name: "main", params: []Param{}, returnType: "unit", body: testBody,})
-    return Ok(Program{nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
+    return Ok(Program{typeShapes: copyTypeShapes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
+}
+
+func copyTypeShapes(con checked semantic.CheckedProgram) []TypeShape {
+    mut shapes := []TypeShape{}
+    for mut shape := 0; shape < semantic.TypeShapeCount(con checked); shape = shape + 1 {
+        mut arguments := []string{}
+        mut argumentCleanup := []bool{}
+        for mut argument := 0; argument < semantic.TypeShapeArgumentCount(con checked, shape); argument = argument + 1 {
+            arguments = append(arguments, semantic.TypeShapeArgument(con checked, shape, argument))
+            argumentCleanup = append(argumentCleanup, semantic.TypeShapeArgumentNeedsCleanup(con checked, shape, argument))
+        }
+        shapes = append(shapes, TypeShape{name: semantic.TypeShapeName(con checked, shape), kind: semantic.TypeShapeKind(con checked, shape), copy: semantic.TypeShapeIsCopy(con checked, shape), cleanup: semantic.TypeShapeNeedsCleanup(con checked, shape), arguments: arguments, argumentCleanup: argumentCleanup, arrayLength: semantic.TypeShapeArrayLength(con checked, shape),})
+    }
+    return shapes
+}
+
+func copyStructs(con checked semantic.CheckedProgram) []StructDef {
+    mut structures := []StructDef{}
+    for mut structure := 0; structure < semantic.StructCount(con checked); structure = structure + 1 {
+        name := semantic.StructName(con checked, structure)
+        mut intrinsicArguments := []string{}
+        mut intrinsicArgumentCleanup := []bool{}
+        for mut argument := 0; argument < semantic.StructIntrinsicArgumentCount(con checked, structure); argument = argument + 1 {
+            intrinsicArguments = append(intrinsicArguments, semantic.StructIntrinsicArgumentType(con checked, structure, argument))
+            intrinsicArgumentCleanup = append(intrinsicArgumentCleanup, semantic.StructIntrinsicArgumentNeedsCleanup(con checked, structure, argument))
+        }
+        mut fields := []StructField{}
+        for mut field := 0; field < semantic.StructFieldCount(con checked, con name); field = field + 1 {
+            fieldName := semantic.StructFieldName(con checked, con name, field)
+            fieldType := semantic.StructFieldType(con checked, con name, field)
+            fieldCleanup := semantic.StructFieldNeedsCleanup(con checked, con name, field)
+            fields = append(fields, StructField{name: fieldName, ty: fieldType, cleanup: fieldCleanup,})
+        }
+        structures = append(structures, StructDef{name: name, intrinsic: semantic.StructIntrinsic(con checked, structure), intrinsicArguments: intrinsicArguments, intrinsicArgumentCleanup: intrinsicArgumentCleanup, fields: fields,})
+    }
+    return structures
+}
+
+func copyEnums(con checked semantic.CheckedProgram) []EnumDef {
+    mut enums := []EnumDef{}
+    for mut enumeration := 0; enumeration < semantic.EnumCount(con checked); enumeration = enumeration + 1 {
+        name := semantic.EnumName(con checked, enumeration)
+        mut variants := []EnumVariant{}
+        for mut variant := 0; variant < semantic.EnumVariantCount(con checked, enumeration); variant = variant + 1 {
+            variantName := semantic.EnumVariantName(con checked, enumeration, variant)
+            mut payloads := []EnumPayload{}
+            for mut payload := 0; payload < semantic.EnumVariantPayloadCount(con checked, con name, con variantName); payload = payload + 1 {
+                match semantic.EnumVariantPayloadType(con checked, con name, con variantName, payload) {
+                    case Ok(ty) {
+                        cleanup := semantic.EnumVariantPayloadNeedsCleanup(con checked, con name, con variantName, payload)
+                        payloads = append(payloads, EnumPayload{ty: ty, cleanup: cleanup,})
+                    }
+                    case Err(_) {}
+                }
+            }
+            variants = append(variants, EnumVariant{name: variantName, payloads: payloads,})
+        }
+        intrinsic := semantic.EnumIntrinsic(con checked, enumeration)
+        patternName := semantic.EnumPatternName(con checked, enumeration)
+        storage := semantic.EnumStorage(con checked, con name)
+        enums = append(enums, EnumDef{name: name, intrinsic: intrinsic, patternName: patternName, storage: storage, variants: variants,})
+    }
+    return enums
 }
 
 func (mut self Lowerer) lowerProgramDeclarations(con syntax ast.Program, con checked semantic.CheckedProgram) Result[bool, Error] {
@@ -239,6 +347,122 @@ pub func FunctionBodyNode(con program Program, function int, statement int) int 
 
 pub func ClosureCount(con program Program) int {
     return len(program.closures)
+}
+
+pub func TypeShapeCount(con program Program) int {
+    return len(program.typeShapes)
+}
+
+pub func TypeShapeName(con program Program, shape int) string {
+    return token.CopyText(con program.typeShapes[shape].name)
+}
+
+pub func TypeShapeKind(con program Program, shape int) string {
+    return token.CopyText(con program.typeShapes[shape].kind)
+}
+
+pub func TypeShapeIsCopy(con program Program, shape int) bool {
+    return program.typeShapes[shape].copy
+}
+
+pub func TypeShapeNeedsCleanup(con program Program, shape int) bool {
+    return program.typeShapes[shape].cleanup
+}
+
+pub func TypeShapeArgumentCount(con program Program, shape int) int {
+    return len(program.typeShapes[shape].arguments)
+}
+
+pub func TypeShapeArgument(con program Program, shape int, argument int) string {
+    return token.CopyText(con program.typeShapes[shape].arguments[argument])
+}
+
+pub func TypeShapeArgumentNeedsCleanup(con program Program, shape int, argument int) bool {
+    return program.typeShapes[shape].argumentCleanup[argument]
+}
+
+pub func TypeShapeArrayLength(con program Program, shape int) int {
+    return program.typeShapes[shape].arrayLength
+}
+
+pub func StructCount(con program Program) int {
+    return len(program.structs)
+}
+
+pub func StructName(con program Program, structure int) string {
+    return token.CopyText(con program.structs[structure].name)
+}
+
+pub func StructIntrinsic(con program Program, structure int) string {
+    return token.CopyText(con program.structs[structure].intrinsic)
+}
+
+pub func StructIntrinsicArgumentCount(con program Program, structure int) int {
+    return len(program.structs[structure].intrinsicArguments)
+}
+
+pub func StructIntrinsicArgument(con program Program, structure int, argument int) string {
+    return token.CopyText(con program.structs[structure].intrinsicArguments[argument])
+}
+
+pub func StructIntrinsicArgumentNeedsCleanup(con program Program, structure int, argument int) bool {
+    return program.structs[structure].intrinsicArgumentCleanup[argument]
+}
+
+pub func StructFieldCount(con program Program, structure int) int {
+    return len(program.structs[structure].fields)
+}
+
+pub func StructFieldName(con program Program, structure int, field int) string {
+    return token.CopyText(con program.structs[structure].fields[field].name)
+}
+
+pub func StructFieldType(con program Program, structure int, field int) string {
+    return token.CopyText(con program.structs[structure].fields[field].ty)
+}
+
+pub func StructFieldNeedsCleanup(con program Program, structure int, field int) bool {
+    return program.structs[structure].fields[field].cleanup
+}
+
+pub func EnumCount(con program Program) int {
+    return len(program.enums)
+}
+
+pub func EnumName(con program Program, enumeration int) string {
+    return token.CopyText(con program.enums[enumeration].name)
+}
+
+pub func EnumIntrinsic(con program Program, enumeration int) string {
+    return token.CopyText(con program.enums[enumeration].intrinsic)
+}
+
+pub func EnumPatternName(con program Program, enumeration int) string {
+    return token.CopyText(con program.enums[enumeration].patternName)
+}
+
+pub func EnumStorage(con program Program, enumeration int) string {
+    return token.CopyText(con program.enums[enumeration].storage)
+}
+
+pub func EnumVariantCount(con program Program, enumeration int) int {
+    return len(program.enums[enumeration].variants)
+}
+
+pub func EnumVariantName(con program Program, enumeration int, variant int) string {
+    return token.CopyText(con program.enums[enumeration].variants[variant].name)
+}
+
+pub func EnumVariantPayloadCount(con program Program, enumeration int, variant int) int {
+    return len(program.enums[enumeration].variants[variant].payloads)
+}
+
+pub func EnumVariantPayloadType(con program Program, enumeration int, variant int, payload int) string {
+    return token.CopyText(con program.enums[enumeration].variants[variant].payloads[payload].ty)
+}
+
+pub func EnumVariantPayloadNeedsCleanup(con program Program, enumeration int, variant int, payload int) bool {
+    return program.enums[enumeration].variants[variant].payloads[payload].cleanup
 }
 
 pub func NodeCategory(con program Program, node int) string {

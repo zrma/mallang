@@ -723,8 +723,14 @@ return/local/drop, full-expression cleanup, statement `if`/`else`, condition
 loop와 `break`/`continue`를 추가했다. Expanded compiler source 725개 normalized
 IR function이 Stage0과 일치하고, scalar와 owned-control fixture는 모두
 Stage0/Stage1 byte identity, strict native, accounting, ASan/UBSan을 통과한다.
-B3 전체는 아직 active이며 나머지 composite owned values/control flow,
-callable/project surface와 complete compiler-source C generation이 남아 있다.
+P177b2는 semantic type shape와 specialized struct/enum declaration을 IR
+metadata로 보존하고 fixed array, heap-backed slice, struct layout, composite
+literal, field/index/len과 recursive drop helper를 추가했다. 세 positive
+fixture와 bounds/unsupported-node rejection이 Stage0 byte identity, strict
+native, accounting, ASan/UBSan을 통과하고 compiler source 806개 normalized IR
+function이 일치한다. B3 전체는 아직 active이며 ADT와 나머지 composite
+control flow, callable/project surface와 complete compiler-source C generation이
+남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -741,9 +747,9 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
 `scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177b1의 두 fixture 기준 약 4초다. Compiler source 또는 Stage0가 바뀌면
-인자 없는 backend gate로 Stage1을 다시 만들며 관측된 integration loop는 약
-16초다. Ownership/typed-IR
+loop는 P177b2의 세 positive/두 rejection fixture 기준 약 6-8초다. Compiler
+source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
+관측된 integration loop는 약 18초다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.

@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a and P177b1 complete
+Status: active; P177a, P177b1 and P177b2 complete
 
 ## Objective
 
@@ -45,9 +45,21 @@ before strict native, allocation-accounting and ASan/UBSan execution. The
 expanded compiler source also matches Stage0 across 725 normalized typed-IR
 functions.
 
-P177b remains active. Arrays, slices, structs, inline/owned ADTs, expression
-`if`, match forms, range and three-clause loops, overwrite cleanup and dynamic
-owned-string construction remain in later slices.
+P177b2 is complete. Semantic type shapes and specialized struct/enum
+declarations are preserved as read-only IR metadata instead of being reparsed
+from display strings. The Mallang backend uses that metadata to emit fixed
+arrays, heap-backed slices, structs, nested type definitions and recursive drop
+helpers. Array/slice literals, struct literals, field access, checked indexing
+and `len` preserve Stage0 evaluation and cleanup order. The
+`composite-values` fixture matches Stage0 C byte-for-byte before strict native,
+allocation-accounting and ASan/UBSan execution. A dynamic bounds failure and the
+still-unsupported `SliceAppend` node are deterministic rejection fixtures. The
+expanded compiler source matches Stage0 across 806 normalized typed-IR
+functions.
+
+P177b remains active. Inline/owned ADTs, expression `if`, match forms, range and
+three-clause loops, overwrite cleanup, slice append and dynamic owned-string
+construction remain in later slices.
 
 ### P177c: Callable And Project Surface
 
@@ -80,10 +92,11 @@ the publication cost on every edit.
    `scripts/check.sh`; the backend slice reuses the fresh Stage1 produced by the
    preceding compiler gate.
 
-On one development host, the two-fixture P177b1 reuse gate took about four
-seconds, the fresh backend gate about sixteen seconds and a complete
-compiler-source IR reuse comparison about eleven seconds. These observations
-justify the layer split; they are not portable performance thresholds.
+On one development host, the three-positive/two-rejection P177b2 reuse gate took
+about six to eight seconds, the fresh backend gate about eighteen seconds and a
+fresh compiler-source IR comparison about twenty-three seconds. These
+observations justify the layer split; they are not portable performance
+thresholds.
 
 ## Acceptance
 
@@ -96,7 +109,9 @@ justify the layer split; they are not portable performance thresholds.
 - [x] P177a sub-two-second artifact-reuse edit loop on the observed host
 - [x] P177b1 owned strings, statement control flow and explicit cleanup
 - [x] two-fixture byte parity, native, accounting and sanitizer gate
-- [ ] owned values and control flow
+- [x] P177b2 array, slice and struct layout, expressions and recursive cleanup
+- [x] three positive, one runtime-rejection and one boundary-rejection fixtures
+- [ ] remaining ADT and control-flow owned values
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance
