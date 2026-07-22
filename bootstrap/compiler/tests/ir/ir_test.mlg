@@ -1651,6 +1651,50 @@ test LowersThreeClauseLoops() {
     }
 }
 
+test LowersIndexedForPostTarget() {
+    source := "func main() { mut values := [3]int{0, 0, 0}; mut slot := 0; mut index := 0; for ; index < 3; values[slot] = index { slot = index; index = index + 1 } }"
+    match lexer.Lex(source) {
+        case Ok(tokens) {
+            match parser.Parse(tokens) {
+                case Ok(program) {
+                    match semantic.Check(con program) {
+                        case Ok(checked) {
+                            match Lower(con program, con checked) {
+                                case Ok(lowered) {
+                                    loop := lowered.functions[0].body[3]
+                                    post := lowered.nodes[loop].children[1]
+                                    assert(lowered.nodes[post].kind == "ForPost.Assign")
+                                    target := lowered.nodes[post].children[0]
+                                    assert(lowered.nodes[target].kind == "Expr.Index")
+                                    assert(lowered.nodes[target].ty == "int")
+                                    base := lowered.nodes[target].children[0]
+                                    index := lowered.nodes[target].children[1]
+                                    assert(lowered.nodes[base].kind == "Expr.Var")
+                                    assert(lowered.nodes[base].ty == "[3]int")
+                                    assert(lowered.nodes[index].kind == "Expr.Var")
+                                    assert(lowered.nodes[index].ty == "int")
+                                }
+                                case Err(_) {
+                                    assert(false)
+                                }
+                            }
+                        }
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
 test LowersCopyArrayAndSliceRangeLoops() {
     source := "func sumArray(values [3]int) int { mut total := 0; for index, value := range values { total = total + index + value }; return total } func sumSlice(values []int) int { mut total := 0; for index := range values { total = total + values[index] }; return total } func main() {}"
     match lexer.Lex(source) {

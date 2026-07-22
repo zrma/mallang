@@ -1,6 +1,0 @@
-func main() {
-    values := [2]int{1, 2}
-    for _, value := range values {
-        print(value)
-    }
-}

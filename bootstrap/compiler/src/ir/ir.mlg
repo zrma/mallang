@@ -626,6 +626,44 @@ func (mut self Lowerer) lowerClosure(con syntax ast.Program, closure int, con ch
     }
 }
 
+func (mut self Lowerer) lowerForPostTarget(con syntax ast.Program, expression int, con expectedType string, con checked semantic.CheckedProgram) Result[int, Error] {
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.Var" {
+        return self.lowerExpression(con syntax, expression, con checked)
+    }
+    if kind == "Expr.FieldAccess" {
+        if ast.ChildCount(con syntax, expression) != 1 {
+            return Err(newError("checked for post field target is malformed", ast.Span(con syntax, expression)))
+        }
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(base) {
+                return Ok(self.addNode("E", "Expr.FieldAccess", ast.Value(con syntax, expression), token.CopyText(con expectedType), ast.Span(con syntax, expression), []int{base}, semantic.NodeNeedsCleanup(con checked, expression)))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Index" {
+        if ast.ChildCount(con syntax, expression) != 2 {
+            return Err(newError("checked for post index target is malformed", ast.Span(con syntax, expression)))
+        }
+        mut children := []int{}
+        for mut child := 0; child < 2; child = child + 1 {
+            match self.lowerExpression(con syntax, ast.Child(con syntax, expression, child), con checked) {
+                case Ok(lowered) {
+                    children = append(children, lowered)
+                }
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+        return Ok(self.addNode("E", "Expr.Index", "", token.CopyText(con expectedType), ast.Span(con syntax, expression), children, semantic.NodeNeedsCleanup(con checked, expression)))
+    }
+    return Err(newError("checked for post assignment target is invalid", ast.Span(con syntax, expression)))
+}
+
 func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, con checked semantic.CheckedProgram) Result[int, Error] {
     kind := ast.Kind(con syntax, statement)
     value := ast.Value(con syntax, statement)
@@ -683,14 +721,31 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
                     return Err(newError("checked for post is malformed", ast.Span(con syntax, control)))
                 }
                 mut postChildren := []int{}
-                for mut postChild := 0; postChild < 2; postChild = postChild + 1 {
-                    match self.lowerExpression(con syntax, ast.Child(con syntax, control, postChild), con checked) {
-                        case Ok(loweredPostChild) {
-                            postChildren = append(postChildren, loweredPostChild)
-                        }
-                        case Err(error) {
-                            return Err(error)
-                        }
+                target := ast.Child(con syntax, control, 0)
+                expression := ast.Child(con syntax, control, 1)
+                mut postType := ""
+                match semantic.NodeType(con checked, expression) {
+                    case Ok(resolved) {
+                        postType = resolved
+                    }
+                    case Err(_) {
+                        return Err(newError("checked for post expression type is missing", ast.Span(con syntax, expression)))
+                    }
+                }
+                match self.lowerForPostTarget(con syntax, target, con postType, con checked) {
+                    case Ok(loweredTarget) {
+                        postChildren = append(postChildren, loweredTarget)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+                match self.lowerExpression(con syntax, expression, con checked) {
+                    case Ok(loweredExpression) {
+                        postChildren = append(postChildren, loweredExpression)
+                    }
+                    case Err(error) {
+                        return Err(error)
                     }
                 }
                 children = append(children, self.addNode("F", "ForPost.Assign", "", "unit", ast.Span(con syntax, control), postChildren, false))

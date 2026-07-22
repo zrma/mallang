@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a and P177b1-P177b3 complete
+Status: active; P177a and P177b1-P177b4 complete
 
 ## Objective
 
@@ -70,8 +70,20 @@ native, accounting and sanitizer checks where applicable. Existing recursive,
 nested-match and branch-prelude examples also match Stage0 C byte-for-byte. The
 compiler source matches Stage0 across 831 normalized typed-IR functions.
 
-P177b remains active. Range and three-clause loops, overwrite cleanup, slice
-append and dynamic owned-string construction remain in later slices.
+P177b4 is complete. Three-clause loops now preserve init, condition, post and
+loop-exit cleanup order, including post execution after nested `continue`.
+Array and slice range loops preserve index/value bindings, blank bindings,
+source evaluation and full-expression owner lifetime through normal exit,
+`break` and `continue`. Binary operand preludes are sequenced left-to-right and
+logical right-hand sides remain short-circuited. The `control-flow-loops`
+fixture covers clause-condition/post preludes, indexed post targets, loop-local
+cleanup, array/slice/temporary ranges and range control flow. Five positive,
+two runtime-rejection and two boundary-rejection paths pass byte parity,
+strict C, native, accounting and sanitizer checks where applicable. The
+compiler source matches Stage0 across 845 normalized typed-IR functions.
+
+P177b remains active. Overwrite cleanup, slice append and dynamic owned-string
+construction remain in later slices.
 
 ### P177c: Callable And Project Surface
 
@@ -104,9 +116,9 @@ the publication cost on every edit.
    `scripts/check.sh`; the backend slice reuses the fresh Stage1 produced by the
    preceding compiler gate.
 
-On one development host, the four-positive/four-rejection P177b3 reuse gate took
-about ten seconds, the fresh backend gate about twenty-two to twenty-five
-seconds and a fresh compiler-source IR comparison about twenty-four seconds.
+On one development host, the five-positive/four-rejection P177b4 reuse gate took
+about sixteen seconds, the fresh backend gate about twenty-four seconds and a
+fresh compiler-source IR comparison about twenty-two seconds.
 These observations justify the layer split; they are not portable performance
 thresholds.
 
@@ -125,7 +137,9 @@ thresholds.
 - [x] three positive, one runtime-rejection and one boundary-rejection fixtures
 - [x] P177b3 inline/owned ADTs, expression `if` and statement/expression `match`
 - [x] four positive, two runtime-rejection and two boundary-rejection fixtures
-- [ ] remaining loop, overwrite, append and dynamic-string owned values
+- [x] P177b4 three-clause/range loops, cleanup and post-preserving `continue`
+- [x] five positive, two runtime-rejection and two boundary-rejection fixtures
+- [ ] remaining overwrite, append and dynamic-string owned values
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

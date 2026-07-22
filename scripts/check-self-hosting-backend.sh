@@ -52,10 +52,10 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values adt-match)
+FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure)
-BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append unsupported-range-for)
+BOUNDARY_REJECTION_FIXTURES=(unsupported-slice-append unsupported-overwrite)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -167,6 +167,9 @@ EOF
       ;;
     adt-match)
       expected=$'4\n0\n7\n0\n1\n9\npair\n8\n1\n1'
+      ;;
+    control-flow-loops)
+      expected=$'done\n18\n27\n7'
       ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
@@ -295,8 +298,8 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
     unsupported-slice-append)
       expected="B3 C backend does not yet support Expr.SliceAppend"
       ;;
-    unsupported-range-for)
-      expected="B3 C backend does not yet support Stmt.RangeFor"
+    unsupported-overwrite)
+      expected="B3 C backend does not yet support Stmt.Overwrite"
       ;;
     *)
       echo "self-hosting backend boundary fixture has no expected diagnostic: $name" >&2

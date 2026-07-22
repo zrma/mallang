@@ -128,8 +128,19 @@ boundary-rejection paths pass the applicable byte-identity, deterministic,
 strict native, accounting and ASan/UBSan checks. Broader recursive-enum,
 branch-prelude and nested-pattern examples also match Stage0 C byte-for-byte,
 and the compiler source matches across 831 normalized typed-IR functions.
-P177b remains active for range/three-clause loops, overwrite cleanup, slice
-append and dynamic owned-string construction. P177c-P177d remain open.
+
+P177b4 adds three-clause init/condition/post lowering, post-preserving nested
+`continue`, loop-exit cleanup and array/slice range lowering. Range source
+temporaries remain live for the complete loop and are cleaned after normal
+exit or `break`, while loop-local cleanup runs before `continue`. Binary
+operand preludes retain Stage0 left-to-right order and logical right-hand sides
+remain short-circuited. The fifth positive fixture combines condition/post
+preludes, indexed post targets, array/slice/temporary ranges and control flow;
+all five positive and four rejection paths pass the applicable differential,
+strict native, accounting and sanitizer gates. The compiler source matches
+across 845 normalized typed-IR functions. P177b remains active for overwrite
+cleanup, slice append and dynamic owned-string construction. P177c-P177d
+remain open.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

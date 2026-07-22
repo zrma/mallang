@@ -1,0 +1,75 @@
+type Counter struct {
+    value int
+}
+
+func first() int {
+    for index, value := range []int{7, 8} {
+        if index == 0 {
+            return value
+        }
+    }
+    return 0
+}
+
+func main() {
+    mut total := 0
+
+    for mut i := 0; i < 4; i = i + 1 {
+        label := "loop"
+        match Some(i) {
+            case Some(value) {
+                if value == 1 {
+                    continue
+                }
+            }
+            case None {}
+        }
+        total = total + i
+    }
+
+    values := [3]int{2, 4, 6}
+    mut index := 0
+    mut slot := 0
+    for ; index < len(values); total = total + values[slot] {
+        slot = index
+        index = index + 1
+        if slot == 1 {
+            continue
+        }
+    }
+
+    mut counter := Counter{value: 0}
+    for ; counter.value < 2; counter.value = counter.value + 1 {
+        total = total + counter.value
+    }
+
+    mut rangeTotal := 0
+    for i, value := range values {
+        marker := "array"
+        if i == 1 {
+            continue
+        }
+        rangeTotal = rangeTotal + value
+    }
+
+    for _, value := range []int{5, 7} {
+        rangeTotal = rangeTotal + value
+    }
+
+    slice := []int{3, 4, 5}
+    for i, value := range slice {
+        if i == 2 {
+            break
+        }
+        rangeTotal = rangeTotal + value
+    }
+
+    for label := "done"; true; {
+        print(label)
+        break
+    }
+
+    print(total)
+    print(rangeTotal)
+    print(first())
+}

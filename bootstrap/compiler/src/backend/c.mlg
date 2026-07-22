@@ -1142,41 +1142,35 @@ func emitCheckedBinary(con program ir.Program, node int, con indent string, con 
     if ir.NodeChildCount(con program, node) != 2 {
         return Err("B3 C backend received malformed checked binary IR")
     }
-    mut lines := []string{}
-    mut leftValue := ""
-    mut rightValue := ""
-    mut postLines := []string{}
     match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
         case Ok(left) {
-            lines = copyLines(lines, con left.lines)
-            leftValue = token.CopyText(con left.value)
-            postLines = copyLines(left.postLines, con postLines)
+            match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
+                case Ok(right) {
+                    suffix := spanSuffix(con program, node)
+                    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
+                    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
+                    resultName := strings.join(con []string{"mallang_checked_result_", token.CopyText(con suffix),}, con "")
+                    mut lines := copyLines([]string{}, con left.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con leftName), " = ", token.CopyText(con left.value), ";",}, con ""))
+                    lines = copyLines(lines, con left.postLines)
+                    lines = copyLines(lines, con right.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con rightName), " = ", token.CopyText(con right.value), ";",}, con ""))
+                    lines = copyLines(lines, con right.postLines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con resultName), ";",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con builtin), "(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), ", &", token.CopyText(con resultName), ")) {",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                    return Ok(EmittedExpr{lines: lines, value: resultName, postLines: []string{},})
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
         }
         case Err(message) {
             return Err(message)
         }
     }
-    match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
-        case Ok(right) {
-            lines = copyLines(lines, con right.lines)
-            rightValue = token.CopyText(con right.value)
-            postLines = copyLines(right.postLines, con postLines)
-        }
-        case Err(message) {
-            return Err(message)
-        }
-    }
-    suffix := spanSuffix(con program, node)
-    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
-    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
-    resultName := strings.join(con []string{"mallang_checked_result_", token.CopyText(con suffix),}, con "")
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con leftName), " = ", leftValue, ";",}, con ""))
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con rightName), " = ", rightValue, ";",}, con ""))
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con resultName), ";",}, con ""))
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con builtin), "(", token.CopyText(con leftName), ", ", token.CopyText(con rightName), ", &", token.CopyText(con resultName), ")) {",}, con ""))
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
-    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
-    return Ok(EmittedExpr{lines: lines, value: resultName, postLines: postLines,})
 }
 
 func emitStringEquality(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
@@ -1231,53 +1225,77 @@ func emitBinary(con program ir.Program, node int, con indent string, con env Emi
     if ir.NodeType(con program, ir.NodeChild(con program, node, 0)) == "string" &&(kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual") {
         return emitStringEquality(con program, node, con indent, con env)
     }
-    mut lines := []string{}
-    mut leftValue := ""
-    mut rightValue := ""
-    mut postLines := []string{}
     match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
         case Ok(left) {
-            lines = copyLines(lines, con left.lines)
-            leftValue = token.CopyText(con left.value)
-            postLines = copyLines(left.postLines, con postLines)
+            match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
+                case Ok(right) {
+                    mut operator := ""
+                    if kind == "Expr.Binary.Equal" {
+                        operator = "=="
+                    } else if kind == "Expr.Binary.NotEqual" {
+                        operator = "!="
+                    } else if kind == "Expr.Binary.Less" {
+                        operator = "<"
+                    } else if kind == "Expr.Binary.LessEqual" {
+                        operator = "<="
+                    } else if kind == "Expr.Binary.Greater" {
+                        operator = ">"
+                    } else if kind == "Expr.Binary.GreaterEqual" {
+                        operator = ">="
+                    } else if kind == "Expr.Binary.And" {
+                        operator = "&&"
+                    } else if kind == "Expr.Binary.Or" {
+                        operator = "||"
+                    } else {
+                        return Err(unsupported(con kind))
+                    }
+                    if len(left.lines) == 0 && len(left.postLines) == 0 && len(right.lines) == 0 && len(right.postLines) == 0 {
+                        value := strings.join(con []string{"(", token.CopyText(con left.value), " ", token.CopyText(con operator), " ", token.CopyText(con right.value), ")",}, con "")
+                        return Ok(EmittedExpr{lines: []string{}, value: value, postLines: []string{},})
+                    }
+                    operandType := cTypeFor(con program, con ir.NodeType(con program, ir.NodeChild(con program, node, 0)))
+                    if operandType == "" || operandType == "void" {
+                        return Err(unsupported(con ir.NodeType(con program, ir.NodeChild(con program, node, 0))))
+                    }
+                    suffix := spanSuffix(con program, node)
+                    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
+                    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
+                    mut lines := copyLines([]string{}, con left.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con operandType), " ", token.CopyText(con leftName), " = ", token.CopyText(con left.value), ";",}, con ""))
+                    lines = copyLines(lines, con left.postLines)
+                    if kind == "Expr.Binary.And" || kind == "Expr.Binary.Or" {
+                        resultName := strings.join(con []string{"mallang_logical_", token.CopyText(con suffix),}, con "")
+                        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "bool ", token.CopyText(con resultName), " = ", stripOuterParens(con leftName), ";",}, con ""))
+                        mut condition := token.CopyText(con resultName)
+                        if kind == "Expr.Binary.Or" {
+                            condition = strings.join(con []string{"!", token.CopyText(con resultName),}, con "")
+                        }
+                        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con condition), ") {",}, con ""))
+                        for mut line := 0; line < len(right.lines); line = line + 1 {
+                            lines = append(lines, strings.join(con []string{"    ", token.CopyText(con right.lines[line]),}, con ""))
+                        }
+                        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    ", token.CopyText(con resultName), " = ", stripOuterParens(con right.value), ";",}, con ""))
+                        for mut line := 0; line < len(right.postLines); line = line + 1 {
+                            lines = append(lines, strings.join(con []string{"    ", token.CopyText(con right.postLines[line]),}, con ""))
+                        }
+                        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                        return Ok(EmittedExpr{lines: copyLines([]string{}, con lines), value: resultName, postLines: []string{},})
+                    }
+                    lines = copyLines(lines, con right.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con operandType), " ", token.CopyText(con rightName), " = ", token.CopyText(con right.value), ";",}, con ""))
+                    lines = copyLines(lines, con right.postLines)
+                    value := strings.join(con []string{"(", token.CopyText(con leftName), " ", token.CopyText(con operator), " ", token.CopyText(con rightName), ")",}, con "")
+                    return Ok(EmittedExpr{lines: lines, value: value, postLines: []string{},})
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
         }
         case Err(message) {
             return Err(message)
         }
     }
-    match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
-        case Ok(right) {
-            lines = copyLines(lines, con right.lines)
-            rightValue = token.CopyText(con right.value)
-            postLines = copyLines(right.postLines, con postLines)
-        }
-        case Err(message) {
-            return Err(message)
-        }
-    }
-    mut resultValue := ""
-    mut operator := ""
-    if kind == "Expr.Binary.Equal" {
-        operator = "=="
-    } else if kind == "Expr.Binary.NotEqual" {
-        operator = "!="
-    } else if kind == "Expr.Binary.Less" {
-        operator = "<"
-    } else if kind == "Expr.Binary.LessEqual" {
-        operator = "<="
-    } else if kind == "Expr.Binary.Greater" {
-        operator = ">"
-    } else if kind == "Expr.Binary.GreaterEqual" {
-        operator = ">="
-    } else if kind == "Expr.Binary.And" {
-        operator = "&&"
-    } else if kind == "Expr.Binary.Or" {
-        operator = "||"
-    } else {
-        return Err(unsupported(con kind))
-    }
-    resultValue = strings.join(con []string{"(", token.CopyText(con leftValue), " ", operator, " ", token.CopyText(con rightValue), ")",}, con "")
-    return Ok(EmittedExpr{lines: lines, value: resultValue, postLines: postLines,})
 }
 
 func emitArrayLiteral(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
@@ -1905,13 +1923,13 @@ func emitPrint(con program ir.Program, call int, con indent string, con env Emit
     }
 }
 
-func emitBlock(con program ir.Program, block int, con indent string, con env EmitEnv) Result[[]string, string] {
+func emitBlockWithContinue(con program ir.Program, block int, con indent string, con env EmitEnv, con continueLabel string) Result[[]string, string] {
     if ir.NodeCategory(con program, block) != "B" {
         return Err("B3 C backend received malformed block IR")
     }
     mut lines := []string{}
     for mut child := 0; child < ir.NodeChildCount(con program, block); child = child + 1 {
-        match emitStatement(con program, ir.NodeChild(con program, block, child), con indent, con env) {
+        match emitStatementWithContinue(con program, ir.NodeChild(con program, block, child), con indent, con env, con continueLabel) {
             case Ok(emitted) {
                 lines = copyLines(lines, con emitted)
             }
@@ -1923,7 +1941,11 @@ func emitBlock(con program ir.Program, block int, con indent string, con env Emi
     return Ok(lines)
 }
 
-func emitIf(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+func emitBlock(con program ir.Program, block int, con indent string, con env EmitEnv) Result[[]string, string] {
+    return emitBlockWithContinue(con program, block, con indent, con env, con "")
+}
+
+func emitIfWithContinue(con program ir.Program, node int, con indent string, con env EmitEnv, con continueLabel string) Result[[]string, string] {
     if ir.NodeChildCount(con program, node) != 3 {
         return Err("B3 C backend received malformed if IR")
     }
@@ -1944,10 +1966,10 @@ func emitIf(con program ir.Program, node int, con indent string, con env EmitEnv
                 value = temp
             }
             lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con value), ") {",}, con ""))
-            match emitBlock(con program, thenBlock, con strings.join(con []string {
+            match emitBlockWithContinue(con program, thenBlock, con strings.join(con []string {
                 token.CopyText(con indent), "    ",
             }
-            , con ""), con env){case Ok(body) {
+            , con ""), con env, con continueLabel){case Ok(body) {
                     lines = copyLines(lines, con body)
                 }
                 case Err(message) {
@@ -1958,10 +1980,10 @@ func emitIf(con program ir.Program, node int, con indent string, con env EmitEnv
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
             } else {
                 lines = append(lines, strings.join(con []string{token.CopyText(con indent), "} else {",}, con ""))
-                match emitBlock(con program, elseBlock, con strings.join(con []string {
+                match emitBlockWithContinue(con program, elseBlock, con strings.join(con []string {
                     token.CopyText(con indent), "    ",
                 }
-                , con ""), con env){case Ok(body) {
+                , con ""), con env, con continueLabel){case Ok(body) {
                         lines = copyLines(lines, con body)
                     }
                     case Err(message) {
@@ -1978,18 +2000,180 @@ func emitIf(con program ir.Program, node int, con indent string, con env EmitEnv
     }
 }
 
+func emitIf(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    return emitIfWithContinue(con program, node, con indent, con env, con "")
+}
+
+func blockContainsOuterContinue(con program ir.Program, block int) bool {
+    for mut child := 0; child < ir.NodeChildCount(con program, block); child = child + 1 {
+        if statementContainsOuterContinue(con program, ir.NodeChild(con program, block, child)) {
+            return true
+        }
+    }
+    return false
+}
+
+func statementContainsOuterContinue(con program ir.Program, node int) bool {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Stmt.Continue" {
+        return true
+    }
+    if kind == "Stmt.If" {
+        for mut child := 1; child < ir.NodeChildCount(con program, node); child = child + 1 {
+            if blockContainsOuterContinue(con program, ir.NodeChild(con program, node, child)) {
+                return true
+            }
+        }
+    } else if kind == "Stmt.Match" {
+        for mut child := 1; child < ir.NodeChildCount(con program, node); child = child + 1 {
+            arm := ir.NodeChild(con program, node, child)
+            if ir.NodeKind(con program, arm) == "Match.BlockArm" && ir.NodeChildCount(con program, arm) == 2 {
+                if blockContainsOuterContinue(con program, ir.NodeChild(con program, arm, 1)) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+func emitForInit(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    kind := ir.NodeKind(con program, node)
+    if(kind != "ForInit.Let.Immutable" && kind != "ForInit.Let.Mutable") || ir.NodeChildCount(con program, node) != 1 {
+        return Err("B3 C backend received malformed for init IR")
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
+        case Ok(emitted) {
+            ty := cTypeFor(con program, con ir.NodeType(con program, node))
+            if ty == "" || ty == "void" {
+                return Err(unsupported(con ir.NodeType(con program, node)))
+            }
+            mut lines := copyLines([]string{}, con emitted.lines)
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), ty, " ", cVariableName(con ir.NodeValue(con program, node)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+            lines = copyLines(lines, con emitted.postLines)
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitAssignmentTarget(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Expr.Var" {
+        return Ok(EmittedExpr{lines: []string{}, value: envVariableName(con env, con ir.NodeValue(con program, node)), postLines: []string{},})
+    }
+    if kind == "Expr.FieldAccess" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed assignment field target IR")
+        }
+        match emitAssignmentTarget(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
+            case Ok(base) {
+                return Ok(EmittedExpr{lines: base.lines, value: strings.join(con []string{"(", token.CopyText(con base.value), ").", cField(con ir.NodeValue(con program, node)),}, con ""), postLines: base.postLines,})
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if kind == "Expr.Index" {
+        if ir.NodeChildCount(con program, node) != 2 {
+            return Err("B3 C backend received malformed assignment index target IR")
+        }
+        baseNode := ir.NodeChild(con program, node, 0)
+        indexNode := ir.NodeChild(con program, node, 1)
+        match emitAssignmentTarget(con program, baseNode, con indent, con env) {
+            case Ok(base) {
+                match emitExpression(con program, indexNode, con indent, con env) {
+                    case Ok(index) {
+                        mut lines := copyLines([]string{}, con base.lines)
+                        lines = copyLines(lines, con index.lines)
+                        mut postLines := copyLines([]string{}, con index.postLines)
+                        postLines = copyLines(postLines, con base.postLines)
+                        kind := typeKind(con program, con ir.NodeType(con program, baseNode))
+                        if kind == "array" {
+                            shape := typeShapeIndex(con program, con ir.NodeType(con program, baseNode))
+                            if shape < 0 {
+                                return Err("B3 C backend received an unknown array assignment target type")
+                            }
+                            value := strings.join(con []string{"(", token.CopyText(con base.value), ").", cField(con "data"), "[mallang_check_index(", token.CopyText(con index.value), ", ", strings.fromInt(ir.TypeShapeArrayLength(con program, shape)), ")]",}, con "")
+                            return Ok(EmittedExpr{lines: copyLines([]string{}, con lines), value: value, postLines: copyLines([]string{}, con postLines),})
+                        }
+                        if kind == "slice" {
+                            temp := strings.join(con []string{"mallang_index_value_", spanSuffix(con program, node),}, con "")
+                            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con temp), " = ", token.CopyText(con index.value), ";",}, con ""))
+                            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con temp), " < 0 || ", token.CopyText(con temp), " >= (", token.CopyText(con base.value), ").", cField(con "len"), ") {",}, con ""))
+                            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"slice index out of bounds\");",}, con ""))
+                            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                            value := strings.join(con []string{"(", token.CopyText(con base.value), ").", cField(con "data"), "[", token.CopyText(con temp), "]",}, con "")
+                            return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
+                        }
+                        return Err("B3 C backend received an index assignment target without an array or slice type")
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Err("B3 C backend received an invalid assignment target")
+}
+
+func emitForPost(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    if ir.NodeKind(con program, node) != "ForPost.Assign" || ir.NodeChildCount(con program, node) != 2 {
+        return Err("B3 C backend received malformed for post IR")
+    }
+    match emitAssignmentTarget(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
+        case Ok(target) {
+            match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
+                case Ok(expression) {
+                    mut lines := copyLines([]string{}, con target.lines)
+                    lines = copyLines(lines, con expression.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con target.value), " = ", token.CopyText(con expression.value), ";",}, con ""))
+                    lines = copyLines(lines, con expression.postLines)
+                    lines = copyLines(lines, con target.postLines)
+                    return Ok(lines)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
 func emitFor(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    mut init := -1
     mut condition := -1
+    mut post := -1
     mut body := -1
     mut cleanup := -1
     for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
         control := ir.NodeChild(con program, node, child)
         kind := ir.NodeKind(con program, control)
-        if kind == "ForCondition" {
+        if kind == "ForInit.Let.Immutable" || kind == "ForInit.Let.Mutable" {
+            if init >= 0 {
+                return Err("B3 C backend received duplicate for init IR")
+            }
+            init = control
+        } else if kind == "ForCondition" {
             if ir.NodeChildCount(con program, control) != 1 {
                 return Err("B3 C backend received malformed for condition IR")
             }
             condition = ir.NodeChild(con program, control, 0)
+        } else if kind == "ForPost.Assign" {
+            if post >= 0 {
+                return Err("B3 C backend received duplicate for post IR")
+            }
+            post = control
         } else if kind == "Block.For" {
             body = control
         } else if kind == "Block.ForCleanup" {
@@ -1998,8 +2182,87 @@ func emitFor(con program ir.Program, node int, con indent string, con env EmitEn
             return Err(unsupported(con kind))
         }
     }
-    if body < 0 || cleanup < 0 || ir.NodeChildCount(con program, cleanup) != 0 {
-        return Err("B3 C backend requires a simple for body without loop cleanup")
+    if body < 0 || cleanup < 0 {
+        return Err("B3 C backend received malformed for blocks")
+    }
+    if init >= 0 || post >= 0 || ir.NodeChildCount(con program, cleanup) > 0 {
+        nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
+        loopIndent := strings.join(con []string{token.CopyText(con nestedIndent), "    ",}, con "")
+        bodyIndent := strings.join(con []string{token.CopyText(con loopIndent), "    ",}, con "")
+        mut lines := []string{strings.join(con []string{token.CopyText(con indent), "{",}, con ""),}
+        if init >= 0 {
+            match emitForInit(con program, init, con nestedIndent, con env) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        mut continueLabel := ""
+        if post >= 0 && blockContainsOuterContinue(con program, body) {
+            target := ir.NodeChild(con program, post, 0)
+            continueLabel = strings.join(con []string{"mallang_for_post_", strings.fromInt(source.Start(con ir.NodeSpan(con program, target))),}, con "")
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "while (true) {",}, con ""))
+        if condition >= 0 {
+            match emitExpression(con program, condition, con loopIndent, con env) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted.lines)
+                    mut value := stripOuterParens(con emitted.value)
+                    if len(emitted.postLines) > 0 {
+                        temp := strings.join(con []string{"mallang_condition_", spanSuffix(con program, condition),}, con "")
+                        lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "bool ", token.CopyText(con temp), " = ", token.CopyText(con value), ";",}, con ""))
+                        lines = copyLines(lines, con emitted.postLines)
+                        value = temp
+                    }
+                    lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "if (!(", token.CopyText(con value), ")) {",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con bodyIndent), "break;",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "}",}, con ""))
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "{",}, con ""))
+        match emitBlockWithContinue(con program, body, con bodyIndent, con env, con continueLabel) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "}",}, con ""))
+        if post >= 0 {
+            if continueLabel == "" {
+                lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "{",}, con ""))
+            } else {
+                lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), token.CopyText(con continueLabel), ": {",}, con ""))
+            }
+            match emitForPost(con program, post, con bodyIndent, con env) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+            lines = append(lines, strings.join(con []string{token.CopyText(con loopIndent), "}",}, con ""))
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "}",}, con ""))
+        match emitBlock(con program, cleanup, con nestedIndent, con env) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+        lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+        return Ok(lines)
     }
     nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
     mut emittedCondition := EmittedExpr{lines: []string{}, value: "true", postLines: []string{},}
@@ -2045,7 +2308,175 @@ func emitFor(con program ir.Program, node int, con indent string, con env EmitEn
     return Ok(lines)
 }
 
-func emitMatchStatement(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+func rangeBindingPart(con value string, wantValue bool) string {
+    mut comma := -1
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        match strings.byteAt(con value, index) {
+            case Ok(byte) {
+                if byte == 44 {
+                    comma = index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    if comma < 0 {
+        if wantValue {
+            return "_"
+        }
+        return token.CopyText(con value)
+    }
+    mut start := 0
+    mut end := comma
+    if wantValue {
+        start = comma + 1
+        end = strings.byteLen(con value)
+    }
+    return match strings.slice(con value, start, end) {
+        case Ok(part) {
+            token.CopyText(con part)
+        }
+        case Err(_) {
+            "_"
+        }
+    }
+}
+
+func fullExpressionOwnerNode(con program ir.Program, node int) int {
+    kind := ir.NodeKind(con program, node)
+    if kind == "Expr.FullExprTemporary" && ir.NodeNeedsCleanup(con program, node) {
+        return node
+    }
+    if(kind == "Expr.FieldAccess" || kind == "Expr.Index") && ir.NodeChildCount(con program, node) > 0 {
+        return fullExpressionOwnerNode(con program, ir.NodeChild(con program, node, 0))
+    }
+    return - 1
+}
+
+func removeFirstLine(con values []string, con target string) []string {
+    mut removed := false
+    mut output := []string{}
+    for mut index := 0; index < len(values); index = index + 1 {
+        if !removed && values[index]== target {
+            removed = true
+        } else {
+            output = append(output, token.CopyText(con values[index]))
+        }
+    }
+    return output
+}
+
+func emitRangeFor(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    if ir.NodeChildCount(con program, node) != 4 {
+        return Err("B3 C backend received malformed range-for IR")
+    }
+    bindings := ir.NodeChild(con program, node, 0)
+    sourceNode := ir.NodeChild(con program, node, 1)
+    body := ir.NodeChild(con program, node, 2)
+    cleanup := ir.NodeChild(con program, node, 3)
+    if ir.NodeKind(con program, bindings) != "RangeBindings" || ir.NodeKind(con program, body) != "Block.RangeFor" || ir.NodeKind(con program, cleanup) != "Block.RangeCleanup" {
+        return Err("B3 C backend received malformed range-for blocks")
+    }
+    indexName := rangeBindingPart(con ir.NodeValue(con program, bindings), false)
+    valueName := rangeBindingPart(con ir.NodeValue(con program, bindings), true)
+    sourceType := ir.NodeType(con program, sourceNode)
+    sourceKind := typeKind(con program, con sourceType)
+    sourceTemp := strings.join(con []string{"mallang_range_src_", strings.fromInt(source.Start(con ir.NodeSpan(con program, sourceNode))),}, con "")
+    mut length := ""
+    mut arrayLength := -1
+    if sourceKind == "array" {
+        shape := typeShapeIndex(con program, con sourceType)
+        if shape < 0 {
+            return Err("B3 C backend received an unknown range array type")
+        }
+        arrayLength = ir.TypeShapeArrayLength(con program, shape)
+        length = strings.fromInt(arrayLength)
+    } else if sourceKind == "slice" {
+        length = strings.join(con []string{"(", token.CopyText(con sourceTemp), ").", cField(con "len"),}, con "")
+    } else {
+        return Err("B3 C backend received a range source without an array or slice type")
+    }
+    match emitExpression(con program, sourceNode, con indent, con env) {
+        case Ok(sourceExpression) {
+            mut emittedSource := sourceExpression
+            owner := fullExpressionOwnerNode(con program, sourceNode)
+            if owner >= 0 {
+                ownerType := ir.NodeType(con program, owner)
+                ownerValue := ir.NodeValue(con program, owner)
+                ownerName := cVariableName(con ownerValue)
+                match dropLine(con program, con ownerType, con ownerName, con indent) {
+                    case Ok(ownerDrop) {
+                        if !containsText(con emittedSource.postLines, con ownerDrop) {
+                            return Err("B3 C backend range full-expression owner is missing cleanup")
+                        }
+                        emittedSource.postLines = removeFirstLine(con emittedSource.postLines, con ownerDrop)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            mut lines := copyLines([]string{}, con emittedSource.lines)
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), cTypeFor(con program, con sourceType), " ", token.CopyText(con sourceTemp), " = ", token.CopyText(con emittedSource.value), ";",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "(void)&", token.CopyText(con sourceTemp), ";",}, con ""))
+            lines = copyLines(lines, con emittedSource.postLines)
+            mut indexIdent := cVariableName(con indexName)
+            if indexName == "_" {
+                indexIdent = strings.join(con []string{"mallang_range_index_", strings.fromInt(source.Start(con ir.NodeSpan(con program, sourceNode))),}, con "")
+            }
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "for (int64_t ", token.CopyText(con indexIdent), " = 0; ", token.CopyText(con indexIdent), " < ", token.CopyText(con length), "; ", token.CopyText(con indexIdent), " = (", token.CopyText(con indexIdent), " + 1)) {",}, con ""))
+            nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
+            mut valueIdent := ""
+            if valueName != "_" {
+                valueIdent = cVariableName(con valueName)
+                valueType := cTypeFor(con program, con ir.NodeType(con program, bindings))
+                if valueType == "" || valueType == "void" {
+                    return Err(unsupported(con ir.NodeType(con program, bindings)))
+                }
+                if arrayLength == 0 {
+                    lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), valueType, " ", token.CopyText(con valueIdent), ";",}, con ""))
+                } else {
+                    lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), valueType, " ", token.CopyText(con valueIdent), " = (", token.CopyText(con sourceTemp), ").", cField(con "data"), "[", token.CopyText(con indexIdent), "];",}, con ""))
+                }
+                lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "(void)&", token.CopyText(con valueIdent), ";",}, con ""))
+            }
+            mut bodyEnv := copyEmitEnv(con env)
+            if indexName != "_" {
+                bodyEnv = envSet(con bodyEnv, con indexName, con indexIdent)
+            }
+            if valueName != "_" {
+                bodyEnv = envSet(con bodyEnv, con valueName, con valueIdent)
+            }
+            lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "{",}, con ""))
+            match emitBlock(con program, body, con strings.join(con []string {
+                token.CopyText(con nestedIndent), "    ",
+            }
+            , con ""), con bodyEnv){case Ok(emitted) {
+                    lines = copyLines(lines, con emitted)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+            lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "}",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+            match emitBlock(con program, cleanup, con indent, con env) {
+                case Ok(emitted) {
+                    lines = copyLines(lines, con emitted)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitMatchStatementWithContinue(con program ir.Program, node int, con indent string, con env EmitEnv, con continueLabel string) Result[[]string, string] {
     if ir.NodeChildCount(con program, node) < 2 {
         return Err("B3 C backend received a match statement without arms")
     }
@@ -2077,7 +2508,7 @@ func emitMatchStatement(con program ir.Program, node int, con indent string, con
                         for mut setup := 0; setup < len(plan.setup); setup = setup + 1 {
                             lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), token.CopyText(con plan.setup[setup]),}, con ""))
                         }
-                        match emitBlock(con program, block, con nestedIndent, con plan.env) {
+                        match emitBlockWithContinue(con program, block, con nestedIndent, con plan.env, con continueLabel) {
                             case Ok(emitted) {
                                 lines = copyLines(lines, con emitted)
                             }
@@ -2102,7 +2533,11 @@ func emitMatchStatement(con program ir.Program, node int, con indent string, con
     }
 }
 
-func emitStatement(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+func emitMatchStatement(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    return emitMatchStatementWithContinue(con program, node, con indent, con env, con "")
+}
+
+func emitStatementWithContinue(con program ir.Program, node int, con indent string, con env EmitEnv, con continueLabel string) Result[[]string, string] {
     kind := ir.NodeKind(con program, node)
     if kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" {
         if ir.NodeChildCount(con program, node) != 1 {
@@ -2173,18 +2608,24 @@ func emitStatement(con program ir.Program, node int, con indent string, con env 
         }
     }
     if kind == "Stmt.If" {
-        return emitIf(con program, node, con indent, con env)
+        return emitIfWithContinue(con program, node, con indent, con env, con continueLabel)
     }
     if kind == "Stmt.For" {
         return emitFor(con program, node, con indent, con env)
     }
+    if kind == "Stmt.RangeFor" {
+        return emitRangeFor(con program, node, con indent, con env)
+    }
     if kind == "Stmt.Match" {
-        return emitMatchStatement(con program, node, con indent, con env)
+        return emitMatchStatementWithContinue(con program, node, con indent, con env, con continueLabel)
     }
     if kind == "Stmt.Break" {
         return Ok([]string{strings.join(con []string{token.CopyText(con indent), "break;",}, con ""),})
     }
     if kind == "Stmt.Continue" {
+        if continueLabel != "" {
+            return Ok([]string{strings.join(con []string{token.CopyText(con indent), "goto ", token.CopyText(con continueLabel), ";",}, con ""),})
+        }
         return Ok([]string{strings.join(con []string{token.CopyText(con indent), "continue;",}, con ""),})
     }
     if kind == "Stmt.Drop" {
@@ -2247,6 +2688,10 @@ func emitStatement(con program ir.Program, node int, con indent string, con env 
         }
     }
     return Err(unsupported(con kind))
+}
+
+func emitStatement(con program ir.Program, node int, con indent string, con env EmitEnv) Result[[]string, string] {
+    return emitStatementWithContinue(con program, node, con indent, con env, con "")
 }
 
 func emitThunk(con program ir.Program, function int) Result[[]string, string] {
