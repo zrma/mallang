@@ -1786,7 +1786,7 @@ specialization and typed IR in independently differential-tested slices.
 
 ## P177: B3 Self-Hosting C Backend
 
-상태: active; P177a-P177b, P177c1-P177c4 complete (2026-07-23)
+상태: complete; P177a-P177d accepted (2026-07-23)
 
 - [x] Mallang typed-IR read-only backend API
 - [x] standalone Mallang `c` host mode
@@ -1822,12 +1822,17 @@ specialization and typed IR in independently differential-tested slices.
 - [x] 10 positive/5 runtime rejection/1 closure boundary와 882-function IR parity
 - [x] compiler-used string query/slice/find/join/parse intrinsic backend
 - [x] 11 positive/6 runtime rejection/1 closure boundary와 897-function IR parity
-- [ ] intrinsic function value, closure/capture, specialization과 project backend
-- [ ] complete compiler-source C generation과 B3 canonical acceptance
+- [x] compiler-used platform I/O/filesystem/process intrinsic backend
+- [x] 12 positive/9 runtime rejection/1 closure boundary와 908-function IR parity
+- [x] compiler-required callable, specialization과 linked-project backend
+- [x] deterministic complete compiler-source C generation과 strict C11 compile
+- [x] B3 canonical publication과 supported-platform CI acceptance
 
 Exact scope, gate layering and current evidence are owned by
-`docs/todo-self-hosting-backend/`. P177a does not claim Stage2 generation or a
-fixed point; those remain B4 work.
+`docs/todo-self-hosting-backend/`. Closures and intrinsic function values are
+not used by the current compiler source and remain outside the closed B3
+bootstrap-critical surface. Stage2 generation and fixed-point conformance are
+B4 work.
 
 ## Deferred 2.0 Naming Conventions
 

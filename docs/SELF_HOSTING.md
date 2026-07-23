@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B2 complete, B3 active
+Status: active long-term program; B0-B3 complete, B4 active
 
 ## Objective
 
@@ -81,16 +81,18 @@ Mallang to specific 1.x versions.
   while the compiler gate grows through B2.
 - `scripts/check-self-hosting-backend.sh`: B3 Stage0/Stage1 generated-C
   identity, determinism, strict native, allocation-accounting and sanitizer
-  gate. `--assume-bootstrap` is the explicit artifact-reuse edit loop.
+  gate. The complete gate also generates the compiler project twice and
+  compiles it as strict C11. `--assume-bootstrap --fixtures-only` is the
+  explicit artifact-reuse edit loop.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
-- `docs/todo-self-hosting-backend/`: active B3 work breakdown and decisions.
+- `docs/todo-self-hosting-backend/`: closed B3 work breakdown and decisions.
 - `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 
-## B3 Current Slice
+## B3 Closure
 
 P177a exposes read-only typed-IR metadata to Mallang and adds a Mallang-owned
 scalar C emitter plus standalone `c` host mode. Its fixture covers scalar
@@ -206,6 +208,24 @@ failure. Eleven positive, six runtime-rejection and one closure-boundary path
 pass deterministic C parity, strict native, accounting and sanitizer checks.
 Compiler source parity is 897 normalized functions, and self C generation now
 reaches `IoWriteStderr`.
+
+P177c5 completes the platform surface used by the compiler with owned process
+arguments, stdout/stderr writes, text-file reads and bounded process exit. The
+runtime preserves allocation-failure diagnostics and exact cleanup for partial
+argument and file-read construction. Owned direct slice fields use an internal
+take-and-reset IR operation, while read, assignment and append contexts retain
+their distinct borrow or consuming behavior. Twelve positive, nine runtime
+rejection and one explicit closure-boundary path pass the B3 fixture gate, and
+the complete compiler source matches Stage0 across 908 normalized typed-IR
+functions.
+
+P177d closes B3. Stage1 deterministically emits the complete compiler project
+as warning-clean strict C11, with source discovery and native C compilation
+remaining explicit host-harness operations. Closures and intrinsic function
+values remain valid language features but are not used by the current compiler
+source set, so their backend support is outside the B3 bootstrap-critical
+surface. The canonical repository and supported-platform CI gates protect the
+closed boundary. B4 owns Stage1-to-Stage2 fixed-point and conformance behavior.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
@@ -404,4 +424,6 @@ invocations, one hundred sixty-seven parser corpus sources and two hundred
   seconds and the full 48-fixture, 167-source gate in 83 seconds. These are
   host-local observations, not thresholds. The canonical repository gate,
   public `main` publication and supported-platform CI acceptance all pass, so
-  B2 is complete and B3 C backend work is next.
+  B2 is complete. B3 subsequently moved the compiler-required C backend and
+  linked-project path behind Stage1 and is now complete; B4 fixed-point work is
+  next.

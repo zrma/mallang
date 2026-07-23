@@ -1,6 +1,6 @@
 # Open Questions: B3 Self-Hosting C Backend
 
-Status: active; P177a decisions frozen unless later evidence reopens them
+Status: closed with B3; decisions frozen unless later evidence reopens them
 
 ## Should The Mallang Backend Port The Entire Rust Backend At Once?
 
@@ -27,6 +27,8 @@ logical change and publication.
 
 ## How Much Host Driver Is Allowed?
 
-B3 may retain deterministic source discovery, process invocation and `clang`
-execution in the host. C generation semantics and generated source ownership
-must live in Mallang. P177d records the exact remaining host boundary for B4.
+B3 retains deterministic source discovery, project-graph argument assembly and
+`clang` invocation in the host harness. Compiler semantics and generated source
+ownership live in Mallang. B4 treats the ordered source set and graph as
+declared inputs while proving Stage1-to-Stage2 identity; B5 owns migration of
+the public project-discovery and native-build workflow to the Mallang compiler.

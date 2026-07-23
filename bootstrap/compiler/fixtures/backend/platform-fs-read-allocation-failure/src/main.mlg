@@ -1,0 +1,15 @@
+package main
+
+import "std/fs"
+
+func main() {
+    path := "bootstrap/compiler/fixtures/backend/platform-intrinsics/input.txt"
+    match fs.readText(con path) {
+        case Ok(text) {
+            print(text)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+}

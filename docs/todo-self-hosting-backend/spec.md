@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a-P177b and P177c1-P177c3 complete
+Status: complete; P177a-P177d accepted
 
 ## Objective
 
@@ -169,6 +169,15 @@ byte parity, deterministic repeat, strict native, accounting and sanitizer
 checks. Compiler source parity is 897 normalized functions, and compiler-project
 C generation now reaches the `IoWriteStderr` platform intrinsic boundary.
 
+P177c5 is complete. The compiler-used platform surface now includes
+`IoWriteStdout`, `IoWriteStderr`, `FsReadText`, `OsArgs` and `OsExit`, with
+owned argument copies, partial-allocation cleanup, errno-backed file errors and
+bounded exit status. An internal slice-field take resets moved headers while
+read, assignment and append lowering preserve their separate ownership
+contracts. The platform fixture and forced argument/file allocation failures
+raise the gate to twelve positive, nine runtime-rejection and one explicit
+closure-boundary path. Compiler-source parity is 908 normalized functions.
+
 ### P177d: B3 Closure
 
 - cover every typed-IR node required by the Mallang compiler source set
@@ -177,14 +186,25 @@ C generation now reaches the `IoWriteStderr` platform intrinsic boundary.
   canonical repository gates
 - document the remaining host operations that B4 must move behind Stage1
 
+P177d is complete. The complete compiler source set is discovered in stable
+path order, emitted twice by Stage1, compared byte-for-byte and compiled under
+strict C11. Source discovery, project-graph argument assembly and native C
+compiler invocation remain host-harness responsibilities; B4 may retain these
+declared inputs while it proves the Stage1-to-Stage2 fixed point. The compiler
+core, linked-project specialization, semantic/ownership checks, typed IR and C
+generation are all behind Stage1. Closures and intrinsic function values are
+not required by the current compiler source set and remain an explicit
+non-bootstrap backend boundary.
+
 ## Development Loop
 
 The validation layers are deliberately asymmetric so feature work does not pay
 the publication cost on every edit.
 
 1. Edit loop: run focused Rust/Mallang tests and
-   `scripts/check-self-hosting-backend.sh --assume-bootstrap`. This reuses an
-   explicitly existing Stage1 and is not milestone evidence.
+   `scripts/check-self-hosting-backend.sh --assume-bootstrap --fixtures-only`.
+   This reuses an explicitly existing Stage1, skips the complete compiler
+   project and is not milestone evidence.
 2. Integration loop: run `scripts/check-self-hosting-backend.sh`. This rebuilds
    Stage1 from current sources before the complete tracked backend fixture gate.
 3. Compiler-core differential: run
@@ -235,9 +255,11 @@ thresholds.
 - [x] ten positive, five runtime-rejection and one closure boundary path
 - [x] P177c4 compiler-used byte/string query, slice, join and parse intrinsics
 - [x] eleven positive, six runtime-rejection and one closure boundary path
-- [ ] callable, specialization and project surface
-- [ ] complete compiler-source C generation
-- [ ] B3 canonical, publication and supported-platform CI acceptance
+- [x] P177c5 compiler-used platform I/O, filesystem, process args and exit
+- [x] twelve positive, nine runtime-rejection and one closure boundary path
+- [x] compiler-required callable, specialization and linked-project surface
+- [x] complete deterministic compiler-source C generation and strict compile
+- [x] B3 canonical, publication and supported-platform CI acceptance
 
 ## Excluded
 

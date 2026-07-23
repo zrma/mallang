@@ -508,7 +508,7 @@ target/mallang/match-statement
 - `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
 - `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
-- `docs/todo-self-hosting-backend/`: active B3 Mallang C backend contract
+- `docs/todo-self-hosting-backend/`: closed B3 Mallang C backend contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
@@ -785,6 +785,15 @@ typed-IR metadata에서 유도한다. 성공과 domain error를 함께 실행하
 closure boundary가 deterministic C parity, strict native, accounting과 ASan/UBSan을 통과한다.
 Compiler source 897개 normalized IR function이 일치하며 compiler project self C 생성의 다음
 실제 경계는 `IoWriteStderr` platform intrinsic이다.
+P177c5는 compiler가 사용하는 stdout/stderr, text-file read, process args와 bounded exit
+intrinsic을 owned runtime으로 구현했다. Partial allocation cleanup과 errno-backed error를
+보존하고, direct owned slice field는 internal take-and-reset IR로 이동하되 read/assignment/
+append context의 borrow/consume 차이를 유지한다. 열두 positive/아홉 runtime rejection/하나의
+closure boundary가 differential, strict native, accounting과 ASan/UBSan을 통과하며 compiler
+source 908개 normalized IR function이 일치한다. P177d는 Stage1이 complete compiler source를
+stable path order로 두 번 C 생성하고 byte identity 및 strict C11 compile을 확인해 B3를 닫았다.
+Source discovery, project graph argument assembly와 `clang` invocation은 declared host harness로
+남고, Stage1-to-Stage2 fixed point와 conformance behavior는 B4가 담당한다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -800,10 +809,12 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 인정한다.
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
-`scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177c4의 열한 positive/일곱 rejection path 기준 약 26초다. Compiler
+`scripts/check-self-hosting-backend.sh --assume-bootstrap --fixtures-only`를 사용한다.
+이 경로는 complete compiler-project generation/strict compile을 생략하므로 milestone
+evidence가 아니다. 관측된 complete fixture loop는 P177c5의 열두 positive/열 rejection
+path 기준 약 44초다. Compiler
 source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
-관측된 integration loop는 약 31초다. Ownership/typed-IR
+complete compiler project까지 검증한다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.

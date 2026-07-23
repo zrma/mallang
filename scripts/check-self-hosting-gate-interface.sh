@@ -48,6 +48,7 @@ grep -Fq -- '--reuse-bootstrap' "$work/compiler-ir-help.stderr"
 scripts/check-self-hosting-backend.sh --help \
   >"$work/backend-help.stdout" 2>"$work/backend-help.stderr"
 grep -Fq -- '--assume-bootstrap' "$work/backend-help.stderr"
+grep -Fq -- '--fixtures-only' "$work/backend-help.stderr"
 expect_status_2 invalid-backend-mode scripts/check-self-hosting-backend.sh --fast
 grep -Fq 'usage: scripts/check-self-hosting-backend.sh' \
   "$work/invalid-backend-mode.stderr"

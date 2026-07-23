@@ -1,0 +1,52 @@
+package main
+
+import "std/fs"
+import "std/io"
+import "std/os"
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            print(len(args))
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+
+    path := "bootstrap/compiler/fixtures/backend/platform-intrinsics/input.txt"
+    match fs.readText(con path) {
+        case Ok(text) {
+            match io.writeStdout(con text) {
+                case Ok(_) {
+                }
+                case Err(error) {
+                    print(error.message)
+                }
+            }
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+
+    missing := "bootstrap/compiler/fixtures/backend/platform-intrinsics/missing.txt"
+    match fs.readText(con missing) {
+        case Ok(_) {
+            print("unexpected")
+        }
+        case Err(_) {
+            print("missing")
+        }
+    }
+
+    empty := ""
+    match io.writeStderr(con empty) {
+        case Ok(_) {
+            print("stderr-ok")
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+}

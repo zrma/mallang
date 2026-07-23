@@ -1,0 +1,14 @@
+package main
+
+import "std/os"
+
+func main() {
+    match os.args() {
+        case Ok(args) {
+            print(len(args))
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+}

@@ -5,24 +5,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  echo "usage: scripts/check-self-hosting-backend.sh [--assume-bootstrap]" >&2
+  echo "usage: scripts/check-self-hosting-backend.sh [--assume-bootstrap] [--fixtures-only]" >&2
 }
 
 ASSUME_BOOTSTRAP=false
-if [[ $# -gt 0 ]]; then
+FIXTURES_ONLY=false
+while [[ $# -gt 0 ]]; do
   case "$1" in
     --assume-bootstrap)
-      [[ $# -eq 1 ]] || {
-        usage
-        exit 2
-      }
       ASSUME_BOOTSTRAP=true
       ;;
+    --fixtures-only)
+      FIXTURES_ONLY=true
+      ;;
     -h|--help)
-      [[ $# -eq 1 ]] || {
-        usage
-        exit 2
-      }
       usage
       exit 0
       ;;
@@ -31,7 +27,8 @@ if [[ $# -gt 0 ]]; then
       exit 2
       ;;
   esac
-fi
+  shift
+done
 
 if command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)
@@ -53,10 +50,11 @@ STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
 FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values)
-PROJECT_FIXTURES=(dynamic-owned-string string-intrinsics)
+PROJECT_FIXTURES=(dynamic-owned-string string-intrinsics platform-intrinsics)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds integer-division-zero)
+PROJECT_RUNTIME_REJECTION_FIXTURES=(platform-exit-range)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
-PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure string-join-allocation-failure)
+PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure string-join-allocation-failure platform-os-args-allocation-failure platform-fs-read-allocation-failure)
 BOUNDARY_REJECTION_FIXTURES=(unsupported-closure)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
@@ -233,7 +231,32 @@ for name in "${PROJECT_FIXTURES[@]}"; do
   "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1-san"
 
   generated_c_abs="$(cd "$(dirname "$stage1_c")" && pwd)/$(basename "$stage1_c")"
-  cat >"$WORK/$name-accounting.c" <<EOF
+  if [[ "$name" == platform-intrinsics ]]; then
+    cat >"$WORK/$name-accounting.c" <<EOF
+#define main mallang_fixture_main
+#include "$generated_c_abs"
+#undef main
+
+int main(void) {
+    char mlg_arg0[] = "platform-intrinsics";
+    char *mlg_argv[] = { mlg_arg0, NULL };
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(stderr, "self-hosting backend accounting did not start at zero\n");
+        return 2;
+    }
+    if (mallang_fixture_main(1, mlg_argv) != 0) {
+        fprintf(stderr, "self-hosting backend fixture returned a non-zero status\n");
+        return 3;
+    }
+    if (mallang_live_allocation_count() != 0) {
+        fprintf(stderr, "self-hosting backend fixture leaked allocations\n");
+        return 4;
+    }
+    return 0;
+}
+EOF
+  else
+    cat >"$WORK/$name-accounting.c" <<EOF
 #define main mallang_fixture_main
 #include "$generated_c_abs"
 #undef main
@@ -254,6 +277,7 @@ int main(void) {
     return 0;
 }
 EOF
+  fi
 
   "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
     "$WORK/$name-accounting.c" -o "$WORK/$name-accounting"
@@ -287,6 +311,9 @@ EOF
       ;;
     string-intrinsics)
       expected=$'5\n234\nstring byte index out of bounds\n가\nstring slice boundary splits a UTF-8 scalar\n1\n-1\na|한|z\n-42\ninvalid integer text\ninteger value out of range'
+      ;;
+    platform-intrinsics)
+      expected=$'1\nplatform-file\nmissing\nstderr-ok'
       ;;
     *)
       echo "self-hosting backend project fixture has no expected output: $name" >&2
@@ -360,6 +387,63 @@ for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
     esac
     if [[ "$(cat "$WORK/$name.$binary.stderr")" != "$expected" ]]; then
       echo "self-hosting backend rejection stderr mismatch: $name.$binary" >&2
+      exit 1
+    fi
+  done
+done
+
+for name in "${PROJECT_RUNTIME_REJECTION_FIXTURES[@]}"; do
+  fixture_root="$PROJECT/fixtures/backend/$name/src"
+  fixture="$fixture_root/main.mlg"
+  unit_name="${name//-/_}"
+  oracle_c="$WORK/$name.stage0.c"
+  stage1_c="$WORK/$name.stage1.c"
+  stage1_c_second="$WORK/$name.stage1.second.c"
+
+  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  cp target/mallang/main.c "$oracle_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
+  "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"
+  if ! cmp -s "$oracle_c" "$stage1_c"; then
+    echo "self-hosting backend project rejection C differs from Stage0: $name" >&2
+    diff -u "$oracle_c" "$stage1_c" >&2 || true
+    exit 1
+  fi
+  if ! cmp -s "$stage1_c" "$stage1_c_second"; then
+    echo "self-hosting backend project rejection C is not deterministic: $name" >&2
+    exit 1
+  fi
+
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1"
+  "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" "$stage1_c" -o "$WORK/$name.stage1-san"
+
+  expected=""
+  case "$name" in
+    platform-exit-range)
+      expected="mallang runtime error: process exit code out of range"
+      ;;
+    *)
+      echo "self-hosting backend project runtime rejection has no expected diagnostic: $name" >&2
+      exit 1
+      ;;
+  esac
+
+  for binary in stage0 stage1 stage1-san; do
+    set +e
+    "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \
+      2>"$WORK/$name.$binary.stderr"
+    status=$?
+    set -e
+    if [[ $status -ne 1 ]]; then
+      echo "self-hosting backend project rejection returned $status instead of 1: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ -s "$WORK/$name.$binary.stdout" ]]; then
+      echo "self-hosting backend project rejection emitted unexpected stdout: $name.$binary" >&2
+      exit 1
+    fi
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != "$expected" ]]; then
+      echo "self-hosting backend project rejection stderr mismatch: $name.$binary" >&2
       exit 1
     fi
   done
@@ -463,6 +547,12 @@ for name in "${PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}"; do
     string-join-allocation-failure)
       expected="mallang runtime error: joined string allocation failed"
       ;;
+    platform-os-args-allocation-failure)
+      expected="mallang runtime error: process argument allocation failed"
+      ;;
+    platform-fs-read-allocation-failure)
+      expected="mallang runtime error: file path allocation failed"
+      ;;
     *)
       echo "self-hosting backend project allocation rejection has no expected diagnostic: $name" >&2
       exit 1
@@ -522,6 +612,28 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   fi
 done
 
+if [[ "$FIXTURES_ONLY" == false ]]; then
+  compiler_sources=()
+  while IFS= read -r source_path; do
+    compiler_sources+=("$source_path")
+  done < <(find "$PROJECT/src" -type f -name '*.mlg' -print | LC_ALL=C sort)
+
+  compiler_c="$WORK/bootstrap-compiler.stage1.c"
+  compiler_c_second="$WORK/bootstrap-compiler.stage1.second.c"
+  "$STAGE1" c-project \
+    1 bootstrap_compiler "$PROJECT/src" 0 "${compiler_sources[@]}" \
+    >"$compiler_c"
+  "$STAGE1" c-project \
+    1 bootstrap_compiler "$PROJECT/src" 0 "${compiler_sources[@]}" \
+    >"$compiler_c_second"
+  if ! cmp -s "$compiler_c" "$compiler_c_second"; then
+    echo "self-hosting backend compiler-project C is not deterministic" >&2
+    exit 1
+  fi
+  "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
+    "$compiler_c" -o "$WORK/bootstrap-compiler.stage1"
+fi
+
 fixture_count=$((${#FIXTURES[@]} + ${#PROJECT_FIXTURES[@]}))
-runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]} + ${#PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}))
-echo "self-hosting B3 backend gate passed: fixtures=$fixture_count runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} elapsed=$((SECONDS - started))s"
+runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#PROJECT_RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]} + ${#PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}))
+echo "self-hosting B3 backend gate passed: fixtures=$fixture_count runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} compiler-project=$([[ "$FIXTURES_ONLY" == true ]] && echo skipped || echo strict) elapsed=$((SECONDS - started))s"

@@ -692,11 +692,8 @@ func (mut self Lowerer) lowerForPostTarget(con syntax ast.Program, expression in
     if kind == "Expr.Var" {
         return self.lowerExpression(con syntax, expression, con checked)
     }
-    if kind == "Expr.FieldAccess" {
-        if ast.ChildCount(con syntax, expression) != 1 {
-            return Err(newError("checked for post field target is malformed", ast.Span(con syntax, expression)))
-        }
-        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+    if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
+        match self.lowerAssignmentTargetExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
             case Ok(base) {
                 return Ok(self.addNode("E", "Expr.FieldAccess", ast.Value(con syntax, expression), token.CopyText(con expectedType), ast.Span(con syntax, expression), []int{base}, semantic.NodeNeedsCleanup(con checked, expression)))
             }
@@ -705,22 +702,24 @@ func (mut self Lowerer) lowerForPostTarget(con syntax ast.Program, expression in
             }
         }
     }
-    if kind == "Expr.Index" {
-        if ast.ChildCount(con syntax, expression) != 2 {
-            return Err(newError("checked for post index target is malformed", ast.Span(con syntax, expression)))
-        }
-        mut children := []int{}
-        for mut child := 0; child < 2; child = child + 1 {
-            match self.lowerExpression(con syntax, ast.Child(con syntax, expression, child), con checked) {
-                case Ok(lowered) {
-                    children = append(children, lowered)
-                }
-                case Err(error) {
-                    return Err(error)
-                }
+    if kind == "Expr.Index" && ast.ChildCount(con syntax, expression) == 2 {
+        mut base := -1
+        match self.lowerAssignmentTargetExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
             }
         }
-        return Ok(self.addNode("E", "Expr.Index", "", token.CopyText(con expectedType), ast.Span(con syntax, expression), children, semantic.NodeNeedsCleanup(con checked, expression)))
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+            case Ok(index) {
+                return Ok(self.addNode("E", "Expr.Index", "", token.CopyText(con expectedType), ast.Span(con syntax, expression), []int{base, index,}, semantic.NodeNeedsCleanup(con checked, expression)))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
     }
     return Err(newError("checked for post assignment target is invalid", ast.Span(con syntax, expression)))
 }
@@ -947,7 +946,7 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
         base := ast.Child(con syntax, statement, 0)
         expression := ast.Child(con syntax, statement, 1)
         mut children := []int{}
-        match self.lowerExpression(con syntax, base, con checked) {
+        match self.lowerAssignmentTargetExpression(con syntax, base, con checked) {
             case Ok(irBase) {
                 children = append(children, irBase)
             }
@@ -967,7 +966,15 @@ func (mut self Lowerer) lowerStatement(con syntax ast.Program, statement int, co
     }
     if kind == "Stmt.IndexAssign" {
         mut children := []int{}
-        for mut child := 0; child < ast.ChildCount(con syntax, statement); child = child + 1 {
+        match self.lowerAssignmentTargetExpression(con syntax, ast.Child(con syntax, statement, 0), con checked) {
+            case Ok(irBase) {
+                children = append(children, irBase)
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        for mut child := 1; child < ast.ChildCount(con syntax, statement); child = child + 1 {
             syntaxChild := ast.Child(con syntax, statement, child)
             match self.lowerExpression(con syntax, syntaxChild, con checked) {
                 case Ok(irChild) {
@@ -1240,14 +1247,28 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
                 return Err(newError("checked append argument mode is invalid", ast.Span(con syntax, expression)))
             }
             mut appendChildren := []int{}
-            match self.lowerExpression(con syntax, ast.Child(con syntax, sliceArgument, 0), con checked) {
-                case Ok(slice) {
-                    appendChildren = append(appendChildren, slice)
+            sliceExpression := ast.Child(con syntax, sliceArgument, 0)
+            mut loweredSlice := -1
+            if ast.Kind(con syntax, sliceExpression) == "Expr.FieldAccess" && isDirectReadExpression(con syntax, sliceExpression) {
+                match self.lowerBorrowExpression(con syntax, sliceExpression, con checked) {
+                    case Ok(slice) {
+                        loweredSlice = slice
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
                 }
-                case Err(error) {
-                    return Err(error)
+            } else {
+                match self.lowerExpression(con syntax, sliceExpression, con checked) {
+                    case Ok(slice) {
+                        loweredSlice = slice
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
                 }
             }
+            appendChildren = append(appendChildren, loweredSlice)
             match self.lowerExpression(con syntax, ast.Child(con syntax, itemArgument, 0), con checked) {
                 case Ok(item) {
                     appendChildren = append(appendChildren, item)
@@ -1336,9 +1357,23 @@ func (mut self Lowerer) lowerExpression(con syntax ast.Program, expression int, 
     }
 
     if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
-        match self.lowerTemporaryPlaceExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+        baseExpression := ast.Child(con syntax, expression, 0)
+        match self.lowerTemporaryPlaceExpression(con syntax, baseExpression, con checked) {
             case Ok(base) {
-                return Ok(self.addNode("E", "Expr.FieldAccess", token.CopyText(con value), token.CopyText(con ty), ast.Span(con syntax, expression), []int{base}, cleanup))
+                source := self.addNode("E", "Expr.FieldAccess", token.CopyText(con value), token.CopyText(con ty), ast.Span(con syntax, expression), []int{base}, cleanup)
+                if isDirectReadExpression(con syntax, baseExpression) {
+                    match semantic.NodeTypeKind(con checked, expression) {
+                        case Ok(typeKind) {
+                            if typeKind == "slice" {
+                                return Ok(self.addNode("E", "Expr.SliceFieldTake", "", token.CopyText(con ty), ast.Span(con syntax, expression), []int{source}, cleanup))
+                            }
+                        }
+                        case Err(_) {
+                            return Err(newError("checked field type kind is missing", ast.Span(con syntax, expression)))
+                        }
+                    }
+                }
+                return Ok(source)
             }
             case Err(error) {
                 return Err(error)
@@ -1564,7 +1599,7 @@ func (mut self Lowerer) lowerArgument(con syntax ast.Program, argument int, con 
 
 func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
     if isDirectReadExpression(con syntax, expression) {
-        return self.lowerExpression(con syntax, expression, con checked)
+        return self.lowerBorrowExpression(con syntax, expression, con checked)
     }
     kind := ast.Kind(con syntax, expression)
     if kind == "Expr.FieldAccess" || kind == "Expr.Index" {
@@ -1583,9 +1618,111 @@ func (mut self Lowerer) lowerReadExpression(con syntax ast.Program, expression i
     return self.wrapFullExpressionTemporary(con syntax, expression, lowered, con checked)
 }
 
+func (mut self Lowerer) lowerAssignmentTargetExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.Var" {
+        return self.lowerExpression(con syntax, expression, con checked)
+    }
+    if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
+        match self.lowerAssignmentTargetExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(base) {
+                match semantic.NodeType(con checked, expression) {
+                    case Ok(ty) {
+                        return Ok(self.addNode("E", "Expr.FieldAccess", ast.Value(con syntax, expression), ty, ast.Span(con syntax, expression), []int{base}, semantic.NodeNeedsCleanup(con checked, expression)))
+                    }
+                    case Err(_) {
+                        return Err(newError("checked assignment field type is missing", ast.Span(con syntax, expression)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Index" && ast.ChildCount(con syntax, expression) == 2 {
+        mut base := -1
+        match self.lowerAssignmentTargetExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+            case Ok(index) {
+                match semantic.NodeType(con checked, expression) {
+                    case Ok(ty) {
+                        return Ok(self.addNode("E", "Expr.Index", "", ty, ast.Span(con syntax, expression), []int{base, index,}, semantic.NodeNeedsCleanup(con checked, expression)))
+                    }
+                    case Err(_) {
+                        return Err(newError("checked assignment index type is missing", ast.Span(con syntax, expression)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Err(newError("checked assignment target is invalid", ast.Span(con syntax, expression)))
+}
+
+func (mut self Lowerer) lowerBorrowExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
+    kind := ast.Kind(con syntax, expression)
+    if kind == "Expr.Var" {
+        return self.lowerExpression(con syntax, expression, con checked)
+    }
+    if kind == "Expr.FieldAccess" && ast.ChildCount(con syntax, expression) == 1 {
+        match self.lowerBorrowExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(base) {
+                match semantic.NodeType(con checked, expression) {
+                    case Ok(ty) {
+                        return Ok(self.addNode("E", "Expr.FieldAccess", ast.Value(con syntax, expression), ty, ast.Span(con syntax, expression), []int{base}, semantic.NodeNeedsCleanup(con checked, expression)))
+                    }
+                    case Err(_) {
+                        return Err(newError("checked borrow field type is missing", ast.Span(con syntax, expression)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if kind == "Expr.Index" && ast.ChildCount(con syntax, expression) == 2 {
+        mut base := -1
+        match self.lowerBorrowExpression(con syntax, ast.Child(con syntax, expression, 0), con checked) {
+            case Ok(value) {
+                base = value
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        match self.lowerExpression(con syntax, ast.Child(con syntax, expression, 1), con checked) {
+            case Ok(index) {
+                match semantic.NodeType(con checked, expression) {
+                    case Ok(ty) {
+                        return Ok(self.addNode("E", "Expr.Index", "", ty, ast.Span(con syntax, expression), []int{base, index,}, semantic.NodeNeedsCleanup(con checked, expression)))
+                    }
+                    case Err(_) {
+                        return Err(newError("checked borrow index type is missing", ast.Span(con syntax, expression)))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    return Err(newError("checked borrow expression is not a direct place", ast.Span(con syntax, expression)))
+}
+
 func (mut self Lowerer) lowerTemporaryPlaceExpression(con syntax ast.Program, expression int, con checked semantic.CheckedProgram) Result[int, Error] {
     if isDirectReadExpression(con syntax, expression) {
-        return self.lowerExpression(con syntax, expression, con checked)
+        return self.lowerBorrowExpression(con syntax, expression, con checked)
     }
 
     kind := ast.Kind(con syntax, expression)
@@ -2589,6 +2726,9 @@ func copyInts(con values []int) []int {
 }
 
 func normalizeNode(con program Program, node int, depth int) string {
+    if program.nodes[node].kind == "Expr.SliceFieldTake" && len(program.nodes[node].children) == 1 {
+        return normalizeNode(con program, program.nodes[node].children[0], depth)
+    }
     span := source.Copy(con program.nodes[node].span)
     mut output := strings.join(con []string{"I|", strings.fromInt(depth), "|", token.CopyText(con program.nodes[node].category), "|", token.CopyText(con program.nodes[node].kind), "|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con program.nodes[node].value), "|", token.CopyText(con program.nodes[node].ty), "|", strings.fromInt(len(program.nodes[node].children)),}, con "")
     for mut child := 0; child < len(program.nodes[node].children); child = child + 1 {

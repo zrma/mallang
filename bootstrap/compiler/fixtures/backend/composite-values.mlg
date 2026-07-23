@@ -4,6 +4,14 @@ type Bundle struct {
     labels []string
 }
 
+func makeDiscardedBundle() Bundle {
+    return Bundle{
+        title: "discarded",
+        fixed: [2]int{9, 10},
+        labels: []string{"unused"},
+    }
+}
+
 func main() {
     fixed := [3]int{4, 5, 6}
     print(fixed[1])
@@ -20,4 +28,6 @@ func main() {
     print(bundle.title)
     print(bundle.fixed[0])
     print(len(bundle.labels))
+
+    makeDiscardedBundle()
 }

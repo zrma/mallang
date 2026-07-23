@@ -227,6 +227,15 @@ pub func NodeType(con checked CheckedProgram, node int) Result[string, bool] {
     return Err(false)
 }
 
+pub func NodeTypeKind(con checked CheckedProgram, node int) Result[string, bool] {
+    for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
+        if checked.typedNodes[index].node == node {
+            return Ok(token.CopyText(con checked.typedNodes[index].ty.kind))
+        }
+    }
+    return Err(false)
+}
+
 pub func NodeNeedsCleanup(con checked CheckedProgram, node int) bool {
     for mut index := 0; index < len(checked.typedNodes); index = index + 1 {
         if checked.typedNodes[index].node == node {
