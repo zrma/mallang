@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+failure_stage="initialization"
+report_failure() {
+  local status=$?
+  local source_line="${BASH_LINENO[0]:-unknown}"
+  printf 'release artifact smoke failed during %s at line %s (status %s)\n' \
+    "$failure_stage" "$source_line" "$status" >&2
+  exit "$status"
+}
+trap report_failure ERR
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -22,18 +32,21 @@ project="$work/project"
 rm -rf "$work"
 mkdir -p "$first" "$second" "$offline" "$project/src" "$project/tests"
 
+failure_stage="first release archive build"
 if ! first_archive="$(
   scripts/build-release-artifact.sh --version "$crate_version" --output-dir "$first"
 )"; then
   echo "first release archive build failed" >&2
   exit 1
 fi
+failure_stage="second release archive build"
 if ! second_archive="$(
   scripts/build-release-artifact.sh --version "$crate_version" --output-dir "$second"
 )"; then
   echo "second release archive build failed" >&2
   exit 1
 fi
+failure_stage="archive reproducibility and checksum setup"
 if ! cmp -s "$first_archive" "$second_archive"; then
   echo "repeated release archive builds are not byte-identical" >&2
   exit 1
@@ -84,6 +97,7 @@ if [[ "$(wc -l <"$work/combined/SHA256SUMS" | tr -d ' ')" != "2" ]] || \
 fi
 
 mkdir -p "$work/tampered"
+failure_stage="tampered archive rejection"
 cp "$offline/$archive_name" "$work/tampered/$archive_name"
 printf 'tampered' >>"$work/tampered/$archive_name"
 if ./install.sh \
@@ -104,6 +118,7 @@ if [[ -s "$work/tampered.stdout" ]] || \
 fi
 
 mkdir -p "$work/malformed"
+failure_stage="malformed archive rejection"
 python3 - "$offline/$archive_name" "$work/malformed/$archive_name" <<'PY'
 import gzip
 import io
@@ -153,6 +168,7 @@ if [[ -s "$work/malformed.stdout" ]] || \
 fi
 
 mkdir -p "$work/symlink"
+failure_stage="symlink archive rejection"
 python3 - "$offline/$archive_name" "$work/symlink/$archive_name" <<'PY'
 import gzip
 from pathlib import Path
@@ -202,6 +218,7 @@ install_args=(
   --archive "$offline/$archive_name"
   --checksums "$offline/SHA256SUMS"
 )
+failure_stage="clean dual-binary installation"
 HOME="$home" ./install.sh "${install_args[@]}" >"$work/install-default.stdout"
 HOME="$home" ./install.sh "${install_args[@]}" >"$work/reinstall-default.stdout"
 installed="$home/.local/bin/mlg"
@@ -251,6 +268,7 @@ cp examples/projects/hello/mallang.toml "$project/"
 cp -R examples/projects/hello/src/. "$project/src/"
 cp -R examples/projects/hello/tests/. "$project/tests/"
 
+failure_stage="installed self-hosted compiler workflow"
 "$installed" check "$project" >"$work/project-check.stdout" 2>"$work/project-check.stderr"
 "$installed" build "$project" -o "$work/hello" >"$work/project-build.stdout" 2>"$work/project-build.stderr"
 if [[ "$(cat "$work/project-check.stdout")" != "$project: ok" ]] || \
@@ -292,6 +310,7 @@ if [[ "$test_output" != "$expected_test_output" ]]; then
 fi
 
 rollback_bin="$work/offline-rollback/bin"
+failure_stage="offline Stage0 rollback"
 mkdir -p "$rollback_bin"
 cp "$installed" "$rollback_bin/mlg"
 if "$rollback_bin/mlg" check examples/first.mlg \
