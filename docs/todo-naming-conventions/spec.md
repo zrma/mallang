@@ -1,6 +1,6 @@
 # Naming Conventions Design Debt
 
-Status: active; P181 compatible naming lint implementation
+Status: deferred; P181 naming lint complete, reference-aware fixes require 2.0 planning
 
 ## Problem
 
@@ -88,7 +88,9 @@ reference-aware renaming belongs to an explicit fix or IDE code action.
 - [x] Separate visibility from role-based casing.
 - [x] Record the target casing matrix and 1.x compatibility boundary.
 - [x] Reserve formatter behavior as non-renaming.
-- [ ] Inventory current violations and publish lint rule IDs.
-- [ ] Implement `mlg lint` warnings and machine-readable diagnostics.
+- [x] Inventory declaration roles and publish `MLG-NAME-001` through
+  `MLG-NAME-009`.
+- [x] Implement Stage0/self `mlg lint` warnings, JSON diagnostics, explicit
+  `--allow <rule-id>` suppression, and opt-in `--deny-warnings`.
 - [ ] Implement explicit reference-aware naming fixes.
 - [ ] Plan and verify the 2.0 hard-error migration.

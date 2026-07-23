@@ -8,6 +8,7 @@ pub mod ir;
 pub mod ir_protocol;
 pub mod lexer;
 pub mod linker;
+pub mod lint;
 pub mod package;
 pub mod parser;
 pub mod project;
@@ -37,6 +38,10 @@ pub use ir::{lower, lower_test, IrError, IrProgram};
 pub use ir_protocol::normalize_ir;
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
 pub use linker::{display_linked_message, link_project, link_standalone, LinkError};
+pub use lint::{
+    canonical_name_rule, is_known_name_rule, is_lower_snake_case, lint_program_names,
+    naming_message, LintFinding, NAME_RULE_IDS, PROJECT_CASE_RULE,
+};
 pub use package::{
     build_package_graph, build_standalone_package_graph, Package, PackageDeclaration,
     PackageDeclarationKind, PackageError, PackageGraph, PackageImport, PackageTest,

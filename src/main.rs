@@ -9,15 +9,15 @@ use std::{
 };
 
 use mallang::{
-    check_project_sources_with_diagnostics, check_sources_with_diagnostics, discover_project,
-    format_source, generate_c_project_sources_with_diagnostics,
-    generate_c_sources_with_diagnostics, lex_with_source, load_source_files,
+    canonical_name_rule, check_project_sources_with_diagnostics, check_sources_with_diagnostics,
+    discover_project, format_source, generate_c_project_sources_with_diagnostics,
+    generate_c_sources_with_diagnostics, lex_with_source, lint_program_names, load_source_files,
     lower_project_sources_with_diagnostics, lower_sources_with_diagnostics,
     materialize_project_plan, normalize_ir, parse_sources_with_diagnostics,
     prepare_project_tests_with_diagnostics, resolve_project_dependency, resolve_project_manifest,
-    CompilerError, Diagnostic, DiagnosticStage, FormatError, FrontendError, PackageTest,
-    PathDependency, Project, ProjectManifest, ProjectMaterializationError, ProjectMetadata,
-    ProjectPlanUnit, SourceId, SourceLoadError, SourceMap,
+    CompilerError, Diagnostic, DiagnosticStage, FormatError, FrontendError, LintFinding,
+    PackageTest, PathDependency, Project, ProjectManifest, ProjectMaterializationError,
+    ProjectMetadata, ProjectPlanUnit, SourceId, SourceLoadError, SourceMap, PROJECT_CASE_RULE,
 };
 
 const SELF_COMPILER_BINARY: &str = "mlgc";
@@ -170,6 +170,8 @@ fn main() {
                 .and_then(|args| run_parse(&program, &args, &options.compiler)),
             Some("check") => utf8_cli_args(command_args)
                 .and_then(|args| run_check(&program, &args, &options.compiler)),
+            Some("lint") => utf8_cli_args(command_args)
+                .and_then(|args| run_lint(&program, &args, diagnostic_format, &options.compiler)),
             Some("fmt") => utf8_cli_args(command_args)
                 .and_then(|args| run_fmt(&program, &args, &options.compiler)),
             Some("ir") => utf8_cli_args(command_args)
@@ -380,6 +382,10 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} lex <source-file>")?;
     writeln!(output, "  {program} parse <source-file>")?;
     writeln!(output, "  {program} check <input>")?;
+    writeln!(
+        output,
+        "  {program} lint [--allow <rule-id>] [--deny-warnings] <input>"
+    )?;
     writeln!(output, "  {program} fmt [--check] <input>")?;
     writeln!(output, "  {program} ir <input>")?;
     writeln!(output, "  {program} build <input> [-o <output>]")?;
@@ -634,6 +640,173 @@ fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> Cl
     }
     println!("{path}: ok");
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LintOptions<'a> {
+    input: &'a str,
+    allowed_rules: BTreeSet<String>,
+    deny_warnings: bool,
+}
+
+fn parse_lint_options<'a>(program: &str, args: &'a [String]) -> CliResult<LintOptions<'a>> {
+    let mut allowed_rules = BTreeSet::new();
+    let mut deny_warnings = false;
+    let mut input = None;
+    let mut index = 0;
+
+    while let Some(argument) = args.get(index) {
+        if argument == "--allow" {
+            let rule_id = args
+                .get(index + 1)
+                .ok_or_else(|| CliError::cli("missing value for --allow"))?;
+            add_allowed_name_rule(&mut allowed_rules, rule_id)?;
+            index += 2;
+            continue;
+        }
+        if let Some(rule_id) = argument.strip_prefix("--allow=") {
+            add_allowed_name_rule(&mut allowed_rules, rule_id)?;
+            index += 1;
+            continue;
+        }
+        if argument == "--deny-warnings" {
+            if deny_warnings {
+                return Err(CliError::cli("duplicate --deny-warnings option"));
+            }
+            deny_warnings = true;
+            index += 1;
+            continue;
+        }
+        if argument.starts_with('-') {
+            return Err(CliError::cli(format!("unknown lint argument `{argument}`")));
+        }
+        if input.replace(argument.as_str()).is_some() {
+            return Err(CliError::cli(format!(
+                "usage: {program} lint [--allow <rule-id>] [--deny-warnings] <input>"
+            )));
+        }
+        index += 1;
+    }
+
+    let input = input.ok_or_else(|| {
+        CliError::cli(format!(
+            "usage: {program} lint [--allow <rule-id>] [--deny-warnings] <input>"
+        ))
+    })?;
+    Ok(LintOptions {
+        input,
+        allowed_rules,
+        deny_warnings,
+    })
+}
+
+fn add_allowed_name_rule(allowed_rules: &mut BTreeSet<String>, rule_id: &str) -> CliResult<()> {
+    let rule_id = canonical_name_rule(rule_id)
+        .ok_or_else(|| CliError::cli(format!("unknown naming lint rule `{rule_id}`")))?;
+    allowed_rules.insert(rule_id.to_string());
+    Ok(())
+}
+
+fn run_lint(
+    program: &str,
+    args: &[String],
+    diagnostic_format: DiagnosticFormat,
+    compiler: &CompilerSelection,
+) -> CliResult<()> {
+    let options = parse_lint_options(program, args)?;
+    let input = load_compilation_input(options.input, compiler)?;
+    let mut diagnostics = match input {
+        CompilationInput::Standalone { sources, source_id } => {
+            lint_source_input(options.input, &sources, &[source_id], None, compiler)?
+        }
+        CompilationInput::Project {
+            project,
+            sources,
+            source_ids,
+        } => {
+            let mut diagnostics = Vec::new();
+            if !mallang::is_lower_snake_case(project.name()) {
+                let message = mallang::naming_message(PROJECT_CASE_RULE, project.name())
+                    .expect("project naming rule must have a message");
+                diagnostics.push(
+                    Diagnostic::warning(DiagnosticStage::Lint, message)
+                        .with_code(PROJECT_CASE_RULE)
+                        .with_path(project.diagnostic_path(project.manifest_path())),
+                );
+            }
+            diagnostics.extend(lint_source_input(
+                options.input,
+                &sources,
+                &source_ids,
+                Some(&project),
+                compiler,
+            )?);
+            diagnostics
+        }
+    };
+    diagnostics.retain(|diagnostic| {
+        diagnostic
+            .code
+            .as_ref()
+            .is_none_or(|code| !options.allowed_rules.contains(code))
+    });
+
+    let has_warnings = !diagnostics.is_empty();
+    emit_diagnostics(CliError::many(diagnostics), diagnostic_format);
+    if options.deny_warnings && has_warnings {
+        return Err(CliError::many(Vec::new()));
+    }
+    Ok(())
+}
+
+fn lint_source_input(
+    input_path: &str,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+    project: Option<&Project>,
+    compiler: &CompilerSelection,
+) -> CliResult<Vec<Diagnostic>> {
+    let findings = match compiler.implementation {
+        CompilerImplementation::Stage0 => {
+            let program = parse_sources_with_diagnostics(sources, source_ids)
+                .map_err(|errors| frontend_diagnostics(sources, errors))?;
+            lint_program_names(&program)
+        }
+        CompilerImplementation::SelfHosted => {
+            let mut args = vec![OsString::from("lint-sources")];
+            for source_id in source_ids {
+                let source = sources.file(*source_id).ok_or_else(|| {
+                    self_hosted_protocol_error(
+                        input_path,
+                        format!(
+                            "source ID {} is missing from the source map",
+                            source_id.index()
+                        ),
+                    )
+                })?;
+                args.push(source.path().as_os_str().to_owned());
+            }
+            let stdout = invoke_self_hosted_compiler_args(&args, input_path, compiler)?;
+            finish_self_hosted_lint(input_path, &stdout, sources, project)?
+        }
+    };
+    Ok(findings
+        .into_iter()
+        .map(|finding| lint_diagnostic(finding, sources, project))
+        .collect())
+}
+
+fn lint_diagnostic(
+    finding: LintFinding,
+    sources: &SourceMap,
+    project: Option<&Project>,
+) -> Diagnostic {
+    let display_path = sources
+        .file(finding.span.source)
+        .and_then(|source| project.map(|project| project.diagnostic_path(source.path())));
+    Diagnostic::warning(DiagnosticStage::Lint, finding.message())
+        .with_code(finding.rule_id)
+        .with_span(sources, finding.span, display_path.as_deref())
 }
 
 fn run_fmt(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
@@ -1667,6 +1840,77 @@ fn finish_self_hosted_check(
     ))
 }
 
+fn finish_self_hosted_lint(
+    input_path: &str,
+    stdout: &str,
+    sources: &SourceMap,
+    project: Option<&Project>,
+) -> CliResult<Vec<LintFinding>> {
+    let Some(first_line) = stdout.lines().next() else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "lint response is empty",
+        ));
+    };
+    if first_line.starts_with("PERR|") {
+        return Err(CliError::many(
+            parse_self_hosted_diagnostics(stdout, sources, project)
+                .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+        ));
+    }
+    parse_self_hosted_lint_findings(stdout, sources)
+        .map_err(|detail| self_hosted_protocol_error(input_path, detail))
+}
+
+fn parse_self_hosted_lint_findings(
+    output: &str,
+    sources: &SourceMap,
+) -> Result<Vec<LintFinding>, String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    let header = lines
+        .first()
+        .ok_or_else(|| "lint response is empty".to_string())?
+        .split('|')
+        .collect::<Vec<_>>();
+    if header.len() != 3 || header[0] != "LINT" || header[1] != "1" {
+        return Err("invalid LINT response header".to_string());
+    }
+    let expected_count = parse_self_hosted_count(header[2], "lint finding count")?;
+    if lines.len() != expected_count + 1 {
+        return Err("lint finding count does not match its header".to_string());
+    }
+
+    let mut findings = Vec::with_capacity(expected_count);
+    for line in &lines[1..] {
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 6 || fields[0] != "L" {
+            return Err("invalid lint finding record".to_string());
+        }
+        let source_index = parse_self_hosted_usize(fields[1], "lint source ID")?;
+        let start = parse_self_hosted_usize(fields[2], "lint span start")?;
+        let end = parse_self_hosted_usize(fields[3], "lint span end")?;
+        let source_id = SourceId::new(source_index);
+        validate_self_hosted_source_span(sources, source_id, start, end, "lint")?;
+        let rule_id = canonical_name_rule(fields[4])
+            .ok_or_else(|| format!("unknown naming lint rule `{}`", fields[4]))?;
+        let name = decode_self_hosted_bytes(fields[5])?;
+        findings.push(LintFinding {
+            rule_id,
+            name,
+            span: mallang::Span::new(source_id, start, end),
+        });
+    }
+    findings.sort_by_key(|finding| {
+        (
+            finding.span.source.index(),
+            finding.span.start,
+            finding.span.end,
+            finding.rule_id,
+        )
+    });
+    Ok(findings)
+}
+
 fn finish_self_hosted_ir(
     input_path: &str,
     stdout: String,
@@ -2460,13 +2704,15 @@ fn project_source_load_error(project: &Project, error: SourceLoadError) -> CliEr
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeSet,
         ffi::OsString,
         path::{Path, PathBuf},
     };
 
     use super::{
         child_signal_diagnostic, finish_self_hosted_format, parse_assertion_marker,
-        parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_lex_diagnostic,
+        parse_global_options, parse_lint_options, parse_self_hosted_diagnostics,
+        parse_self_hosted_lex_diagnostic, parse_self_hosted_lint_findings,
         parse_self_hosted_manifest_response, parse_self_hosted_native_response,
         parse_self_hosted_project_plan_response, parse_self_hosted_test_response,
         validate_self_hosted_ast, validate_self_hosted_ir, validate_self_hosted_lex,
@@ -2955,6 +3201,60 @@ mod tests {
             Some((3, 42))
         );
         assert_eq!(parse_assertion_marker("ordinary stderr"), None);
+    }
+
+    #[test]
+    fn parses_naming_lint_controls() {
+        let args = vec![
+            "--allow".to_string(),
+            "MLG-NAME-004".to_string(),
+            "--allow=MLG-NAME-008".to_string(),
+            "--deny-warnings".to_string(),
+            "src/main.mlg".to_string(),
+        ];
+        let options = parse_lint_options("mlg", &args).unwrap();
+        assert_eq!(options.input, "src/main.mlg");
+        assert_eq!(
+            options.allowed_rules,
+            BTreeSet::from(["MLG-NAME-004".to_string(), "MLG-NAME-008".to_string()])
+        );
+        assert!(options.deny_warnings);
+
+        let error = parse_lint_options("mlg", &["--allow".to_string(), "MLG-NAME-999".to_string()])
+            .unwrap_err();
+        assert_eq!(
+            error.diagnostics[0].render_human(),
+            "unknown naming lint rule `MLG-NAME-999`"
+        );
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_lint_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("src/main.mlg", "package BadPackage\n");
+        let response = format!(
+            "LINT|1|1\nL|0|0|18|MLG-NAME-008|{}\n",
+            encoded("BadPackage")
+        );
+        let findings = parse_self_hosted_lint_findings(&response, &sources).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "MLG-NAME-008");
+        assert_eq!(findings[0].name, "BadPackage");
+
+        for malformed in [
+            "",
+            "LINT|2|0\n",
+            "LINT|1|1\n",
+            "LINT|1|0\nL|0|0|18|MLG-NAME-008|66\n",
+            "LINT|1|1\nL|1|0|18|MLG-NAME-008|66\n",
+            "LINT|1|1\nL|0|18|0|MLG-NAME-008|66\n",
+            "LINT|1|1\nL|0|0|18|MLG-NAME-999|66\n",
+        ] {
+            assert!(
+                parse_self_hosted_lint_findings(malformed, &sources).is_err(),
+                "response should be rejected: {malformed:?}"
+            );
+        }
     }
 
     #[cfg(unix)]

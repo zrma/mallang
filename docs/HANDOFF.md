@@ -936,3 +936,11 @@ and refuses to publish if `main@origin` no longer matches the local `main` base.
 The `--no-push` dry run exercises the same freshness checks but stops before
 bookmark movement and push. After real push, the helper fetches again and
 verifies `main@origin` points at the published commit.
+
+P181은 visibility와 identifier role을 분리했다. `pub`만 package exposure를
+결정하며 대소문자는 1.x에서 source acceptance에 영향을 주지 않는다.
+`mlg lint`는 Stage0/self parser가 동일한 `MLG-NAME-001`부터
+`MLG-NAME-009`까지의 human/JSON warning을 내고, explicit
+`--allow <rule-id>` suppression과 CI용 `--deny-warnings`를 제공한다.
+`mlg fmt`는 identifier를 변경하지 않으며 reference-aware rename과 hard-error
+전환은 2.0 migration boundary로 남는다.

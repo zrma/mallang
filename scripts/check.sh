@@ -147,6 +147,7 @@ scripts/build-self-hosted-compiler.sh \
   --stage0 target/debug/mlg \
   --output target/debug/mlgc \
   >/dev/null
+scripts/check-naming-lint.sh target/debug/mlg target/debug/mlgc
 crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
 version_output="$("${CARGO[@]}" run --quiet --bin mlg -- --version)"
 if [[ "$version_output" != "mlg $crate_version" ]]; then
@@ -158,6 +159,7 @@ help_stderr="target/mallang/help.stderr"
 help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
 if [[ "$help_output" != *"usage:"* || \
   "$help_output" != *"target/debug/mlg check <input>"* || \
+  "$help_output" != *"target/debug/mlg lint [--allow <rule-id>] [--deny-warnings] <input>"* || \
   "$help_output" != *"target/debug/mlg ir <input>"* || \
   "$help_output" != *"target/debug/mlg fmt [--check] <input>"* || \
   "$help_output" != *"target/debug/mlg test <input> [--exact <test-id>]"* || \

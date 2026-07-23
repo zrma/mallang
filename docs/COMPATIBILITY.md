@@ -142,9 +142,11 @@ Every source-visible or distribution-visible change after the freeze records:
 If compatibility impact is unclear, the change does not enter a release until a
 decision gate resolves it.
 
-## Deferred naming enforcement
+## Naming enforcement
 
 Identifier casing remains non-semantic throughout 1.x; only explicit `pub`
-controls package visibility. The approved role-based naming target, lint and
-reference-aware fix sequence, and 2.0 hard-error boundary are documented in
+controls package visibility. The compatible `mlg lint` warning surface uses
+stable role IDs, supports explicit `--allow <rule-id>` suppression, and changes
+status only when `--deny-warnings` is requested. Reference-aware fixes and hard
+errors remain a 2.0 migration boundary documented in
 `docs/todo-naming-conventions/`. `mlg fmt` does not rename identifiers.

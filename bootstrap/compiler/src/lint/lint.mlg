@@ -1,0 +1,189 @@
+package lint
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+pub type Finding struct {
+    ruleId string
+    name string
+    span source.Span
+}
+
+type Collector struct {
+    findings []Finding
+}
+
+pub func Collect(con program ast.Program) []Finding {
+    mut collector := Collector{findings: []Finding{},}
+    collector.collectNode(con program, ast.Root(con program))
+    return collector.findings
+}
+
+pub func RuleId(con finding Finding) string {
+    return copyText(con finding.ruleId)
+}
+
+pub func Name(con finding Finding) string {
+    return copyText(con finding.name)
+}
+
+pub func Span(con finding Finding) source.Span {
+    return source.Copy(con finding.span)
+}
+
+func (mut self Collector) collectNode(con program ast.Program, node int) {
+    kind := ast.Kind(con program, node)
+    name := ast.Value(con program, node)
+    span := ast.Span(con program, node)
+
+    if kind == "PackageDecl" {
+        self.checkName(con "MLG-NAME-008", con name, con span, con "lower_snake_case")
+    } else if kind == "StructDecl.Public" || kind == "StructDecl.Package" || kind == "EnumDecl.Public" || kind == "EnumDecl.Package" {
+        self.checkName(con "MLG-NAME-001", con name, con span, con "PascalCase")
+    } else if kind == "EnumVariant" {
+        self.checkName(con "MLG-NAME-002", con name, con span, con "PascalCase")
+    } else if kind == "TypeParam" {
+        self.checkName(con "MLG-NAME-003", con name, con span, con "PascalCase")
+    } else if kind == "FunctionDecl.Public" || kind == "FunctionDecl.Package" {
+        self.checkName(con "MLG-NAME-004", con name, con span, con "lowerCamelCase")
+    } else if kind == "Param.Owned" || kind == "Param.Con" || kind == "Param.Mut" || kind == "ReceiverParam.Owned" || kind == "ReceiverParam.Con" || kind == "ReceiverParam.Mut" || kind == "Stmt.Let.Immutable" || kind == "Stmt.Let.Mutable" || kind == "ForInit.Let.Immutable" || kind == "ForInit.Let.Mutable" || kind == "Pattern.Some" || kind == "Pattern.Ok" || kind == "Pattern.Err" || kind == "Pattern.Binding" {
+        self.checkName(con "MLG-NAME-005", con name, con span, con "lowerCamelCase")
+    } else if kind == "Stmt.RangeFor" {
+        self.checkRangeNames(con name, con span)
+    } else if kind == "FieldDecl" {
+        self.checkName(con "MLG-NAME-006", con name, con span, con "lowerCamelCase")
+    } else if kind == "TestDecl" {
+        self.checkName(con "MLG-NAME-007", con name, con span, con "PascalCase")
+    }
+
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        self.collectNode(con program, ast.Child(con program, node, child))
+    }
+}
+
+func (mut self Collector) checkRangeNames(con value string, con span source.Span) {
+    mut comma := -1
+    for mut index := 0; index < strings.byteLen(con value); index = index + 1 {
+        if byteAt(con value, index) == 44 {
+            comma = index
+        }
+    }
+    if comma >= 0 {
+        match strings.slice(con value, 0, comma) {
+            case Ok(indexName) {
+                self.checkName(con "MLG-NAME-005", con indexName, con span, con "lowerCamelCase")
+            }
+            case Err(_) {}
+        }
+        match strings.slice(con value, comma + 1, strings.byteLen(con value)) {
+            case Ok(valueName) {
+                self.checkName(con "MLG-NAME-005", con valueName, con span, con "lowerCamelCase")
+            }
+            case Err(_) {}
+        }
+    }
+}
+
+func (mut self Collector) checkName(con ruleId string, con name string, con span source.Span, con style string) {
+    if name != "_" {
+        mut valid := false
+        if style == "PascalCase" {
+            valid = isCamelCase(con name, true)
+        } else if style == "lowerCamelCase" {
+            valid = isCamelCase(con name, false)
+        } else {
+            valid = isLowerSnakeCase(con name)
+        }
+        if !valid {
+            self.findings = append(self.findings, Finding{ruleId: copyText(con ruleId), name: copyText(con name), span: source.Copy(con span)})
+        }
+    }
+}
+
+func isLowerSnakeCase(con name string) bool {
+    if strings.byteLen(con name) == 0 {
+        return false
+    }
+    first := byteAt(con name, 0)
+    if !isLower(first) {
+        return false
+    }
+    mut previousUnderscore := false
+    for mut index := 1; index < strings.byteLen(con name); index = index + 1 {
+        value := byteAt(con name, index)
+        if value == 95 {
+            if previousUnderscore {
+                return false
+            }
+            previousUnderscore = true
+        } else if isLower(value) || isDigit(value) {
+            previousUnderscore = false
+        } else {
+            return false
+        }
+    }
+    return !previousUnderscore
+}
+
+func isCamelCase(con name string, upperFirst bool) bool {
+    if strings.byteLen(con name) == 0 {
+        return false
+    }
+    first := byteAt(con name, 0)
+    if upperFirst {
+        if !isUpper(first) {
+            return false
+        }
+    } else if !isLower(first) {
+        return false
+    }
+    mut previousUpper := isUpper(first)
+    for mut index := 1; index < strings.byteLen(con name); index = index + 1 {
+        value := byteAt(con name, index)
+        if !isUpper(value) && !isLower(value) && !isDigit(value) {
+            return false
+        }
+        currentUpper := isUpper(value)
+        if previousUpper && currentUpper {
+            return false
+        }
+        previousUpper = currentUpper
+    }
+    return true
+}
+
+func isUpper(value int) bool {
+    return value >= 65 && value <= 90
+}
+
+func isLower(value int) bool {
+    return value >= 97 && value <= 122
+}
+
+func isDigit(value int) bool {
+    return value >= 48 && value <= 57
+}
+
+func byteAt(con text string, index int) int {
+    match strings.byteAt(con text, index) {
+        case Ok(value) {
+            return value
+        }
+        case Err(_) {
+            return - 1
+        }
+    }
+}
+
+func copyText(con text string) string {
+    return match strings.slice(con text, 0, strings.byteLen(con text)) {
+        case Ok(value) {
+            value
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}

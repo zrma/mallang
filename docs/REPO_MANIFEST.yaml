@@ -31,6 +31,7 @@ commands:
   check_self_hosting_string_cursor: scripts/check-self-hosting-string-cursor.sh target/mallang/string-cursor.c
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg
+  check_naming_lint: scripts/check-naming-lint.sh target/debug/mlg target/debug/mlgc
   check_parser_recovery: scripts/check-parser-recovery.sh target/debug/mlg
   check_v1_conformance: python3 scripts/check-v1-conformance.py
   check_v1_migration: scripts/check-v1-migration.sh target/debug/mlg

@@ -11,6 +11,7 @@ STAGES = {
     "frontend",
     "package",
     "link",
+    "lint",
     "semantic",
     "ir",
     "backend",
@@ -32,17 +33,20 @@ def validate_position(position, label):
 
 def validate_record(record):
     required = {"schema", "severity", "stage", "message"}
-    allowed = required | {"source"}
+    allowed = required | {"code", "source"}
     if not required.issubset(record) or not set(record).issubset(allowed):
         fail("record has missing or unexpected top-level fields")
     if record["schema"] != SCHEMA:
         fail(f"unsupported schema {record['schema']!r}")
-    if record["severity"] != "error":
-        fail("v1 consumer expects error severity")
+    if record["severity"] not in {"error", "warning"}:
+        fail(f"unknown severity {record['severity']!r}")
     if record["stage"] not in STAGES:
         fail(f"unknown stage {record['stage']!r}")
     if not isinstance(record["message"], str) or not record["message"]:
         fail("message must be a non-empty string")
+    code = record.get("code")
+    if code is not None and (not isinstance(code, str) or not code):
+        fail("code must be a non-empty string")
 
     source = record.get("source")
     if source is None:
@@ -68,19 +72,28 @@ def validate_record(record):
 
 
 def render_human(record):
+    message = record["message"]
+    code = record.get("code")
+    if record["severity"] == "warning":
+        label = f"warning[{code}]" if code else "warning"
+        message = f"{label}: {message}"
+    elif code:
+        message = f"[{code}] {message}"
     source = record.get("source")
     if source is None:
-        return record["message"]
+        return message
     span = source.get("span")
     if span is None:
-        return f"{source['path']}: {record['message']}"
+        return f"{source['path']}: {message}"
     start = span["start"]
-    return f"{source['path']}:{start['line']}:{start['column']}: {record['message']}"
+    return f"{source['path']}:{start['line']}:{start['column']}: {message}"
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--expect-stage", choices=sorted(STAGES))
+    parser.add_argument("--expect-severity", choices=["error", "warning"], default="error")
+    parser.add_argument("--expect-code-prefix")
     parser.add_argument("--expect-count", type=int, default=1)
     parser.add_argument("--expect-path")
     parser.add_argument("--expect-line-range")
@@ -105,6 +118,12 @@ def main():
         fail(f"expected {args.expect_count} records, got {len(records)}")
     if args.expect_stage and any(record["stage"] != args.expect_stage for record in records):
         fail(f"expected every record to use stage {args.expect_stage!r}")
+    if any(record["severity"] != args.expect_severity for record in records):
+        fail(f"expected every record to use severity {args.expect_severity!r}")
+    if args.expect_code_prefix and any(
+        not record.get("code", "").startswith(args.expect_code_prefix) for record in records
+    ):
+        fail(f"expected every record code to start with {args.expect_code_prefix!r}")
     if args.expect_path and any(
         record.get("source", {}).get("path") != args.expect_path for record in records
     ):

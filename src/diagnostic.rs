@@ -10,6 +10,7 @@ pub const DIAGNOSTIC_SCHEMA: &str = "mallang.diagnostic.v1";
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
     Error,
+    Warning,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -20,6 +21,7 @@ pub enum DiagnosticStage {
     Frontend,
     Package,
     Link,
+    Lint,
     Semantic,
     Ir,
     Backend,
@@ -67,6 +69,8 @@ pub struct Diagnostic {
     pub stage: DiagnosticStage,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<DiagnosticSource>,
 }
 
@@ -77,8 +81,25 @@ impl Diagnostic {
             severity: DiagnosticSeverity::Error,
             stage,
             message: message.into(),
+            code: None,
             source: None,
         }
+    }
+
+    pub fn warning(stage: DiagnosticStage, message: impl Into<String>) -> Self {
+        Self {
+            schema: DIAGNOSTIC_SCHEMA,
+            severity: DiagnosticSeverity::Warning,
+            stage,
+            message: message.into(),
+            code: None,
+            source: None,
+        }
+    }
+
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
     }
 
     pub fn with_path(mut self, path: impl AsRef<Path>) -> Self {
@@ -127,15 +148,23 @@ impl Diagnostic {
     }
 
     pub fn render_human(&self) -> String {
+        let message = match (&self.code, self.severity) {
+            (Some(code), DiagnosticSeverity::Warning) => {
+                format!("warning[{code}]: {}", self.message)
+            }
+            (Some(code), DiagnosticSeverity::Error) => format!("[{code}] {}", self.message),
+            (None, DiagnosticSeverity::Warning) => format!("warning: {}", self.message),
+            (None, DiagnosticSeverity::Error) => self.message.clone(),
+        };
         match &self.source {
             Some(source) => match source.span {
                 Some(span) => format!(
                     "{}:{}:{}: {}",
-                    source.path, span.start.line, span.start.column, self.message
+                    source.path, span.start.line, span.start.column, message
                 ),
-                None => format!("{}: {}", source.path, self.message),
+                None => format!("{}: {}", source.path, message),
             },
-            None => self.message.clone(),
+            None => message,
         }
     }
 
@@ -177,6 +206,23 @@ mod tests {
         assert_eq!(
             diagnostic.render_json(),
             r#"{"schema":"mallang.diagnostic.v1","severity":"error","stage":"input","message":"not formatted","source":{"path":"src/main.mlg"}}"#
+        );
+    }
+
+    #[test]
+    fn renders_warning_codes_in_human_and_json_diagnostics() {
+        let diagnostic =
+            Diagnostic::warning(DiagnosticStage::Lint, "type name should use PascalCase")
+                .with_code("MLG-NAME-001")
+                .with_path("src/main.mlg");
+
+        assert_eq!(
+            diagnostic.render_human(),
+            "src/main.mlg: warning[MLG-NAME-001]: type name should use PascalCase"
+        );
+        assert_eq!(
+            diagnostic.render_json(),
+            r#"{"schema":"mallang.diagnostic.v1","severity":"warning","stage":"lint","message":"type name should use PascalCase","code":"MLG-NAME-001","source":{"path":"src/main.mlg"}}"#
         );
     }
 

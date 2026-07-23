@@ -13,6 +13,7 @@ and normative v1 contract.
 - Compiler command shape: `mlg build`, not a separate long `mallangc` command
 - Run command shape: `mlg run`
 - Format command shape: `mlg fmt`
+- Naming lint shape: `mlg lint [--allow <rule-id>] [--deny-warnings] <input>`
 - Test command shape: `mlg test`
 - Machine diagnostic shape: `mlg --diagnostic-format json check <input>`
 - Version command shape: `mlg --version`
@@ -97,7 +98,7 @@ and normative v1 contract.
 - Integer arithmetic guards overflow before native execution can reach C signed
   overflow undefined behavior.
 - Multi-file projects use `mallang.toml`, an `src/` tree, directory packages,
-  explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg ir`,
+  explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg lint`, `mlg ir`,
   `mlg build`, and `mlg run` accept either a standalone `.mlg` file or a project
   directory or manifest. `mlg ir` emits the deterministic normalized
   self-hosting IR view rather than implementation-specific Rust debug output.
@@ -116,6 +117,10 @@ and normative v1 contract.
 - `mlg fmt` applies the comment-preserving canonical style. `mlg fmt --check`
   performs the same deterministic project traversal without writing files and
   exits non-zero when formatting changes are required.
+- `mlg lint` reports compatible role-based naming warnings without changing
+  source acceptance or visibility. `pub` remains the only visibility marker;
+  `--allow <rule-id>` suppresses an explicit legacy role and
+  `--deny-warnings` makes findings fail CI. `mlg fmt` never renames.
 - Project tests live in an optional `tests/` tree mirroring `src/` packages.
   Contextual `test Name() { ... }` declarations use standalone `assert(bool)`
   statements. `mlg test <project> [--exact <test-id>]` preflights the whole suite,
@@ -486,7 +491,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
 - `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
-- `docs/todo-naming-conventions/`: approved role-based casing design debt and 2.0 migration boundary.
+- `docs/todo-naming-conventions/`: implemented 1.x naming lint and deferred
+  reference-aware rename/2.0 hard-error boundary.
 - `docs/SELF_HOSTING.md`: completed B0-B5 self-hosting and fixed-point contract.
 - `bootstrap/probe/`: Stage0-built B0 Mallang bootstrap capability probe.
 - `bootstrap/compiler/`: default self-hosted Mallang compiler source.

@@ -9,8 +9,7 @@ Status: canonical
 
 ## Active
 
-- [Naming conventions](todo-naming-conventions/spec.md): P181 호환 naming
-  diagnostics와 `mlg lint`를 구현한다.
+현재 활성 패킷 없음.
 
 ## Decision Required
 
@@ -18,8 +17,8 @@ Status: canonical
 
 ## Deferred
 
-현재 별도 deferred 패킷 없음. 2.0 전용 naming hard-error와 reference-aware
-rename은 naming 패킷 안에서 호환성 경계로 추적한다.
+- [Naming conventions](todo-naming-conventions/spec.md): 1.x `mlg lint`는
+  완료됐고 reference-aware rename과 hard-error는 2.0 경계로 보류한다.
 
 ## Completed Programs
 

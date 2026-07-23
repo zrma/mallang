@@ -387,6 +387,7 @@ user-facing command: mlg
 build command: mlg build
 run command: mlg run
 check command: mlg check
+lint command: mlg lint
 format command: mlg fmt
 test command: mlg test
 version command: mlg --version
@@ -395,6 +396,24 @@ help command: mlg --help
 
 `mallang` is reserved for documentation, package names, and searchability. The
 day-to-day command is intentionally short.
+
+### Identifier casing
+
+Visibility and spelling are independent. `pub` is the only source-level
+visibility marker; changing identifier case never exports or hides a symbol.
+`mlg lint <input>` reports these compatible 1.x naming targets:
+
+- types, enum variants, type parameters, and tests use `PascalCase`;
+- functions, methods, parameters, receivers, fields, locals, range bindings,
+  and match bindings use `lowerCamelCase`;
+- package and project names use `lower_snake_case`;
+- acronym runs are words, as in `HttpClient`, `parseUtf8`, and `apiUrl`.
+
+Naming findings are warnings and do not change whether a v1 source is accepted.
+`--allow <rule-id>` explicitly suppresses a legacy role, while
+`--deny-warnings` returns non-zero when unsuppressed findings remain. Human and
+JSON diagnostics carry stable `MLG-NAME-001` through `MLG-NAME-009` codes.
+`mlg fmt` never renames identifiers.
 
 ## Design Goals
 

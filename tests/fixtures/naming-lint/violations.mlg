@@ -1,0 +1,16 @@
+package BadPackage
+
+type http_client[t_item]struct {
+    User_name string
+}
+
+type ResultCode enum {
+    ok_value
+    HttpOK
+}
+
+func ParseUTF8(con User_name string) {
+    mut Bad_local := User_name
+}
+
+test parses_name() {}

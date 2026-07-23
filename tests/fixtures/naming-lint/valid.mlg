@@ -1,0 +1,16 @@
+package naming_lint
+
+type HttpClient[T]struct {
+    apiUrl string
+}
+
+type RequestState enum {
+    Ready
+    HttpError
+}
+
+func parseUtf8(con inputText string) {
+    mut retryCount := 0
+}
+
+test ParsesName() {}
