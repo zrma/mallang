@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B3 complete, B4 active
+Status: active long-term program; B0-B4 complete, B5 active
 
 ## Objective
 
@@ -91,8 +91,10 @@ Mallang to specific 1.x versions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
 - `docs/todo-self-hosting-backend/`: closed B3 work breakdown and decisions.
-- `docs/todo-self-hosting-fixed-point/`: active B4 fixed-point work breakdown
+- `docs/todo-self-hosting-fixed-point/`: closed B4 fixed-point work breakdown
   and decisions.
+- `docs/todo-self-hosting-default-compiler/`: active B5 default-transition work
+  breakdown and decisions.
 - `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
@@ -245,15 +247,28 @@ and native behavior conformance before B4 can close.
 P178a is complete. The full gate reaches a 9,780,069-byte compiler-C fixed
 point, reproduces it under ASan/UBSan and matches 487 compiler-pair fixtures,
 the 168-source parser corpus, four compiler project operations and eight linked
-backend projects. P178b-P178c remain active.
+backend projects. At the P178a boundary, P178b-P178c remained active.
 
 P178b is complete. The existing B2 harness exposes a compiler-pair mode, so
 Stage1 and Stage2 traverse the same complete package-layout, linker,
 standard-project, compiler-project, fixture and parser-corpus inventory. The B4
 gate additionally compares fourteen flat and eight linked backend C outputs and
 runs twenty-one strict native positive/rejection/allocation pairs. B3 accounting
-and Stage0 parity apply transitively to the byte-identical C. P178c remote
-supported-platform acceptance remains open.
+and Stage0 parity apply transitively to the byte-identical C. At the P178b
+boundary, P178c remote supported-platform acceptance remained open.
+
+P178c closes B4. The published change passed the canonical repository gate,
+macOS arm64 and Linux x86_64 fixed-point jobs, both release-archive jobs and the
+checksum bundle. The tracked Rust Cargo workspace and lockfile remain the
+reproducible Stage0 seed and explicit, non-silent B5 rollback path.
+
+## B5 Current Slice
+
+P179a freezes the transition contract before changing the default. Users keep
+the `mlg` command; the self-hosted compiler becomes its default implementation
+only after public project discovery, diagnostics, format/test/build/run and
+release packaging move behind the Mallang boundary. Rust Stage0 remains a
+source-built seed, oracle and explicit selector. Silent fallback is forbidden.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

@@ -509,7 +509,8 @@ target/mallang/match-statement
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
 - `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
 - `docs/todo-self-hosting-backend/`: closed B3 Mallang C backend contract
-- `docs/todo-self-hosting-fixed-point/`: active B4 fixed-point and conformance contract
+- `docs/todo-self-hosting-fixed-point/`: closed B4 fixed-point and conformance contract
+- `docs/todo-self-hosting-default-compiler/`: active B5 default-transition contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
@@ -799,7 +800,7 @@ P178a는 `scripts/check-self-hosting-fixed-point.sh`로 fresh Stage1, strict-C11
 Stage2 compiler regeneration과 ASan/UBSan regeneration을 분리된 deep gate에 둔다. 모든
 compiler-core fixture, repository parser corpus, compiler project operation과 linked backend
 project C를 Stage1/Stage2 status/stdout/stderr 기준으로 비교한다. Complete project-graph와
-native behavior parity는 P178b, supported-platform publication closure는 P178c에 남는다.
+native behavior parity는 P178b, supported-platform publication closure는 P178c에 남아 있었다.
 P178a full deep gate는 9,780,069-byte compiler C fixed point, 487 pair fixture,
 168-source parser corpus, 8 backend project와 ASan/UBSan regeneration을 통과했다. 관측된
 360초는 host-local evidence이며 threshold가 아니다.
@@ -807,7 +808,11 @@ P178b는 기존 B2 harness에 `--compiler-pair <stage1> <stage2>`를 추가해 f
 package-layout, linker, standard/compiler project와 parser corpus inventory를 재사용한다.
 B4 deep gate는 별도로 14 flat/8 linked backend C와 21 strict native
 positive/rejection/allocation pair를 비교한다. Full sanitizer gate는 295초에 통과했으며,
-P178c supported-platform publication acceptance만 남았다.
+P178b 경계에서는 P178c supported-platform publication acceptance만 남아 있었다.
+P178c remote CI에서 canonical, macOS/Linux fixed-point, 양 release artifact와 checksum
+bundle이 모두 성공해 B4를 닫았다. B5 P179a는 public `mlg` 명령을 유지하고 self-hosted
+core를 default implementation으로 전환하되, tracked Rust Cargo workspace/lockfile을
+reproducible Stage0 seed와 explicit non-silent rollback selector로 보존하는 계약을 고정했다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

@@ -1,6 +1,6 @@
 # Spec: B4 Self-Hosting Fixed Point
 
-Status: active; P178a-P178b complete, P178c pending
+Status: complete; P178a-P178c accepted
 
 ## Objective
 
@@ -66,6 +66,14 @@ One complete P178b deep-gate run took 295 seconds; this is not a threshold.
 - document the exact Stage0 seed retained for B5 and the default-transition
   rollback boundary
 
+P178c is complete. The canonical repository gate, macOS arm64 and Linux x86_64
+fixed-point matrix, both release-archive jobs and checksum bundle passed for
+the published P178b change. The retained Stage0 seed is the tracked Rust Cargo
+workspace plus lockfile, reproducibly built with
+`cargo build --locked --bin mlg`. B5 keeps explicit Stage0 selection as a
+non-silent diagnostic and rollback path until the default-transition release is
+accepted.
+
 ## Development Loop
 
 1. Backend edits use
@@ -86,8 +94,8 @@ One complete P178b deep-gate run took 295 seconds; this is not a threshold.
 - [x] compiler project and linked backend-project output matches
 - [x] complete project-graph and standard-project conformance matches
 - [x] native output, rejection, accounting and sanitizer behavior matches
-- [ ] macOS arm64 and Linux x86_64 fixed-point CI acceptance
-- [ ] B4 canonical publication acceptance
+- [x] macOS arm64 and Linux x86_64 fixed-point CI acceptance
+- [x] B4 canonical publication acceptance
 
 ## Excluded
 

@@ -1836,7 +1836,7 @@ B4 work.
 
 ## P178: B4 Self-Hosting Fixed Point
 
-상태: active; P178a-P178b complete, P178c pending (2026-07-23)
+상태: complete; P178a-P178c accepted (2026-07-23)
 
 - [x] Stage0가 declared compiler source set에서 Stage1 생성
 - [x] Stage1이 identical input에서 strict-C11 Stage2 생성
@@ -1846,12 +1846,29 @@ B4 work.
 - [x] compiler project와 linked backend-project C parity
 - [x] complete package/linker/standard-project conformance parity
 - [x] native output, rejection, accounting과 sanitizer parity
-- [ ] macOS arm64/Linux x86_64 fixed-point CI와 publication acceptance
+- [x] macOS arm64/Linux x86_64 fixed-point CI와 publication acceptance
 
 Exact scope and deep-gate layering are owned by
 `docs/todo-self-hosting-fixed-point/`. The fixed-point gate remains parallel to
 the ordinary canonical repository gate so self-compiler sanitizer cost does not
 slow every edit loop. Default compiler transition remains B5 work.
+
+## P179: B5 Default Self-Hosted Compiler
+
+상태: active; P179a planning complete, implementation pending (2026-07-23)
+
+- [ ] public `mlg`, internal self-hosted compiler와 Stage0 selector contract
+- [ ] clean-checkout Stage0 -> Stage1 -> Stage2 build graph와 provenance
+- [ ] explicit non-silent Stage0 diagnostic/rollback path
+- [ ] self-hosted project discovery, diagnostics, check, IR와 build
+- [ ] self-hosted format, test, run과 native workflow
+- [ ] complete Stage0/default command와 conformance parity
+- [ ] default release artifact와 supported-platform clean-install acceptance
+- [ ] compatible 1.x signed tag와 GitHub Release acceptance
+
+Exact scope and default-transition safety rules are owned by
+`docs/todo-self-hosting-default-compiler/`. B5 keeps `mlg` as the public command
+and the tracked Rust Cargo workspace as the reproducible seed and oracle.
 
 ## Deferred 2.0 Naming Conventions
 
