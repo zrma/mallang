@@ -188,6 +188,14 @@ closure remains the single explicit boundary. The compiler source matches
 Stage0 across 880 normalized typed-IR functions. Intrinsic function values,
 closures/captures and the broader project surface remain in P177c.
 
+P177c3 completes the compiler-used scalar expression surface with checked
+integer negation, division and remainder, including overflow and zero guards.
+Logical short-circuit emission now consumes the canonical typed-IR kind names.
+The scalar fixture and a division-by-zero rejection bring the backend gate to
+ten positive, five runtime-rejection and one closure-boundary path. Compiler
+source parity is 882 normalized functions, and self C generation of the
+compiler project now reaches the `StringsByteLen` intrinsic boundary.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the

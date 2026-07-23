@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a-P177b and P177c1-P177c2 complete
+Status: active; P177a-P177b and P177c1-P177c3 complete
 
 ## Objective
 
@@ -147,6 +147,15 @@ byte parity, native, accounting and sanitizer checks. The compiler source
 matches Stage0 across 880 normalized typed-IR functions. Intrinsic function
 values, closures/captures and the broader project surface remain in P177c.
 
+P177c3 is complete. Checked integer negation, division and remainder now use
+the same span-stable temporaries and overflow/zero guards as Stage0. Logical
+short-circuit dispatch uses the canonical `Expr.Binary.LogicalAnd` and
+`Expr.Binary.LogicalOr` IR kinds without compatibility aliases. The expanded
+scalar fixture and a division-by-zero rejection raise the gate to ten positive,
+five runtime-rejection and one closure-boundary path. The compiler source
+matches Stage0 across 882 normalized typed-IR functions, and compiler-project C
+generation now reaches the `StringsByteLen` intrinsic boundary.
+
 ### P177d: B3 Closure
 
 - cover every typed-IR node required by the Mallang compiler source set
@@ -209,6 +218,8 @@ thresholds.
 - [x] nine positive, four runtime-rejection and one function-value boundary path
 - [x] P177c2 named function values, callable ABI/drop helpers and indirect calls
 - [x] ten positive, four runtime-rejection and one closure boundary path
+- [x] P177c3 checked integer negate/divide/remainder and canonical logical kinds
+- [x] ten positive, five runtime-rejection and one closure boundary path
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

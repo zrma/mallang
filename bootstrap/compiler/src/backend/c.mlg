@@ -1454,6 +1454,70 @@ func emitCheckedBinary(con program ir.Program, node int, con indent string, con 
     }
 }
 
+func emitCheckedNegate(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 1 {
+        return Err("B3 C backend received malformed checked negate IR")
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
+        case Ok(operand) {
+            start := strings.fromInt(source.Start(con ir.NodeSpan(con program, node)))
+            operandName := strings.join(con []string{"mallang_checked_unary_operand_", token.CopyText(con start),}, con "")
+            resultName := strings.join(con []string{"mallang_checked_unary_result_", token.CopyText(con start),}, con "")
+            mut lines := copyLines([]string{}, con operand.lines)
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con operandName), " = ", token.CopyText(con operand.value), ";",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con resultName), ";",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (__builtin_sub_overflow((int64_t)0, ", token.CopyText(con operandName), ", &", token.CopyText(con resultName), ")) {",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+            return Ok(EmittedExpr{lines: lines, value: resultName, postLines: operand.postLines,})
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
+func emitCheckedDivision(con program ir.Program, node int, con indent string, con operator string, con env EmitEnv) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) != 2 {
+        return Err("B3 C backend received malformed checked division IR")
+    }
+    match emitExpression(con program, ir.NodeChild(con program, node, 0), con indent, con env) {
+        case Ok(left) {
+            match emitExpression(con program, ir.NodeChild(con program, node, 1), con indent, con env) {
+                case Ok(right) {
+                    suffix := spanSuffix(con program, node)
+                    leftName := strings.join(con []string{"mallang_checked_left_", token.CopyText(con suffix),}, con "")
+                    rightName := strings.join(con []string{"mallang_checked_right_", token.CopyText(con suffix),}, con "")
+                    dividendName := strings.join(con []string{"mallang_dividend_", token.CopyText(con suffix),}, con "")
+                    divisorName := strings.join(con []string{"mallang_divisor_", token.CopyText(con suffix),}, con "")
+                    mut lines := copyLines([]string{}, con left.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con leftName), " = ", token.CopyText(con left.value), ";",}, con ""))
+                    lines = copyLines(lines, con left.postLines)
+                    lines = copyLines(lines, con right.lines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con rightName), " = ", token.CopyText(con right.value), ";",}, con ""))
+                    lines = copyLines(lines, con right.postLines)
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con dividendName), " = ", token.CopyText(con leftName), ";",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "int64_t ", token.CopyText(con divisorName), " = ", token.CopyText(con rightName), ";",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con divisorName), " == 0) {",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"division by zero\");",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con dividendName), " == INT64_MIN && ", token.CopyText(con divisorName), " == -1) {",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_runtime_error(\"integer overflow\");",}, con ""))
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                    value := strings.join(con []string{"(", token.CopyText(con dividendName), " ", token.CopyText(con operator), " ", token.CopyText(con divisorName), ")",}, con "")
+                    return Ok(EmittedExpr{lines: lines, value: value, postLines: []string{},})
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
 func emitStringEquality(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
     leftNode := ir.NodeChild(con program, node, 0)
     rightNode := ir.NodeChild(con program, node, 1)
@@ -1500,6 +1564,12 @@ func emitBinary(con program ir.Program, node int, con indent string, con env Emi
     if kind == "Expr.Binary.Multiply" {
         return emitCheckedBinary(con program, node, con indent, con "__builtin_mul_overflow", con env)
     }
+    if kind == "Expr.Binary.Divide" {
+        return emitCheckedDivision(con program, node, con indent, con "/", con env)
+    }
+    if kind == "Expr.Binary.Remainder" {
+        return emitCheckedDivision(con program, node, con indent, con "%", con env)
+    }
     if ir.NodeChildCount(con program, node) != 2 {
         return Err("B3 C backend received malformed binary IR")
     }
@@ -1523,9 +1593,9 @@ func emitBinary(con program ir.Program, node int, con indent string, con env Emi
                         operator = ">"
                     } else if kind == "Expr.Binary.GreaterEqual" {
                         operator = ">="
-                    } else if kind == "Expr.Binary.And" {
+                    } else if kind == "Expr.Binary.LogicalAnd" {
                         operator = "&&"
-                    } else if kind == "Expr.Binary.Or" {
+                    } else if kind == "Expr.Binary.LogicalOr" {
                         operator = "||"
                     } else {
                         return Err(unsupported(con kind))
@@ -1544,11 +1614,11 @@ func emitBinary(con program ir.Program, node int, con indent string, con env Emi
                     mut lines := copyLines([]string{}, con left.lines)
                     lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con operandType), " ", token.CopyText(con leftName), " = ", token.CopyText(con left.value), ";",}, con ""))
                     lines = copyLines(lines, con left.postLines)
-                    if kind == "Expr.Binary.And" || kind == "Expr.Binary.Or" {
+                    if kind == "Expr.Binary.LogicalAnd" || kind == "Expr.Binary.LogicalOr" {
                         resultName := strings.join(con []string{"mallang_logical_", token.CopyText(con suffix),}, con "")
                         lines = append(lines, strings.join(con []string{token.CopyText(con indent), "bool ", token.CopyText(con resultName), " = ", stripOuterParens(con leftName), ";",}, con ""))
                         mut condition := token.CopyText(con resultName)
-                        if kind == "Expr.Binary.Or" {
+                        if kind == "Expr.Binary.LogicalOr" {
                             condition = strings.join(con []string{"!", token.CopyText(con resultName),}, con "")
                         }
                         lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (", token.CopyText(con condition), ") {",}, con ""))
@@ -2161,6 +2231,9 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
     if kind == "Expr.SliceAppend" {
         return emitSliceAppend(con program, node, con indent, con env)
     }
+    if kind == "Expr.Unary.Negate" {
+        return emitCheckedNegate(con program, node, con indent, con env)
+    }
     if kind == "Expr.Unary.Not" {
         if ir.NodeChildCount(con program, node) != 1 {
             return Err("B3 C backend received malformed unary IR")
@@ -2174,7 +2247,7 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
             }
         }
     }
-    if kind == "Expr.Binary.Add" || kind == "Expr.Binary.Subtract" || kind == "Expr.Binary.Multiply" || kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual" || kind == "Expr.Binary.Less" || kind == "Expr.Binary.LessEqual" || kind == "Expr.Binary.Greater" || kind == "Expr.Binary.GreaterEqual" || kind == "Expr.Binary.And" || kind == "Expr.Binary.Or" {
+    if kind == "Expr.Binary.Add" || kind == "Expr.Binary.Subtract" || kind == "Expr.Binary.Multiply" || kind == "Expr.Binary.Divide" || kind == "Expr.Binary.Remainder" || kind == "Expr.Binary.Equal" || kind == "Expr.Binary.NotEqual" || kind == "Expr.Binary.Less" || kind == "Expr.Binary.LessEqual" || kind == "Expr.Binary.Greater" || kind == "Expr.Binary.GreaterEqual" || kind == "Expr.Binary.LogicalAnd" || kind == "Expr.Binary.LogicalOr" {
         return emitBinary(con program, node, con indent, con env)
     }
     return Err(unsupported(con kind))

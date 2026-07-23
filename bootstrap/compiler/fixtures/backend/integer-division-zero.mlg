@@ -1,0 +1,7 @@
+func zero() int {
+    return 0
+}
+
+func main() {
+    print(1 / zero())
+}

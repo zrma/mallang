@@ -3,6 +3,11 @@ func main() {
     total := add(base, 20)
     print(total)
     print(isPositive(total))
+    print(-base)
+    print(total / 3)
+    print(total % 7)
+    print(isPositive(total) && total == 30)
+    print(total == 0 || isPositive(total))
 }
 
 func add(left int, right int) int {

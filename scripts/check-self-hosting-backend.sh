@@ -54,7 +54,7 @@ STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
 FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values)
 PROJECT_FIXTURES=(dynamic-owned-string)
-RUNTIME_REJECTION_FIXTURES=(composite-bounds)
+RUNTIME_REJECTION_FIXTURES=(composite-bounds integer-division-zero)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
 PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure)
 BOUNDARY_REJECTION_FIXTURES=(unsupported-closure)
@@ -159,7 +159,7 @@ EOF
   expected=""
   case "$name" in
     scalars)
-      expected=$'30\ntrue'
+      expected=$'30\ntrue\n-10\n10\n2\ntrue\ntrue'
       ;;
     owned-control)
       expected=$'ready\nmiddle\nready\nready\nequal\ndifferent\n말랑'
@@ -333,8 +333,20 @@ for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
       echo "self-hosting backend rejection emitted unexpected stdout: $name.$binary" >&2
       exit 1
     fi
-    if [[ "$(cat "$WORK/$name.$binary.stderr")" != \
-          "mallang runtime error: array index out of bounds" ]]; then
+    expected=""
+    case "$name" in
+      composite-bounds)
+        expected="mallang runtime error: array index out of bounds"
+        ;;
+      integer-division-zero)
+        expected="mallang runtime error: division by zero"
+        ;;
+      *)
+        echo "self-hosting backend runtime rejection has no expected diagnostic: $name" >&2
+        exit 1
+        ;;
+    esac
+    if [[ "$(cat "$WORK/$name.$binary.stderr")" != "$expected" ]]; then
       echo "self-hosting backend rejection stderr mismatch: $name.$binary" >&2
       exit 1
     fi
