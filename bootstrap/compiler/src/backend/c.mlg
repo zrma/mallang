@@ -32,6 +32,11 @@ type PatternPlan struct {
     env EmitEnv
 }
 
+type IntrinsicFunctionUse struct {
+    intrinsic string
+    callableType string
+}
+
 func copyPatternPlan(con plan PatternPlan) PatternPlan {
     return PatternPlan{conditions: copyLines([]string{}, con plan.conditions), setup: copyLines([]string{}, con plan.setup), env: copyEmitEnv(con plan.env),}
 }
@@ -119,6 +124,15 @@ func functionIndex(con program ir.Program, con name string) int {
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         if ir.FunctionName(con program, function) == name {
             return function
+        }
+    }
+    return - 1
+}
+
+func closureIndex(con program ir.Program, con name string) int {
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        if ir.ClosureName(con program, closure) == name {
+            return closure
         }
     }
     return - 1
@@ -399,6 +413,10 @@ func enumNodeTypeName(con program ir.Program, con ty string) string {
     return strings.join(con []string{cTypeFor(con program, con ty), "_node",}, con "")
 }
 
+func mapEntryTypeName(con program ir.Program, con ty string) string {
+    return strings.join(con []string{cTypeFor(con program, con ty), "_entry",}, con "")
+}
+
 func variantPayloadField(payload int) string {
     return strings.join(con []string{"mlg_payload_", strings.fromInt(payload),}, con "")
 }
@@ -476,6 +494,22 @@ func collectDefinedTypes(con program ir.Program) []string {
         }
         for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
             statementTypes := collectNodeTypes(con program, con types, ir.FunctionBodyNode(con program, function, statement))
+            types = statementTypes
+        }
+    }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        returnTypes := collectType(con program, con types, con ir.ClosureReturnType(con program, closure))
+        types = returnTypes
+        for mut capture := 0; capture < ir.ClosureCaptureCount(con program, closure); capture = capture + 1 {
+            captureTypes := collectType(con program, con types, con ir.ClosureCaptureType(con program, closure, capture))
+            types = captureTypes
+        }
+        for mut param := 0; param < ir.ClosureParamCount(con program, closure); param = param + 1 {
+            paramTypes := collectType(con program, con types, con ir.ClosureParamType(con program, closure, param))
+            types = paramTypes
+        }
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            statementTypes := collectNodeTypes(con program, con types, ir.ClosureBodyNode(con program, closure, statement))
             types = statementTypes
         }
     }
@@ -596,14 +630,35 @@ func (mut self TypeEmitter) emitTypeDefinition(con program ir.Program, con ty st
     } else if kind == "struct" {
         structure := structIndex(con program, con ty)
         intrinsic := ir.StructIntrinsic(con program, structure)
-        if intrinsic != "" && intrinsic != "Error" {
+        if intrinsic == "Map" {
+            if ir.StructIntrinsicArgumentCount(con program, structure) != 2 {
+                return Err("B3 C backend requires Map with two type arguments")
+            }
+            keyType := cTypeFor(con program, con ir.StructIntrinsicArgument(con program, structure, 0))
+            valueType := cTypeFor(con program, con ir.StructIntrinsicArgument(con program, structure, 1))
+            mapType := cTypeFor(con program, con ty)
+            entryType := mapEntryTypeName(con program, con ty)
+            self.lines = append(self.lines, strings.join(con []string{"typedef struct ", token.CopyText(con entryType), " ", token.CopyText(con entryType), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"struct ", token.CopyText(con entryType), " {",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    uint64_t ", cField(con "hash"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    ", token.CopyText(con keyType), " ", cField(con "key"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    ", token.CopyText(con valueType), " ", cField(con "value"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    ", token.CopyText(con entryType), " *", cField(con "next"), ";",}, con ""))
+            self.lines = append(self.lines, "};")
+            self.lines = append(self.lines, "typedef struct {")
+            self.lines = append(self.lines, strings.join(con []string{"    ", token.CopyText(con entryType), " **", cField(con "buckets"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    int64_t ", cField(con "len"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    int64_t ", cField(con "cap"), ";",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"} ", token.CopyText(con mapType), ";",}, con ""))
+        } else if intrinsic != "" && intrinsic != "Error" {
             return Err(unsupported(con strings.join(con []string{"intrinsic struct ", token.CopyText(con ty),}, con "")))
+        } else {
+            self.lines = append(self.lines, "typedef struct {")
+            for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+                self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con ir.StructFieldType(con program, structure, field)), " ", cField(con ir.StructFieldName(con program, structure, field)), ";",}, con ""))
+            }
+            self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
         }
-        self.lines = append(self.lines, "typedef struct {")
-        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
-            self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con ir.StructFieldType(con program, structure, field)), " ", cField(con ir.StructFieldName(con program, structure, field)), ";",}, con ""))
-        }
-        self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
     } else if kind == "option" {
         inner := typeArgument(con program, con ty, 0)
         self.lines = append(self.lines, "typedef struct {")
@@ -815,19 +870,51 @@ func (mut self TypeEmitter) emitDropHelper(con program ir.Program, con ty string
     } else if kind == "struct" {
         structure := structIndex(con program, con ty)
         intrinsic := ir.StructIntrinsic(con program, structure)
-        if intrinsic != "" && intrinsic != "Error" {
-            return Err(unsupported(con strings.join(con []string{"intrinsic struct cleanup ", token.CopyText(con ty),}, con "")))
-        }
-        mut cleanupFields := 0
-        for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
-            if ir.StructFieldNeedsCleanup(con program, structure, field) {
-                fieldType := ir.StructFieldType(con program, structure, field)
-                self.lines = append(self.lines, strings.join(con []string{"    ", dropFunctionName(con program, con fieldType), "(&(mlg_value->", cField(con ir.StructFieldName(con program, structure, field)), "));",}, con ""))
-                cleanupFields = cleanupFields + 1
+        if intrinsic == "Map" {
+            if ir.StructIntrinsicArgumentCount(con program, structure) != 2 {
+                return Err("B3 C backend requires Map with two type arguments")
             }
-        }
-        if cleanupFields == 0 {
-            self.lines = append(self.lines, "    (void)mlg_value;")
+            keyType := ir.StructIntrinsicArgument(con program, structure, 0)
+            valueType := ir.StructIntrinsicArgument(con program, structure, 1)
+            entryType := mapEntryTypeName(con program, con ty)
+            self.lines = append(self.lines, strings.join(con []string{"    if (mlg_value->", cField(con "len"), " < 0 || mlg_value->", cField(con "cap"), " < 0 ||",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"        mlg_value->", cField(con "len"), " > mlg_value->", cField(con "cap"), " ||",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"        (mlg_value->", cField(con "cap"), " == 0 && mlg_value->", cField(con "buckets"), " != NULL) ||",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"        (mlg_value->", cField(con "cap"), " > 0 && mlg_value->", cField(con "buckets"), " == NULL)) {",}, con ""))
+            self.lines = append(self.lines, "        mallang_runtime_error(\"invalid map storage\");")
+            self.lines = append(self.lines, "    }")
+            self.lines = append(self.lines, strings.join(con []string{"    for (int64_t mlg_i = 0; mlg_i < mlg_value->", cField(con "cap"), "; mlg_i = mlg_i + 1) {",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"        ", token.CopyText(con entryType), " *mlg_entry = mlg_value->", cField(con "buckets"), "[mlg_i];",}, con ""))
+            self.lines = append(self.lines, "        while (mlg_entry != NULL) {")
+            self.lines = append(self.lines, strings.join(con []string{"            ", token.CopyText(con entryType), " *mlg_next = mlg_entry->", cField(con "next"), ";",}, con ""))
+            if typeNeedsCleanup(con program, con keyType) {
+                self.lines = append(self.lines, strings.join(con []string{"            ", dropFunctionName(con program, con keyType), "(&(mlg_entry->", cField(con "key"), "));",}, con ""))
+            }
+            if typeNeedsCleanup(con program, con valueType) {
+                self.lines = append(self.lines, strings.join(con []string{"            ", dropFunctionName(con program, con valueType), "(&(mlg_entry->", cField(con "value"), "));",}, con ""))
+            }
+            self.lines = append(self.lines, "            mallang_dealloc(mlg_entry);")
+            self.lines = append(self.lines, "            mlg_entry = mlg_next;")
+            self.lines = append(self.lines, "        }")
+            self.lines = append(self.lines, "    }")
+            self.lines = append(self.lines, strings.join(con []string{"    mallang_dealloc(mlg_value->", cField(con "buckets"), ");",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    mlg_value->", cField(con "buckets"), " = NULL;",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    mlg_value->", cField(con "len"), " = 0;",}, con ""))
+            self.lines = append(self.lines, strings.join(con []string{"    mlg_value->", cField(con "cap"), " = 0;",}, con ""))
+        } else if intrinsic != "" && intrinsic != "Error" {
+            return Err(unsupported(con strings.join(con []string{"intrinsic struct cleanup ", token.CopyText(con ty),}, con "")))
+        } else {
+            mut cleanupFields := 0
+            for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+                if ir.StructFieldNeedsCleanup(con program, structure, field) {
+                    fieldType := ir.StructFieldType(con program, structure, field)
+                    self.lines = append(self.lines, strings.join(con []string{"    ", dropFunctionName(con program, con fieldType), "(&(mlg_value->", cField(con ir.StructFieldName(con program, structure, field)), "));",}, con ""))
+                    cleanupFields = cleanupFields + 1
+                }
+            }
+            if cleanupFields == 0 {
+                self.lines = append(self.lines, "    (void)mlg_value;")
+            }
         }
     } else if kind == "option" {
         inner := typeArgument(con program, con ty, 0)
@@ -1046,6 +1133,18 @@ func cFunctionName(con name string) string {
     return strings.join(con []string{"mlg_", cTypeIdent(con name),}, con "")
 }
 
+func closureEnvTypeName(con name string) string {
+    return strings.join(con []string{"mallang_", cTypeIdent(con name), "_env",}, con "")
+}
+
+func closureCallName(con name string) string {
+    return strings.join(con []string{"mallang_", cTypeIdent(con name), "_call",}, con "")
+}
+
+func closureDropName(con name string) string {
+    return strings.join(con []string{"mallang_", cTypeIdent(con name), "_drop",}, con "")
+}
+
 func cVariableName(con name string) string {
     return strings.join(con []string{"mlg_", token.CopyText(con name),}, con "")
 }
@@ -1161,7 +1260,8 @@ func programUsesString(con program ir.Program) bool {
 }
 
 func nodeUsesIntrinsic(con program ir.Program, node int, con intrinsic string) bool {
-    if ir.NodeKind(con program, node) == "Expr.IntrinsicCall" && ir.NodeValue(con program, node) == intrinsic {
+    kind := ir.NodeKind(con program, node)
+    if(kind == "Expr.IntrinsicCall" || kind == "Expr.IntrinsicFunctionValue") && ir.NodeValue(con program, node) == intrinsic {
         return true
     }
     for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
@@ -1176,6 +1276,13 @@ func programUsesIntrinsic(con program ir.Program, con intrinsic string) bool {
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
             if nodeUsesIntrinsic(con program, ir.FunctionBodyNode(con program, function, statement), con intrinsic) {
+                return true
+            }
+        }
+    }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            if nodeUsesIntrinsic(con program, ir.ClosureBodyNode(con program, closure, statement), con intrinsic) {
                 return true
             }
         }
@@ -1205,7 +1312,180 @@ func programIntrinsicNode(con program ir.Program, con intrinsic string) int {
             }
         }
     }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            found := intrinsicNodeInNode(con program, ir.ClosureBodyNode(con program, closure, statement), con intrinsic)
+            if found >= 0 {
+                return found
+            }
+        }
+    }
     return - 1
+}
+
+func isCollectionIntrinsic(con intrinsic string) bool {
+    return intrinsic == "CollectionsNewMap" || intrinsic == "CollectionsCount" || intrinsic == "CollectionsInsert"
+}
+
+func collectionMapType(con program ir.Program, node int) string {
+    intrinsic := ir.NodeValue(con program, node)
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicFunctionValue" {
+        callable := callableTypeIndex(con program, con ir.NodeType(con program, node))
+        if callable < 0 {
+            return ""
+        }
+        if intrinsic == "CollectionsNewMap" {
+            return ir.CallableTypeReturn(con program, callable)
+        }
+        if isCollectionIntrinsic(con intrinsic) && ir.CallableTypeParamCount(con program, callable) > 0 {
+            return ir.CallableTypeParam(con program, callable, 0)
+        }
+        return ""
+    }
+    if intrinsic == "CollectionsNewMap" {
+        return ir.NodeType(con program, node)
+    }
+    if !isCollectionIntrinsic(con intrinsic) || ir.NodeChildCount(con program, node) == 0 {
+        return ""
+    }
+    return ir.NodeType(con program, ir.NodeChild(con program, node, 0))
+}
+
+func nodeUsesMapIntrinsic(con program ir.Program, node int, con intrinsic string, con mapType string) bool {
+    kind := ir.NodeKind(con program, node)
+    if(kind == "Expr.IntrinsicCall" || kind == "Expr.IntrinsicFunctionValue") && ir.NodeValue(con program, node) == intrinsic && collectionMapType(con program, node) == mapType {
+        return true
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        if nodeUsesMapIntrinsic(con program, ir.NodeChild(con program, node, child), con intrinsic, con mapType) {
+            return true
+        }
+    }
+    return false
+}
+
+func programUsesMapIntrinsic(con program ir.Program, con intrinsic string, con mapType string) bool {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            if nodeUsesMapIntrinsic(con program, ir.FunctionBodyNode(con program, function, statement), con intrinsic, con mapType) {
+                return true
+            }
+        }
+    }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            if nodeUsesMapIntrinsic(con program, ir.ClosureBodyNode(con program, closure, statement), con intrinsic, con mapType) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func mapInsertResultNodeInNode(con program ir.Program, node int, con mapType string) int {
+    kind := ir.NodeKind(con program, node)
+    if(kind == "Expr.IntrinsicCall" || kind == "Expr.IntrinsicFunctionValue") && ir.NodeValue(con program, node) == "CollectionsInsert" && collectionMapType(con program, node) == mapType {
+        return node
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        found := mapInsertResultNodeInNode(con program, ir.NodeChild(con program, node, child), con mapType)
+        if found >= 0 {
+            return found
+        }
+    }
+    return - 1
+}
+
+func mapInsertResultType(con program ir.Program, con mapType string) string {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            found := mapInsertResultNodeInNode(con program, ir.FunctionBodyNode(con program, function, statement), con mapType)
+            if found >= 0 {
+                if ir.NodeKind(con program, found) == "Expr.IntrinsicFunctionValue" {
+                    callable := callableTypeIndex(con program, con ir.NodeType(con program, found))
+                    return ir.CallableTypeReturn(con program, callable)
+                }
+                return ir.NodeType(con program, found)
+            }
+        }
+    }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            found := mapInsertResultNodeInNode(con program, ir.ClosureBodyNode(con program, closure, statement), con mapType)
+            if found >= 0 {
+                if ir.NodeKind(con program, found) == "Expr.IntrinsicFunctionValue" {
+                    callable := callableTypeIndex(con program, con ir.NodeType(con program, found))
+                    return ir.CallableTypeReturn(con program, callable)
+                }
+                return ir.NodeType(con program, found)
+            }
+        }
+    }
+    return ""
+}
+
+func collectionFunctionName(con intrinsic string) string {
+    if intrinsic == "CollectionsNewMap" {
+        return "newMap"
+    }
+    if intrinsic == "CollectionsCount" {
+        return "count"
+    }
+    if intrinsic == "CollectionsInsert" {
+        return "insert"
+    }
+    return ""
+}
+
+func collectionHelperName(con program ir.Program, con intrinsic string, con mapType string) string {
+    return strings.join(con []string{"mallang_std_collections_", collectionFunctionName(con intrinsic), "_", cTypeFor(con program, con mapType),}, con "")
+}
+
+func mapInternalHelperName(con program ir.Program, con operation string, con mapType string) string {
+    return strings.join(con []string{"mallang_std_collections_map_", token.CopyText(con operation), "_", cTypeFor(con program, con mapType),}, con "")
+}
+
+func intrinsicCallableThunkName(con program ir.Program, con intrinsic string, con callableType string) string {
+    return strings.join(con []string{"mallang_intrinsic_callable_thunk_", token.CopyText(con intrinsic), "_", mangleType(con program, con callableType),}, con "")
+}
+
+func intrinsicFunctionUseExists(con uses []IntrinsicFunctionUse, con intrinsic string, con callableType string) bool {
+    for mut index := 0; index < len(uses); index = index + 1 {
+        if uses[index].intrinsic == intrinsic && uses[index].callableType == callableType {
+            return true
+        }
+    }
+    return false
+}
+
+func collectIntrinsicFunctionUsesNode(con program ir.Program, node int, uses []IntrinsicFunctionUse) []IntrinsicFunctionUse {
+    mut output := uses
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicFunctionValue" {
+        intrinsic := ir.NodeValue(con program, node)
+        callableType := ir.NodeType(con program, node)
+        if !intrinsicFunctionUseExists(con output, con intrinsic, con callableType) {
+            output = append(output, IntrinsicFunctionUse{intrinsic: intrinsic, callableType: callableType,})
+        }
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        output = collectIntrinsicFunctionUsesNode(con program, ir.NodeChild(con program, node, child), output)
+    }
+    return output
+}
+
+func intrinsicFunctionUses(con program ir.Program) []IntrinsicFunctionUse {
+    mut uses := []IntrinsicFunctionUse{}
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            uses = collectIntrinsicFunctionUsesNode(con program, ir.FunctionBodyNode(con program, function, statement), uses)
+        }
+    }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+            uses = collectIntrinsicFunctionUsesNode(con program, ir.ClosureBodyNode(con program, closure, statement), uses)
+        }
+    }
+    return uses
 }
 
 func intrinsicResultType(con program ir.Program, con intrinsic string) string {
@@ -1533,6 +1813,155 @@ func dynamicStringRuntime(con program ir.Program) Result[[]string, string] {
     return Ok(lines)
 }
 
+func mapRuntimeFor(con program ir.Program, structure int) Result[[]string, string] {
+    mapType := ir.StructName(con program, structure)
+    usesNew := programUsesMapIntrinsic(con program, con "CollectionsNewMap", con mapType)
+    usesCount := programUsesMapIntrinsic(con program, con "CollectionsCount", con mapType)
+    usesInsert := programUsesMapIntrinsic(con program, con "CollectionsInsert", con mapType)
+    if !usesNew && !usesCount && !usesInsert {
+        return Ok([]string{})
+    }
+    if ir.StructIntrinsicArgumentCount(con program, structure) != 2 {
+        return Err("B3 C backend requires Map with two type arguments")
+    }
+    keyType := ir.StructIntrinsicArgument(con program, structure, 0)
+    valueType := ir.StructIntrinsicArgument(con program, structure, 1)
+    if keyType != "int" && keyType != "bool" && keyType != "string" {
+        return Err(unsupported(con strings.join(con []string{"Map key ", token.CopyText(con keyType),}, con "")))
+    }
+
+    mapCType := cTypeFor(con program, con mapType)
+    keyCType := cTypeFor(con program, con keyType)
+    valueCType := cTypeFor(con program, con valueType)
+    entryType := mapEntryTypeName(con program, con mapType)
+    validate := mapInternalHelperName(con program, con "validate", con mapType)
+    hash := mapInternalHelperName(con program, con "hash", con mapType)
+    equal := mapInternalHelperName(con program, con "equal", con mapType)
+    find := mapInternalHelperName(con program, con "find", con mapType)
+    ensure := mapInternalHelperName(con program, con "ensure_insert_capacity", con mapType)
+
+    mut lines := []string{strings.join(con []string{"static void MLG_UNUSED ", token.CopyText(con validate), "(const ", token.CopyText(con mapCType), " *mlg_map) {",}, con ""), strings.join(con []string{"    if (mlg_map == NULL || mlg_map->", cField(con "len"), " < 0 || mlg_map->", cField(con "cap"), " < 0 ||",}, con ""), strings.join(con []string{"        mlg_map->", cField(con "len"), " > mlg_map->", cField(con "cap"), " ||",}, con ""), strings.join(con []string{"        (mlg_map->", cField(con "cap"), " == 0 && mlg_map->", cField(con "buckets"), " != NULL) ||",}, con ""), strings.join(con []string{"        (mlg_map->", cField(con "cap"), " > 0 && mlg_map->", cField(con "buckets"), " == NULL)) {",}, con ""), "        mallang_runtime_error(\"invalid map storage\");", "    }", "}", "", strings.join(con []string{"static uint64_t MLG_UNUSED ", token.CopyText(con hash), "(const ", token.CopyText(con keyCType), " *mlg_key) {",}, con ""), "    if (mlg_key == NULL) {", "        mallang_runtime_error(\"invalid map key\");", "    }",}
+    if keyType == "int" {
+        lines = copyLines(lines, con []string{"    uint64_t mlg_hash = (uint64_t)(*mlg_key);", "    mlg_hash = (mlg_hash ^ (mlg_hash >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);", "    mlg_hash = (mlg_hash ^ (mlg_hash >> 27)) * UINT64_C(0x94d049bb133111eb);", "    return mlg_hash ^ (mlg_hash >> 31);",})
+    } else if keyType == "bool" {
+        lines = append(lines, "    return *mlg_key ? UINT64_C(0x9e3779b97f4a7c15) : UINT64_C(0x243f6a8885a308d3);")
+    } else {
+        lines = copyLines(lines, con []string{"    mallang_validate_string(*mlg_key);", "    uint64_t mlg_hash = UINT64_C(14695981039346656037);", "    const unsigned char *mlg_bytes = (const unsigned char *)mlg_key->mlg_data;", "    for (size_t mlg_i = 0; mlg_i < mlg_key->mlg_len; mlg_i = mlg_i + 1) {", "        mlg_hash = (mlg_hash ^ (uint64_t)mlg_bytes[mlg_i]) * UINT64_C(1099511628211);", "    }", "    return mlg_hash;",})
+    }
+    lines = copyLines(lines, con []string{"}", "", strings.join(con []string{"static bool MLG_UNUSED ", token.CopyText(con equal), "(",}, con ""), strings.join(con []string{"    const ", token.CopyText(con keyCType), " *mlg_left,",}, con ""), strings.join(con []string{"    const ", token.CopyText(con keyCType), " *mlg_right",}, con ""), ") {", "    if (mlg_left == NULL || mlg_right == NULL) {", "        mallang_runtime_error(\"invalid map key\");", "    }",})
+    if keyType == "string" {
+        lines = append(lines, "    return mallang_string_equal(*mlg_left, *mlg_right);")
+    } else {
+        lines = append(lines, "    return *mlg_left == *mlg_right;")
+    }
+    lines = copyLines(lines, con []string{"}", "", strings.join(con []string{"static ", token.CopyText(con entryType), " *MLG_UNUSED ", token.CopyText(con find), "(",}, con ""), strings.join(con []string{"    const ", token.CopyText(con mapCType), " *mlg_map,",}, con ""), strings.join(con []string{"    const ", token.CopyText(con keyCType), " *mlg_key,",}, con ""), "    uint64_t mlg_hash", ") {", strings.join(con []string{"    ", token.CopyText(con validate), "(mlg_map);",}, con ""), strings.join(con []string{"    if (mlg_map->", cField(con "cap"), " == 0) {",}, con ""), "        return NULL;", "    }", strings.join(con []string{"    uint64_t mlg_bucket = mlg_hash % (uint64_t)mlg_map->", cField(con "cap"), ";",}, con ""), strings.join(con []string{"    ", token.CopyText(con entryType), " *mlg_entry = mlg_map->", cField(con "buckets"), "[mlg_bucket];",}, con ""), "    while (mlg_entry != NULL) {", strings.join(con []string{"        if (mlg_entry->", cField(con "hash"), " == mlg_hash &&",}, con ""), strings.join(con []string{"            ", token.CopyText(con equal), "(&(mlg_entry->", cField(con "key"), "), mlg_key)) {",}, con ""), "            return mlg_entry;", "        }", strings.join(con []string{"        mlg_entry = mlg_entry->", cField(con "next"), ";",}, con ""), "    }", "    return NULL;", "}", "", strings.join(con []string{"static void MLG_UNUSED ", token.CopyText(con ensure), "(", token.CopyText(con mapCType), " *mlg_map) {",}, con ""), strings.join(con []string{"    ", token.CopyText(con validate), "(mlg_map);",}, con ""), strings.join(con []string{"    if (mlg_map->", cField(con "len"), " == INT64_MAX) {",}, con ""), "        mallang_runtime_error(\"map capacity overflow\");", "    }", strings.join(con []string{"    int64_t mlg_required = mlg_map->", cField(con "len"), " + 1;",}, con ""), strings.join(con []string{"    if (mlg_map->", cField(con "cap"), " > 0 &&",}, con ""), strings.join(con []string{"        mlg_required <= mlg_map->", cField(con "cap"), " - (mlg_map->", cField(con "cap"), " / 4)) {",}, con ""), "        return;", "    }", "    int64_t mlg_new_cap = 8;", strings.join(con []string{"    if (mlg_map->", cField(con "cap"), " > 0) {",}, con ""), strings.join(con []string{"        if (mlg_map->", cField(con "cap"), " > INT64_MAX / 2) {",}, con ""), "            mallang_runtime_error(\"map capacity overflow\");", "        }", strings.join(con []string{"        mlg_new_cap = mlg_map->", cField(con "cap"), " * 2;",}, con ""), "    }", strings.join(con []string{"    if ((uint64_t)mlg_new_cap > SIZE_MAX / sizeof(", token.CopyText(con entryType), " *)) {",}, con ""), "        mallang_runtime_error(\"map allocation size overflow\");", "    }", strings.join(con []string{"    ", token.CopyText(con entryType), " **mlg_new_buckets = mallang_alloc(",}, con ""), strings.join(con []string{"        sizeof(", token.CopyText(con entryType), " *) * (size_t)mlg_new_cap,",}, con ""), "        \"map bucket allocation failed\"", "    );", "    memset(", "        mlg_new_buckets,", "        0,", strings.join(con []string{"        sizeof(", token.CopyText(con entryType), " *) * (size_t)mlg_new_cap",}, con ""), "    );", strings.join(con []string{"    for (int64_t mlg_i = 0; mlg_i < mlg_map->", cField(con "cap"), "; mlg_i = mlg_i + 1) {",}, con ""), strings.join(con []string{"        ", token.CopyText(con entryType), " *mlg_entry = mlg_map->", cField(con "buckets"), "[mlg_i];",}, con ""), "        while (mlg_entry != NULL) {", strings.join(con []string{"            ", token.CopyText(con entryType), " *mlg_next = mlg_entry->", cField(con "next"), ";",}, con ""), strings.join(con []string{"            uint64_t mlg_bucket = mlg_entry->", cField(con "hash"), " % (uint64_t)mlg_new_cap;",}, con ""), strings.join(con []string{"            mlg_entry->", cField(con "next"), " = mlg_new_buckets[mlg_bucket];",}, con ""), "            mlg_new_buckets[mlg_bucket] = mlg_entry;", "            mlg_entry = mlg_next;", "        }", "    }", strings.join(con []string{"    mallang_dealloc(mlg_map->", cField(con "buckets"), ");",}, con ""), strings.join(con []string{"    mlg_map->", cField(con "buckets"), " = mlg_new_buckets;",}, con ""), strings.join(con []string{"    mlg_map->", cField(con "cap"), " = mlg_new_cap;",}, con ""), "}", "",})
+
+    if usesNew {
+        helper := collectionHelperName(con program, con "CollectionsNewMap", con mapType)
+        lines = copyLines(lines, con []string{strings.join(con []string{"static ", token.CopyText(con mapCType), " MLG_UNUSED ", token.CopyText(con helper), "(void) {",}, con ""), strings.join(con []string{"    return (", token.CopyText(con mapCType), "){ .", cField(con "buckets"), " = NULL, .", cField(con "len"), " = 0, .", cField(con "cap"), " = 0 };",}, con ""), "}", "",})
+    }
+    if usesCount {
+        helper := collectionHelperName(con program, con "CollectionsCount", con mapType)
+        lines = copyLines(lines, con []string{strings.join(con []string{"static int64_t MLG_UNUSED ", token.CopyText(con helper), "(const ", token.CopyText(con mapCType), " *mlg_map) {",}, con ""), strings.join(con []string{"    ", token.CopyText(con validate), "(mlg_map);",}, con ""), strings.join(con []string{"    return mlg_map->", cField(con "len"), ";",}, con ""), "}", "",})
+    }
+    if usesInsert {
+        optionType := mapInsertResultType(con program, con mapType)
+        if typeKind(con program, con optionType) != "option" || typeArgument(con program, con optionType, 0) != valueType {
+            return Err("B3 C backend received malformed Map insert result type")
+        }
+        optionCType := cTypeFor(con program, con optionType)
+        helper := collectionHelperName(con program, con "CollectionsInsert", con mapType)
+        lines = copyLines(lines, con []string{strings.join(con []string{"static ", token.CopyText(con optionCType), " MLG_UNUSED ", token.CopyText(con helper), "(",}, con ""), strings.join(con []string{"    ", token.CopyText(con mapCType), " *mlg_map,",}, con ""), strings.join(con []string{"    ", token.CopyText(con keyCType), " mlg_key,",}, con ""), strings.join(con []string{"    ", token.CopyText(con valueCType), " mlg_value",}, con ""), ") {", strings.join(con []string{"    uint64_t mlg_hash = ", token.CopyText(con hash), "(&mlg_key);",}, con ""), strings.join(con []string{"    ", token.CopyText(con entryType), " *mlg_existing = ", token.CopyText(con find), "(mlg_map, &mlg_key, mlg_hash);",}, con ""), "    if (mlg_existing != NULL) {",})
+        if typeNeedsCleanup(con program, con keyType) {
+            lines = append(lines, strings.join(con []string{"        ", dropFunctionName(con program, con keyType), "(&mlg_key);",}, con ""))
+        }
+        lines = copyLines(lines, con []string{strings.join(con []string{"        ", token.CopyText(con optionCType), " mlg_result = { .tag = 1 };",}, con ""), strings.join(con []string{"        mlg_result.", cField(con "payload"), ".", cField(con "Some"), " = mlg_existing->", cField(con "value"), ";",}, con ""), strings.join(con []string{"        mlg_existing->", cField(con "value"), " = mlg_value;",}, con ""), "        return mlg_result;", "    }", strings.join(con []string{"    ", token.CopyText(con ensure), "(mlg_map);",}, con ""), strings.join(con []string{"    uint64_t mlg_bucket = mlg_hash % (uint64_t)mlg_map->", cField(con "cap"), ";",}, con ""), strings.join(con []string{"    ", token.CopyText(con entryType), " *mlg_entry = mallang_alloc(",}, con ""), strings.join(con []string{"        sizeof(", token.CopyText(con entryType), "),",}, con ""), "        \"map entry allocation failed\"", "    );", strings.join(con []string{"    mlg_entry->", cField(con "hash"), " = mlg_hash;",}, con ""), strings.join(con []string{"    mlg_entry->", cField(con "key"), " = mlg_key;",}, con ""), strings.join(con []string{"    mlg_entry->", cField(con "value"), " = mlg_value;",}, con ""), strings.join(con []string{"    mlg_entry->", cField(con "next"), " = mlg_map->", cField(con "buckets"), "[mlg_bucket];",}, con ""), strings.join(con []string{"    mlg_map->", cField(con "buckets"), "[mlg_bucket] = mlg_entry;",}, con ""), strings.join(con []string{"    mlg_map->", cField(con "len"), " = mlg_map->", cField(con "len"), " + 1;",}, con ""), strings.join(con []string{"    return (", token.CopyText(con optionCType), "){ .tag = 0 };",}, con ""), "}", "",})
+    }
+    return Ok(lines)
+}
+
+func mapRuntime(con program ir.Program) Result[[]string, string] {
+    mut lines := []string{}
+    for mut structure := 0; structure < ir.StructCount(con program); structure = structure + 1 {
+        if ir.StructIntrinsic(con program, structure) == "Map" {
+            match mapRuntimeFor(con program, structure) {
+                case Ok(helper) {
+                    lines = copyLines(lines, con helper)
+                }
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+    }
+    return Ok(lines)
+}
+
+func collectionMapTypeForCallable(con program ir.Program, con intrinsic string, callable int) string {
+    if callable < 0 {
+        return ""
+    }
+    if intrinsic == "CollectionsNewMap" {
+        return ir.CallableTypeReturn(con program, callable)
+    }
+    if isCollectionIntrinsic(con intrinsic) && ir.CallableTypeParamCount(con program, callable) > 0 {
+        return ir.CallableTypeParam(con program, callable, 0)
+    }
+    return ""
+}
+
+func intrinsicHelperNameForCallable(con program ir.Program, con intrinsic string, callable int) string {
+    helper := intrinsicHelperName(con intrinsic)
+    if helper != "" {
+        return helper
+    }
+    if isCollectionIntrinsic(con intrinsic) {
+        mapType := collectionMapTypeForCallable(con program, con intrinsic, callable)
+        if structIndex(con program, con mapType) >= 0 {
+            return collectionHelperName(con program, con intrinsic, con mapType)
+        }
+    }
+    return ""
+}
+
+func intrinsicCallableThunks(con program ir.Program) Result[[]string, string] {
+    mut lines := []string{}
+    uses := intrinsicFunctionUses(con program)
+    for mut index := 0; index < len(uses); index = index + 1 {
+        callable := callableTypeIndex(con program, con uses[index].callableType)
+        if callable < 0 {
+            return Err("B3 C backend received an intrinsic function value without a callable type")
+        }
+        helper := intrinsicHelperNameForCallable(con program, con uses[index].intrinsic, callable)
+        if helper == "" {
+            return Err(unsupported(con strings.join(con []string{"intrinsic function value ", token.CopyText(con uses[index].intrinsic),}, con "")))
+        }
+        returnType := cTypeFor(con program, con ir.CallableTypeReturn(con program, callable))
+        mut params := []string{"void *mlg_env",}
+        mut args := []string{}
+        for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+            paramType := cParamType(con program, con ir.CallableTypeParam(con program, callable, param), con ir.CallableTypeParamMode(con program, callable, param))
+            if paramType == "" {
+                return Err(unsupported(con ir.CallableTypeParam(con program, callable, param)))
+            }
+            name := strings.join(con []string{"mlg_arg_", strings.fromInt(param),}, con "")
+            params = append(params, strings.join(con []string{token.CopyText(con paramType), " ", token.CopyText(con name),}, con ""))
+            args = append(args, token.CopyText(con name))
+        }
+        thunk := intrinsicCallableThunkName(con program, con uses[index].intrinsic, con uses[index].callableType)
+        lines = append(lines, strings.join(con []string{"static ", token.CopyText(con returnType), " MLG_UNUSED ", token.CopyText(con thunk), "(", strings.join(con params, con ", "), ") {",}, con ""))
+        lines = append(lines, "    (void)mlg_env;")
+        if ir.CallableTypeReturn(con program, callable) == "unit" {
+            lines = append(lines, strings.join(con []string{"    ", token.CopyText(con helper), "(", strings.join(con args, con ", "), ");",}, con ""))
+        } else {
+            lines = append(lines, strings.join(con []string{"    return ", token.CopyText(con helper), "(", strings.join(con args, con ", "), ");",}, con ""))
+        }
+        lines = append(lines, "}")
+        lines = append(lines, "")
+    }
+    return Ok(lines)
+}
+
 func standardRuntime(con program ir.Program) Result[[]string, string] {
     match dynamicStringRuntime(con program) {
         case Ok(stringLines) {
@@ -1540,7 +1969,23 @@ func standardRuntime(con program ir.Program) Result[[]string, string] {
             match platformRuntime(con program) {
                 case Ok(platformLines) {
                     lines = copyLines(lines, con platformLines)
-                    return Ok(lines)
+                    match mapRuntime(con program) {
+                        case Ok(mapLines) {
+                            lines = copyLines(lines, con mapLines)
+                            match intrinsicCallableThunks(con program) {
+                                case Ok(thunks) {
+                                    lines = copyLines(lines, con thunks)
+                                    return Ok(lines)
+                                }
+                                case Err(message) {
+                                    return Err(message)
+                                }
+                            }
+                        }
+                        case Err(message) {
+                            return Err(message)
+                        }
+                    }
                 }
                 case Err(message) {
                     return Err(message)
@@ -1642,6 +2087,27 @@ func callableTypeMatchesFunction(con program ir.Program, callable int, function 
     return true
 }
 
+func callableTypeMatchesClosure(con program ir.Program, callable int, closure int) bool {
+    if callable < 0 || closure < 0 || ir.CallableTypeMutable(con program, callable) != ir.ClosureMutable(con program, closure) {
+        return false
+    }
+    if ir.CallableTypeReturn(con program, callable) != ir.ClosureReturnType(con program, closure) {
+        return false
+    }
+    if ir.CallableTypeParamCount(con program, callable) != ir.ClosureParamCount(con program, closure) {
+        return false
+    }
+    for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+        if ir.CallableTypeParamMode(con program, callable, param) != ir.ClosureParamMode(con program, closure, param) {
+            return false
+        }
+        if ir.CallableTypeParam(con program, callable, param) != ir.ClosureParamType(con program, closure, param) {
+            return false
+        }
+    }
+    return true
+}
+
 func emitFunctionValue(con program ir.Program, node int) Result[EmittedExpr, string] {
     ty := ir.NodeType(con program, node)
     callable := callableTypeIndex(con program, con ty)
@@ -1652,6 +2118,55 @@ func emitFunctionValue(con program ir.Program, node int) Result[EmittedExpr, str
     }
     value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = mallang_callable_thunk_", cFunctionName(con name), " }",}, con "")
     return Ok(EmittedExpr{lines: []string{}, value: value, postLines: []string{},})
+}
+
+func emitIntrinsicFunctionValue(con program ir.Program, node int) Result[EmittedExpr, string] {
+    ty := ir.NodeType(con program, node)
+    callable := callableTypeIndex(con program, con ty)
+    intrinsic := ir.NodeValue(con program, node)
+    if callable < 0 || intrinsicHelperNameForCallable(con program, con intrinsic, callable) == "" {
+        return Err("B3 C backend received a mismatched intrinsic function value")
+    }
+    thunk := intrinsicCallableThunkName(con program, con intrinsic, con ty)
+    value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = ", token.CopyText(con thunk), " }",}, con "")
+    return Ok(EmittedExpr{lines: []string{}, value: value, postLines: []string{},})
+}
+
+func emitClosureValue(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    ty := ir.NodeType(con program, node)
+    callable := callableTypeIndex(con program, con ty)
+    name := ir.NodeValue(con program, node)
+    closure := closureIndex(con program, con name)
+    if !callableTypeMatchesClosure(con program, callable, closure) || ir.NodeChildCount(con program, node) != ir.ClosureCaptureCount(con program, closure) {
+        return Err("B3 C backend received a mismatched closure value")
+    }
+    if ir.NodeChildCount(con program, node) == 0 {
+        value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = ", closureCallName(con name), " }",}, con "")
+        return Ok(EmittedExpr{lines: []string{}, value: value, postLines: []string{},})
+    }
+
+    envType := closureEnvTypeName(con name)
+    envTemp := strings.join(con []string{"mallang_closure_env_tmp_", spanSuffix(con program, node),}, con "")
+    mut lines := []string{strings.join(con []string{token.CopyText(con indent), token.CopyText(con envType), " *", token.CopyText(con envTemp), " = mallang_alloc(sizeof(", token.CopyText(con envType), "), \"closure environment allocation failed\");",}, con ""),}
+    mut postLines := []string{}
+    for mut capture := 0; capture < ir.NodeChildCount(con program, node); capture = capture + 1 {
+        captureNode := ir.NodeChild(con program, node, capture)
+        if ir.NodeKind(con program, captureNode) != "Closure.Capture" || ir.NodeChildCount(con program, captureNode) != 1 || ir.NodeValue(con program, captureNode) != ir.ClosureCaptureName(con program, closure, capture) || ir.NodeType(con program, captureNode) != ir.ClosureCaptureType(con program, closure, capture) {
+            return Err("B3 C backend received a mismatched closure capture")
+        }
+        match emitExpression(con program, ir.NodeChild(con program, captureNode, 0), con indent, con env) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted.lines)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), token.CopyText(con envTemp), "->", cField(con ir.NodeValue(con program, captureNode)), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                postLines = copyLines(emitted.postLines, con postLines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_env = ", token.CopyText(con envTemp), ", .mlg_drop = ", closureDropName(con name), ", .mlg_call = ", closureCallName(con name), " }",}, con "")
+    return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
 }
 
 func callArgumentMode(con program ir.Program, argument int) string {
@@ -1792,7 +2307,13 @@ func intrinsicHelperName(con intrinsic string) string {
 
 func emitIntrinsicCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
     intrinsic := ir.NodeValue(con program, node)
-    helper := intrinsicHelperName(con intrinsic)
+    mut helper := intrinsicHelperName(con intrinsic)
+    if helper == "" && isCollectionIntrinsic(con intrinsic) {
+        mapType := collectionMapType(con program, node)
+        if structIndex(con program, con mapType) >= 0 {
+            helper = collectionHelperName(con program, con intrinsic, con mapType)
+        }
+    }
     if helper == "" {
         return Err(unsupported(con strings.join(con []string{"intrinsic ", token.CopyText(con intrinsic),}, con "")))
     }
@@ -2567,6 +3088,12 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
     }
     if kind == "Expr.FunctionValue" {
         return emitFunctionValue(con program, node)
+    }
+    if kind == "Expr.IntrinsicFunctionValue" {
+        return emitIntrinsicFunctionValue(con program, node)
+    }
+    if kind == "Expr.ClosureValue" {
+        return emitClosureValue(con program, node, con indent, con env)
     }
     if kind == "Expr.FullExprTemporary" {
         if ir.NodeChildCount(con program, node) != 1 {
@@ -3713,6 +4240,32 @@ func emitStatementWithContinue(con program ir.Program, node int, con indent stri
         }
         return Ok([]string{strings.join(con []string{token.CopyText(con indent), "continue;",}, con ""),})
     }
+    if kind == "Stmt.Assert" {
+        if ir.NodeChildCount(con program, node) != 1 {
+            return Err("B3 C backend received malformed assertion IR")
+        }
+        conditionNode := ir.NodeChild(con program, node, 0)
+        match emitExpression(con program, conditionNode, con indent, con env) {
+            case Ok(condition) {
+                mut lines := copyLines([]string{}, con condition.lines)
+                mut value := token.CopyText(con condition.value)
+                if len(condition.postLines) > 0 {
+                    temp := strings.join(con []string{"mallang_assert_condition_", spanSuffix(con program, conditionNode),}, con "")
+                    lines = append(lines, strings.join(con []string{token.CopyText(con indent), "bool ", token.CopyText(con temp), " = ", token.CopyText(con value), ";",}, con ""))
+                    lines = copyLines(lines, con condition.postLines)
+                    value = temp
+                }
+                span := ir.NodeSpan(con program, node)
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "if (!(", token.CopyText(con value), ")) {",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "    mallang_test_assertion_failed(", strings.fromInt(source.Source(con span)), ", ", strings.fromInt(source.Start(con span)), ");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                return Ok(lines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
     if kind == "Stmt.Drop" {
         if ir.NodeChildCount(con program, node) != 1 {
             return Err("B3 C backend received malformed drop IR")
@@ -3786,6 +4339,108 @@ func emitStatement(con program ir.Program, node int, con indent string, con env 
     return emitStatementWithContinue(con program, node, con indent, con env, con "")
 }
 
+func emitClosureEnvironmentTypes(con program ir.Program) Result[[]string, string] {
+    mut lines := []string{}
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        if ir.ClosureCaptureCount(con program, closure) == 0 {
+            continue
+        }
+        lines = append(lines, "typedef struct {")
+        for mut capture := 0; capture < ir.ClosureCaptureCount(con program, closure); capture = capture + 1 {
+            ty := cTypeFor(con program, con ir.ClosureCaptureType(con program, closure, capture))
+            if ty == "" || ty == "void" {
+                return Err(unsupported(con ir.ClosureCaptureType(con program, closure, capture)))
+            }
+            lines = append(lines, strings.join(con []string{"    ", ty, " ", cField(con ir.ClosureCaptureName(con program, closure, capture)), ";",}, con ""))
+        }
+        lines = append(lines, strings.join(con []string{"} ", closureEnvTypeName(con ir.ClosureName(con program, closure)), ";",}, con ""))
+        lines = append(lines, "")
+    }
+    return Ok(lines)
+}
+
+func emitClosureDropHelpers(con program ir.Program) Result[[]string, string] {
+    mut lines := []string{}
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        if ir.ClosureCaptureCount(con program, closure) == 0 {
+            continue
+        }
+        name := ir.ClosureName(con program, closure)
+        envType := closureEnvTypeName(con name)
+        lines = append(lines, strings.join(con []string{"static void MLG_UNUSED ", closureDropName(con name), "(void *mlg_raw_env) {",}, con ""))
+        lines = copyLines(lines, con []string{"    if (mlg_raw_env == NULL) {", "        return;", "    }",})
+        lines = append(lines, strings.join(con []string{"    ", token.CopyText(con envType), " *mlg_env = (", token.CopyText(con envType), " *)mlg_raw_env;",}, con ""))
+        for mut capture := 0; capture < ir.ClosureCaptureCount(con program, closure); capture = capture + 1 {
+            ty := ir.ClosureCaptureType(con program, closure, capture)
+            if typeNeedsCleanup(con program, con ty) {
+                lines = append(lines, strings.join(con []string{"    ", dropFunctionName(con program, con ty), "(&(mlg_env->", cField(con ir.ClosureCaptureName(con program, closure, capture)), "));",}, con ""))
+            }
+        }
+        lines = copyLines(lines, con []string{"    mallang_dealloc(mlg_env);", "}", "",})
+    }
+    return Ok(lines)
+}
+
+func closureParams(con program ir.Program, closure int) Result[string, string] {
+    mut params := []string{"void *mlg_raw_env",}
+    for mut param := 0; param < ir.ClosureParamCount(con program, closure); param = param + 1 {
+        mode := ir.ClosureParamMode(con program, closure, param)
+        ty := cParamType(con program, con ir.ClosureParamType(con program, closure, param), con mode)
+        if ty == "" {
+            return Err(unsupported(con ir.ClosureParamType(con program, closure, param)))
+        }
+        params = append(params, strings.join(con []string{ty, " ", cVariableName(con ir.ClosureParamName(con program, closure, param)),}, con ""))
+    }
+    return Ok(strings.join(con params, con ", "))
+}
+
+func emitClosureFunction(con program ir.Program, closure int) Result[[]string, string] {
+    returnType := cTypeFor(con program, con ir.ClosureReturnType(con program, closure))
+    if returnType == "" {
+        return Err(unsupported(con ir.ClosureReturnType(con program, closure)))
+    }
+    match closureParams(con program, closure) {
+        case Ok(params) {
+            name := ir.ClosureName(con program, closure)
+            mut lines := []string{strings.join(con []string{"static ", token.CopyText(con returnType), " MLG_UNUSED ", closureCallName(con name), "(", params, ") {",}, con ""),}
+            mut env := EmitEnv{bindings: []EmitBinding{},}
+            if ir.ClosureCaptureCount(con program, closure) == 0 {
+                lines = append(lines, "    (void)mlg_raw_env;")
+            } else {
+                envType := closureEnvTypeName(con name)
+                lines = append(lines, strings.join(con []string{"    ", token.CopyText(con envType), " *mlg_env = (", token.CopyText(con envType), " *)mlg_raw_env;",}, con ""))
+                for mut capture := 0; capture < ir.ClosureCaptureCount(con program, closure); capture = capture + 1 {
+                    captureName := ir.ClosureCaptureName(con program, closure, capture)
+                    env = envSet(con env, con captureName, con strings.join(con []string{"(mlg_env->", cField(con captureName), ")",}, con ""))
+                }
+            }
+            for mut param := 0; param < ir.ClosureParamCount(con program, closure); param = param + 1 {
+                paramName := ir.ClosureParamName(con program, closure, param)
+                cName := cVariableName(con paramName)
+                lines = append(lines, strings.join(con []string{"    (void)", token.CopyText(con cName), ";",}, con ""))
+                if ir.ClosureParamMode(con program, closure, param) != "owned" {
+                    env = envSet(con env, con paramName, con strings.join(con []string{"(*", token.CopyText(con cName), ")",}, con ""))
+                }
+            }
+            for mut statement := 0; statement < ir.ClosureBodyCount(con program, closure); statement = statement + 1 {
+                match emitStatement(con program, ir.ClosureBodyNode(con program, closure, statement), con "    ", con env) {
+                    case Ok(emitted) {
+                        lines = copyLines(lines, con emitted)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            lines = append(lines, "}")
+            return Ok(lines)
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+}
+
 func emitThunk(con program ir.Program, function int) Result[[]string, string] {
     returnType := cTypeFor(con program, con ir.FunctionReturnType(con program, function))
     if returnType == "" {
@@ -3854,10 +4509,39 @@ func emitFunction(con program ir.Program, function int) Result[[]string, string]
 }
 
 pub func Generate(con program ir.Program) Result[string, string] {
-    if ir.ClosureCount(con program) != 0 {
-        return Err("B3 C backend does not yet support closures")
+    return generate(con program, con []string{}, false)
+}
+
+pub func GenerateTestRunner(con program ir.Program, con testFunctions []string) Result[string, string] {
+    if len(testFunctions) == 0 {
+        return Err("B3 C backend test runner requires at least one test")
     }
+    if functionIndex(con program, con "main") >= 0 {
+        return Err("B3 C backend test runner must not contain application main")
+    }
+    mut seen := []string{}
+    for mut index := 0; index < len(testFunctions); index = index + 1 {
+        name := token.CopyText(con testFunctions[index])
+        if containsText(con seen, con name) {
+            return Err("B3 C backend test runner contains a duplicate function")
+        }
+        seen = append(seen, token.CopyText(con name))
+        function := functionIndex(con program, con name)
+        if function < 0 {
+            return Err("B3 C backend test runner references an unknown function")
+        }
+        if ir.FunctionParamCount(con program, function) != 0 || ir.FunctionReturnType(con program, function) != "unit" {
+            return Err("B3 C backend test runner functions must take no parameters and return unit")
+        }
+    }
+    return generate(con program, con testFunctions, true)
+}
+
+func generate(con program ir.Program, con testFunctions []string, testRunner bool) Result[string, string] {
     mut lines := runtimePrelude()
+    if testRunner {
+        lines = copyLines(lines, con []string{"", "static _Noreturn void MLG_UNUSED mallang_test_assertion_failed(size_t source_id, size_t offset) {", "    fprintf(stderr, \"__mlg_test_assert:%zu:%zu\\n\", source_id, offset);", "    exit(1);", "}",})
+    }
     types := collectDefinedTypes(con program)
     if containsText(con types, con "string") {
         lines = copyLines(lines, con stringRuntimeWithoutDrop())
@@ -3897,6 +4581,28 @@ pub func Generate(con program ir.Program) Result[string, string] {
             return Err(message)
         }
     }
+    match emitClosureEnvironmentTypes(con program) {
+        case Ok(definitions) {
+            lines = copyLines(lines, con definitions)
+            if len(definitions) > 0 {
+                lines = append(lines, "")
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
+    match emitClosureDropHelpers(con program) {
+        case Ok(helpers) {
+            lines = copyLines(lines, con helpers)
+            if len(helpers) > 0 {
+                lines = append(lines, "")
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match functionSignature(con program, function) {
             case Ok(signature) {
@@ -3921,6 +4627,17 @@ pub func Generate(con program ir.Program) Result[string, string] {
             }
         }
     }
+    for mut closure := 0; closure < ir.ClosureCount(con program); closure = closure + 1 {
+        match emitClosureFunction(con program, closure) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted)
+                lines = append(lines, "")
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match emitFunction(con program, function) {
             case Ok(emitted) {
@@ -3932,6 +4649,22 @@ pub func Generate(con program ir.Program) Result[string, string] {
             }
         }
     }
+    if testRunner {
+        lines = copyLines(lines, con emitTestRunner(con program, con testFunctions))
+    }
     lines = append(lines, "")
     return Ok(strings.join(con lines, con "\n"))
+}
+
+func emitTestRunner(con program ir.Program, con testFunctions []string) []string {
+    mut lines := []string{"int main(int argc, char **argv) {", "    if (argc != 2 || argv == NULL || argv[1] == NULL || argv[1][0] == '\\0') {", "        mallang_runtime_error(\"invalid test runner invocation\");", "    }", "    for (const char *cursor = argv[1]; *cursor != '\\0'; cursor++) {", "        if (*cursor < '0' || *cursor > '9') {", "            mallang_runtime_error(\"invalid test runner invocation\");", "        }", "    }", "    errno = 0;", "    char *end = NULL;", "    unsigned long long test_case = strtoull(argv[1], &end, 10);", "    if (errno == ERANGE || end == argv[1] || *end != '\\0') {", "        mallang_runtime_error(\"invalid test runner invocation\");", "    }",}
+    if programUsesIntrinsic(con program, con "OsArgs") {
+        lines = append(lines, "    mallang_process_init(argc - 1, argv);")
+    }
+    lines = append(lines, "    switch (test_case) {")
+    for mut runnerCase := 0; runnerCase < len(testFunctions); runnerCase = runnerCase + 1 {
+        lines = append(lines, strings.join(con []string{"        case ", strings.fromInt(runnerCase), ": ", cFunctionName(con testFunctions[runnerCase]), "(); return 0;",}, con ""))
+    }
+    lines = copyLines(lines, con []string{"        default: mallang_runtime_error(\"unknown test runner case\");", "    }", "}",})
+    return lines
 }

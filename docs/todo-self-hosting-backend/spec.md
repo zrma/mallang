@@ -260,6 +260,7 @@ thresholds.
 - [x] compiler-required callable, specialization and linked-project surface
 - [x] complete deterministic compiler-source C generation and strict compile
 - [x] B3 canonical, publication and supported-platform CI acceptance
+- [x] P179c2 closure capture promotion to thirteen positive, nine runtime-rejection and zero boundary paths
 
 ## Excluded
 

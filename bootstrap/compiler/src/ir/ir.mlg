@@ -189,6 +189,63 @@ pub func LowerTest(con syntax ast.Program, con checked semantic.CheckedProgram, 
     return Ok(Program{typeShapes: copyTypeShapes(con checked), callableTypes: copyCallableTypes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
 }
 
+pub func LowerTests(con syntax ast.Program, con checked semantic.CheckedProgram, con testIndices []int) Result[Program, Error] {
+    mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
+    match lowerer.lowerProgramDeclarations(con syntax, con checked) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut functions := []Function{}
+    for mut function := 0; function < len(lowerer.functions); function = function + 1 {
+        if lowerer.functions[function].name != "main" {
+            functions = append(functions, copyFunction(con lowerer.functions[function]))
+        }
+    }
+
+    for mut runnerCase := 0; runnerCase < len(testIndices); runnerCase = runnerCase + 1 {
+        selectedTest := findTestDeclaration(con syntax, testIndices[runnerCase])
+        if selectedTest < 0 {
+            return Err(newError("unknown test index", ast.Span(con syntax, ast.Root(con syntax))))
+        }
+        block := ast.Child(con syntax, selectedTest, 0)
+        mut testBody := []int{}
+        match lowerer.lowerBlock(con syntax, block, con checked) {
+            case Ok(body) {
+                testBody = lowerer.insertStraightLineCleanupDrops(con body, []CleanupBinding{}, []CleanupBinding{}, ast.Span(con syntax, block))
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+        functions = append(functions, Function{name: TestFunctionName(runnerCase), params: []Param{}, returnType: "unit", body: testBody,})
+    }
+
+    return Ok(Program{typeShapes: copyTypeShapes(con checked), callableTypes: copyCallableTypes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
+}
+
+pub func TestFunctionName(runnerCase int) string {
+    return strings.join(con []string{"__mlg_test_", strings.fromInt(runnerCase),}, con "")
+}
+
+func findTestDeclaration(con syntax ast.Program, testIndex int) int {
+    root := ast.Root(con syntax)
+    mut seenTests := 0
+    for mut child := 0; child < ast.ChildCount(con syntax, root); child = child + 1 {
+        declaration := ast.Child(con syntax, root, child)
+        if ast.Kind(con syntax, declaration) != "TestDecl" {
+            continue
+        }
+        if seenTests == testIndex {
+            return declaration
+        }
+        seenTests = seenTests + 1
+    }
+    return - 1
+}
+
 func copyTypeShapes(con checked semantic.CheckedProgram) []TypeShape {
     mut shapes := []TypeShape{}
     for mut shape := 0; shape < semantic.TypeShapeCount(con checked); shape = shape + 1 {
@@ -380,6 +437,58 @@ pub func FunctionBodyNode(con program Program, function int, statement int) int 
 
 pub func ClosureCount(con program Program) int {
     return len(program.closures)
+}
+
+pub func ClosureName(con program Program, closure int) string {
+    return token.CopyText(con program.closures[closure].name)
+}
+
+pub func ClosureMutable(con program Program, closure int) bool {
+    return program.closures[closure].mutable
+}
+
+pub func ClosureCaptureCount(con program Program, closure int) int {
+    return len(program.closures[closure].captures)
+}
+
+pub func ClosureCaptureName(con program Program, closure int, capture int) string {
+    return token.CopyText(con program.closures[closure].captures[capture].name)
+}
+
+pub func ClosureCaptureType(con program Program, closure int, capture int) string {
+    return token.CopyText(con program.closures[closure].captures[capture].ty)
+}
+
+pub func ClosureCaptureMutable(con program Program, closure int, capture int) bool {
+    return program.closures[closure].captures[capture].mutable
+}
+
+pub func ClosureParamCount(con program Program, closure int) int {
+    return len(program.closures[closure].params)
+}
+
+pub func ClosureParamName(con program Program, closure int, param int) string {
+    return token.CopyText(con program.closures[closure].params[param].name)
+}
+
+pub func ClosureParamMode(con program Program, closure int, param int) string {
+    return token.CopyText(con program.closures[closure].params[param].mode)
+}
+
+pub func ClosureParamType(con program Program, closure int, param int) string {
+    return token.CopyText(con program.closures[closure].params[param].ty)
+}
+
+pub func ClosureReturnType(con program Program, closure int) string {
+    return token.CopyText(con program.closures[closure].returnType)
+}
+
+pub func ClosureBodyCount(con program Program, closure int) int {
+    return len(program.closures[closure].body)
+}
+
+pub func ClosureBodyNode(con program Program, closure int, statement int) int {
+    return program.closures[closure].body[statement]
 }
 
 pub func TypeShapeCount(con program Program) int {

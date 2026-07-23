@@ -374,6 +374,158 @@ func runProjectPackage(con args []string, operation string) {
     }
 }
 
+func selectProjectTests(con tests []packages.ProjectTest, con selection string, con exact string) Result[[]int, string] {
+    if selection == "all" {
+        if exact != "" {
+            return Err("bootstrap compiler received an exact test id for all-test selection")
+        }
+        mut selected := []int{}
+        for mut index := 0; index < len(tests); index = index + 1 {
+            selected = append(selected, index)
+        }
+        return Ok(selected)
+    }
+    if selection != "exact" || exact == "" {
+        return Err("bootstrap compiler received an invalid test selection")
+    }
+    for mut index := 0; index < len(tests); index = index + 1 {
+        if packages.TestId(con tests[index]) == exact {
+            return Ok([]int{index})
+        }
+    }
+    return Err(strings.join(con []string{"unknown test id `", token.CopyText(con exact), "`",}, con ""))
+}
+
+func writeTestResponse(con tests []packages.ProjectTest, con selected []int, con cSource string) {
+    mut lines := []string{strings.join(con []string{"TEST|1|", strings.fromInt(len(selected)), "|", strings.fromInt(strings.byteLen(con cSource)),}, con ""),}
+    for mut index := 0; index < len(selected); index = index + 1 {
+        testIndex := selected[index]
+        span := packages.TestSpan(con tests[testIndex])
+        lines = append(lines, strings.join(con []string{"CASE|", strings.fromInt(source.Source(con span)), "|", strings.fromInt(source.Start(con span)), "|", strings.fromInt(source.End(con span)), "|", token.EncodeBytes(con packages.TestId(con tests[testIndex])),}, con ""))
+    }
+    output := strings.join(con []string{strings.join(con lines, con "\n"), "\n\n", token.CopyText(con cSource),}, con "")
+    writeStdout(con output)
+}
+
+func runTestProject(con args []string) {
+    if len(args) < 10 {
+        fail(con "usage: bootstrap-frontend test-project <all|exact> <test-id> <test-root> <unit-count> (<name> <source-root> <dependency-count> <dependency>...)* <source>...\n")
+    }
+    selection := token.CopyText(con args[2])
+    exact := token.CopyText(con args[3])
+    testRoot := token.CopyText(con args[4])
+    unitCount := parseCliCount(con args[5])
+    mut argument := 6
+    mut units := []packages.ProjectUnit{}
+    mut rootName := ""
+    for mut unitIndex := 0; unitIndex < unitCount; unitIndex = unitIndex + 1 {
+        if argument + 2 >= len(args) {
+            fail(con "bootstrap frontend received an incomplete test project unit\n")
+        }
+        name := token.CopyText(con args[argument])
+        if unitIndex == 0 {
+            rootName = token.CopyText(con name)
+        }
+        sourceRoot := token.CopyText(con args[argument + 1])
+        dependencyCount := parseCliCount(con args[argument + 2])
+        argument = argument + 3
+        if argument + dependencyCount > len(args) {
+            fail(con "bootstrap frontend received an incomplete test dependency list\n")
+        }
+        mut dependencies := []string{}
+        for mut dependency := 0; dependency < dependencyCount; dependency = dependency + 1 {
+            dependencies = append(dependencies, token.CopyText(con args[argument]))
+            argument = argument + 1
+        }
+        units = append(units, packages.NewProjectUnit(con name, con sourceRoot, con dependencies))
+    }
+    if len(units) == 0 || testRoot == "" || argument >= len(args) {
+        fail(con "bootstrap frontend test project requires units, a test root, and source files\n")
+    }
+    match parseSourcePaths(con args, argument) {
+        case Ok(program) {
+            mut paths := []string{}
+            for mut index := argument; index < len(args); index = index + 1 {
+                paths = append(paths, token.CopyText(con args[index]))
+            }
+            project := packages.NewTestProject(con units, con testRoot)
+            match packages.BuildProject(con program, con project, con paths) {
+                case Ok(layout) {
+                    match packages.CollectProjectTests(con layout, con program) {
+                        case Ok(tests) {
+                            match linker.LinkProject(con rootName, con layout, con program) {
+                                case Ok(linkedProgram) {
+                                    augmented := standard.Augment(con layout, con linkedProgram)
+                                    match prepareProgram(con augmented) {
+                                        case Ok(specialized) {
+                                            concrete := specialize.Program(con specialized)
+                                            match semantic.Check(con concrete) {
+                                                case Ok(checked) {
+                                                    match selectProjectTests(con tests, con selection, con exact) {
+                                                        case Ok(selected) {
+                                                            if len(selected) == 0 {
+                                                                writeTestResponse(con tests, con selected, con "")
+                                                            } else {
+                                                                match ir.LowerTests(con concrete, con checked, con selected) {
+                                                                    case Ok(lowered) {
+                                                                        mut functionNames := []string{}
+                                                                        for mut index := 0; index < len(selected); index = index + 1 {
+                                                                            functionNames = append(functionNames, ir.TestFunctionName(index))
+                                                                        }
+                                                                        match backend.GenerateTestRunner(con lowered, con functionNames) {
+                                                                            case Ok(output) {
+                                                                                writeTestResponse(con tests, con selected, con output)
+                                                                            }
+                                                                            case Err(message) {
+                                                                                print(message)
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    case Err(error) {
+                                                                        print(ir.NormalizeError(con error))
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        case Err(message) {
+                                                            print(strings.join(con []string{"TERR|", token.EncodeBytes(con message),}, con ""))
+                                                        }
+                                                    }
+                                                }
+                                                case Err(error) {
+                                                    message := semantic.ErrorMessage(con error)
+                                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                                                }
+                                            }
+                                        }
+                                        case Err(message) {
+                                            print(message)
+                                        }
+                                    }
+                                }
+                                case Err(error) {
+                                    print(linker.NormalizeError(con error))
+                                }
+                            }
+                        }
+                        case Err(error) {
+                            print(packages.NormalizeError(con error))
+                        }
+                    }
+                }
+                case Err(error) {
+                    print(packages.NormalizeError(con error))
+                }
+            }
+        }
+        case Err(errors) {
+            for mut index := 0; index < len(errors); index = index + 1 {
+                print(ast.NormalizeError(con errors[index]))
+            }
+        }
+    }
+}
+
 func runCheck(text string) {
     match lexer.Lex(text) {
         case Ok(tokens) {
@@ -596,6 +748,10 @@ func main() {
             }
             if len(args) >= 2 && args[1]== "project-plan" {
                 runProjectPlan(con args)
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "test-project" {
+                runTestProject(con args)
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "ir-project" {

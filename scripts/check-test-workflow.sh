@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: scripts/check-test-workflow.sh <mlg-binary>" >&2
+if [[ $# -lt 1 ]]; then
+  echo "usage: scripts/check-test-workflow.sh <mlg-binary> [mlg-args...]" >&2
   exit 2
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MLG="$1"
+MLG_COMMAND=("$@")
 CLANG_BIN="${CLANG:-clang}"
 OUT_DIR="target/mallang/test-workflow"
 SUCCESS_PROJECT="examples/projects/hello"
@@ -53,7 +53,7 @@ run_failure() {
   fi
 }
 
-run_success "success" "$MLG" test "$SUCCESS_PROJECT"
+run_success "success" "${MLG_COMMAND[@]}" test "$SUCCESS_PROJECT"
 expected_success=$'test hello/greet::ReadsPrivateProductionState ... ok\ntest hello::CopyAndOwnedValues ... ok\ntest hello::GenericAndClosure ... ok\ntest hello::MapAndStandardIo ... ok\ntest hello::RecursiveAdt ... ok\ntest result: ok. 5 passed; 0 failed'
 if [[ "$(cat "$OUT_DIR/success.stdout")" != "$expected_success" ]]; then
   echo "test workflow success output mismatch" >&2
@@ -73,7 +73,7 @@ cp "$success_runner" "$OUT_DIR/success-runner.c"
 
 run_success \
   "exact" \
-  "$MLG" test "$SUCCESS_PROJECT/mallang.toml" --exact "hello/greet::ReadsPrivateProductionState"
+  "${MLG_COMMAND[@]}" test "$SUCCESS_PROJECT/mallang.toml" --exact "hello/greet::ReadsPrivateProductionState"
 expected_exact=$'test hello/greet::ReadsPrivateProductionState ... ok\ntest result: ok. 1 passed; 0 failed'
 if [[ "$(cat "$OUT_DIR/exact.stdout")" != "$expected_exact" ]]; then
   echo "test workflow exact output mismatch" >&2
@@ -81,21 +81,21 @@ if [[ "$(cat "$OUT_DIR/exact.stdout")" != "$expected_exact" ]]; then
   exit 1
 fi
 
-run_failure "unknown" "$MLG" test "$SUCCESS_PROJECT" --exact "hello::Missing"
+run_failure "unknown" "${MLG_COMMAND[@]}" test "$SUCCESS_PROJECT" --exact "hello::Missing"
 if [[ -s "$OUT_DIR/unknown.stdout" ]] || \
   [[ "$(cat "$OUT_DIR/unknown.stderr")" != 'unknown test id `hello::Missing`' ]]; then
   echo "test workflow unknown exact diagnostic mismatch" >&2
   exit 1
 fi
 
-run_failure "standalone" "$MLG" test "$SUCCESS_PROJECT/tests/main_test.mlg"
+run_failure "standalone" "${MLG_COMMAND[@]}" test "$SUCCESS_PROJECT/tests/main_test.mlg"
 if [[ -s "$OUT_DIR/standalone.stdout" ]] || \
   [[ "$(cat "$OUT_DIR/standalone.stderr")" != 'mlg test requires a project directory or `mallang.toml`' ]]; then
   echo "test workflow standalone input diagnostic mismatch" >&2
   exit 1
 fi
 
-run_failure "failure" "$MLG" test "$FAILURE_PROJECT"
+run_failure "failure" "${MLG_COMMAND[@]}" test "$FAILURE_PROJECT"
 expected_failure=$'test testfailure::FirstPasses ... ok\ntest testfailure::SecondFails ... FAILED\nvisible failing output\ntest testfailure::ThirdPasses ... ok\ntest result: FAILED. 2 passed; 1 failed'
 if [[ "$(cat "$OUT_DIR/failure.stdout")" != "$expected_failure" ]] || \
   ! grep -Eq '^tests/main_test\.mlg:[0-9]+:[0-9]+: assertion failed in test `testfailure::SecondFails`$' \
@@ -111,7 +111,7 @@ if grep -Fq "hidden passing output" "$OUT_DIR/failure.stdout" || \
   exit 1
 fi
 
-run_failure "preflight" "$MLG" test "$PREFLIGHT_PROJECT"
+run_failure "preflight" "${MLG_COMMAND[@]}" test "$PREFLIGHT_PROJECT"
 if [[ -s "$OUT_DIR/preflight.stdout" ]] || \
   ! grep -Fq 'assertion condition must have type `bool`' "$OUT_DIR/preflight.stderr" || \
   grep -Fq "test body must not run" "$OUT_DIR/preflight.stdout"; then
@@ -121,7 +121,7 @@ if [[ -s "$OUT_DIR/preflight.stdout" ]] || \
   exit 1
 fi
 
-run_success "empty" "$MLG" test "$EMPTY_PROJECT"
+run_success "empty" "${MLG_COMMAND[@]}" test "$EMPTY_PROJECT"
 if [[ "$(cat "$OUT_DIR/empty.stdout")" != 'test result: ok. 0 passed; 0 failed' ]]; then
   echo "test workflow empty suite output mismatch" >&2
   cat "$OUT_DIR/empty.stdout" >&2

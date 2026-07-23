@@ -179,9 +179,8 @@ fn main() {
             Some("build") => utf8_cli_args(command_args)
                 .and_then(|args| run_build(&program, &args, &options.compiler)),
             Some("run") => run_run(&program, command_args, &options.compiler),
-            Some("test") => require_stage0(&options.compiler, "test")
-                .and_then(|()| utf8_cli_args(command_args))
-                .and_then(|args| run_test(&program, &args, diagnostic_format)),
+            Some("test") => utf8_cli_args(command_args)
+                .and_then(|args| run_test(&program, &args, diagnostic_format, &options.compiler)),
             Some("-V" | "--version") => run_version(&program, command_args, &options.compiler),
             Some("-h" | "--help") => {
                 let mut stdout = io::stdout().lock();
@@ -656,6 +655,127 @@ fn finish_self_hosted_format(
     ))
 }
 
+fn finish_self_hosted_test(
+    input_path: &str,
+    stdout: String,
+    project: &Project,
+    sources: &SourceMap,
+    exact: Option<&str>,
+) -> CliResult<SelfHostedTestResponse> {
+    if stdout.starts_with("TEST|") || stdout.starts_with("TERR|") {
+        return match parse_self_hosted_test_response(&stdout, sources, project.test_root(), exact)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?
+        {
+            SelfHostedReply::Success(response) => Ok(response),
+            SelfHostedReply::Rejection(message) => Err(CliError::cli(message)),
+        };
+    }
+    Err(CliError::many(
+        parse_self_hosted_diagnostics(&stdout, sources, Some(project))
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+    ))
+}
+
+fn parse_self_hosted_test_response(
+    output: &str,
+    sources: &SourceMap,
+    test_root: &Path,
+    exact: Option<&str>,
+) -> Result<SelfHostedReply<SelfHostedTestResponse>, String> {
+    if output.starts_with("TERR|") {
+        let line = output.strip_suffix('\n').unwrap_or(output);
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 2 || fields[0] != "TERR" {
+            return Err("invalid TERR response".to_string());
+        }
+        return decode_self_hosted_bytes(fields[1]).map(SelfHostedReply::Rejection);
+    }
+
+    let (records, c_source) = output
+        .split_once("\n\n")
+        .ok_or_else(|| "test response is missing its payload separator".to_string())?;
+    let lines = records.lines().collect::<Vec<_>>();
+    let header = lines
+        .first()
+        .ok_or_else(|| "test response is empty".to_string())?
+        .split('|')
+        .collect::<Vec<_>>();
+    if header.len() != 4 || header[0] != "TEST" || header[1] != "1" {
+        return Err("invalid TEST header".to_string());
+    }
+    let test_count = parse_self_hosted_count(header[2], "test count")?;
+    let c_length = parse_self_hosted_count(header[3], "test C payload byte length")?;
+    if lines.len().saturating_sub(1) != test_count {
+        return Err("test count does not match its CASE records".to_string());
+    }
+    if c_source.len() != c_length {
+        return Err("test C payload byte length does not match its header".to_string());
+    }
+    if test_count == 0 {
+        if !c_source.is_empty() {
+            return Err("empty test selection contains a C payload".to_string());
+        }
+    } else if !c_source.starts_with("#include <") || !c_source.ends_with('\n') {
+        return Err("test C payload is not a complete generated C source".to_string());
+    }
+
+    let mut tests = Vec::with_capacity(test_count);
+    let mut ids = BTreeSet::new();
+    for line in &lines[1..] {
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 5 || fields[0] != "CASE" {
+            return Err("invalid CASE record".to_string());
+        }
+        let source_index = parse_self_hosted_count(fields[1], "test source ID")?;
+        let start = parse_self_hosted_count(fields[2], "test span start")?;
+        let end = parse_self_hosted_count(fields[3], "test span end")?;
+        let source_id = SourceId::new(source_index);
+        let source = sources
+            .file(source_id)
+            .ok_or_else(|| format!("unknown test source ID {source_index}"))?;
+        if !source.path().starts_with(test_root) {
+            return Err(format!(
+                "test source ID {source_index} is outside the project test root"
+            ));
+        }
+        if start > end
+            || end > source.text().len()
+            || !source.text().is_char_boundary(start)
+            || !source.text().is_char_boundary(end)
+        {
+            return Err(format!("invalid test source span {start}..{end}"));
+        }
+        let id = decode_self_hosted_bytes(fields[4])?;
+        let Some((package_path, name)) = id.rsplit_once("::") else {
+            return Err("test ID is missing its package separator".to_string());
+        };
+        if package_path.is_empty() || name.is_empty() {
+            return Err("test ID contains an empty package or name".to_string());
+        }
+        if !ids.insert(id.clone()) {
+            return Err(format!("test response repeats test ID `{id}`"));
+        }
+        let package_path = package_path.to_string();
+        let name = name.to_string();
+        tests.push(PackageTest {
+            id,
+            package_path,
+            name,
+            span: mallang::Span::new(source_id, start, end),
+        });
+    }
+
+    if let Some(exact) = exact {
+        if tests.len() != 1 || tests[0].id != exact {
+            return Err("exact test response does not match the requested test ID".to_string());
+        }
+    }
+    Ok(SelfHostedReply::Success(SelfHostedTestResponse {
+        tests,
+        c_source: c_source.to_string(),
+    }))
+}
+
 fn run_ir(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_input_arg(program, "ir", args)?;
     let output = match load_compilation_input(path, compiler)? {
@@ -767,7 +887,12 @@ fn run_run(program: &str, args: &[OsString], compiler: &CompilerSelection) -> Cl
     Ok(())
 }
 
-fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat) -> CliResult<()> {
+fn run_test(
+    program: &str,
+    args: &[String],
+    diagnostic_format: DiagnosticFormat,
+    compiler: &CompilerSelection,
+) -> CliResult<()> {
     let (input, exact) = match args {
         [input] => (input.as_str(), None),
         [input, flag, test_id] if flag == "--exact" => (input.as_str(), Some(test_id.as_str())),
@@ -789,25 +914,59 @@ fn run_test(program: &str, args: &[String], diagnostic_format: DiagnosticFormat)
             "mlg test requires a project directory or `mallang.toml`",
         ));
     }
-    let project = discover_project(input).map_err(|error| CliError::input(error.to_string()))?;
+    let project = if compiler.implementation == CompilerImplementation::SelfHosted {
+        discover_self_hosted_project(Path::new(input), input, compiler)?
+    } else {
+        discover_project(input).map_err(|error| CliError::input(error.to_string()))?
+    };
     let test_files = project
         .discover_test_files()
         .map_err(|error| CliError::input(error.to_string()))?;
     let project_sources = project.compilation_source_files();
     let loaded = load_source_files(project_sources.into_iter().chain(test_files.iter()))
         .map_err(|error| project_source_load_error(&project, error))?;
-    let suite =
-        prepare_project_tests_with_diagnostics(&project, &loaded.sources, &loaded.source_ids)
-            .map_err(|errors| {
+    let prepared = if compiler.implementation == CompilerImplementation::SelfHosted {
+        let stdout = invoke_self_hosted_test_compiler(
+            &project,
+            &loaded.sources,
+            &loaded.source_ids,
+            exact,
+            input,
+            compiler,
+        )?;
+        let response = finish_self_hosted_test(input, stdout, &project, &loaded.sources, exact)?;
+        let selected = (0..response.tests.len()).collect();
+        PreparedTestRun {
+            tests: response.tests,
+            selected,
+            c_source: response.c_source,
+        }
+    } else {
+        let suite =
+            prepare_project_tests_with_diagnostics(&project, &loaded.sources, &loaded.source_ids)
+                .map_err(|errors| {
                 compiler_diagnostics(&loaded.sources, Some(&project), input, errors)
             })?;
-    let selected = select_tests(suite.tests(), exact)?;
-    let artifacts = build_test_artifacts(&project, &loaded.sources, &suite, &selected, input)?;
+        let selected = select_tests(suite.tests(), exact)?;
+        let c_source = if selected.is_empty() {
+            String::new()
+        } else {
+            suite.generate_c_runner(&selected).map_err(|error| {
+                compiler_diagnostic(&loaded.sources, Some(&project), input, error)
+            })?
+        };
+        PreparedTestRun {
+            tests: suite.tests().to_vec(),
+            selected,
+            c_source,
+        }
+    };
+    let artifacts = build_test_artifacts(&project, &prepared.selected, prepared.c_source)?;
 
     let mut passed = 0usize;
     let mut failed = 0usize;
     for artifact in artifacts {
-        let test = &suite.tests()[artifact.test_index];
+        let test = &prepared.tests[artifact.test_index];
         let output = Command::new(&artifact.binary_path)
             .arg(artifact.runner_case.to_string())
             .output()
@@ -854,6 +1013,17 @@ struct TestArtifact {
     binary_path: PathBuf,
 }
 
+struct PreparedTestRun {
+    tests: Vec<PackageTest>,
+    selected: Vec<usize>,
+    c_source: String,
+}
+
+struct SelfHostedTestResponse {
+    tests: Vec<PackageTest>,
+    c_source: String,
+}
+
 fn select_tests(tests: &[PackageTest], exact: Option<&str>) -> Result<Vec<usize>, String> {
     let Some(exact) = exact else {
         return Ok((0..tests.len()).collect());
@@ -867,10 +1037,8 @@ fn select_tests(tests: &[PackageTest], exact: Option<&str>) -> Result<Vec<usize>
 
 fn build_test_artifacts(
     project: &Project,
-    sources: &SourceMap,
-    suite: &mallang::ProjectTestSuite,
     selected: &[usize],
-    fallback_path: &str,
+    c_source: String,
 ) -> CliResult<Vec<TestArtifact>> {
     let build_dir = project.root().join("target/mallang/tests");
     if build_dir.exists() {
@@ -885,9 +1053,6 @@ fn build_test_artifacts(
         return Ok(Vec::new());
     }
 
-    let c_source = suite
-        .generate_c_runner(selected)
-        .map_err(|error| compiler_diagnostic(sources, Some(project), fallback_path, error))?;
     let c_path = build_dir.join("runner.c");
     let binary_path = build_dir.join("runner");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -1153,11 +1318,52 @@ fn invoke_self_hosted_project_compiler(
     input_path: &str,
     compiler: &CompilerSelection,
 ) -> CliResult<String> {
+    let args = self_hosted_project_args(
+        vec![OsString::from(command)],
+        project,
+        sources,
+        source_ids,
+        input_path,
+    )?;
+    invoke_self_hosted_compiler_args(&args, input_path, compiler)
+}
+
+fn invoke_self_hosted_test_compiler(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+    exact: Option<&str>,
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
+    let (selection, test_id) = match exact {
+        Some(test_id) => ("exact", test_id),
+        None => ("all", ""),
+    };
+    let args = self_hosted_project_args(
+        vec![
+            OsString::from("test-project"),
+            OsString::from(selection),
+            OsString::from(test_id),
+            project.test_root().as_os_str().to_owned(),
+        ],
+        project,
+        sources,
+        source_ids,
+        input_path,
+    )?;
+    invoke_self_hosted_compiler_args(&args, input_path, compiler)
+}
+
+fn self_hosted_project_args(
+    mut args: Vec<OsString>,
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+    input_path: &str,
+) -> CliResult<Vec<OsString>> {
     let units = project.compiler_units().collect::<Vec<_>>();
-    let mut args = vec![
-        OsString::from(command),
-        OsString::from(units.len().to_string()),
-    ];
+    args.push(OsString::from(units.len().to_string()));
     for unit in units {
         let dependencies = unit.direct_dependencies().collect::<Vec<_>>();
         args.push(OsString::from(unit.name()));
@@ -1177,7 +1383,7 @@ fn invoke_self_hosted_project_compiler(
         })?;
         args.push(source.path().as_os_str().to_owned());
     }
-    invoke_self_hosted_compiler_args(&args, input_path, compiler)
+    Ok(args)
 }
 
 fn invoke_self_hosted_compiler_args(
@@ -2039,13 +2245,16 @@ fn project_source_load_error(project: &Project, error: SourceLoadError) -> CliEr
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, path::PathBuf};
+    use std::{
+        ffi::OsString,
+        path::{Path, PathBuf},
+    };
 
     use super::{
         child_signal_diagnostic, finish_self_hosted_format, parse_assertion_marker,
         parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
-        parse_self_hosted_project_plan_response, validate_self_hosted_ir, CompilerImplementation,
-        DiagnosticFormat, SelfHostedReply,
+        parse_self_hosted_project_plan_response, parse_self_hosted_test_response,
+        validate_self_hosted_ir, CompilerImplementation, DiagnosticFormat, SelfHostedReply,
     };
     use mallang::SourceMap;
 
@@ -2308,6 +2517,85 @@ mod tests {
                 "response should be rejected: {response:?}"
             );
         }
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_test_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("project/tests/main_test.mlg", "test Pass() {}\n");
+        let payload = "#include <stdint.h>\n";
+        let response = format!(
+            "TEST|1|1|{}\nCASE|0|0|14|{}\n\n{payload}",
+            payload.len(),
+            encoded("project::Pass")
+        );
+
+        let SelfHostedReply::Success(response) = parse_self_hosted_test_response(
+            &response,
+            &sources,
+            Path::new("project/tests"),
+            Some("project::Pass"),
+        )
+        .unwrap() else {
+            panic!("test response should succeed");
+        };
+        assert_eq!(response.tests.len(), 1);
+        assert_eq!(response.tests[0].id, "project::Pass");
+        assert_eq!(response.c_source, payload);
+
+        let SelfHostedReply::Rejection(message) = parse_self_hosted_test_response(
+            &format!("TERR|{}\n", encoded("unknown test")),
+            &sources,
+            Path::new("project/tests"),
+            None,
+        )
+        .unwrap() else {
+            panic!("test selection should be rejected");
+        };
+        assert_eq!(message, "unknown test");
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_test_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("project/tests/main_test.mlg", "test Pass() {}\n");
+        sources.add_file("project/src/main.mlg", "func main() {}\n");
+        let id = encoded("project::Pass");
+
+        let responses = [
+            String::new(),
+            "TEST|2|0|0\n\n".to_string(),
+            "TEST|1|1|0\n\n".to_string(),
+            format!("TEST|1|1|19\nCASE|0|0|14|{id}\n\n#include <stdint.h>\n"),
+            format!("TEST|1|1|0\nCASE|2|0|14|{id}\n\n"),
+            format!("TEST|1|1|0\nCASE|1|0|14|{id}\n\n"),
+            format!("TEST|1|1|0\nCASE|0|14|1|{id}\n\n"),
+            format!("TEST|1|1|0\nCASE|0|0|14|{}\n\n", encoded("Pass")),
+            format!("TEST|1|2|0\nCASE|0|0|14|{id}\nCASE|0|0|14|{id}\n\n"),
+            format!("TEST|1|1|19\nCASE|0|0|14|{id}\n\n#include <stdint.h>"),
+            format!("TERR|{}\nCASE|0|0|14|{id}\n", encoded("unknown test")),
+        ];
+        for response in responses {
+            assert!(
+                parse_self_hosted_test_response(
+                    &response,
+                    &sources,
+                    Path::new("project/tests"),
+                    None,
+                )
+                .is_err(),
+                "response should be rejected: {response:?}"
+            );
+        }
+
+        let valid = format!("TEST|1|1|20\nCASE|0|0|14|{id}\n\n#include <stdint.h>\n");
+        assert!(parse_self_hosted_test_response(
+            &valid,
+            &sources,
+            Path::new("project/tests"),
+            Some("project::Other"),
+        )
+        .is_err());
     }
 
     #[test]

@@ -333,11 +333,26 @@ example/compiler corpus, human/JSON rejection, deterministic project ordering,
 atomic failure and malformed no-fallback behavior agree. The formatter also
 identified and removed full-source UTF-8 revalidation from each valid
 `strings.slice` call; layout and UTF-8 boundaries remain checked, with
-allocation, failure-injection and sanitizer evidence preserved. P179c2 now owns
-test selection and runner generation, followed by the remaining native process
-workflow in P179c3. P179c1 local acceptance covers the canonical and
-default-transition gates plus the full Stage1/Stage2 fixed point and release
-archive smoke.
+allocation, failure-injection and sanitizer evidence preserved. P179c1 local
+acceptance covers the canonical and default-transition gates plus the full
+Stage1/Stage2 fixed point and release archive smoke.
+
+P179c2 moves public project `test` selection, test lowering and one shared C
+runner through `mlgc` using the strict length-framed `TEST|1`/`CASE` protocol.
+The Rust host brokers filesystem and process capabilities, validates source
+IDs, test-root paths, UTF-8 spans, encoded IDs and the complete C payload before
+writing anything, then compiles and replays native results through the existing
+diagnostic surface. The self-hosted C backend now carries the closure
+environment ABI, intrinsic function-value thunks and the `Map[K,V]`
+`newMap`/`count`/`insert` runtime required by the representative project suite.
+Stage0/self passing, failing, preflight, exact, unknown and empty workflow,
+strict C11, allocation, sanitizer, routing and malformed no-fallback evidence
+agree. Local acceptance covers the canonical 591 library, 18 driver and four
+hardening tests; thirteen positive, nine runtime-rejection and zero boundary
+B3 paths; the default-transition gate; an 11,186,276-byte fixed point with 478
+compiler-pair tasks, 173 parser sources, fourteen backend fixtures, eight
+backend projects, twenty-one native pairs and sanitizer regeneration; and the
+release-archive smoke. P179c3 now owns the remaining native process workflow.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

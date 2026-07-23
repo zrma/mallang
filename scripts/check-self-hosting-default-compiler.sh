@@ -32,6 +32,7 @@ parser_rejection="bootstrap/compiler/fixtures/parser/recovery-statements.mlg"
 project_fixture="examples/projects/local-deps/app"
 project_artifact="pathapp"
 project_rejection="tests/fixtures/diagnostics/dependency-project/app"
+test_fixture="examples/projects/hello"
 mkdir -p "$work"
 
 invalid_dependency="$work/invalid-dependency"
@@ -71,6 +72,9 @@ scripts/build-self-hosted-compiler.sh --stage0 "$driver" --output "$self_compile
 
 scripts/check-formatter.sh "$driver" --compiler stage0 >/dev/null
 scripts/check-formatter.sh \
+  "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+scripts/check-test-workflow.sh "$driver" --compiler stage0 >/dev/null
+scripts/check-test-workflow.sh \
   "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
 
 formatter_corpus="$work/formatter-corpus"
@@ -248,6 +252,22 @@ if [[ "$(grep -c '^format$' "$spy_log")" -ne 1 ]] || \
   exit 1
 fi
 
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  test "$test_fixture" --exact "hello::GenericAndClosure" \
+  >"$work/test-spy.stdout" 2>"$work/test-spy.stderr"
+if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^project-plan$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^test-project$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 3 ]] || \
+   [[ -s "$work/test-spy.stderr" ]]; then
+  echo "public self-hosted test protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
 formatter_json="$work/formatter-json.mlg"
 printf '%s\n' 'func main(){print(1)}' >"$formatter_json"
 set +e
@@ -316,6 +336,34 @@ if [[ -s "$work/malformed-format.stdout" ]] || \
      "$work/malformed-format.stderr" || \
    ! cmp -s "$work/malformed-format.mlg" "$work/malformed-format.before.mlg"; then
   echo "malformed formatter response handling mismatch" >&2
+  exit 1
+fi
+
+malformed_test="$work/mlgc-malformed-test"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'if [[ "${1:-}" == "test-project" ]]; then' \
+  '  printf "TEST|1|1|2\nCASE|0|0|0|98,97,100\n\n"' \
+  '  exit 0' \
+  'fi' \
+  'exec "$MLG_MALFORMED_TARGET" "$@"' \
+  >"$malformed_test"
+chmod +x "$malformed_test"
+cp "$test_fixture/target/mallang/tests/runner.c" "$work/malformed-test.before.c"
+if MLG_MALFORMED_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$malformed_test" \
+  test "$test_fixture" \
+  >"$work/malformed-test.stdout" 2>"$work/malformed-test.stderr"; then
+  echo "malformed test response unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "$work/malformed-test.stdout" ]] || \
+   ! grep -Fq 'test C payload byte length does not match its header' \
+     "$work/malformed-test.stderr" || \
+   ! cmp -s "$test_fixture/target/mallang/tests/runner.c" \
+     "$work/malformed-test.before.c"; then
+  echo "malformed test response handling mismatch" >&2
   exit 1
 fi
 
@@ -490,4 +538,4 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,fmt,ir,build,run diagnostics=human,json fallback=explicit-only"
+echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,fmt,ir,build,run,test diagnostics=human,json fallback=explicit-only"

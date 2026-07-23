@@ -49,13 +49,12 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values)
+FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values closure-capture)
 PROJECT_FIXTURES=(dynamic-owned-string string-intrinsics platform-intrinsics)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds integer-division-zero)
 PROJECT_RUNTIME_REJECTION_FIXTURES=(platform-exit-range)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
 PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure string-join-allocation-failure platform-os-args-allocation-failure platform-fs-read-allocation-failure)
-BOUNDARY_REJECTION_FIXTURES=(unsupported-closure)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -182,6 +181,9 @@ EOF
       ;;
     function-values)
       expected=$'20\n22\n42\nkim\n1\n2'
+      ;;
+    closure-capture)
+      expected='1'
       ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
@@ -579,39 +581,6 @@ for name in "${PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}"; do
   done
 done
 
-for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
-  fixture="$PROJECT/fixtures/backend/$name.mlg"
-  first="$WORK/$name.first.stdout"
-  second="$WORK/$name.second.stdout"
-  first_stderr="$WORK/$name.first.stderr"
-  second_stderr="$WORK/$name.second.stderr"
-
-  "$STAGE1" c "$fixture" >"$first" 2>"$first_stderr"
-  "$STAGE1" c "$fixture" >"$second" 2>"$second_stderr"
-  expected=""
-  case "$name" in
-    unsupported-closure)
-      expected="B3 C backend does not yet support closures"
-      ;;
-    *)
-      echo "self-hosting backend boundary fixture has no expected diagnostic: $name" >&2
-      exit 1
-      ;;
-  esac
-  if [[ "$(cat "$first")" != "$expected" ]]; then
-    echo "self-hosting backend boundary rejection mismatch: $name" >&2
-    exit 1
-  fi
-  if ! cmp -s "$first" "$second"; then
-    echo "self-hosting backend boundary rejection is not deterministic: $name" >&2
-    exit 1
-  fi
-  if [[ -s "$first_stderr" || -s "$second_stderr" ]]; then
-    echo "self-hosting backend boundary rejection emitted unexpected stderr: $name" >&2
-    exit 1
-  fi
-done
-
 if [[ "$FIXTURES_ONLY" == false ]]; then
   compiler_sources=()
   while IFS= read -r source_path; do
@@ -636,4 +605,4 @@ fi
 
 fixture_count=$((${#FIXTURES[@]} + ${#PROJECT_FIXTURES[@]}))
 runtime_rejections=$((${#RUNTIME_REJECTION_FIXTURES[@]} + ${#PROJECT_RUNTIME_REJECTION_FIXTURES[@]} + ${#ALLOCATION_REJECTION_FIXTURES[@]} + ${#PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}))
-echo "self-hosting B3 backend gate passed: fixtures=$fixture_count runtime-rejections=$runtime_rejections boundary-rejections=${#BOUNDARY_REJECTION_FIXTURES[@]} compiler-project=$([[ "$FIXTURES_ONLY" == true ]] && echo skipped || echo strict) elapsed=$((SECONDS - started))s"
+echo "self-hosting B3 backend gate passed: fixtures=$fixture_count runtime-rejections=$runtime_rejections boundary-rejections=0 compiler-project=$([[ "$FIXTURES_ONLY" == true ]] && echo skipped || echo strict) elapsed=$((SECONDS - started))s"

@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179b and P179c1 complete; P179c2 active
+Status: active; P179a-P179b and P179c1-P179c2 complete; P179c3 active
 
 ## Objective
 
@@ -140,9 +140,27 @@ second; this is evidence for the algorithmic fix, not a portable threshold.
 Canonical acceptance, the default-transition differential, the complete
 Stage1/Stage2 fixed point and release-archive smoke all pass with this boundary.
 
-P179c2 owns Mallang-side test selection and runner generation. P179c3 then
-moves the remaining native process workflow behind the Mallang boundary before
-P179d changes the packaged default.
+P179c2 moves project test inventory, exact/all selection, test lowering and
+shared native runner generation through `mlgc`. The Mallang compiler emits a
+length-framed `TEST|1` response with one source/span/encoded-ID `CASE` record
+per selected test and the complete generated C payload. Rust remains the
+filesystem, process and diagnostic-replay host; it validates every count,
+source boundary, UTF-8 span, test-root path, ID and payload byte before writing
+or executing the runner. `TERR` selection failures and malformed protocol
+responses never fall back to Stage0 or mutate the prior runner.
+
+The representative project test corpus required the self-hosted C backend to
+close its closure environment/call/drop ABI, intrinsic function-value thunks
+and the `Map[K,V]` layout plus `newMap`, `count` and `insert` runtime. The
+Stage0/self workflow covers passing, failing, preflight, exact, unknown and
+empty suites, shared-runner allocation accounting, strict C11, ASan/UBSan and
+protocol routing. Local acceptance covers the canonical 591 library, 18 driver
+and four hardening tests; thirteen positive, nine runtime-rejection and zero
+boundary B3 paths; the default-transition gate; an 11,186,276-byte fixed point
+with 478 compiler-pair tasks, 173 parser sources, fourteen backend fixtures,
+eight backend projects, twenty-one native pairs and sanitizer regeneration;
+and the release-archive smoke. P179c3 now owns the remaining native process
+workflow before P179d changes the packaged default.
 
 ### P179d: Default Switch And Packaging
 
@@ -167,7 +185,7 @@ P179d changes the packaged default.
 - [x] explicit non-silent Stage0 diagnostic and rollback selector
 - [x] self-hosted public project discovery, diagnostics, check, IR and build
 - [x] self-hosted format and project-wide atomic write/check workflow
-- [ ] self-hosted test selection and runner generation
+- [x] self-hosted test selection and runner generation
 - [ ] self-hosted run and native process workflow
 - [ ] complete Stage0/default command and conformance parity
 - [ ] default release artifacts use the Mallang compiler core

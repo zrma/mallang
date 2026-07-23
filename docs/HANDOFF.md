@@ -855,9 +855,21 @@ example/compiler corpus, human/JSON rejection, project order/atomic failure와 m
 no-fallback 처리가 일치한다. Formatter profiling에서 각 token slice마다 전체 source UTF-8을
 재검사하던 병목을 확인해 두 C backend의 `strings.slice`를 valid-string invariant,
 layout/boundary 검사로 정렬했다. Standard-string과 self-hosting cursor allocation,
-failure-injection, sanitizer gate는 유지된다. P179c2는 test selection/runner generation,
-P179c3은 남은 native process workflow를 소유한다. P179c1 local acceptance는 canonical,
+failure-injection, sanitizer gate는 유지된다. P179c1 local acceptance는 canonical,
 default-transition, deep fixed-point와 release-archive gate를 모두 통과했다.
+P179c2는 public project `test`의 all/exact selection, test lowering과 shared C runner
+generation을 `mlgc test-project`로 옮겼다. Mallang compiler는 source/span/encoded ID
+`CASE` record와 C byte length를 포함한 `TEST|1` payload를 내보내며, Rust host는 test-root,
+UTF-8 span, count, ID와 전체 payload를 검증한 뒤에만 runner를 쓴다. Closure
+environment/call/drop ABI, intrinsic function-value thunk와 representative suite가 사용하는
+`Map[K,V]` `newMap`/`count`/`insert` runtime도 self-hosted C backend에 추가했다.
+Stage0/self passing, failing, preflight, exact, unknown, empty workflow와 strict C11,
+allocation accounting, sanitizer, protocol spy, malformed no-fallback/no-mutation 검증이
+일치한다. Local acceptance는 canonical 591 library/18 driver/4 hardening test,
+B3 13 positive/9 runtime rejection/0 boundary, default-transition, 11,186,276-byte
+fixed point의 478 compiler-pair fixture task/173 parser corpus/14 backend fixture/
+8 backend project/21 native pair와 sanitizer, release-archive smoke를 통과했다.
+P179c3이 남은 native process workflow를 소유한다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
