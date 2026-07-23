@@ -1,7 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179c complete; P179d implementation complete and
-supported-platform acceptance active
+Status: active; P179a-P179d complete; P179e v1.2.0 release acceptance active
 
 ## Objective
 
@@ -209,8 +208,12 @@ scripts/build-self-hosted-compiler.sh \
   --output target/debug/mlgc
 ```
 
-P179d remains active until the default-transition and release-artifact jobs pass
-on macOS arm64 and Linux x86_64 from the published change.
+P179d is complete. The published change passed the default-transition,
+fixed-point and release-artifact jobs on macOS arm64 and Linux x86_64. Both
+platform archives passed clean installation, explicit Stage0 recovery and
+v1.0.0 rollback/current re-upgrade acceptance, and the combined checksum bundle
+was produced. P179e owns the remaining v1.2.0 publication and installed-release
+verification.
 
 ### P179e: B5 Closure
 
@@ -231,7 +234,7 @@ on macOS arm64 and Linux x86_64 from the published change.
 - [x] self-hosted run and native process workflow
 - [x] local complete Stage0/default command and conformance parity
 - [x] default release artifacts use the Mallang compiler core
-- [ ] macOS arm64 and Linux x86_64 packaging and clean-install acceptance
+- [x] macOS arm64 and Linux x86_64 packaging and clean-install acceptance
 - [ ] B5 publication, signed tag and GitHub Release acceptance
 
 ## Excluded

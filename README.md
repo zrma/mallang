@@ -140,6 +140,10 @@ and normative v1 contract.
   `std/fs.forEachLine[C,S]` without exposing a file handle or changing existing
   v1 source semantics. The release gate upgrades published v1.0.0, rolls back,
   and re-upgrades while preserving representative program output.
+- The v1.2.0 release candidate switches the no-flag `mlg` path to the
+  fixed-point Mallang `mlgc` core while retaining tracked Rust Stage0 as the
+  reproducible seed, differential oracle and explicit recovery path. It changes
+  no v1 source syntax or standard-library API.
 - v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
   source without entering later compiler stages. Deterministic lexer/parser/type/
   ownership properties, a checked-in crash corpus, typed IR preflight validation,
@@ -432,7 +436,8 @@ and stable re-upgrade gates. It is the cross-platform release acceptance used by
 
 ## v1 Binary Distribution
 
-The v1.1.0 GitHub release contains:
+The latest published v1.1.0 release uses the legacy single-`mlg` archive. The
+v1.2.0 release candidate adds the sibling self-hosted `mlgc` core and contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -447,12 +452,12 @@ chmod +x install.sh
 ./install.sh --version 1.1.0
 ```
 
-The default destination is `$HOME/.local/bin`, where the installer places the
-`mlg` driver and sibling `mlgc` core; use `--bin-dir <directory>` for another
-prefix. The installer requires `clang`, downloads only the detected host archive
-over HTTPS, verifies its entry in `SHA256SUMS`, and replaces the verified binary
-pair. Re-running it with another explicit version is the explicit update or
-offline rollback workflow.
+The default destination is `$HOME/.local/bin`; use `--bin-dir <directory>` for
+another prefix. The installer requires `clang`, downloads only the detected host
+archive over HTTPS, and verifies its entry in `SHA256SUMS`. A legacy archive
+installs only `mlg` and removes a stale `mlgc`; a current archive atomically
+installs the verified `mlg`/`mlgc` pair. Re-running it with another explicit
+version is the explicit update or offline rollback workflow.
 
 Build and inspect the current native development artifact with:
 
@@ -488,7 +493,8 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `bootstrap/compiler/`: active Mallang compiler source, beginning with the B1
   token model and lexer.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
-- `docs/releases/`: v0.1.0 through v1.1.0 release notes and verification records.
+- `docs/releases/`: v0.1.0 through the v1.2.0 release candidate notes and
+  verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,

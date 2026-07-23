@@ -1,6 +1,6 @@
 # Open Questions: B5 Default Self-Hosted Compiler
 
-Status: active; P179a decisions frozen unless implementation evidence reopens them
+Status: resolved for B5; P179e release verification active
 
 ## Does The Public Command Change?
 
@@ -43,6 +43,7 @@ compiler implementation behind the default path is not acceptable.
 
 The local switch happened only after self-hosted project discovery,
 diagnostics, formatting, testing, native workflow and dual-binary release
-packaging passed Stage0/default parity. P179d still requires that same evidence
-on every supported platform before closure; B4 fixed-point evidence alone is
-insufficient.
+packaging passed Stage0/default parity. P179d then passed the same default,
+fixed-point, archive and clean-install evidence on every supported platform.
+B4 fixed-point evidence alone was insufficient; B5 publication remains gated by
+the P179e signed-release and installed-artifact verification.

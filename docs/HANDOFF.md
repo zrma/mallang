@@ -886,6 +886,16 @@ B3 13 positive/9 runtime rejection/0 boundary, default-transition,
 smoke를 통과했다. P179d가 packaged default switch와 offline Stage0 recovery
 artifact를 소유한다.
 
+P179d는 no-flag `mlg`를 sibling `mlgc` self-hosted core로 전환하고
+`--compiler stage0`를 명시적 in-process 복구/oracle 경로로 보존했다. Release archive와
+installer는 `mlg`/`mlgc` pair의 exact entry set, checksum, driver version, core protocol과
+Stage0 selector를 검증한다. Published v1.0.0 single-driver artifact rollback 뒤에는 stale
+`mlgc`를 남기지 않고, current dual artifact re-upgrade가 pair를 복원한다. macOS arm64와
+Linux x86_64 remote CI에서 default transition, fixed point, clean install,
+rollback/re-upgrade, release archive와 checksum bundle이 모두 통과해 P179d를 닫았다.
+P179e는 compatible v1.2.0 signed tag, GitHub Release와 published clean-install
+verification을 소유한다.
+
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
 `scripts/diagnose-self-hosting-compiler-ir.sh --rebuild-bootstrap` 또는

@@ -1,6 +1,7 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B4 complete, B5 P179d acceptance active
+Status: active long-term program; B0-B4 and B5 P179a-P179d complete,
+P179e v1.2.0 release acceptance active
 
 ## Objective
 
@@ -393,8 +394,34 @@ target/debug/mlg --compiler stage0 --version --verbose
 ```
 
 The local transition, fixed-point, release-binary and deterministic dual-binary
-archive gates cover the packaged switch. P179d closes only after the same
-default and clean-install paths pass macOS arm64 and Linux x86_64 CI.
+archive gates cover the packaged switch. P179d is complete: the same default,
+fixed-point, archive, clean-install and rollback/current re-upgrade paths pass
+macOS arm64 and Linux x86_64 CI, and both archives are assembled into one
+checksum bundle.
+
+## Long-Term Stage0 Seed Audit
+
+The tracked Rust workspace and `Cargo.lock` remain the authoritative Stage0
+seed after B5. They are maintained as a reproducible recovery input and
+differential oracle, not as the normal compiler implementation.
+
+- A seed refresh is allowed only in a separately reviewed change that names the
+  compiler behavior or toolchain reason. Dependency-only churn is not an
+  automatic refresh trigger.
+- Every refresh must build from a clean checkout with
+  `cargo build --locked --bin mlg`, regenerate Stage1 and Stage2, and pass the
+  complete fixed-point,
+  Stage0/default differential, canonical, sanitizer and release-artifact gates.
+- The refresh must preserve explicit `--compiler stage0` provenance and must
+  not add an opaque or untracked bootstrap binary.
+- A compatible release that changes the seed records the old-to-new seed
+  boundary in its release notes. A source, ownership, CLI or supported-platform
+  compatibility change still follows `docs/COMPATIBILITY.md`; calling it a seed
+  refresh does not relax that policy.
+- Periodic audits rebuild the seed from tracked source and lockfile, compare the
+  resulting self-hosted compiler at the fixed point, and exercise both supported
+  platform archives. Audit evidence belongs in repository gates and release
+  records, while machine-specific inventory remains local-only.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
