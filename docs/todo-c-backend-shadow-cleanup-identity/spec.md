@@ -1,6 +1,6 @@
 # C Backend Shadow Cleanup Identity
 
-Status: complete (2026-07-19)
+Status: complete; accepted on 2026-07-19
 
 ## Objective
 

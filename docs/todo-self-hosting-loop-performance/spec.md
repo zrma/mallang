@@ -1,6 +1,6 @@
 # Spec: Self-Hosting Loop Performance
 
-Status: complete (2026-07-18)
+Status: complete; accepted on 2026-07-18
 
 ## Problem
 

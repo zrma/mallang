@@ -1,5 +1,7 @@
 # Spec: pipeline-expressions
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Mallang의 함수형 value-first 스타일을 위해 `|>` pipeline call sugar를 추가한다.

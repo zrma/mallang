@@ -1,5 +1,7 @@
 # Spec: borrow-mode-alias-rejection-regression
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0 borrow surface를 `con`/`mut` prefix grammar로만 유지한다.

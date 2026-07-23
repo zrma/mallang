@@ -1,5 +1,7 @@
 # Spec: field-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like direct struct field assignment을 parser, semantic checker, typed IR,

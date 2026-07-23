@@ -1,5 +1,7 @@
 # Spec: entrypoint-signature
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0 native backend wrapper와 semantic checker가 같은 entrypoint contract를

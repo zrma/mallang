@@ -1,5 +1,7 @@
 # Spec: match-statement
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - statement-form `match`를 추가하고 각 arm이 block statements를 갖도록 한다.

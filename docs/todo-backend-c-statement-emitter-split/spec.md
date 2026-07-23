@@ -1,5 +1,7 @@
 # Spec: backend-c-statement-emitter-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend의 statement/loop/match statement/print emission을 expression emission과 분리한다.

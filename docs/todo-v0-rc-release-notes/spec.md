@@ -1,5 +1,7 @@
 # Spec: v0-rc-release-notes
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Add a durable v0 release-candidate note that summarizes the local language

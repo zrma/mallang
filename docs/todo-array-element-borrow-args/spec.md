@@ -1,5 +1,7 @@
 # Spec: array-element-borrow-args
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array의 non-copy element를 owned value로 꺼내지 않고 함수 인자로

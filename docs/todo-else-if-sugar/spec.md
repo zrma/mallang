@@ -1,5 +1,7 @@
 # Spec: else-if-sugar
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - statement-form `if`와 expression-form `if`에서 `else if` sugar를 지원한다.

@@ -1,5 +1,7 @@
 # Spec: fixed-array-element-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - fixed-size array의 `Copy` element를 checked index를 통해 갱신할 수 있게 한다.

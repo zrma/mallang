@@ -1,5 +1,7 @@
 # Spec: match-scrutinee-temp
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - native C backend에서 `match` scrutinee가 local variable이 아닌 expression이어도

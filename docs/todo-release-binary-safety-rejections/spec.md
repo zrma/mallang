@@ -1,5 +1,7 @@
 # Spec: release-binary-safety-rejections
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify the release-built CLI rejects representative v0 safety violations

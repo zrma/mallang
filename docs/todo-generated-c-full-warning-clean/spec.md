@@ -1,5 +1,7 @@
 # Spec: generated-c-full-warning-clean
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Make every successful generated C example in the normal smoke gate compile

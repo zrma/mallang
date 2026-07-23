@@ -1,5 +1,7 @@
 # Spec: slice-element-borrow
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice element를 기존 `con`/`mut` borrow argument surface에 연결한다.

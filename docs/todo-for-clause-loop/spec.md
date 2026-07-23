@@ -1,5 +1,7 @@
 # Spec: for-clause-loop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like `for init; condition; post` loop를 parser, semantic checker, typed IR,

@@ -1,5 +1,7 @@
 # Spec: v0.2-project-model
 
+Status: complete; historical milestone record
+
 상태: released as v0.2.0 (2026-07-15)
 
 ## 목표

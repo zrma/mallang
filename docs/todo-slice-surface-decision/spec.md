@@ -1,5 +1,7 @@
 # Spec: slice-surface-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - array-only `range` 이후의 다음 array/slice 작업 경계를 고정한다.

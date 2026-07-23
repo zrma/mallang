@@ -1,5 +1,7 @@
 # Spec: publish-remote-freshness-guard
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Prevent approval-gated publish from moving `main` when `origin/main` has

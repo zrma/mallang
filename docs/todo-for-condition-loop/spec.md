@@ -1,5 +1,7 @@
 # Spec: for-condition-loop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like control flow의 기본으로 condition-only `for` statement를 추가한다.

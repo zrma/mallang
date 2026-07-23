@@ -1,5 +1,7 @@
 # Spec: backend-c-expression-emitter-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend의 expression/literal/call/borrow-lvalue/match-expression emission을 statement/orchestration module에서 분리한다.

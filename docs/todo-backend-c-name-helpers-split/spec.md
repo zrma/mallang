@@ -1,5 +1,7 @@
 # Spec: backend-c-name-helpers-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend 내부에서 C identifier/type/operator naming helper를 emission orchestration에서 분리한다.

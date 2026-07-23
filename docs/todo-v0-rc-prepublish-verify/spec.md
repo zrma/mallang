@@ -1,5 +1,7 @@
 # Spec: v0-rc-prepublish-verify
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Add a single local v0 release-candidate verification command before remote

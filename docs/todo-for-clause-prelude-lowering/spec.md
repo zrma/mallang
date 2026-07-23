@@ -1,5 +1,7 @@
 # Spec: for-clause-prelude-lowering
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Native backend에서 `for init; condition; post` clause의 condition/post가

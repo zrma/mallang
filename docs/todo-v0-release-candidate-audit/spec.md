@@ -1,5 +1,7 @@
 # Spec: v0-release-candidate-audit
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Record the current v0 release-candidate evidence in a durable agent-readable

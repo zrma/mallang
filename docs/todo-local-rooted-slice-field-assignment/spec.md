@@ -1,5 +1,7 @@
 # Spec: local-rooted-slice-field-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Struct field로 소유한 slice element를 직접 갱신할 수 있게 한다.

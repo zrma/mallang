@@ -1,5 +1,7 @@
 # Spec: print-statement-only
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `print(expr)`를 v0의 statement-only built-in으로 고정한다.

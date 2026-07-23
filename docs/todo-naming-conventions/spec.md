@@ -1,7 +1,6 @@
 # Naming Conventions Design Debt
 
-Status: approved design; implementation deferred until after the active
-self-hosting program
+Status: active; P181 compatible naming lint implementation
 
 ## Problem
 

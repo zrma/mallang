@@ -1,5 +1,7 @@
 # Spec: fixed-array-index-len
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - fixed-size array의 직접 index access와 `len` built-in을 compiler pipeline에

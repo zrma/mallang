@@ -1,5 +1,7 @@
 # Spec: slice-ownership-append-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `[]T`, `append`, range over slices를 열기 전 ownership/native ABI 결정을

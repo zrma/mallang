@@ -1,5 +1,7 @@
 # Spec: prefix-parameter-modes
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Borrow parameter/call surface를 `con`/`mut` prefix mode로 정리한다.

@@ -1,5 +1,7 @@
 # Spec: generic-type-refs
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `Option[T]`와 `Result[T, E]` 구현의 첫 단계로 generic type reference를 AST까지 파싱한다.

@@ -1,5 +1,7 @@
 # Spec: backend-c-module-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Native backend 분리의 첫 구조 작업으로 backend public API와 C backend

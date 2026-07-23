@@ -1,5 +1,7 @@
 # Spec: internal-slice-type-shell
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice 구현 전 단계로 internal type/backend shell을 추가한다.

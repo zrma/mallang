@@ -1,5 +1,7 @@
 # Spec: slice-literal-allocation-size-guard
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Native slice literal lowering이 `malloc(sizeof(T) * len)` 전에 allocation-size overflow를 guard한다.

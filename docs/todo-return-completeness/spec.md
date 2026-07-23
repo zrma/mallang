@@ -1,5 +1,7 @@
 # Spec: return-completeness
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - non-`unit` function의 return-completeness analysis를 statement-form `if`

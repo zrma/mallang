@@ -1,5 +1,7 @@
 # Spec: non-copy-array-element-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array의 non-copy element도 mutable slot assignment로 교체할 수 있게 한다.

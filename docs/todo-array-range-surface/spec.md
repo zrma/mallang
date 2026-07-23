@@ -1,5 +1,7 @@
 # Spec: array-range-surface
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Mallang v0의 array/slice/range 최소 surface를 구현 전에 확정한다.

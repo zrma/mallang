@@ -1,5 +1,7 @@
 # Spec: overlapping-borrows
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - same-call borrow conflict를 semantic checker에서 검출해 ownership-lite의 독점

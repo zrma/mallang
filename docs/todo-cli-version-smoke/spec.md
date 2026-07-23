@@ -1,5 +1,7 @@
 # Spec: cli-version-smoke
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0 PoC의 user-facing CLI가 자기 버전을 출력할 수 있게 한다.

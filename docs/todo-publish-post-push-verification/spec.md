@@ -1,5 +1,7 @@
 # Spec: publish-post-push-verification
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Treat publish success as remote bookmark equality, not only as a successful

@@ -1,5 +1,7 @@
 # Spec: match-expression
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Built-in ADT인 `Option[T]`와 `Result[T, E]`를 값으로 분해하는 exhaustive `match` expression을 추가한다.

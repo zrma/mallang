@@ -1,5 +1,7 @@
 # Spec: adt-constructors
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `Option[T]` / `Result[T, E]` 타입을 semantic checker의 실제 타입 모델에 추가한다.

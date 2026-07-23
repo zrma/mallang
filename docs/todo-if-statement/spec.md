@@ -1,5 +1,7 @@
 # Spec: if-statement
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like statement-form `if`를 parser, semantic checker, typed IR, C backend에

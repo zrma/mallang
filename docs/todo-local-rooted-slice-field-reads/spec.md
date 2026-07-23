@@ -1,5 +1,7 @@
 # Spec: local-rooted-slice-field-reads
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Struct cleanup으로 열린 `[]T` fields를 read/borrow surface에서 직접 사용할 수 있게 한다.

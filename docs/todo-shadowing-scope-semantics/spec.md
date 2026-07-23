@@ -1,5 +1,7 @@
 # Spec: shadowing-scope-semantics
 
+Status: complete; historical milestone record
+
 ## Goal
 
 - Mallang v0 binding shadowing 규칙을 lexical block 기준으로 고정한다.

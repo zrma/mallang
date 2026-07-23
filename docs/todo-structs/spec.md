@@ -1,5 +1,7 @@
 # Spec: structs
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like `type Name struct { ... }`, struct literal, field access를

@@ -1,5 +1,7 @@
 # Spec: mut-parameter-abi
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `con`/`mut` parameter를 native backend에서 hidden-reference ABI로 낮춘다.

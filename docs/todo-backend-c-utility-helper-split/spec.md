@@ -1,5 +1,7 @@
 # Spec: backend-c-utility-helper-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend의 shared formatting, temp-name, checked-int helper, parameter-env helper를 orchestration module에서 분리한다.

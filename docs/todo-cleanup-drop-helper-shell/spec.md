@@ -1,5 +1,7 @@
 # Spec: cleanup-drop-helper-shell
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned heap resource cleanup/drop lowering의 선행 단계로 C backend drop helper

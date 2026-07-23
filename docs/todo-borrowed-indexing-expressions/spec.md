@@ -1,5 +1,7 @@
 # Spec: borrowed-indexing-expressions
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Local-rooted fixed-size array and direct local slice indexing can be used in

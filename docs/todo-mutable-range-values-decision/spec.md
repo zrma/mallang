@@ -1,5 +1,7 @@
 # Spec: mutable-range-values-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0에서 mutable range value syntax를 열지 않는다.

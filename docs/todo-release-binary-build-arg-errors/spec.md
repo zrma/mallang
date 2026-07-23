@@ -1,5 +1,7 @@
 # Spec: release-binary-build-arg-errors
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify release-built `mlg build` rejects malformed build arguments before v0

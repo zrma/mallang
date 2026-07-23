@@ -1,5 +1,7 @@
 # Spec: straight-line-cleanup-reassignment-drop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Straight-line cleanup insertion에서 cleanup root reassignment가 기존 owned

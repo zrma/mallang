@@ -1,5 +1,7 @@
 # Spec: loop-persistent-move-safety
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `for`/`range` loop에서 반복 iteration을 가로질러 살아있는 move-only

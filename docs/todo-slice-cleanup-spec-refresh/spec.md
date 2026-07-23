@@ -1,5 +1,7 @@
 # Spec: slice-cleanup-spec-refresh
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `SPEC.md`의 slice cleanup 설명을 현재 구현 상태에 맞춘다.

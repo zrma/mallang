@@ -1,5 +1,7 @@
 # Spec: struct-cleanup-slice-fields
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Struct fields may own cleanup resources such as `[]T`.

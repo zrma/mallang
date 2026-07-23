@@ -1,5 +1,7 @@
 # Spec: release-binary-frontend-smoke
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify every read-only frontend/IR CLI command on the release-built `mlg`

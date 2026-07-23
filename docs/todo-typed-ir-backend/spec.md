@@ -1,5 +1,7 @@
 # Spec: typed-ir-backend
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - semantic checker를 통과한 AST를 typed IR로 lower하고, C backend가 AST를 직접

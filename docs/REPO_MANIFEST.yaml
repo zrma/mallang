@@ -14,6 +14,7 @@ primary_entrypoints:
   - docs/ROADMAP.md
 commands:
   check_agent_harness: scripts/check-agent-harness-interface.sh
+  check_todo_state: python3 scripts/check-todo-state.py
   check: scripts/check.sh
   check_test_workflow: scripts/check-test-workflow.sh target/debug/mlg
   check_streaming_file_io: scripts/check-streaming-file-io-runtime.sh

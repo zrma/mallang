@@ -1,5 +1,7 @@
 # Spec: runtime-failure-stderr-smoke
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Native runtime failure smoke가 exit code뿐 아니라 Mallang runtime stderr message도 검증한다.

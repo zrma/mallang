@@ -1,5 +1,7 @@
 # Spec: slice-field-append-reassignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice field를 같은 field에 즉시 재저장하는 append 표면을 연다.

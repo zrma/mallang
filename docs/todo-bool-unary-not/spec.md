@@ -1,5 +1,7 @@
 # Spec: bool-unary-not
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Mallang v0의 `!expr` bool unary operator를 공식 surface로 고정한다.

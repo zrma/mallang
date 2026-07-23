@@ -1,5 +1,7 @@
 # Spec: publish-freshness-preflight
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Fail fast on stale remote state before the finalizer mutates the local jj

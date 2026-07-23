@@ -1,5 +1,7 @@
 # Spec: array-range-one-variable
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like one-variable array range syntax를 지원한다.

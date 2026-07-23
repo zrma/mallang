@@ -1,5 +1,7 @@
 # Spec: ir-subcommand
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `mlg ir <input>` debug subcommand를 추가해 checked AST를 typed IR로 낮춘

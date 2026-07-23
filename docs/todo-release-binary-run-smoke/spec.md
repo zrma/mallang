@@ -1,5 +1,7 @@
 # Spec: release-binary-run-smoke
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify the release-built CLI `mlg run` path before v0 publication.

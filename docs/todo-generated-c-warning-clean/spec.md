@@ -1,5 +1,7 @@
 # Spec: generated-c-warning-clean
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Keep representative generated C output clean under `clang -std=c11 -Wall

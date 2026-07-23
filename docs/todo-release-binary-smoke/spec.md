@@ -1,5 +1,7 @@
 # Spec: release-binary-smoke
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify the actual `target/release/mlg` binary before v0 publication.

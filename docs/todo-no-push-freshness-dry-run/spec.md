@@ -1,5 +1,7 @@
 # Spec: no-push-freshness-dry-run
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Make the `--no-push` finalizer dry run exercise the same remote freshness

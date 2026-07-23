@@ -1,6 +1,6 @@
 # B2 Self-Hosting Semantics And Typed IR
 
-Status: in progress; P176a-P176e4c1 complete
+Status: complete; P176a-P176e4c1 accepted
 
 ## Objective
 

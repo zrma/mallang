@@ -1,5 +1,7 @@
 # Spec: statement-spanning-borrows-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0에서 statement-spanning borrow syntax를 열지 않는다.

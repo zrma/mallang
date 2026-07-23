@@ -1,5 +1,7 @@
 # Spec: nested-field-places
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `user.name.value`처럼 local binding에서 시작하는 nested field path를

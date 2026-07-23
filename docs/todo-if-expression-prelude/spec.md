@@ -1,5 +1,7 @@
 # Spec: if-expression-prelude
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `if` expression branch 안에 `match` expression처럼 C prelude statement가 필요한 expression이 들어와도 native backend가 코드를 생성하게 한다.

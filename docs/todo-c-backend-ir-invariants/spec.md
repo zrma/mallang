@@ -1,5 +1,7 @@
 # Spec: c-backend-ir-invariants
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend가 malformed typed IR을 조용히 C로 emit하지 않고 invariant error로 실패하는지 regression으로 고정한다.

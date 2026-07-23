@@ -1,5 +1,7 @@
 # Spec: slice-range
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice를 Go-like `range` source로 허용한다.

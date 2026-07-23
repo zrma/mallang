@@ -1,5 +1,7 @@
 # Spec: array-ir-backend
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array typed IR와 C struct-wrapper layout을 추가한다.

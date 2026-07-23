@@ -1,5 +1,7 @@
 # Spec: field-index-cleanup-overwrite-drop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Cleanup type field/index assignment가 기존 owned value를 덮어쓰기 전에 old

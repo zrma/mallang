@@ -1,5 +1,7 @@
 # Spec: first-native-build
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - README의 첫 마일스톤을 닫는다: Mallang source를 native binary로 빌드하고,

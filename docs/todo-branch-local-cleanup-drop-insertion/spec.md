@@ -1,5 +1,7 @@
 # Spec: branch-local-cleanup-drop-insertion
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Cleanup drop insertion을 straight-line top-level body에서 `if`/`match`

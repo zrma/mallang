@@ -1,5 +1,7 @@
 # Spec: checked-int-arithmetic
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Native C backend의 signed integer arithmetic이 C undefined behavior에 기대지

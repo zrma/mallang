@@ -1,5 +1,7 @@
 # Spec: c-runtime-error-helper
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Generated C의 Mallang runtime failure emission을 한 helper로 모은다.

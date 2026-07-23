@@ -1,5 +1,7 @@
 # Spec: for-init-cleanup-trailer
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `for init; condition; post` loop의 init binding이 cleanup type일 때, loop

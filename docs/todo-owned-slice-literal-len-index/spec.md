@@ -1,5 +1,7 @@
 # Spec: owned-slice-literal-len-index
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Source-level `[]T`를 owned move-only slice value로 연다.

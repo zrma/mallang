@@ -1,5 +1,7 @@
 # Spec: v1-roadmap
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Mallang `v0.2.0`부터 `v1.0.0`까지 아홉 개 마일스톤을 durable roadmap으로

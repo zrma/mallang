@@ -1,5 +1,7 @@
 # Spec: slice-type-surface
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like slice type syntax `[]T`를 parser surface에 추가한다.

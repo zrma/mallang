@@ -1,5 +1,7 @@
 # Spec: slice-field-take-append-source
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Same-field reassignment 없이 owned slice field를 `append` source로 사용할 수 있게 한다.

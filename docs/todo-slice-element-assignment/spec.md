@@ -1,5 +1,7 @@
 # Spec: slice-element-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice element를 direct indexed assignment target으로 허용한다.

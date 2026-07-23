@@ -1,5 +1,7 @@
 # Spec: mut-receiver-methods
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - 기존 receiver mode 설계 중 `mut` receiver method가 native backend에서 caller-visible mutation을 보장하는지 검증으로 고정한다.

@@ -1,5 +1,7 @@
 # Spec: expression-branch-cleanup-normalization
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Expression-form `if`/`match`가 cleanup root를 branch별로 다르게 move할 때

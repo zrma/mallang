@@ -1,5 +1,7 @@
 # Spec: slice-reserved-boundary
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - slice ownership/native ABI를 열기 전까지 `[]T`가 모든 type position에서

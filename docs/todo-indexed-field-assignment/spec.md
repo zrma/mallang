@@ -1,5 +1,7 @@
 # Spec: indexed-field-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Array/slice element에서 이어지는 field path를 assignment target으로 허용한다.

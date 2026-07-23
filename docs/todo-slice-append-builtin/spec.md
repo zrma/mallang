@@ -1,5 +1,7 @@
 # Spec: slice-append-builtin
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned slice growth surface를 `append(slice, item)` built-in으로 연다.

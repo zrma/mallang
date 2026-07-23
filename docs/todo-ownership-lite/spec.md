@@ -1,5 +1,7 @@
 # Spec: ownership-lite
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0 ownership-lite의 첫 정적 규칙을 semantic checker에 추가한다.

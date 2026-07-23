@@ -40,6 +40,8 @@ if [[ ! -f "$TODO_DIR/spec.md" ]]; then
   cat >"$TODO_DIR/spec.md" <<EOF
 # Spec: $WORK_ID
 
+Status: active
+
 ## 목표
 
 - TODO

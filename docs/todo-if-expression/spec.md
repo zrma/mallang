@@ -1,5 +1,7 @@
 # Spec: if-expression
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - SPEC에 이미 정의된 `if` expression의 첫 구현을 추가한다.

@@ -1,5 +1,7 @@
 # Spec: mlg-run-command
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - SPEC에 이미 선언된 `mlg run` command를 CLI에 구현한다.

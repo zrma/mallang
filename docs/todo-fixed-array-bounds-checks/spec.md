@@ -1,5 +1,7 @@
 # Spec: fixed-array-bounds-checks
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - fixed-size array indexing이 Rust-like safety 목표에 맞게 unchecked C memory

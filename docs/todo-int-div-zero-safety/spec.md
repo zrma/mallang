@@ -1,5 +1,7 @@
 # Spec: int-div-zero-safety
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Integer division and remainder가 C backend에서 undefined behavior에 기대지

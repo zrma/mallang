@@ -1,5 +1,7 @@
 # Spec: recursive-struct-type-check
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Recursive value type definitions를 `mlg check` 단계에서 reject한다.

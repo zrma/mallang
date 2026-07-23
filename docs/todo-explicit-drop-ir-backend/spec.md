@@ -1,5 +1,7 @@
 # Spec: explicit-drop-ir-backend
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Automatic cleanup insertion 전에 typed IR/backend가 명시적 drop statement를

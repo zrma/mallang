@@ -1,5 +1,7 @@
 # Spec: branch-outer-cleanup-move-normalization
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Cleanup root가 `if`/statement-form `match` branch 안에서 move될 때 parent

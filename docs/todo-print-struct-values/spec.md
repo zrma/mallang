@@ -1,5 +1,7 @@
 # Spec: print-struct-values
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend에서 struct 값을 native `print`로 출력한다.

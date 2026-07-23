@@ -1,5 +1,7 @@
 # Spec: v0.6-standard-library
 
+Status: complete; historical milestone record
+
 상태: released as v0.6.0 (2026-07-15; P147-P153 complete)
 
 ## 목표

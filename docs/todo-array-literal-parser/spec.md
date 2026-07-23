@@ -1,5 +1,7 @@
 # Spec: array-literal-parser
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array literal `[N]T{...}`를 parser AST까지 연결한다.

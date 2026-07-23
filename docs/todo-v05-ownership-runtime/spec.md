@@ -1,5 +1,7 @@
 # Spec: v0.5-ownership-runtime
 
+Status: complete; historical milestone record
+
 상태: released as v0.5.0 (2026-07-15; P138-P145 complete)
 
 ## 목표

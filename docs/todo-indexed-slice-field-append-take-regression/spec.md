@@ -1,5 +1,7 @@
 # Spec: indexed-slice-field-append-take-regression
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Indexed owned slice field source를 `append` source로 take하는 C lowering을 regression으로 고정한다.

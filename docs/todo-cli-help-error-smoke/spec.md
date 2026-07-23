@@ -1,5 +1,7 @@
 # Spec: cli-help-error-smoke
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0 PoC CLI의 help/error stream behavior를 smoke로 고정한다.

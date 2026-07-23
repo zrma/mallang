@@ -1,5 +1,7 @@
 # Spec: finalizer-option-value-diagnostics
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Make missing finalizer option values fail with explicit diagnostics instead of

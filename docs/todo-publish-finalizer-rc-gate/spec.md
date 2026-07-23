@@ -1,5 +1,7 @@
 # Spec: publish-finalizer-rc-gate
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Ensure the approval-gated publish helper uses the full v0 RC verification

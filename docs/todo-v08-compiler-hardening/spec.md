@@ -1,5 +1,7 @@
 # Spec: v0.8 Compiler Hardening
 
+Status: complete; historical milestone record
+
 상태: released as v0.8.0 (2026-07-16; P161-P166 complete)
 
 ## Goal

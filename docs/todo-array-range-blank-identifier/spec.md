@@ -1,5 +1,7 @@
 # Spec: array-range-blank-identifier
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Array-only `range` loop에서 Go-like blank identifier `_`를 지원한다.

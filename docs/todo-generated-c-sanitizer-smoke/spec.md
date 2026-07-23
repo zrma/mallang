@@ -1,5 +1,7 @@
 # Spec: generated-c-sanitizer-smoke
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Add a focused generated C memory/lifetime smoke for cleanup-heavy v0 examples.

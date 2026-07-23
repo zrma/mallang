@@ -1,5 +1,7 @@
 # Spec: release-helper-contract-checks
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Keep the publish helper argument contract under automated local verification.

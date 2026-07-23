@@ -1,5 +1,7 @@
 # Spec: general-field-partial-moves-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0에서 general field partial move semantics를 열지 않는다.

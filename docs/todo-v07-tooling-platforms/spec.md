@@ -1,5 +1,7 @@
 # Spec: v0.7 Tooling and Platforms
 
+Status: complete; historical milestone record
+
 상태: released as v0.7.0 (2026-07-16; P154-P160 complete)
 
 ## Goal

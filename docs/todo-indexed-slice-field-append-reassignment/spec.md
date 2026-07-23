@@ -1,5 +1,7 @@
 # Spec: indexed-slice-field-append-reassignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Indexed slice field를 같은 indexed field에 즉시 재저장하는 append 표면을 연다.

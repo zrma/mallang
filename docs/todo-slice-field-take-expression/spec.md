@@ -1,5 +1,7 @@
 # Spec: slice-field-take-expression
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Owned value position에서 owned slice field를 직접 take할 수 있게 한다.

@@ -1,5 +1,7 @@
 # Spec: backend-c-type-emitter-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend의 type collection, C type layout emission, cleanup helper emission을 function/statement/expression emission orchestration에서 분리한다.

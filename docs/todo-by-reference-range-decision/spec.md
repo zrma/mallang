@@ -1,5 +1,7 @@
 # Spec: by-reference-range-decision
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0에서 by-reference range binding syntax를 열지 않는다.

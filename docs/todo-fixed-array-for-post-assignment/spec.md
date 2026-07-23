@@ -1,5 +1,7 @@
 # Spec: fixed-array-for-post-assignment
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like `for init; condition; post`의 post 절에서 fixed-size array element

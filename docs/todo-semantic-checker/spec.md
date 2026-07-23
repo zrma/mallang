@@ -1,5 +1,7 @@
 # Spec: semantic-checker
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `mlg check` subcommand와 별도 semantic phase를 추가해 parser 이후 오류를

@@ -1,5 +1,7 @@
 # Spec: struct-methods
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like receiver method declaration과 method call을 parser, semantic checker,

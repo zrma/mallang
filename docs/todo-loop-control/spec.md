@@ -1,5 +1,7 @@
 # Spec: loop-control
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Condition-only `for` loop에 필요한 최소 loop control statement를 추가한다.

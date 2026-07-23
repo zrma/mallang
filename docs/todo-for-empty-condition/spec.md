@@ -1,5 +1,7 @@
 # Spec: for-empty-condition
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like conditionless loop `for { ... }`와 empty-condition clause loop

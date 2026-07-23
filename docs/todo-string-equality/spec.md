@@ -1,5 +1,7 @@
 # Spec: string-equality
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `string`에 대해 `==`/`!=` equality를 지원한다.

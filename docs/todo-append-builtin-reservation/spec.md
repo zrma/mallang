@@ -1,5 +1,7 @@
 # Spec: append-builtin-reservation
 
+Status: complete; historical milestone record
+
 ## Goal
 
 - Slice growth surface를 열기 전에 `append` 이름을 built-in value namespace에 예약한다.

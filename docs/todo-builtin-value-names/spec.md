@@ -1,5 +1,7 @@
 # Spec: builtin-value-names
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Built-in value namespace를 semantic checker에서 예약한다.

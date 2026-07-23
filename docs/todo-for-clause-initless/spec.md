@@ -1,5 +1,7 @@
 # Spec: for-clause-initless
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Go-like initless clause loop `for ; condition; post { ... }`를 parser,

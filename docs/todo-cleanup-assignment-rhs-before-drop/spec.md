@@ -1,5 +1,7 @@
 # Spec: cleanup-assignment-rhs-before-drop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Cleanup overwrite assignment에서 RHS를 먼저 평가한 뒤 old place를 drop하고

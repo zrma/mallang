@@ -1,5 +1,7 @@
 # Spec: field-borrow-args
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `con user.name`과 `mut user.name`처럼 direct local field를 borrow

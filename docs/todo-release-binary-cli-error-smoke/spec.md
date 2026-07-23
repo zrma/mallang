@@ -1,5 +1,7 @@
 # Spec: release-binary-cli-error-smoke
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Verify release-built CLI failure UX before v0 publication.

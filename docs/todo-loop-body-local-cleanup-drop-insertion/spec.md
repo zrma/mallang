@@ -1,5 +1,7 @@
 # Spec: loop-body-local-cleanup-drop-insertion
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Cleanup drop insertion을 `for`/`range` loop body-local cleanup roots까지

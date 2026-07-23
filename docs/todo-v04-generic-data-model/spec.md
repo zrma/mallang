@@ -1,5 +1,7 @@
 # Spec: v0.4-generic-data-model
 
+Status: complete; historical milestone record
+
 상태: released as v0.4.0 (2026-07-15)
 
 ## 목표

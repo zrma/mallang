@@ -1,5 +1,7 @@
 # Spec: borrowed-value-escape
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `con`/`mut` parameter로 들어온 non-copy borrowed value가 owned position으로 escape하지 못하게 한다.

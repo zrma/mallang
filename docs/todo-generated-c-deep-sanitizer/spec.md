@@ -1,5 +1,7 @@
 # Spec: generated-c-deep-sanitizer
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Add a reusable deep generated C sanitizer sweep before v0 publication.

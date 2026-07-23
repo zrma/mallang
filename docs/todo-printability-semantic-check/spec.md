@@ -1,5 +1,7 @@
 # Spec: printability-semantic-check
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `print`가 native backend에서 출력할 수 없는 타입을 `mlg check` 단계에서 reject한다.

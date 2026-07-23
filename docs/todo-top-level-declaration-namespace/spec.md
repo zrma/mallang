@@ -1,5 +1,7 @@
 # Spec: top-level-declaration-namespace
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - v0의 top-level declaration namespace를 semantic checker에서 고정한다.

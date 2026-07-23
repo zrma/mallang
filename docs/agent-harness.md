@@ -26,7 +26,8 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - 현재 상태와 읽기 순서: `docs/HANDOFF.md`.
 - 방향과 planned/implemented 경계: `SPEC.md`, `docs/V1_ROADMAP.md`,
   `docs/ROADMAP.md`.
-- 현재 작업 계약: 활성 `docs/todo-*/spec.md`와 `open-questions.md`.
+- 현재 작업 계약: `docs/TODO_INDEX.md`에 등록된 활성
+  `docs/todo-*/spec.md`와 `open-questions.md`.
 
 ## Autonomy And Permissions
 
@@ -36,7 +37,7 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 
 ## Execution Loop
 
-1. `jj status`, `docs/HANDOFF.md`, 활성 todo를 확인한다.
+1. `jj status`, `docs/HANDOFF.md`, `docs/TODO_INDEX.md`의 활성 작업을 확인한다.
 2. lexer, parser, semantic, ownership, IR/backend, runtime 중 변경 경계를 고정한다.
 3. 비사소한 작업은 todo acceptance와 open question을 먼저 닫는다.
 4. 실패 테스트 또는 예제 입력을 먼저 고정하고 최소 범위로 구현한다.
@@ -47,6 +48,7 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 ## Verification And Evidence
 
 - Publication boundary: `scripts/check-publication-boundary.py`; 공개 출고 전에는 권한 있는 local private-inventory guard도 실행한다.
+- Work packet state: `python3 scripts/check-todo-state.py`.
 - Harness interface: `scripts/check-agent-harness-interface.sh`.
 - 기본 full gate: `scripts/check.sh`.
 - self-hosting inner loop: `scripts/check-self-hosting-lexer.sh --fast`; logical
@@ -103,6 +105,7 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 ## Related Documents
 
 - Navigation and status: `docs/HANDOFF.md`.
+- Active and historical work packets: `docs/TODO_INDEX.md`.
 - Language direction: `SPEC.md`, `docs/V1_ROADMAP.md`, `docs/ROADMAP.md`.
 - Long-term release milestones: `docs/V1_ROADMAP.md`.
 - Escalation: `docs/ESCALATION_POLICY.md`.

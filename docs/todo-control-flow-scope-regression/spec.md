@@ -1,5 +1,7 @@
 # Spec: control-flow-scope-regression
 
+Status: complete; historical milestone record
+
 ## Goal
 
 - Nested shadowing scope가 IR/backend lowering 전체에서 유지되는지 control-flow별

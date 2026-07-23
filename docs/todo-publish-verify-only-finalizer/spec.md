@@ -1,5 +1,7 @@
 # Spec: publish-verify-only-finalizer
 
+Status: complete; historical milestone record
+
 ## Objective
 
 - Provide a publish-readiness command that runs the full v0 RC gate without

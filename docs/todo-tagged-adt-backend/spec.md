@@ -1,5 +1,7 @@
 # Spec: tagged-adt-backend
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `Option[T]` / `Result[T, E]`를 typed IR와 C backend까지 낮춰 native build 경로에 연결한다.

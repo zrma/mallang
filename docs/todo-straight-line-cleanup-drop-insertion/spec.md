@@ -1,5 +1,7 @@
 # Spec: straight-line-cleanup-drop-insertion
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Automatic cleanup insertion의 첫 단계로 straight-line function body에서

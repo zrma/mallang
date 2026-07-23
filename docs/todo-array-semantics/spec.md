@@ -1,5 +1,7 @@
 # Spec: array-semantics
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array type과 `[N]T{...}` literal을 semantic checker에 연결한다.

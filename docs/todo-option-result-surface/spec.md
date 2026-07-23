@@ -1,5 +1,7 @@
 # Spec: option-result-surface
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - `nil` 없이 optional value와 recoverable error를 표현할 v0 surface를 고정한다.

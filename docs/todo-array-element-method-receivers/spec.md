@@ -1,5 +1,7 @@
 # Spec: array-element-method-receivers
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Fixed-size array element를 struct method receiver로 직접 호출할 수 있게 한다.

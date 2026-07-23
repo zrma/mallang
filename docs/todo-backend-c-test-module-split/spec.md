@@ -1,5 +1,7 @@
 # Spec: backend-c-test-module-split
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - C backend unit tests를 `src/backend/c.rs`에서 분리해 production orchestration file을 얇게 유지한다.

@@ -1,5 +1,7 @@
 # Spec: array-range-loop
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Array-only `for i, value := range values { ... }` loop를 parser, semantic,

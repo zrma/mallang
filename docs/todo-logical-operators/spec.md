@@ -1,5 +1,7 @@
 # Spec: logical-operators
 
+Status: complete; historical milestone record
+
 ## 목표
 
 - Mallang v0 native subset에 `bool` logical operators `&&`와 `||`를 추가한다.
