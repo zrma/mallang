@@ -196,6 +196,17 @@ ten positive, five runtime-rejection and one closure-boundary path. Compiler
 source parity is 882 normalized functions, and self C generation of the
 compiler project now reaches the `StringsByteLen` intrinsic boundary.
 
+P177c4 gives intrinsic calls the ordinary call argument and cleanup ABI, then
+adds demand-driven runtime helpers for the six string operations used by the
+compiler: byte length/access, UTF-8-safe slicing, byte-offset find, join and
+integer parsing. Concrete `Result`, `Option`, `Error` and `[]string` C types come
+from typed-IR metadata. A linked project fixture covers successful and
+domain-error results, and an empty join fixture covers forced helper allocation
+failure. Eleven positive, six runtime-rejection and one closure-boundary path
+pass deterministic C parity, strict native, accounting and sanitizer checks.
+Compiler source parity is 897 normalized functions, and self C generation now
+reaches `IoWriteStderr`.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the

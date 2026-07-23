@@ -1,0 +1,9 @@
+package main
+
+import "std/strings"
+
+func main() {
+    parts := []string{}
+    separator := ""
+    print(strings.join(con parts, con separator))
+}

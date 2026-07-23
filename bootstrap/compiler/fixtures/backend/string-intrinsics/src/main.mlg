@@ -1,0 +1,91 @@
+package main
+
+import "std/strings"
+
+func main() {
+    text := "A가Z"
+    print(strings.byteLen(con text))
+    match strings.byteAt(con text, 1) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+    match strings.byteAt(con text, 5) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+    match strings.slice(con text, 1, 4) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+    match strings.slice(con text, 2, 4) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+
+    needle := "가"
+    match strings.find(con text, con needle) {
+        case Some(offset) {
+            print(offset)
+        }
+        case None {
+            print(-1)
+        }
+    }
+    missing := "x"
+    match strings.find(con text, con missing) {
+        case Some(offset) {
+            print(offset)
+        }
+        case None {
+            print(-1)
+        }
+    }
+
+    parts := []string{"a", "한", "z"}
+    separator := "|"
+    print(strings.join(con parts, con separator))
+
+    valid := "-42"
+    match strings.parseInt(con valid) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+    invalid := "+1"
+    match strings.parseInt(con invalid) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+    overflow := "9223372036854775808"
+    match strings.parseInt(con overflow) {
+        case Ok(value) {
+            print(value)
+        }
+        case Err(error) {
+            print(error.message)
+        }
+    }
+}

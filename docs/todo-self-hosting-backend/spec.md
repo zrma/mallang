@@ -156,6 +156,19 @@ five runtime-rejection and one closure-boundary path. The compiler source
 matches Stage0 across 882 normalized typed-IR functions, and compiler-project C
 generation now reaches the `StringsByteLen` intrinsic boundary.
 
+P177c4 is complete. Intrinsic calls now share the same owned/`con`/`mut`
+argument lowering and reverse temporary cleanup contract as ordinary calls.
+Demand-driven runtime emission covers the compiler-used `StringsByteLen`,
+`StringsByteAt`, `StringsSlice`, `StringsFind`, `StringsJoin` and
+`StringsParseInt` operations. Result, option, error and string-slice C types are
+derived from typed-IR metadata instead of package names or precomputed mangled
+identifiers. A linked project fixture exercises successful and domain-error
+paths, while an empty join fixture forces the helper's first allocation to
+fail. Eleven positive, six runtime-rejection and one closure-boundary path pass
+byte parity, deterministic repeat, strict native, accounting and sanitizer
+checks. Compiler source parity is 897 normalized functions, and compiler-project
+C generation now reaches the `IoWriteStderr` platform intrinsic boundary.
+
 ### P177d: B3 Closure
 
 - cover every typed-IR node required by the Mallang compiler source set
@@ -220,6 +233,8 @@ thresholds.
 - [x] ten positive, four runtime-rejection and one closure boundary path
 - [x] P177c3 checked integer negate/divide/remainder and canonical logical kinds
 - [x] ten positive, five runtime-rejection and one closure boundary path
+- [x] P177c4 compiler-used byte/string query, slice, join and parse intrinsics
+- [x] eleven positive, six runtime-rejection and one closure boundary path
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

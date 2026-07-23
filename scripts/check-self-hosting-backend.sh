@@ -53,10 +53,10 @@ STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
 FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values)
-PROJECT_FIXTURES=(dynamic-owned-string)
+PROJECT_FIXTURES=(dynamic-owned-string string-intrinsics)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds integer-division-zero)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
-PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure)
+PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure string-join-allocation-failure)
 BOUNDARY_REJECTION_FIXTURES=(unsupported-closure)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
@@ -280,7 +280,19 @@ EOF
     fi
   done
 
-  expected=$'42\ntrue'
+  expected=""
+  case "$name" in
+    dynamic-owned-string)
+      expected=$'42\ntrue'
+      ;;
+    string-intrinsics)
+      expected=$'5\n234\nstring byte index out of bounds\n가\nstring slice boundary splits a UTF-8 scalar\n1\n-1\na|한|z\n-42\ninvalid integer text\ninteger value out of range'
+      ;;
+    *)
+      echo "self-hosting backend project fixture has no expected output: $name" >&2
+      exit 1
+      ;;
+  esac
   if [[ "$(cat "$WORK/$name.stage0.stdout")" != "$expected" ]]; then
     echo "self-hosting backend project fixture output mismatch: $name" >&2
     exit 1
@@ -443,7 +455,19 @@ for name in "${PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}"; do
   "$CLANG_BIN" "${SANITIZER_FLAGS[@]}" -DMLG_ALLOCATION_FAIL_AFTER=0 \
     "$stage1_c" -o "$WORK/$name.stage1-san"
 
-  expected="mallang runtime error: string allocation failed"
+  expected=""
+  case "$name" in
+    dynamic-string-allocation-failure)
+      expected="mallang runtime error: string allocation failed"
+      ;;
+    string-join-allocation-failure)
+      expected="mallang runtime error: joined string allocation failed"
+      ;;
+    *)
+      echo "self-hosting backend project allocation rejection has no expected diagnostic: $name" >&2
+      exit 1
+      ;;
+  esac
   for binary in stage0 stage1 stage1-san; do
     set +e
     "$WORK/$name.$binary" >"$WORK/$name.$binary.stdout" \

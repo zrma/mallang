@@ -776,6 +776,15 @@ P177c3은 checked integer negate/divide/remainder의 overflow/zero guard와 cano
 division-by-zero rejection을 포함한 열 positive/다섯 runtime rejection/하나의 closure
 boundary가 통과하고 compiler source 882개 normalized IR function이 일치한다. Compiler
 project self C 생성의 다음 실제 경계는 `StringsByteLen` intrinsic이다.
+P177c4는 intrinsic call을 ordinary call과 같은 owned/`con`/`mut` argument 및 reverse
+temporary cleanup 경로로 통합하고, compiler가 사용하는 `StringsByteLen`, `StringsByteAt`,
+`StringsSlice`, `StringsFind`, `StringsJoin`, `StringsParseInt`의 demand-driven runtime을
+추가했다. `Result`/`Option`/`Error`/`[]string` C 타입은 package 이름을 하드코딩하지 않고
+typed-IR metadata에서 유도한다. 성공과 domain error를 함께 실행하는 linked project와
+빈 join의 첫 helper allocation failure를 포함해 열한 positive/여섯 runtime rejection/하나의
+closure boundary가 deterministic C parity, strict native, accounting과 ASan/UBSan을 통과한다.
+Compiler source 897개 normalized IR function이 일치하며 compiler project self C 생성의 다음
+실제 경계는 `IoWriteStderr` platform intrinsic이다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -792,9 +801,9 @@ corpus accounting/sanitizer를 실행하며 milestone, publication과 release ev
 
 B3 backend 수정 중에는 fresh Stage1 artifact가 확인된 경우
 `scripts/check-self-hosting-backend.sh --assume-bootstrap`을 사용한다. 관측된 edit
-loop는 P177c3의 열 positive/여섯 rejection path 기준 약 32초다. Compiler
+loop는 P177c4의 열한 positive/일곱 rejection path 기준 약 26초다. Compiler
 source 또는 Stage0가 바뀌면 인자 없는 backend gate로 Stage1을 다시 만들며
-관측된 integration loop는 약 32초다. Ownership/typed-IR
+관측된 integration loop는 약 31초다. Ownership/typed-IR
 변경은 compiler-source IR diagnostic을 추가하고, `scripts/check.sh`는 직전 full
 self-hosting gate가 만든 Stage1을 재사용해 backend bootstrap 중복을 피한다. 시간은
 host-local 관측값이며 gate threshold가 아니다.

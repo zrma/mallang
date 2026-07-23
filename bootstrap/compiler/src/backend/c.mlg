@@ -1183,15 +1183,226 @@ func programUsesIntrinsic(con program ir.Program, con intrinsic string) bool {
     return false
 }
 
-func dynamicStringRuntime(con program ir.Program) []string {
+func intrinsicNodeInNode(con program ir.Program, node int, con intrinsic string) int {
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicCall" && ir.NodeValue(con program, node) == intrinsic {
+        return node
+    }
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        found := intrinsicNodeInNode(con program, ir.NodeChild(con program, node, child), con intrinsic)
+        if found >= 0 {
+            return found
+        }
+    }
+    return - 1
+}
+
+func programIntrinsicNode(con program ir.Program, con intrinsic string) int {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        for mut statement := 0; statement < ir.FunctionBodyCount(con program, function); statement = statement + 1 {
+            found := intrinsicNodeInNode(con program, ir.FunctionBodyNode(con program, function, statement), con intrinsic)
+            if found >= 0 {
+                return found
+            }
+        }
+    }
+    return - 1
+}
+
+func intrinsicResultType(con program ir.Program, con intrinsic string) string {
+    node := programIntrinsicNode(con program, con intrinsic)
+    if node < 0 {
+        return ""
+    }
+    return ir.NodeType(con program, node)
+}
+
+func intrinsicArgumentType(con program ir.Program, con intrinsic string, argument int) string {
+    node := programIntrinsicNode(con program, con intrinsic)
+    if node < 0 || argument < 0 || argument >= ir.NodeChildCount(con program, node) {
+        return ""
+    }
+    return ir.NodeType(con program, ir.NodeChild(con program, node, argument))
+}
+
+func intrinsicStructIndex(con program ir.Program, con intrinsic string) int {
+    for mut structure := 0; structure < ir.StructCount(con program); structure = structure + 1 {
+        if ir.StructIntrinsic(con program, structure) == intrinsic {
+            return structure
+        }
+    }
+    return - 1
+}
+
+func intrinsicEnumIndex(con program ir.Program, con intrinsic string) int {
+    for mut enumeration := 0; enumeration < ir.EnumCount(con program); enumeration = enumeration + 1 {
+        if ir.EnumIntrinsic(con program, enumeration) == intrinsic {
+            return enumeration
+        }
+    }
+    return - 1
+}
+
+func structFieldIndex(con program ir.Program, structure int, con name string) int {
+    if structure < 0 {
+        return - 1
+    }
+    for mut field := 0; field < ir.StructFieldCount(con program, structure); field = field + 1 {
+        if ir.StructFieldName(con program, structure, field) == name {
+            return field
+        }
+    }
+    return - 1
+}
+
+func stringErrorRuntime(con program ir.Program) Result[[]string, string] {
+    structure := intrinsicStructIndex(con program, con "Error")
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    kindField := structFieldIndex(con program, structure, con "kind")
+    messageField := structFieldIndex(con program, structure, con "message")
+    if structure < 0 || enumeration < 0 || kindField < 0 || messageField < 0 {
+        return Err("B3 C backend requires the standard Error and ErrorKind IR metadata")
+    }
+    if ir.StructFieldType(con program, structure, kindField) != ir.EnumName(con program, enumeration) || ir.StructFieldType(con program, structure, messageField) != "string" {
+        return Err("B3 C backend received malformed standard Error IR metadata")
+    }
+    errorType := cTypeFor(con program, con ir.StructName(con program, structure))
+    kindType := cTypeFor(con program, con ir.EnumName(con program, enumeration))
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con errorType), " MLG_UNUSED mallang_std_strings_error(",}, con ""), "    int32_t mlg_kind,", "    const char *mlg_message", ") {", strings.join(con []string{"    return (", token.CopyText(con errorType), "){",}, con ""), strings.join(con []string{"        .", cField(con "kind"), " = (", kindType, "){ .tag = mlg_kind },",}, con ""), strings.join(con []string{"        .", cField(con "message"), " = mallang_string_owned_from_bytes(",}, con ""), "            mlg_message,", "            strlen(mlg_message)", "        )", "    };", "}", "",})
+}
+
+func byteFindRuntime() []string {
+    return []string{"static bool MLG_UNUSED mallang_std_find_bytes(", "    const char *mlg_haystack,", "    size_t mlg_haystack_len,", "    const char *mlg_needle,", "    size_t mlg_needle_len,", "    size_t *mlg_offset_out", ") {", "    if (mlg_needle_len == 0) {", "        *mlg_offset_out = 0;", "        return true;", "    }", "    if (mlg_needle_len > mlg_haystack_len) {", "        return false;", "    }", "    size_t mlg_limit = mlg_haystack_len - mlg_needle_len;", "    for (size_t mlg_cursor = 0; mlg_cursor <= mlg_limit; mlg_cursor = mlg_cursor + 1) {", "        if (memcmp(mlg_haystack + mlg_cursor, mlg_needle, mlg_needle_len) == 0) {", "            *mlg_offset_out = mlg_cursor;", "            return true;", "        }", "    }", "    return false;", "}", "",}
+}
+
+func byteAtRuntime(con program ir.Program) Result[[]string, string] {
+    resultType := cTypeFor(con program, con intrinsicResultType(con program, con "StringsByteAt"))
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    invalidInput := enumVariantIndex(con program, enumeration, con "InvalidInput")
+    if resultType == "" || invalidInput < 0 {
+        return Err("B3 C backend received malformed StringsByteAt IR metadata")
+    }
+    tag := strings.fromInt(invalidInput)
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_strings_byte_at(",}, con ""), "    const mlg_String *mlg_text,", "    int64_t mlg_index", ") {", "    mallang_validate_string_layout(*mlg_text);", "    if (mlg_index < 0 || (uint64_t)mlg_index >= (uint64_t)mlg_text->mlg_len) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_strings_error(",}, con ""), strings.join(con []string{"                    ", tag, ","}, con ""), "                    \"string byte index out of bounds\"", "                )", "            }", "        };", "    }", "    unsigned char mlg_byte = (unsigned char)mlg_text->mlg_data[(size_t)mlg_index];", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = { .", cField(con "Ok"), " = (int64_t)mlg_byte }",}, con ""), "    };", "}", "",})
+}
+
+func stringSliceRuntime(con program ir.Program) Result[[]string, string] {
+    resultType := cTypeFor(con program, con intrinsicResultType(con program, con "StringsSlice"))
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    invalidInput := enumVariantIndex(con program, enumeration, con "InvalidInput")
+    if resultType == "" || invalidInput < 0 {
+        return Err("B3 C backend received malformed StringsSlice IR metadata")
+    }
+    tag := strings.fromInt(invalidInput)
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_strings_slice(",}, con ""), "    const mlg_String *mlg_text,", "    int64_t mlg_start,", "    int64_t mlg_end", ") {", "    mallang_validate_string(*mlg_text);", "    if (mlg_start < 0 ||", "        mlg_end < 0 ||", "        mlg_start > mlg_end ||", "        (uint64_t)mlg_end > (uint64_t)mlg_text->mlg_len) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_strings_error(",}, con ""), strings.join(con []string{"                    ", token.CopyText(con tag), ","}, con ""), "                    \"string slice range is invalid\"", "                )", "            }", "        };", "    }", "    size_t mlg_start_offset = (size_t)mlg_start;", "    size_t mlg_end_offset = (size_t)mlg_end;", "    bool mlg_start_is_boundary = mlg_start_offset == 0 ||", "        mlg_start_offset == mlg_text->mlg_len ||", "        (((unsigned char)mlg_text->mlg_data[mlg_start_offset] & 0xc0U) != 0x80U);", "    bool mlg_end_is_boundary = mlg_end_offset == 0 ||", "        mlg_end_offset == mlg_text->mlg_len ||", "        (((unsigned char)mlg_text->mlg_data[mlg_end_offset] & 0xc0U) != 0x80U);", "    if (!mlg_start_is_boundary || !mlg_end_is_boundary) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_strings_error(",}, con ""), strings.join(con []string{"                    ", token.CopyText(con tag), ","}, con ""), "                    \"string slice boundary splits a UTF-8 scalar\"", "                )", "            }", "        };", "    }", "    mlg_String mlg_result = mallang_string_owned_from_bytes(", "        mlg_text->mlg_data + mlg_start_offset,", "        mlg_end_offset - mlg_start_offset", "    );", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = { .", cField(con "Ok"), " = mlg_result }",}, con ""), "    };", "}", "",})
+}
+
+func stringFindRuntime(con program ir.Program) Result[[]string, string] {
+    optionType := cTypeFor(con program, con intrinsicResultType(con program, con "StringsFind"))
+    if optionType == "" {
+        return Err("B3 C backend received malformed StringsFind IR metadata")
+    }
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con optionType), " MLG_UNUSED mallang_std_strings_find(",}, con ""), "    const mlg_String *mlg_text,", "    const mlg_String *mlg_needle", ") {", "    mallang_validate_string(*mlg_text);", "    mallang_validate_string(*mlg_needle);", "    size_t mlg_offset = 0;", "    if (!mallang_std_find_bytes(", "            mlg_text->mlg_data,", "            mlg_text->mlg_len,", "            mlg_needle->mlg_data,", "            mlg_needle->mlg_len,", "            &mlg_offset)) {", strings.join(con []string{"        return (", token.CopyText(con optionType), "){ .tag = 0 };"}, con ""), "    }", "    if (mlg_offset > INT64_MAX) {", "        mallang_runtime_error(\"string byte offset overflow\");", "    }", strings.join(con []string{"    return (", token.CopyText(con optionType), "){",}, con ""), "        .tag = 1,", strings.join(con []string{"        .", cField(con "payload"), " = { .", cField(con "Some"), " = (int64_t)mlg_offset }",}, con ""), "    };", "}", "",})
+}
+
+func stringJoinRuntime(con program ir.Program) Result[[]string, string] {
+    slice := intrinsicArgumentType(con program, con "StringsJoin", 0)
+    sliceType := cTypeFor(con program, con slice)
+    if typeKind(con program, con slice) != "slice" || typeArgument(con program, con slice, 0) != "string" || sliceType == "" {
+        return Err("B3 C backend received malformed StringsJoin IR metadata")
+    }
+    data := cField(con "data")
+    length := cField(con "len")
+    capacity := cField(con "cap")
+    return Ok([]string{strings.join(con []string{"static mlg_String MLG_UNUSED mallang_std_strings_join(",}, con ""), strings.join(con []string{"    const ", token.CopyText(con sliceType), " *mlg_parts,"}, con ""), "    const mlg_String *mlg_separator", ") {", "    mallang_validate_string(*mlg_separator);", strings.join(con []string{"    if (mlg_parts->", token.CopyText(con length), " < 0 ||"}, con ""), strings.join(con []string{"        mlg_parts->", token.CopyText(con capacity), " < mlg_parts->", token.CopyText(con length), " ||"}, con ""), strings.join(con []string{"        (mlg_parts->", token.CopyText(con length), " > 0 && mlg_parts->", token.CopyText(con data), " == NULL)) {"}, con ""), "        mallang_runtime_error(\"invalid string slice storage\");", "    }", "    size_t mlg_total = 0;", strings.join(con []string{"    for (int64_t mlg_index = 0; mlg_index < mlg_parts->", token.CopyText(con length), "; mlg_index = mlg_index + 1) {"}, con ""), strings.join(con []string{"        mlg_String mlg_part = mlg_parts->", token.CopyText(con data), "[mlg_index];"}, con ""), "        mallang_validate_string(mlg_part);", "        if (mlg_index > 0) {", "            if (mlg_total > SIZE_MAX - mlg_separator->mlg_len) {", "                mallang_runtime_error(\"joined string size overflow\");", "            }", "            mlg_total = mlg_total + mlg_separator->mlg_len;", "        }", "        if (mlg_total > SIZE_MAX - mlg_part.mlg_len) {", "            mallang_runtime_error(\"joined string size overflow\");", "        }", "        mlg_total = mlg_total + mlg_part.mlg_len;", "    }", "    if (mlg_total == SIZE_MAX) {", "        mallang_runtime_error(\"joined string size overflow\");", "    }", "    char *mlg_data = mallang_alloc(mlg_total + 1, \"joined string allocation failed\");", "    size_t mlg_cursor = 0;", strings.join(con []string{"    for (int64_t mlg_index = 0; mlg_index < mlg_parts->", token.CopyText(con length), "; mlg_index = mlg_index + 1) {"}, con ""), strings.join(con []string{"        mlg_String mlg_part = mlg_parts->", token.CopyText(con data), "[mlg_index];"}, con ""), "        if (mlg_index > 0 && mlg_separator->mlg_len > 0) {", "            memcpy(", "                mlg_data + mlg_cursor,", "                mlg_separator->mlg_data,", "                mlg_separator->mlg_len", "            );", "            mlg_cursor = mlg_cursor + mlg_separator->mlg_len;", "        }", "        if (mlg_part.mlg_len > 0) {", "            memcpy(mlg_data + mlg_cursor, mlg_part.mlg_data, mlg_part.mlg_len);", "            mlg_cursor = mlg_cursor + mlg_part.mlg_len;", "        }", "    }", "    mlg_data[mlg_total] = '\\0';", "    return (mlg_String){", "        .mlg_data = mlg_data,", "        .mlg_len = mlg_total,", "        .mlg_storage = MLG_STRING_OWNED", "    };", "}", "",})
+}
+
+func stringParseIntRuntime(con program ir.Program) Result[[]string, string] {
+    resultType := cTypeFor(con program, con intrinsicResultType(con program, con "StringsParseInt"))
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    invalidData := enumVariantIndex(con program, enumeration, con "InvalidData")
+    if resultType == "" || invalidData < 0 {
+        return Err("B3 C backend received malformed StringsParseInt IR metadata")
+    }
+    tag := strings.fromInt(invalidData)
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_strings_parse_int(",}, con ""), "    const mlg_String *mlg_text", ") {", "    mallang_validate_string(*mlg_text);", "    if (mlg_text->mlg_len == 0) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_strings_error(", token.CopyText(con tag), ", \"invalid integer text\")"}, con ""), "            }", "        };", "    }", "    size_t mlg_cursor = 0;", "    bool mlg_negative = false;", "    if (mlg_text->mlg_data[0] == '-') {", "        mlg_negative = true;", "        mlg_cursor = 1;", "        if (mlg_cursor == mlg_text->mlg_len) {", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_strings_error(", token.CopyText(con tag), ", \"invalid integer text\")"}, con ""), "                }", "            };", "        }", "    }", "    uint64_t mlg_limit = mlg_negative", "        ? (uint64_t)INT64_MAX + UINT64_C(1)", "        : (uint64_t)INT64_MAX;", "    uint64_t mlg_value = 0;", "    while (mlg_cursor < mlg_text->mlg_len) {", "        unsigned char mlg_byte = (unsigned char)mlg_text->mlg_data[mlg_cursor];", "        if (mlg_byte < '0' || mlg_byte > '9') {", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_strings_error(", token.CopyText(con tag), ", \"invalid integer text\")"}, con ""), "                }", "            };", "        }", "        uint64_t mlg_digit = (uint64_t)(mlg_byte - '0');", "        if (mlg_value > (mlg_limit - mlg_digit) / UINT64_C(10)) {", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_strings_error(", token.CopyText(con tag), ", \"integer value out of range\")"}, con ""), "                }", "            };", "        }", "        mlg_value = mlg_value * UINT64_C(10) + mlg_digit;", "        mlg_cursor = mlg_cursor + 1;", "    }", "    int64_t mlg_result;", "    if (mlg_negative && mlg_value == (uint64_t)INT64_MAX + UINT64_C(1)) {", "        mlg_result = INT64_MIN;", "    } else if (mlg_negative) {", "        mlg_result = -(int64_t)mlg_value;", "    } else {", "        mlg_result = (int64_t)mlg_value;", "    }", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = { .", cField(con "Ok"), " = mlg_result }",}, con ""), "    };", "}", "",})
+}
+
+func dynamicStringRuntime(con program ir.Program) Result[[]string, string] {
     mut lines := []string{}
+    needsError := programUsesIntrinsic(con program, con "StringsByteAt") || programUsesIntrinsic(con program, con "StringsSlice") || programUsesIntrinsic(con program, con "StringsParseInt")
+    if needsError {
+        match stringErrorRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if programUsesIntrinsic(con program, con "StringsFind") {
+        lines = copyLines(lines, con byteFindRuntime())
+    }
+    if programUsesIntrinsic(con program, con "StringsByteLen") {
+        lines = copyLines(lines, con []string{"static int64_t MLG_UNUSED mallang_std_strings_byte_len(", "    const mlg_String *mlg_text", ") {", "    mallang_validate_string_layout(*mlg_text);", "    if (mlg_text->mlg_len > INT64_MAX) {", "        mallang_runtime_error(\"string byte length overflow\");", "    }", "    return (int64_t)mlg_text->mlg_len;", "}", "",})
+    }
+    if programUsesIntrinsic(con program, con "StringsByteAt") {
+        match byteAtRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if programUsesIntrinsic(con program, con "StringsSlice") {
+        match stringSliceRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if programUsesIntrinsic(con program, con "StringsFind") {
+        match stringFindRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    if programUsesIntrinsic(con program, con "StringsJoin") {
+        match stringJoinRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
     if programUsesIntrinsic(con program, con "StringsFromInt") {
         lines = copyLines(lines, con []string{"static mlg_String MLG_UNUSED mallang_std_strings_from_int(", "    int64_t mlg_value", ") {", "    char mlg_buffer[32];", "    int mlg_written = snprintf(", "        mlg_buffer,", "        sizeof(mlg_buffer),", "        \"%lld\",", "        (long long)mlg_value", "    );", "    if (mlg_written < 0 || (size_t)mlg_written >= sizeof(mlg_buffer)) {", "        mallang_runtime_error(\"integer formatting failed\");", "    }", "    return mallang_string_owned_from_bytes(mlg_buffer, (size_t)mlg_written);", "}", "",})
     }
     if programUsesIntrinsic(con program, con "StringsFromBool") {
         lines = copyLines(lines, con []string{"static mlg_String MLG_UNUSED mallang_std_strings_from_bool(", "    bool mlg_value", ") {", "    const char *mlg_text = mlg_value ? \"true\" : \"false\";", "    size_t mlg_len = mlg_value ? 4 : 5;", "    return mallang_string_owned_from_bytes(mlg_text, mlg_len);", "}", "",})
     }
-    return lines
+    if programUsesIntrinsic(con program, con "StringsParseInt") {
+        match stringParseIntRuntime(con program) {
+            case Ok(helper) {
+                lines = copyLines(lines, con helper)
+            }
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    }
+    return Ok(lines)
 }
 
 func functionParams(con program ir.Program, function int, thunk bool) Result[string, string] {
@@ -1385,38 +1596,66 @@ func emitCall(con program ir.Program, node int, con indent string, con env EmitE
     return Ok(EmittedExpr{lines: lines, value: strings.join(con []string{cFunctionName(con name), "(", strings.join(con args, con ", "), ")",}, con ""), postLines: postLines,})
 }
 
-func emitDynamicStringCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
-    intrinsic := ir.NodeValue(con program, node)
-    mut helper := ""
-    mut argumentType := ""
+func intrinsicHelperName(con intrinsic string) string {
+    if intrinsic == "StringsByteLen" {
+        return "mallang_std_strings_byte_len"
+    }
+    if intrinsic == "StringsByteAt" {
+        return "mallang_std_strings_byte_at"
+    }
+    if intrinsic == "StringsSlice" {
+        return "mallang_std_strings_slice"
+    }
+    if intrinsic == "StringsFind" {
+        return "mallang_std_strings_find"
+    }
+    if intrinsic == "StringsJoin" {
+        return "mallang_std_strings_join"
+    }
     if intrinsic == "StringsFromInt" {
-        helper = "mallang_std_strings_from_int"
-        argumentType = "int"
-    } else if intrinsic == "StringsFromBool" {
-        helper = "mallang_std_strings_from_bool"
-        argumentType = "bool"
-    } else {
+        return "mallang_std_strings_from_int"
+    }
+    if intrinsic == "StringsFromBool" {
+        return "mallang_std_strings_from_bool"
+    }
+    if intrinsic == "StringsParseInt" {
+        return "mallang_std_strings_parse_int"
+    }
+    return ""
+}
+
+func emitIntrinsicCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    intrinsic := ir.NodeValue(con program, node)
+    helper := intrinsicHelperName(con intrinsic)
+    if helper == "" {
         return Err(unsupported(con strings.join(con []string{"intrinsic ", token.CopyText(con intrinsic),}, con "")))
     }
-    if ir.NodeType(con program, node) != "string" || ir.NodeChildCount(con program, node) != 1 {
-        return Err("B3 C backend received malformed dynamic string intrinsic IR")
-    }
-    argument := ir.NodeChild(con program, node, 0)
-    if ir.NodeKind(con program, argument) != "Arg.Owned" || ir.NodeChildCount(con program, argument) != 1 {
-        return Err("B3 C backend received invalid dynamic string intrinsic argument")
-    }
-    argumentExpression := ir.NodeChild(con program, argument, 0)
-    if ir.NodeType(con program, argumentExpression) != argumentType {
-        return Err("B3 C backend received mismatched dynamic string intrinsic argument")
-    }
-    match emitExpression(con program, argumentExpression, con indent, con env) {
-        case Ok(emitted) {
-            return Ok(EmittedExpr{lines: emitted.lines, value: strings.join(con []string{helper, "(", token.CopyText(con emitted.value), ")",}, con ""), postLines: emitted.postLines,})
+    mut lines := []string{}
+    mut args := []string{}
+    mut postLines := []string{}
+    for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
+        argument := ir.NodeChild(con program, node, child)
+        mode := callArgumentMode(con program, argument)
+        if mode == "" {
+            return Err("B3 C backend received invalid intrinsic argument mode")
         }
-        case Err(message) {
-            return Err(message)
+        match emitCallArgument(con program, argument, con indent, con env) {
+            case Ok(emitted) {
+                lines = copyLines(lines, con emitted.lines)
+                mut value := token.CopyText(con emitted.value)
+                if mode == "con" || mode == "mut" {
+                    value = strings.join(con []string{"&(", token.CopyText(con value), ")",}, con "")
+                }
+                args = append(args, value)
+                postLines = copyLines(emitted.postLines, con postLines)
+            }
+            case Err(message) {
+                return Err(message)
+            }
         }
     }
+    value := strings.join(con []string{helper, "(", strings.join(con args, con ", "), ")",}, con "")
+    return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
 }
 
 func emitCheckedBinary(con program ir.Program, node int, con indent string, con builtin string, con env EmitEnv) Result[EmittedExpr, string] {
@@ -2202,7 +2441,7 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
         return emitIndirectCall(con program, node, con indent, con env)
     }
     if kind == "Expr.IntrinsicCall" {
-        return emitDynamicStringCall(con program, node, con indent, con env)
+        return emitIntrinsicCall(con program, node, con indent, con env)
     }
     if kind == "Expr.If" {
         return emitIfExpression(con program, node, con indent, con env)
@@ -3447,10 +3686,16 @@ pub func Generate(con program ir.Program) Result[string, string] {
             return Err(message)
         }
     }
-    dynamicStringHelpers := dynamicStringRuntime(con program)
-    if len(dynamicStringHelpers) > 0 {
-        lines = copyLines(lines, con dynamicStringHelpers)
-        lines = append(lines, "")
+    match dynamicStringRuntime(con program) {
+        case Ok(helpers) {
+            if len(helpers) > 0 {
+                lines = copyLines(lines, con helpers)
+                lines = append(lines, "")
+            }
+        }
+        case Err(message) {
+            return Err(message)
+        }
     }
     for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
         match functionSignature(con program, function) {
