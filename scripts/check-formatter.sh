@@ -8,7 +8,7 @@ BIN="${1:-target/debug/mlg}"
 if [[ $# -gt 0 ]]; then
   shift
 fi
-MLG_ARGS=("$@")
+MLG_COMMAND=("$BIN" "$@")
 WORK="target/mallang/formatter-smoke"
 DIRECT="$WORK/direct.mlg"
 EXPECTED="$WORK/direct.expected.mlg"
@@ -21,7 +21,7 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 run_mlg() {
-  "$BIN" "${MLG_ARGS[@]}" "$@"
+  "${MLG_COMMAND[@]}" "$@"
 }
 
 rm -rf "$WORK"
