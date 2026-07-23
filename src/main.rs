@@ -432,30 +432,29 @@ fn run_parse(program: &str, args: &[String]) -> CliResult<()> {
 fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_input_arg(program, "check", args)?;
     if compiler.implementation == CompilerImplementation::SelfHosted {
-        let input = Path::new(path);
-        if !input
-            .extension()
-            .is_some_and(|extension| extension == "mlg")
-        {
-            return Err(CliError::cli(
-                "self-hosted compiler project check is not available until P179b2; use explicit `--compiler stage0`",
-            ));
+        match load_compilation_input(path)? {
+            CompilationInput::Standalone { sources, .. } => {
+                let stdout = invoke_self_hosted_compiler("check", path, compiler)?;
+                finish_self_hosted_check(path, stdout, &sources, None)?;
+            }
+            CompilationInput::Project {
+                project,
+                sources,
+                source_ids,
+            } => {
+                let stdout = invoke_self_hosted_project_compiler(
+                    "check-project",
+                    &project,
+                    &sources,
+                    &source_ids,
+                    path,
+                    compiler,
+                )?;
+                finish_self_hosted_check(path, stdout, &sources, Some(&project))?;
+            }
         }
-        let (sources, _) = load_source(path)?;
-        let stdout = invoke_self_hosted_compiler("check", path, compiler)?;
-        let Some(first_line) = stdout.lines().next() else {
-            return Err(self_hosted_protocol_error(path, "check response is empty"));
-        };
-        if first_line.starts_with("CHECKED|") {
-            validate_self_hosted_check_header(first_line)
-                .map_err(|detail| self_hosted_protocol_error(path, detail))?;
-            println!("{path}: ok");
-            return Ok(());
-        }
-        return Err(CliError::many(
-            parse_self_hosted_diagnostics(&stdout, &sources)
-                .map_err(|detail| self_hosted_protocol_error(path, detail))?,
-        ));
+        println!("{path}: ok");
+        return Ok(());
     }
 
     match load_compilation_input(path)? {
@@ -909,20 +908,32 @@ fn compile_input(
     let (c_source, artifact_name, build_dir) = if compiler.implementation
         == CompilerImplementation::SelfHosted
     {
-        let input = Path::new(input_path);
-        if !input
-            .extension()
-            .is_some_and(|extension| extension == "mlg")
-        {
-            return Err(CliError::cli(
-                "self-hosted compiler project build is not available until P179b; use explicit `--compiler stage0`",
-            ));
+        match load_compilation_input(input_path)? {
+            CompilationInput::Standalone { sources, .. } => (
+                generate_self_hosted_c(input_path, &sources, compiler)?,
+                source_stem(input_path).to_string(),
+                PathBuf::from("target/mallang"),
+            ),
+            CompilationInput::Project {
+                project,
+                sources,
+                source_ids,
+            } => {
+                project
+                    .require_entrypoint()
+                    .map_err(|error| CliError::input(error.to_string()))?;
+                let c_source = generate_self_hosted_project_c(
+                    &project,
+                    &sources,
+                    &source_ids,
+                    input_path,
+                    compiler,
+                )?;
+                let artifact_name = project.name().to_string();
+                let build_dir = project.root().join("target/mallang");
+                (c_source, artifact_name, build_dir)
+            }
         }
-        (
-            generate_self_hosted_c(input_path, compiler)?,
-            source_stem(input_path).to_string(),
-            PathBuf::from("target/mallang"),
-        )
     } else {
         match load_compilation_input(input_path)? {
             CompilationInput::Standalone { sources, source_id } => {
@@ -991,13 +1002,40 @@ fn compile_input(
     Ok(output_path)
 }
 
-fn generate_self_hosted_c(input_path: &str, compiler: &CompilerSelection) -> CliResult<String> {
-    let (sources, _) = load_source(input_path)?;
+fn generate_self_hosted_c(
+    input_path: &str,
+    sources: &SourceMap,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
     let stdout = invoke_self_hosted_compiler("c", input_path, compiler)?;
     if stdout.starts_with("#include <") {
         return Ok(stdout);
     }
-    match parse_self_hosted_diagnostics(&stdout, &sources) {
+    match parse_self_hosted_diagnostics(&stdout, sources, None) {
+        Ok(diagnostics) => Err(CliError::many(diagnostics)),
+        Err(detail) => Err(self_hosted_protocol_error(input_path, detail)),
+    }
+}
+
+fn generate_self_hosted_project_c(
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
+    let stdout = invoke_self_hosted_project_compiler(
+        "c-project",
+        project,
+        sources,
+        source_ids,
+        input_path,
+        compiler,
+    )?;
+    if stdout.starts_with("#include <") {
+        return Ok(stdout);
+    }
+    match parse_self_hosted_diagnostics(&stdout, sources, Some(project)) {
         Ok(diagnostics) => Err(CliError::many(diagnostics)),
         Err(detail) => Err(self_hosted_protocol_error(input_path, detail)),
     }
@@ -1008,10 +1046,56 @@ fn invoke_self_hosted_compiler(
     input_path: &str,
     compiler: &CompilerSelection,
 ) -> CliResult<String> {
+    invoke_self_hosted_compiler_args(
+        &[OsString::from(command), OsString::from(input_path)],
+        input_path,
+        compiler,
+    )
+}
+
+fn invoke_self_hosted_project_compiler(
+    command: &str,
+    project: &Project,
+    sources: &SourceMap,
+    source_ids: &[SourceId],
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
+    let units = project.compiler_units().collect::<Vec<_>>();
+    let mut args = vec![
+        OsString::from(command),
+        OsString::from(units.len().to_string()),
+    ];
+    for unit in units {
+        let dependencies = unit.direct_dependencies().collect::<Vec<_>>();
+        args.push(OsString::from(unit.name()));
+        args.push(unit.source_root().as_os_str().to_owned());
+        args.push(OsString::from(dependencies.len().to_string()));
+        args.extend(dependencies.into_iter().map(OsString::from));
+    }
+    for source_id in source_ids {
+        let source = sources.file(*source_id).ok_or_else(|| {
+            self_hosted_protocol_error(
+                input_path,
+                format!(
+                    "source ID {} is missing from the project map",
+                    source_id.index()
+                ),
+            )
+        })?;
+        args.push(source.path().as_os_str().to_owned());
+    }
+    invoke_self_hosted_compiler_args(&args, input_path, compiler)
+}
+
+fn invoke_self_hosted_compiler_args(
+    args: &[OsString],
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
     let compiler_path = compiler.self_compiler_path()?;
     let output = Command::new(&compiler_path)
-        .arg(command)
-        .arg(input_path)
+        .args(args)
         .output()
         .map_err(|error| {
             CliError::native(format!(
@@ -1048,6 +1132,29 @@ fn invoke_self_hosted_compiler(
     Ok(stdout)
 }
 
+fn finish_self_hosted_check(
+    input_path: &str,
+    stdout: String,
+    sources: &SourceMap,
+    project: Option<&Project>,
+) -> CliResult<()> {
+    let Some(first_line) = stdout.lines().next() else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "check response is empty",
+        ));
+    };
+    if first_line.starts_with("CHECKED|") {
+        validate_self_hosted_check_header(first_line)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?;
+        return Ok(());
+    }
+    Err(CliError::many(
+        parse_self_hosted_diagnostics(&stdout, sources, project)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+    ))
+}
+
 fn validate_self_hosted_check_header(line: &str) -> Result<(), String> {
     let fields: Vec<_> = line.split('|').collect();
     if fields.len() != 5 || fields[0] != "CHECKED" {
@@ -1064,13 +1171,14 @@ fn validate_self_hosted_check_header(line: &str) -> Result<(), String> {
 fn parse_self_hosted_diagnostics(
     output: &str,
     sources: &SourceMap,
+    project: Option<&Project>,
 ) -> Result<Vec<Diagnostic>, String> {
     let mut diagnostics = Vec::new();
     for line in output.lines() {
         if line.is_empty() {
             continue;
         }
-        diagnostics.push(parse_self_hosted_diagnostic(line, sources)?);
+        diagnostics.push(parse_self_hosted_diagnostic(line, sources, project)?);
     }
     if diagnostics.is_empty() {
         return Err("diagnostic response is empty".to_string());
@@ -1078,7 +1186,11 @@ fn parse_self_hosted_diagnostics(
     Ok(diagnostics)
 }
 
-fn parse_self_hosted_diagnostic(line: &str, sources: &SourceMap) -> Result<Diagnostic, String> {
+fn parse_self_hosted_diagnostic(
+    line: &str,
+    sources: &SourceMap,
+    project: Option<&Project>,
+) -> Result<Diagnostic, String> {
     let fields: Vec<_> = line.split('|').collect();
     if fields.len() != 5 {
         return Err("diagnostic record has an invalid field count".to_string());
@@ -1106,12 +1218,13 @@ fn parse_self_hosted_diagnostic(line: &str, sources: &SourceMap) -> Result<Diagn
         return Err(format!("invalid source span {start}..{end}"));
     }
     let message = decode_self_hosted_bytes(fields[4])?;
+    let display_path = project.map(|project| project.diagnostic_path(source.path()));
     Ok(source_diagnostic(
         stage,
         message,
         sources,
         mallang::Span::new(source_id, start, end),
-        None,
+        display_path.as_deref(),
     ))
 }
 
@@ -1383,7 +1496,7 @@ mod tests {
         sources.add_file("unicode.mlg", "\u{ac00}x\n");
 
         let diagnostics =
-            parse_self_hosted_diagnostics("PERR|0|0|3|236,152,164,235,165,152\n", &sources)
+            parse_self_hosted_diagnostics("PERR|0|0|3|236,152,164,235,165,152\n", &sources, None)
                 .unwrap();
 
         assert_eq!(diagnostics.len(), 1);
@@ -1406,7 +1519,7 @@ mod tests {
             "PERR|0|0|1",
         ] {
             assert!(
-                parse_self_hosted_diagnostics(record, &sources).is_err(),
+                parse_self_hosted_diagnostics(record, &sources, None).is_err(),
                 "record should be rejected: {record}"
             );
         }

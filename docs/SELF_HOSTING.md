@@ -288,6 +288,15 @@ checking, semantic rejection and multi-error parser recovery. Stage0 remains
 the no-flag default and release artifact; P179b2 owns project discovery,
 manifest/dependency assembly, project `check`/`build` and public IR migration.
 
+P179b2a routes public project `check`, `build` and `run` through Mallang-owned
+package, linker, standard-library, specialization, semantic, IR and C-backend
+logic. The host passes a read-only root-first unit graph and dependency-first
+source order; a transitive local-dependency example proves generated-C and
+native parity, and dependency diagnostics preserve human/JSON paths. This
+exposed and fixed a nested imported generic type-argument specialization gap.
+Rust still interprets manifests, resolves graph paths/boundaries and enumerates
+files, so P179b2b owns that remaining compiler boundary plus public IR output.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the

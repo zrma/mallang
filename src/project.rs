@@ -34,6 +34,11 @@ pub struct Project {
     dependencies: Vec<ProjectUnit>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProjectUnitRef<'a> {
+    unit: &'a ProjectUnit,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProjectUnit {
     root: PathBuf,
@@ -89,6 +94,13 @@ impl Project {
 
     pub fn dependency_names(&self) -> impl Iterator<Item = &str> {
         self.dependencies.iter().map(ProjectUnit::name)
+    }
+
+    pub fn compiler_units(&self) -> impl Iterator<Item = ProjectUnitRef<'_>> {
+        std::iter::once(ProjectUnitRef {
+            unit: &self.root_project,
+        })
+        .chain(self.dependencies.iter().map(|unit| ProjectUnitRef { unit }))
     }
 
     pub fn diagnostic_path(&self, path: &Path) -> PathBuf {
@@ -179,6 +191,20 @@ impl Project {
         self.dependencies
             .iter()
             .find(|project| project.name() == name)
+    }
+}
+
+impl<'a> ProjectUnitRef<'a> {
+    pub fn name(self) -> &'a str {
+        self.unit.name()
+    }
+
+    pub fn source_root(self) -> &'a Path {
+        &self.unit.source_root
+    }
+
+    pub fn direct_dependencies(self) -> impl Iterator<Item = &'a str> + 'a {
+        self.unit.direct_dependencies.iter().map(String::as_str)
     }
 }
 
@@ -979,6 +1005,10 @@ mod tests {
 
         let discovered = discover_project(&project.root).unwrap();
         let dependencies = discovered.dependency_names().collect::<Vec<_>>();
+        let compiler_units = discovered
+            .compiler_units()
+            .map(|unit| (unit.name(), unit.direct_dependencies().collect::<Vec<_>>()))
+            .collect::<Vec<_>>();
         let sources = discovered
             .compilation_source_files()
             .into_iter()
@@ -986,6 +1016,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(dependencies, ["shared", "text"]);
+        assert_eq!(
+            compiler_units,
+            [
+                ("app", vec!["shared", "text"]),
+                ("shared", vec![]),
+                ("text", vec!["shared"]),
+            ]
+        );
         assert_eq!(
             sources,
             [

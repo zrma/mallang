@@ -190,6 +190,7 @@ else
       focused_tests=(
         bootstrap_compiler/linker::RewritesPackageSymbolsAndPreservesLexicalShadowing
         bootstrap_compiler/linker::PreservesStandardFunctionIdentity
+        bootstrap_compiler/linker::SpecializesNestedImportedGenericTypeArguments
       )
       ;;
     specialize)

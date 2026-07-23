@@ -45,7 +45,7 @@ pub use parser::{
 };
 pub use project::{
     discover_project, PathDependency, Project, ProjectError, ProjectManifest, ProjectMetadata,
-    MANIFEST_FILE,
+    ProjectUnitRef, MANIFEST_FILE,
 };
 pub use semantic::{check, check_project, check_project_library, CheckedProgram, SemanticError};
 pub use source::{

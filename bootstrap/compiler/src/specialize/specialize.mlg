@@ -560,7 +560,7 @@ func (mut self Specializer) expressionType(con program ast.Program, expression i
         if substitution >= 0 {
             return Ok(self.cloneOutputNode(substitutions[substitution].node, ast.Span(con program, expression), true))
         }
-        return Ok(self.addNode("Type.Named", name, ast.Span(con program, expression), []int{}))
+        return self.finishExpressionType(con program, name, []int{}, ast.Span(con program, expression))
     }
     if kind == "Expr.Index" {
         base := ast.Child(con program, expression, 0)
@@ -570,7 +570,7 @@ func (mut self Specializer) expressionType(con program ast.Program, expression i
         match self.expressionType(con program, ast.Child(con program, expression, 1), con substitutions) {
             case Ok(argument) {
                 name := ast.Value(con program, base)
-                return Ok(self.addNode("Type.Named", name, ast.Span(con program, expression), []int{argument}))
+                return self.finishExpressionType(con program, name, []int{argument}, ast.Span(con program, expression))
             }
             case Err(_) {
                 return Err(false)
@@ -593,9 +593,33 @@ func (mut self Specializer) expressionType(con program ast.Program, expression i
                 }
             }
         }
-        return Ok(self.addNode("Type.Named", ast.Value(con program, base), ast.Span(con program, expression), arguments))
+        return self.finishExpressionType(con program, ast.Value(con program, base), arguments, ast.Span(con program, expression))
     }
     return Err(false)
+}
+
+func (mut self Specializer) finishExpressionType(con program ast.Program, name string, arguments []int, span source.Span) Result[int, bool] {
+    if self.genericStructIndex(con name) >= 0 {
+        match self.specializeStruct(con program, con name, con arguments, source.Copy(con span)) {
+            case Ok(specialized) {
+                return Ok(self.addNode("Type.Named", specialized, source.Copy(con span), []int{}))
+            }
+            case Err(_) {
+                return Err(false)
+            }
+        }
+    }
+    if self.genericEnumIndex(con name) >= 0 {
+        match self.specializeEnum(con program, con name, con arguments, source.Copy(con span)) {
+            case Ok(specialized) {
+                return Ok(self.addNode("Type.Named", specialized, source.Copy(con span), []int{}))
+            }
+            case Err(_) {
+                return Err(false)
+            }
+        }
+    }
+    return Ok(self.addNode("Type.Named", name, span, arguments))
 }
 
 func (mut self Specializer) rewriteChildren(con program ast.Program, node int, con substitutions []Substitution) Result[int, SpecializationError] {

@@ -5,6 +5,8 @@ import "bootstrap_compiler/frontend/lexer"
 import "bootstrap_compiler/frontend/parser"
 import "bootstrap_compiler/frontend/token"
 import "bootstrap_compiler/packages"
+import "bootstrap_compiler/semantic"
+import "bootstrap_compiler/specialize"
 
 func parseLinkSources(con texts []string) Result[ast.Program, bool] {
     mut programs := []ast.Program{}
@@ -91,6 +93,44 @@ test PreservesStandardFunctionIdentity() {
     match linkTestProject(con texts, con paths) {
         case Ok(linked) {
             assert(hasLinkedNode(con linked, con "Expr.Var", con internalSymbol(con "std/strings", con "byteLen")))
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test SpecializesNestedImportedGenericTypeArguments() {
+    texts := []string{"package main\nimport \"hello/greet\"\nfunc main() { wrapped := greet.Identity[greet.Box[int]](greet.Box[int]{value: 8}); print(wrapped.value) }\n", "package greet\npub type Box[T] struct { value T }\npub func Identity[T](value T) T { return value }\n",}
+    paths := []string{"project/src/main.mlg", "project/src/greet/greet.mlg",}
+    match linkTestProject(con texts, con paths) {
+        case Ok(linked) {
+            match specialize.SpecializeForValidation(con linked) {
+                case Ok(symbolic) {
+                    match semantic.Check(con specialize.Program(con symbolic)) {
+                        case Ok(_) {}
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
+            match specialize.SpecializeDetailed(con linked) {
+                case Ok(concrete) {
+                    match semantic.Check(con specialize.Program(con concrete)) {
+                        case Ok(_) {}
+                        case Err(_) {
+                            assert(false)
+                        }
+                    }
+                }
+                case Err(_) {
+                    assert(false)
+                }
+            }
         }
         case Err(_) {
             assert(false)

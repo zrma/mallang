@@ -823,6 +823,13 @@ Stage0와 비교하며, malformed protocol과 missing `mlgc`는 fallback 없이 
 default와 release archive는 아직 Stage0이다. Project discovery/manifest/dependency graph,
 project check/build와 public IR는 P179b2, formatter/test/native workflow는 P179c, packaged
 default switch는 P179d에 남아 있다.
+P179b2a에서 host의 read-only root-first unit graph와 dependency-first source order를
+`mlgc`에 전달해 public project `check`/`build`/`run`을 Mallang package/linker/standard/
+specialize/semantic/IR/C backend 경로로 연결했다. Transitive local dependency의 generated C,
+native output과 dependency-source human/JSON diagnostics가 Stage0와 일치한다. 이 과정에서
+발견한 imported nested generic type argument specialization 누락도 통합 회귀 테스트와 함께
+수정했다. Manifest parsing, path dependency/graph boundary resolution, source enumeration과
+public IR output은 P179b2b에 남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

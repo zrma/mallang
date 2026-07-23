@@ -28,6 +28,9 @@ self_compiler="target/debug/mlgc"
 fixture="bootstrap/compiler/fixtures/backend/scalars.mlg"
 semantic_rejection="bootstrap/compiler/fixtures/semantic/body-unknown-variable.mlg"
 parser_rejection="bootstrap/compiler/fixtures/parser/recovery-statements.mlg"
+project_fixture="examples/projects/local-deps/app"
+project_artifact="pathapp"
+project_rejection="tests/fixtures/diagnostics/dependency-project/app"
 mkdir -p "$work"
 
 "${cargo_command[@]}" build --locked --quiet --lib --bin mlg
@@ -91,6 +94,44 @@ if [[ "$stage0_status" -ne 0 || "$self_status" -ne 0 ]] || \
   exit 1
 fi
 
+"$driver" --compiler stage0 check "$project_fixture" \
+  >"$work/project-check.stage0.stdout" 2>"$work/project-check.stage0.stderr"
+"$driver" --compiler self check "$project_fixture" \
+  >"$work/project-check.self.stdout" 2>"$work/project-check.self.stderr"
+if ! cmp -s "$work/project-check.stage0.stdout" "$work/project-check.self.stdout" || \
+   ! cmp -s "$work/project-check.stage0.stderr" "$work/project-check.self.stderr"; then
+  echo "public Stage0/self project check parity failed" >&2
+  exit 1
+fi
+
+"$driver" --compiler stage0 build "$project_fixture" -o "$work/project.stage0" \
+  >"$work/project-build.stage0.stdout" 2>"$work/project-build.stage0.stderr"
+cp "$project_fixture/target/mallang/$project_artifact.c" "$work/project.stage0.c"
+"$driver" --compiler self build "$project_fixture" -o "$work/project.self" \
+  >"$work/project-build.self.stdout" 2>"$work/project-build.self.stderr"
+cp "$project_fixture/target/mallang/$project_artifact.c" "$work/project.self.c"
+if [[ -s "$work/project-build.stage0.stderr" || -s "$work/project-build.self.stderr" ]] || \
+   ! cmp -s "$work/project.stage0.c" "$work/project.self.c"; then
+  echo "public Stage0/self project build parity failed" >&2
+  exit 1
+fi
+
+set +e
+"$driver" --compiler stage0 run "$project_fixture" \
+  >"$work/project-run.stage0.stdout" 2>"$work/project-run.stage0.stderr"
+stage0_status=$?
+"$driver" --compiler self run "$project_fixture" \
+  >"$work/project-run.self.stdout" 2>"$work/project-run.self.stderr"
+self_status=$?
+set -e
+if [[ "$stage0_status" -ne 0 || "$self_status" -ne 0 ]] || \
+   [[ "$stage0_status" -ne "$self_status" ]] || \
+   ! cmp -s "$work/project-run.stage0.stdout" "$work/project-run.self.stdout" || \
+   ! cmp -s "$work/project-run.stage0.stderr" "$work/project-run.self.stderr"; then
+  echo "public Stage0/self project run parity failed" >&2
+  exit 1
+fi
+
 "$driver" --compiler stage0 check "$fixture" \
   >"$work/check.stage0.stdout" 2>"$work/check.stage0.stderr"
 "$driver" --compiler self check "$fixture" \
@@ -102,18 +143,24 @@ if ! cmp -s "$work/check.stage0.stdout" "$work/check.self.stdout" || \
 fi
 
 for diagnostic_format in human json; do
-  format_args=()
-  if [[ "$diagnostic_format" == "json" ]]; then
-    format_args=(--diagnostic-format json)
-  fi
   for rejection in "$semantic_rejection" "$parser_rejection"; do
     name="$(basename "$rejection" .mlg).$diagnostic_format"
     set +e
-    "$driver" "${format_args[@]}" --compiler stage0 check "$rejection" \
-      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    if [[ "$diagnostic_format" == "json" ]]; then
+      "$driver" --diagnostic-format json --compiler stage0 check "$rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    else
+      "$driver" --compiler stage0 check "$rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    fi
     stage0_status=$?
-    "$driver" "${format_args[@]}" --compiler self check "$rejection" \
-      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    if [[ "$diagnostic_format" == "json" ]]; then
+      "$driver" --diagnostic-format json --compiler self check "$rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    else
+      "$driver" --compiler self check "$rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    fi
     self_status=$?
     set -e
     if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
@@ -124,6 +171,35 @@ for diagnostic_format in human json; do
       exit 1
     fi
   done
+done
+
+for diagnostic_format in human json; do
+  name="project-rejection.$diagnostic_format"
+  set +e
+  if [[ "$diagnostic_format" == "json" ]]; then
+    "$driver" --diagnostic-format json --compiler stage0 check "$project_rejection" \
+      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+  else
+    "$driver" --compiler stage0 check "$project_rejection" \
+      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+  fi
+  stage0_status=$?
+  if [[ "$diagnostic_format" == "json" ]]; then
+    "$driver" --diagnostic-format json --compiler self check "$project_rejection" \
+      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+  else
+    "$driver" --compiler self check "$project_rejection" \
+      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+  fi
+  self_status=$?
+  set -e
+  if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+     [[ "$stage0_status" -ne "$self_status" ]] || \
+     ! cmp -s "$work/$name.stage0.stdout" "$work/$name.self.stdout" || \
+     ! cmp -s "$work/$name.stage0.stderr" "$work/$name.self.stderr"; then
+    echo "public Stage0/self $diagnostic_format project rejection parity failed" >&2
+    exit 1
+  fi
 done
 
 if "$driver" --compiler self --self-compiler "$work/missing-mlgc" \
@@ -138,4 +214,4 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 commands=check,build,run diagnostics=human,json fallback=explicit-only"
+echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,build,run diagnostics=human,json fallback=explicit-only"

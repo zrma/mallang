@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a and P179b1 complete, P179b2 pending
+Status: active; P179a, P179b1 and P179b2a complete; P179b2b pending
 
 ## Objective
 
@@ -65,8 +65,21 @@ routes standalone `check`, `build` and `run` failures through that boundary.
 Malformed internal output is a backend protocol error and never triggers a
 Stage0 fallback. The transition gate proves successful standalone `check`,
 semantic rejection and multi-error parser recovery parity in both diagnostic
-formats. P179b2 owns project discovery, manifest/dependency graph assembly,
-project `check`/`build` and public IR output.
+formats.
+
+P179b2a is complete. The host exposes a read-only, root-first project-unit view
+and passes that graph plus dependency-first source order to `mlgc`. Public
+project `check`, `build` and `run` now execute Mallang-owned package, linker,
+standard-library, specialization, semantic, IR and C-backend logic. The parity
+gate covers a transitive local dependency graph, byte-identical generated C,
+native output and dependency-source human/JSON diagnostics. A nested imported
+generic type-argument regression found by this route is fixed and covered by a
+linker/specializer integration test.
+
+This is not yet the complete P179b boundary: Rust still finds and parses
+manifests, resolves path dependencies, validates graph boundaries and enumerates
+source files. P179b2b moves those decisions behind the Mallang boundary and
+migrates public IR output without changing its user-visible contract.
 
 ### P179c: Tooling And Native Workflow
 
