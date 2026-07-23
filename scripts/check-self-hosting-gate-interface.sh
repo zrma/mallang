@@ -70,6 +70,16 @@ expect_status_2 invalid-fixed-point-mode \
 grep -Fq 'usage: scripts/check-self-hosting-fixed-point.sh' \
   "$work/invalid-fixed-point-mode.stderr"
 
+scripts/build-self-hosted-compiler.sh --help \
+  >"$work/self-compiler-build-help.stdout" \
+  2>"$work/self-compiler-build-help.stderr"
+grep -Fq -- '--stage0 <path>' "$work/self-compiler-build-help.stderr"
+grep -Fq -- '--output <path>' "$work/self-compiler-build-help.stderr"
+expect_status_2 invalid-default-compiler-mode \
+  scripts/check-self-hosting-default-compiler.sh --fast
+grep -Fq 'usage: scripts/check-self-hosting-default-compiler.sh' \
+  "$work/invalid-default-compiler-mode.stderr"
+
 cat >"$work/ir-expected.txt" <<'EOF'
 IR|2
 FUNCTION|first|unit|0|1
@@ -120,5 +130,6 @@ fi
 
 grep -Fq 'scripts/check-self-hosting-backend.sh --assume-bootstrap' scripts/check.sh
 grep -Fq 'scripts/check-self-hosting-fixed-point.sh' .github/workflows/ci.yml
+grep -Fq 'scripts/check-self-hosting-default-compiler.sh' .github/workflows/ci.yml
 
 echo "self-hosting gate interface and CI role separation passed"

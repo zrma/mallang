@@ -6,6 +6,19 @@ Status: active; P179a decisions frozen unless implementation evidence reopens th
 
 No. Users continue to invoke `mlg`. Implementation selection is an internal
 driver and packaging concern, not a reason to add another normal compiler name.
+The internal self-hosted engine is `mlgc`; users do not need a second normal
+compiler command.
+
+## How Is The Implementation Selected During B5?
+
+`--compiler stage0|self` is the explicit selector. No flag still selects
+Stage0 until P179d changes the packaged default. `--self-compiler <path>` is a
+development override and requires explicit `--compiler self`; ordinary layouts
+resolve sibling `mlgc`. No environment-variable search or silent fallback is
+allowed.
+
+`mlg --version` retains its stable one-line output. `--version --verbose` adds
+driver, selected implementation and core protocol provenance.
 
 ## What Is The Rust Stage0 Artifact?
 

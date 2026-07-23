@@ -62,6 +62,11 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
   `--assume-bootstrap --skip-sanitizers`는 진단 전용이며 milestone/publication
   evidence가 아니다. 일반 `scripts/check.sh`와 분리된 supported-platform CI job으로
   실행한다.
+- B5 default-transition gate:
+  `scripts/check-self-hosting-default-compiler.sh`; tracked Stage0에서 internal
+  `mlgc` fixed point를 만들고 public `mlg --compiler stage0|self`의 현재 이관
+  surface와 non-fallback 계약을 비교한다. 일반 `scripts/check.sh`와 분리된
+  supported-platform CI job으로 실행한다.
 - frontend 변경: lexer/parser/semantic targeted tests와 example diagnostics.
 - backend/runtime 변경: generated C warning/sanitizer 검사와 native smoke.
 - 최종 증거에는 acceptance별 test, planned/implemented 문서 상태, local/remote bookmark, CI를 포함한다.

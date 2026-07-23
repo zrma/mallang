@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a planning complete, implementation pending
+Status: active; P179a complete, P179b pending
 
 ## Objective
 
@@ -22,6 +22,11 @@ supported-platform contracts.
   available for differential diagnosis and rollback.
 - The selector is not silent fallback. A self-hosted compiler failure must be
   reported unless the operator explicitly requests Stage0.
+- The transition names are `mlg` for the public driver, `mlgc` for the internal
+  self-hosted engine and `--compiler <stage0|self>` for explicit selection.
+- `--self-compiler <path>` is an explicit development/diagnostic override. In
+  ordinary installed layouts, `mlg` resolves sibling `mlgc` without an ambient
+  environment-variable search.
 
 ## Work Breakdown
 
@@ -33,6 +38,17 @@ supported-platform contracts.
   compiler and Rust seed
 - add parity harnesses that run the public command through both implementations
 - define a non-recursive bootstrap build graph and clean-checkout recovery path
+
+P179a is complete. `scripts/build-self-hosted-compiler.sh` builds tracked Rust
+Stage0, strict-C11 Stage1 and fixed Stage2, then installs the Stage2 engine as
+`mlgc`. The public driver defaults to Stage0 for now, accepts explicit
+`--compiler stage0|self`, reports driver/compiler/core provenance through
+`--version --verbose` and never silently falls back. The self path currently
+owns standalone `build` and `run`; commands reserved for P179b-P179c fail with
+an explicit transition diagnostic. The isolated
+`scripts/check-self-hosting-default-compiler.sh` gate compares generated C,
+native output, status and stderr through the public driver and runs in the
+macOS arm64/Linux x86_64 CI matrix.
 
 ### P179b: Public Project And Diagnostic Surface
 
@@ -67,9 +83,9 @@ supported-platform contracts.
 
 ## Acceptance
 
-- [ ] public `mlg` and internal compiler/seed naming contract
-- [ ] deterministic clean-checkout Stage0 -> Stage1 -> Stage2 build graph
-- [ ] explicit non-silent Stage0 diagnostic and rollback selector
+- [x] public `mlg` and internal compiler/seed naming contract
+- [x] deterministic clean-checkout Stage0 -> Stage1 -> Stage2 build graph
+- [x] explicit non-silent Stage0 diagnostic and rollback selector
 - [ ] self-hosted public project discovery, diagnostics, check, IR and build
 - [ ] self-hosted format, test, run and native process workflow
 - [ ] complete Stage0/default command and conformance parity

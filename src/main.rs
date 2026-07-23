@@ -16,10 +16,72 @@ use mallang::{
     FormatError, FrontendError, PackageTest, Project, SourceId, SourceLoadError, SourceMap,
 };
 
+const SELF_COMPILER_BINARY: &str = "mlgc";
+const SELF_COMPILER_PROTOCOL: &str = "mlgc protocol 1";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiagnosticFormat {
     Human,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompilerImplementation {
+    Stage0,
+    SelfHosted,
+}
+
+impl CompilerImplementation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Stage0 => "stage0",
+            Self::SelfHosted => "self",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompilerSelection {
+    implementation: CompilerImplementation,
+    self_compiler: Option<PathBuf>,
+}
+
+impl Default for CompilerSelection {
+    fn default() -> Self {
+        Self {
+            implementation: CompilerImplementation::Stage0,
+            self_compiler: None,
+        }
+    }
+}
+
+impl CompilerSelection {
+    fn self_compiler_path(&self) -> CliResult<PathBuf> {
+        let path = match &self.self_compiler {
+            Some(path) => path.clone(),
+            None => env::current_exe()
+                .map_err(|error| {
+                    CliError::cli(format!("failed to locate the mlg driver: {error}"))
+                })?
+                .parent()
+                .map(|directory| directory.join(SELF_COMPILER_BINARY))
+                .ok_or_else(|| CliError::cli("mlg executable has no parent directory"))?,
+        };
+        if !path.is_file() {
+            return Err(CliError::cli(format!(
+                "self-hosted compiler not found at {}; build or install `{SELF_COMPILER_BINARY}` or pass `--self-compiler <path>`",
+                path.display()
+            )));
+        }
+        Ok(path)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GlobalOptions {
+    diagnostic_format: DiagnosticFormat,
+    compiler: CompilerSelection,
+    command_index: usize,
 }
 
 #[derive(Debug)]
@@ -77,14 +139,15 @@ fn main() {
         process::exit(2);
     }
 
-    let (diagnostic_format, command_index) = match parse_diagnostic_format(&args) {
+    let options = match parse_global_options(&args) {
         Ok(parsed) => parsed,
         Err(error) => {
             emit_diagnostics(error, DiagnosticFormat::Human);
             process::exit(1);
         }
     };
-    let Some(command) = args.get(command_index) else {
+    let diagnostic_format = options.diagnostic_format;
+    let Some(command) = args.get(options.command_index) else {
         emit_diagnostics(
             CliError::cli(format!(
                 "missing subcommand; run `{program} --help` for usage"
@@ -93,22 +156,31 @@ fn main() {
         );
         process::exit(1);
     };
-    let command_args = &args[command_index + 1..];
+    let command_args = &args[options.command_index + 1..];
 
     let result = match command.to_str() {
-        Some("lex") => utf8_cli_args(command_args).and_then(|args| run_lex(&program, &args)),
-        Some("parse") => utf8_cli_args(command_args).and_then(|args| run_parse(&program, &args)),
-        Some("check") => utf8_cli_args(command_args).and_then(|args| run_check(&program, &args)),
-        Some("fmt") => utf8_cli_args(command_args).and_then(|args| run_fmt(&program, &args)),
-        Some("ir") => utf8_cli_args(command_args).and_then(|args| run_ir(&program, &args)),
-        Some("build") => utf8_cli_args(command_args).and_then(|args| run_build(&program, &args)),
-        Some("run") => run_run(&program, command_args),
-        Some("test") => utf8_cli_args(command_args)
+        Some("lex") => require_stage0(&options.compiler, "lex")
+            .and_then(|()| utf8_cli_args(command_args))
+            .and_then(|args| run_lex(&program, &args)),
+        Some("parse") => require_stage0(&options.compiler, "parse")
+            .and_then(|()| utf8_cli_args(command_args))
+            .and_then(|args| run_parse(&program, &args)),
+        Some("check") => require_stage0(&options.compiler, "check")
+            .and_then(|()| utf8_cli_args(command_args))
+            .and_then(|args| run_check(&program, &args)),
+        Some("fmt") => require_stage0(&options.compiler, "fmt")
+            .and_then(|()| utf8_cli_args(command_args))
+            .and_then(|args| run_fmt(&program, &args)),
+        Some("ir") => require_stage0(&options.compiler, "ir")
+            .and_then(|()| utf8_cli_args(command_args))
+            .and_then(|args| run_ir(&program, &args)),
+        Some("build") => utf8_cli_args(command_args)
+            .and_then(|args| run_build(&program, &args, &options.compiler)),
+        Some("run") => run_run(&program, command_args, &options.compiler),
+        Some("test") => require_stage0(&options.compiler, "test")
+            .and_then(|()| utf8_cli_args(command_args))
             .and_then(|args| run_test(&program, &args, diagnostic_format)),
-        Some("-V" | "--version") => {
-            println!("mlg {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
+        Some("-V" | "--version") => run_version(&program, command_args, &options.compiler),
         Some("-h" | "--help") => {
             let mut stdout = io::stdout().lock();
             write_usage(&mut stdout, &program)
@@ -126,21 +198,88 @@ fn main() {
     }
 }
 
-fn parse_diagnostic_format(args: &[OsString]) -> CliResult<(DiagnosticFormat, usize)> {
-    let Some(argument) = args.get(1).and_then(|argument| argument.to_str()) else {
-        return Ok((DiagnosticFormat::Human, 1));
-    };
-    if argument == "--diagnostic-format" {
-        let value = args
-            .get(2)
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| CliError::cli("missing UTF-8 value for --diagnostic-format"))?;
-        return Ok((parse_diagnostic_format_value(value)?, 3));
+fn parse_global_options(args: &[OsString]) -> CliResult<GlobalOptions> {
+    let mut diagnostic_format = DiagnosticFormat::Human;
+    let mut diagnostic_format_seen = false;
+    let mut compiler = CompilerSelection::default();
+    let mut compiler_seen = false;
+    let mut self_compiler_seen = false;
+    let mut index = 1;
+
+    while let Some(argument) = args.get(index).and_then(|argument| argument.to_str()) {
+        if argument == "--diagnostic-format" {
+            if diagnostic_format_seen {
+                return Err(CliError::cli("duplicate --diagnostic-format option"));
+            }
+            let value = args
+                .get(index + 1)
+                .and_then(|value| value.to_str())
+                .ok_or_else(|| CliError::cli("missing UTF-8 value for --diagnostic-format"))?;
+            diagnostic_format = parse_diagnostic_format_value(value)?;
+            diagnostic_format_seen = true;
+            index += 2;
+            continue;
+        }
+        if let Some(value) = argument.strip_prefix("--diagnostic-format=") {
+            if diagnostic_format_seen {
+                return Err(CliError::cli("duplicate --diagnostic-format option"));
+            }
+            diagnostic_format = parse_diagnostic_format_value(value)?;
+            diagnostic_format_seen = true;
+            index += 1;
+            continue;
+        }
+        if argument == "--compiler" {
+            if compiler_seen {
+                return Err(CliError::cli("duplicate --compiler option"));
+            }
+            let value = args
+                .get(index + 1)
+                .and_then(|value| value.to_str())
+                .ok_or_else(|| CliError::cli("missing UTF-8 value for --compiler"))?;
+            compiler.implementation = parse_compiler_implementation(value)?;
+            compiler_seen = true;
+            index += 2;
+            continue;
+        }
+        if let Some(value) = argument.strip_prefix("--compiler=") {
+            if compiler_seen {
+                return Err(CliError::cli("duplicate --compiler option"));
+            }
+            compiler.implementation = parse_compiler_implementation(value)?;
+            compiler_seen = true;
+            index += 1;
+            continue;
+        }
+        if argument == "--self-compiler" {
+            if self_compiler_seen {
+                return Err(CliError::cli("duplicate --self-compiler option"));
+            }
+            let path = args
+                .get(index + 1)
+                .filter(|path| {
+                    !path.is_empty() && path.to_str().is_none_or(|value| !value.starts_with("--"))
+                })
+                .ok_or_else(|| CliError::cli("missing value for --self-compiler"))?;
+            compiler.self_compiler = Some(PathBuf::from(path));
+            self_compiler_seen = true;
+            index += 2;
+            continue;
+        }
+        break;
     }
-    if let Some(value) = argument.strip_prefix("--diagnostic-format=") {
-        return Ok((parse_diagnostic_format_value(value)?, 2));
+
+    if self_compiler_seen && compiler.implementation != CompilerImplementation::SelfHosted {
+        return Err(CliError::cli(
+            "--self-compiler requires explicit `--compiler self`",
+        ));
     }
-    Ok((DiagnosticFormat::Human, 1))
+
+    Ok(GlobalOptions {
+        diagnostic_format,
+        compiler,
+        command_index: index,
+    })
 }
 
 fn parse_diagnostic_format_value(value: &str) -> CliResult<DiagnosticFormat> {
@@ -151,6 +290,25 @@ fn parse_diagnostic_format_value(value: &str) -> CliResult<DiagnosticFormat> {
             "unknown diagnostic format `{value}`; expected `human` or `json`"
         ))),
     }
+}
+
+fn parse_compiler_implementation(value: &str) -> CliResult<CompilerImplementation> {
+    match value {
+        "stage0" => Ok(CompilerImplementation::Stage0),
+        "self" => Ok(CompilerImplementation::SelfHosted),
+        _ => Err(CliError::cli(format!(
+            "unknown compiler `{value}`; expected `stage0` or `self`"
+        ))),
+    }
+}
+
+fn require_stage0(selection: &CompilerSelection, command: &str) -> CliResult<()> {
+    if selection.implementation == CompilerImplementation::Stage0 {
+        return Ok(());
+    }
+    Err(CliError::cli(format!(
+        "self-hosted compiler does not yet support public `{command}`; use explicit `--compiler stage0`"
+    )))
 }
 
 fn emit_diagnostics(error: CliError, format: DiagnosticFormat) {
@@ -173,11 +331,59 @@ fn utf8_cli_args(args: &[OsString]) -> CliResult<Vec<String>> {
         .collect()
 }
 
+fn run_version(program: &str, args: &[OsString], compiler: &CompilerSelection) -> CliResult<()> {
+    let verbose = match args {
+        [] => false,
+        [flag] if flag == OsStr::new("--verbose") => true,
+        _ => {
+            return Err(CliError::cli(format!(
+                "usage: {program} [--compiler <stage0|self>] --version [--verbose]"
+            )))
+        }
+    };
+    let core = match compiler.implementation {
+        CompilerImplementation::Stage0 => "rust-stage0".to_string(),
+        CompilerImplementation::SelfHosted => self_compiler_version(compiler)?,
+    };
+
+    println!("mlg {}", env!("CARGO_PKG_VERSION"));
+    if verbose {
+        println!("driver: rust");
+        println!("compiler: {}", compiler.implementation.label());
+        println!("core: {core}");
+    }
+    Ok(())
+}
+
+fn self_compiler_version(compiler: &CompilerSelection) -> CliResult<String> {
+    let path = compiler.self_compiler_path()?;
+    let output = Command::new(&path)
+        .arg("--version")
+        .output()
+        .map_err(|error| {
+            CliError::cli(format!(
+                "failed to execute self-hosted compiler {}: {error}",
+                path.display()
+            ))
+        })?;
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|_| CliError::cli("self-hosted compiler version is not valid UTF-8"))?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() || stdout.trim_end() != SELF_COMPILER_PROTOCOL || !stderr.is_empty()
+    {
+        return Err(CliError::cli(format!(
+            "self-hosted compiler protocol mismatch at {}; expected `{SELF_COMPILER_PROTOCOL}`",
+            path.display()
+        )));
+    }
+    Ok(SELF_COMPILER_PROTOCOL.to_string())
+}
+
 fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "usage:")?;
     writeln!(
         output,
-        "  {program} [--diagnostic-format <human|json>] <subcommand> ..."
+        "  {program} [--diagnostic-format <human|json>] [--compiler <stage0|self>] [--self-compiler <path>] <subcommand> ..."
     )?;
     writeln!(output, "  {program} lex <source-file>")?;
     writeln!(output, "  {program} parse <source-file>")?;
@@ -187,7 +393,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} build <input> [-o <output>]")?;
     writeln!(output, "  {program} run <input> [-- <program-args>...]")?;
     writeln!(output, "  {program} test <input> [--exact <test-id>]")?;
-    writeln!(output, "  {program} --version")
+    writeln!(output, "  {program} --version [--verbose]")
 }
 
 fn run_lex(program: &str, args: &[String]) -> CliResult<()> {
@@ -374,7 +580,7 @@ fn run_ir(program: &str, args: &[String]) -> CliResult<()> {
     Ok(())
 }
 
-fn run_build(program: &str, args: &[String]) -> CliResult<()> {
+fn run_build(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     if args.is_empty() {
         return Err(CliError::cli(format!(
             "usage: {program} build <input> [-o <output>]"
@@ -397,12 +603,12 @@ fn run_build(program: &str, args: &[String]) -> CliResult<()> {
         }
     }
 
-    let output_path = compile_input(source_path, output_path, OutputKind::Build)?;
+    let output_path = compile_input(source_path, output_path, OutputKind::Build, compiler)?;
     println!("{}", output_path.display());
     Ok(())
 }
 
-fn run_run(program: &str, args: &[OsString]) -> CliResult<()> {
+fn run_run(program: &str, args: &[OsString], compiler: &CompilerSelection) -> CliResult<()> {
     let Some(source_path) = args.first() else {
         return Err(CliError::cli(format!(
             "usage: {program} run <input> [-- <program-args>...]"
@@ -421,7 +627,7 @@ fn run_run(program: &str, args: &[OsString]) -> CliResult<()> {
             )));
         }
     };
-    let binary_path = compile_input(source_path, None, OutputKind::Run)?;
+    let binary_path = compile_input(source_path, None, OutputKind::Run, compiler)?;
 
     let status = Command::new(&binary_path)
         .args(program_args)
@@ -672,33 +878,53 @@ fn compile_input(
     input_path: &str,
     output_path: Option<PathBuf>,
     kind: OutputKind,
+    compiler: &CompilerSelection,
 ) -> CliResult<PathBuf> {
-    let (c_source, artifact_name, build_dir) = match load_compilation_input(input_path)? {
-        CompilationInput::Standalone { sources, source_id } => {
-            let c_source = generate_c_sources_with_diagnostics(&sources, &[source_id])
-                .map_err(|errors| compiler_diagnostics(&sources, None, input_path, errors))?;
-            (
-                c_source,
-                source_stem(input_path).to_string(),
-                PathBuf::from("target/mallang"),
-            )
+    let (c_source, artifact_name, build_dir) = if compiler.implementation
+        == CompilerImplementation::SelfHosted
+    {
+        let input = Path::new(input_path);
+        if !input
+            .extension()
+            .is_some_and(|extension| extension == "mlg")
+        {
+            return Err(CliError::cli(
+                "self-hosted compiler project build is not available until P179b; use explicit `--compiler stage0`",
+            ));
         }
-        CompilationInput::Project {
-            project,
-            sources,
-            source_ids,
-        } => {
-            project
-                .require_entrypoint()
-                .map_err(|error| CliError::input(error.to_string()))?;
-            let c_source =
-                generate_c_project_sources_with_diagnostics(&project, &sources, &source_ids)
-                    .map_err(|errors| {
-                        compiler_diagnostics(&sources, Some(&project), input_path, errors)
-                    })?;
-            let artifact_name = project.name().to_string();
-            let build_dir = project.root().join("target/mallang");
-            (c_source, artifact_name, build_dir)
+        (
+            generate_self_hosted_c(input_path, compiler)?,
+            source_stem(input_path).to_string(),
+            PathBuf::from("target/mallang"),
+        )
+    } else {
+        match load_compilation_input(input_path)? {
+            CompilationInput::Standalone { sources, source_id } => {
+                let c_source = generate_c_sources_with_diagnostics(&sources, &[source_id])
+                    .map_err(|errors| compiler_diagnostics(&sources, None, input_path, errors))?;
+                (
+                    c_source,
+                    source_stem(input_path).to_string(),
+                    PathBuf::from("target/mallang"),
+                )
+            }
+            CompilationInput::Project {
+                project,
+                sources,
+                source_ids,
+            } => {
+                project
+                    .require_entrypoint()
+                    .map_err(|error| CliError::input(error.to_string()))?;
+                let c_source =
+                    generate_c_project_sources_with_diagnostics(&project, &sources, &source_ids)
+                        .map_err(|errors| {
+                            compiler_diagnostics(&sources, Some(&project), input_path, errors)
+                        })?;
+                let artifact_name = project.name().to_string();
+                let build_dir = project.root().join("target/mallang");
+                (c_source, artifact_name, build_dir)
+            }
         }
     };
 
@@ -737,6 +963,47 @@ fn compile_input(
     }
 
     Ok(output_path)
+}
+
+fn generate_self_hosted_c(input_path: &str, compiler: &CompilerSelection) -> CliResult<String> {
+    let compiler_path = compiler.self_compiler_path()?;
+    let output = Command::new(&compiler_path)
+        .arg("c")
+        .arg(input_path)
+        .output()
+        .map_err(|error| {
+            CliError::native(format!(
+                "failed to execute self-hosted compiler {}: {error}",
+                compiler_path.display()
+            ))
+        })?;
+    let stdout = String::from_utf8(output.stdout).map_err(|_| {
+        CliError::one(
+            Diagnostic::error(
+                DiagnosticStage::Backend,
+                "self-hosted compiler output is not valid UTF-8",
+            )
+            .with_path(input_path),
+        )
+    })?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() || !stderr.is_empty() || !stdout.starts_with("#include <") {
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim()
+        } else {
+            "self-hosted compiler produced no C output"
+        };
+        return Err(CliError::one(
+            Diagnostic::error(
+                DiagnosticStage::Backend,
+                format!("self-hosted compiler failed: {detail}"),
+            )
+            .with_path(input_path),
+        ));
+    }
+    Ok(stdout)
 }
 
 fn source_stem(source_path: &str) -> &str {
@@ -918,7 +1185,89 @@ fn project_source_load_error(project: &Project, error: SourceLoadError) -> CliEr
 
 #[cfg(test)]
 mod tests {
-    use super::{child_signal_diagnostic, parse_assertion_marker};
+    use std::{ffi::OsString, path::PathBuf};
+
+    use super::{
+        child_signal_diagnostic, parse_assertion_marker, parse_global_options,
+        CompilerImplementation, DiagnosticFormat,
+    };
+
+    fn args(values: &[&str]) -> Vec<OsString> {
+        values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn parses_explicit_compiler_and_diagnostic_options() {
+        let parsed = parse_global_options(&args(&[
+            "mlg",
+            "--compiler=self",
+            "--self-compiler",
+            "target/debug/mlgc",
+            "--diagnostic-format",
+            "json",
+            "build",
+            "example.mlg",
+        ]))
+        .unwrap();
+
+        assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Json);
+        assert_eq!(
+            parsed.compiler.implementation,
+            CompilerImplementation::SelfHosted
+        );
+        assert_eq!(
+            parsed.compiler.self_compiler,
+            Some(PathBuf::from("target/debug/mlgc"))
+        );
+        assert_eq!(parsed.command_index, 6);
+    }
+
+    #[test]
+    fn defaults_to_stage0_without_silent_self_selection() {
+        let parsed = parse_global_options(&args(&["mlg", "check", "example.mlg"])).unwrap();
+
+        assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Human);
+        assert_eq!(
+            parsed.compiler.implementation,
+            CompilerImplementation::Stage0
+        );
+        assert_eq!(parsed.compiler.self_compiler, None);
+        assert_eq!(parsed.command_index, 1);
+    }
+
+    #[test]
+    fn rejects_self_compiler_path_without_explicit_self_selection() {
+        let error = parse_global_options(&args(&[
+            "mlg",
+            "--self-compiler",
+            "target/debug/mlgc",
+            "build",
+            "example.mlg",
+        ]))
+        .unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].render_human(),
+            "--self-compiler requires explicit `--compiler self`"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_self_compiler_path_before_the_command() {
+        let error = parse_global_options(&args(&[
+            "mlg",
+            "--compiler",
+            "self",
+            "--self-compiler",
+            "--version",
+        ]))
+        .unwrap_err();
+
+        assert_eq!(
+            error.diagnostics[0].render_human(),
+            "missing value for --self-compiler"
+        );
+    }
 
     #[test]
     fn parses_test_assertion_marker() {

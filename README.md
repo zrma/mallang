@@ -17,7 +17,9 @@ and normative v1 contract.
 - Machine diagnostic shape: `mlg --diagnostic-format json check <input>`
 - Version command shape: `mlg --version`
 - Help command shape: `mlg --help`
-- Internal compiler crate or binary name, if needed later: `mlgc`
+- Internal self-hosted compiler engine: `mlgc`
+- Transition selector: `mlg --compiler <stage0|self> ...`; Stage0 remains the
+  default until the B5 release switch
 
 ## Current Scope
 
@@ -174,6 +176,10 @@ implemented native subset.
 cargo run --bin mlg -- lex examples/hello.mlg
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
+scripts/build-self-hosted-compiler.sh
+target/debug/mlg --version --verbose
+target/debug/mlg --compiler self --version --verbose
+target/debug/mlg --compiler self build examples/first.mlg -o target/mallang/first-self
 cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- fmt --check examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg

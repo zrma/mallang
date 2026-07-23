@@ -270,6 +270,17 @@ only after public project discovery, diagnostics, format/test/build/run and
 release packaging move behind the Mallang boundary. Rust Stage0 remains a
 source-built seed, oracle and explicit selector. Silent fallback is forbidden.
 
+P179a is complete. The internal engine is `mlgc`; the public driver accepts
+`--compiler stage0|self` plus an explicit `--self-compiler <path>` development
+override and reports selected-core provenance with `--version --verbose`.
+`scripts/build-self-hosted-compiler.sh` implements the non-recursive
+Stage0-to-Stage1-to-fixed-Stage2 build graph. The isolated default-transition
+gate proves public standalone `build`/`run` C and native parity and explicit
+failure for unmigrated or missing self-hosted paths on both supported CI
+platforms. Stage0 remains the no-flag default and release artifact in this
+slice; P179b owns project discovery, diagnostics, `check`, `ir` and project
+build migration.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the
