@@ -26,6 +26,8 @@ work="target/mallang/self-hosting/b5-default"
 driver="target/debug/mlg"
 self_compiler="target/debug/mlgc"
 fixture="bootstrap/compiler/fixtures/backend/scalars.mlg"
+semantic_rejection="bootstrap/compiler/fixtures/semantic/body-unknown-variable.mlg"
+parser_rejection="bootstrap/compiler/fixtures/parser/recovery-statements.mlg"
 mkdir -p "$work"
 
 "${cargo_command[@]}" build --locked --quiet --lib --bin mlg
@@ -89,17 +91,40 @@ if [[ "$stage0_status" -ne 0 || "$self_status" -ne 0 ]] || \
   exit 1
 fi
 
-if "$driver" --compiler self check "$fixture" \
-  >"$work/unsupported.stdout" 2>"$work/unsupported.stderr"; then
-  echo "unmigrated self-hosted command unexpectedly fell back to Stage0" >&2
+"$driver" --compiler stage0 check "$fixture" \
+  >"$work/check.stage0.stdout" 2>"$work/check.stage0.stderr"
+"$driver" --compiler self check "$fixture" \
+  >"$work/check.self.stdout" 2>"$work/check.self.stderr"
+if ! cmp -s "$work/check.stage0.stdout" "$work/check.self.stdout" || \
+   ! cmp -s "$work/check.stage0.stderr" "$work/check.self.stderr"; then
+  echo "public Stage0/self check success parity failed" >&2
   exit 1
 fi
-if [[ -s "$work/unsupported.stdout" ]] || \
-   ! grep -Fq 'self-hosted compiler does not yet support public `check`' \
-     "$work/unsupported.stderr"; then
-  echo "unmigrated self-hosted command diagnostic mismatch" >&2
-  exit 1
-fi
+
+for diagnostic_format in human json; do
+  format_args=()
+  if [[ "$diagnostic_format" == "json" ]]; then
+    format_args=(--diagnostic-format json)
+  fi
+  for rejection in "$semantic_rejection" "$parser_rejection"; do
+    name="$(basename "$rejection" .mlg).$diagnostic_format"
+    set +e
+    "$driver" "${format_args[@]}" --compiler stage0 check "$rejection" \
+      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    stage0_status=$?
+    "$driver" "${format_args[@]}" --compiler self check "$rejection" \
+      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    self_status=$?
+    set -e
+    if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+       [[ "$stage0_status" -ne "$self_status" ]] || \
+       ! cmp -s "$work/$name.stage0.stdout" "$work/$name.self.stdout" || \
+       ! cmp -s "$work/$name.stage0.stderr" "$work/$name.self.stderr"; then
+      echo "public Stage0/self $diagnostic_format rejection parity failed: $rejection" >&2
+      exit 1
+    fi
+  done
+done
 
 if "$driver" --compiler self --self-compiler "$work/missing-mlgc" \
   build "$fixture" -o "$work/missing" \
@@ -113,4 +138,4 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 commands=build,run fallback=explicit-only"
+echo "B5 default compiler transition gate passed: core=mlgc protocol=1 commands=check,build,run diagnostics=human,json fallback=explicit-only"

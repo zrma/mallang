@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a complete, P179b pending
+Status: active; P179a and P179b1 complete, P179b2 pending
 
 ## Objective
 
@@ -44,11 +44,11 @@ Stage0, strict-C11 Stage1 and fixed Stage2, then installs the Stage2 engine as
 `mlgc`. The public driver defaults to Stage0 for now, accepts explicit
 `--compiler stage0|self`, reports driver/compiler/core provenance through
 `--version --verbose` and never silently falls back. The self path currently
-owns standalone `build` and `run`; commands reserved for P179b-P179c fail with
-an explicit transition diagnostic. The isolated
+owns standalone `check`, `build` and `run`; commands reserved for later
+P179b-P179c slices fail with an explicit transition diagnostic. The isolated
 `scripts/check-self-hosting-default-compiler.sh` gate compares generated C,
-native output, status and stderr through the public driver and runs in the
-macOS arm64/Linux x86_64 CI matrix.
+native output, status, stderr and human/JSON rejection diagnostics through the
+public driver and runs in the macOS arm64/Linux x86_64 CI matrix.
 
 ### P179b: Public Project And Diagnostic Surface
 
@@ -57,6 +57,16 @@ macOS arm64/Linux x86_64 CI matrix.
 - preserve source ordering, source paths, human/JSON diagnostics and exit codes
 - expose public `check`, `ir` and `build` behavior through the self-hosted core
 - retain explicit Stage0 differential coverage for every command
+
+P179b1 is complete. The Rust host driver decodes the Mallang compiler's bounded
+`PERR`, `KERR`, `LERR`, `SERR` and `IERR` records into the existing public
+human/JSON diagnostic schema, validates source IDs, byte spans and UTF-8, and
+routes standalone `check`, `build` and `run` failures through that boundary.
+Malformed internal output is a backend protocol error and never triggers a
+Stage0 fallback. The transition gate proves successful standalone `check`,
+semantic rejection and multi-error parser recovery parity in both diagnostic
+formats. P179b2 owns project discovery, manifest/dependency graph assembly,
+project `check`/`build` and public IR output.
 
 ### P179c: Tooling And Native Workflow
 

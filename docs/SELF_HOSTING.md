@@ -277,9 +277,16 @@ override and reports selected-core provenance with `--version --verbose`.
 Stage0-to-Stage1-to-fixed-Stage2 build graph. The isolated default-transition
 gate proves public standalone `build`/`run` C and native parity and explicit
 failure for unmigrated or missing self-hosted paths on both supported CI
-platforms. Stage0 remains the no-flag default and release artifact in this
-slice; P179b owns project discovery, diagnostics, `check`, `ir` and project
-build migration.
+platforms.
+
+P179b1 is complete. Public standalone `check` now uses `mlgc`, and the host
+driver converts bounded Mallang diagnostic records into the same human/JSON
+schema and exit behavior as Stage0. Source IDs, byte spans and UTF-8 payloads
+are validated before publication; malformed protocol output is reported as a
+backend failure without fallback. The transition gate covers successful
+checking, semantic rejection and multi-error parser recovery. Stage0 remains
+the no-flag default and release artifact; P179b2 owns project discovery,
+manifest/dependency assembly, project `check`/`build` and public IR migration.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

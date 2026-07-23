@@ -165,9 +165,8 @@ fn main() {
         Some("parse") => require_stage0(&options.compiler, "parse")
             .and_then(|()| utf8_cli_args(command_args))
             .and_then(|args| run_parse(&program, &args)),
-        Some("check") => require_stage0(&options.compiler, "check")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_check(&program, &args)),
+        Some("check") => utf8_cli_args(command_args)
+            .and_then(|args| run_check(&program, &args, &options.compiler)),
         Some("fmt") => require_stage0(&options.compiler, "fmt")
             .and_then(|()| utf8_cli_args(command_args))
             .and_then(|args| run_fmt(&program, &args)),
@@ -430,8 +429,35 @@ fn run_parse(program: &str, args: &[String]) -> CliResult<()> {
     Ok(())
 }
 
-fn run_check(program: &str, args: &[String]) -> CliResult<()> {
+fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_input_arg(program, "check", args)?;
+    if compiler.implementation == CompilerImplementation::SelfHosted {
+        let input = Path::new(path);
+        if !input
+            .extension()
+            .is_some_and(|extension| extension == "mlg")
+        {
+            return Err(CliError::cli(
+                "self-hosted compiler project check is not available until P179b2; use explicit `--compiler stage0`",
+            ));
+        }
+        let (sources, _) = load_source(path)?;
+        let stdout = invoke_self_hosted_compiler("check", path, compiler)?;
+        let Some(first_line) = stdout.lines().next() else {
+            return Err(self_hosted_protocol_error(path, "check response is empty"));
+        };
+        if first_line.starts_with("CHECKED|") {
+            validate_self_hosted_check_header(first_line)
+                .map_err(|detail| self_hosted_protocol_error(path, detail))?;
+            println!("{path}: ok");
+            return Ok(());
+        }
+        return Err(CliError::many(
+            parse_self_hosted_diagnostics(&stdout, &sources)
+                .map_err(|detail| self_hosted_protocol_error(path, detail))?,
+        ));
+    }
+
     match load_compilation_input(path)? {
         CompilationInput::Standalone { sources, source_id } => {
             check_sources_with_diagnostics(&sources, &[source_id])
@@ -966,9 +992,25 @@ fn compile_input(
 }
 
 fn generate_self_hosted_c(input_path: &str, compiler: &CompilerSelection) -> CliResult<String> {
+    let (sources, _) = load_source(input_path)?;
+    let stdout = invoke_self_hosted_compiler("c", input_path, compiler)?;
+    if stdout.starts_with("#include <") {
+        return Ok(stdout);
+    }
+    match parse_self_hosted_diagnostics(&stdout, &sources) {
+        Ok(diagnostics) => Err(CliError::many(diagnostics)),
+        Err(detail) => Err(self_hosted_protocol_error(input_path, detail)),
+    }
+}
+
+fn invoke_self_hosted_compiler(
+    command: &str,
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<String> {
     let compiler_path = compiler.self_compiler_path()?;
     let output = Command::new(&compiler_path)
-        .arg("c")
+        .arg(command)
         .arg(input_path)
         .output()
         .map_err(|error| {
@@ -987,13 +1029,13 @@ fn generate_self_hosted_c(input_path: &str, compiler: &CompilerSelection) -> Cli
         )
     })?;
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() || !stderr.is_empty() || !stdout.starts_with("#include <") {
+    if !output.status.success() || !stderr.is_empty() {
         let detail = if !stderr.trim().is_empty() {
             stderr.trim()
         } else if !stdout.trim().is_empty() {
             stdout.trim()
         } else {
-            "self-hosted compiler produced no C output"
+            "self-hosted compiler produced no output"
         };
         return Err(CliError::one(
             Diagnostic::error(
@@ -1004,6 +1046,105 @@ fn generate_self_hosted_c(input_path: &str, compiler: &CompilerSelection) -> Cli
         ));
     }
     Ok(stdout)
+}
+
+fn validate_self_hosted_check_header(line: &str) -> Result<(), String> {
+    let fields: Vec<_> = line.split('|').collect();
+    if fields.len() != 5 || fields[0] != "CHECKED" {
+        return Err("invalid CHECKED header".to_string());
+    }
+    for field in &fields[1..] {
+        field
+            .parse::<usize>()
+            .map_err(|_| "invalid CHECKED count".to_string())?;
+    }
+    Ok(())
+}
+
+fn parse_self_hosted_diagnostics(
+    output: &str,
+    sources: &SourceMap,
+) -> Result<Vec<Diagnostic>, String> {
+    let mut diagnostics = Vec::new();
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        diagnostics.push(parse_self_hosted_diagnostic(line, sources)?);
+    }
+    if diagnostics.is_empty() {
+        return Err("diagnostic response is empty".to_string());
+    }
+    Ok(diagnostics)
+}
+
+fn parse_self_hosted_diagnostic(line: &str, sources: &SourceMap) -> Result<Diagnostic, String> {
+    let fields: Vec<_> = line.split('|').collect();
+    if fields.len() != 5 {
+        return Err("diagnostic record has an invalid field count".to_string());
+    }
+    let stage = match fields[0] {
+        "PERR" => DiagnosticStage::Frontend,
+        "KERR" => DiagnosticStage::Package,
+        "LERR" => DiagnosticStage::Link,
+        "SERR" => DiagnosticStage::Semantic,
+        "IERR" => DiagnosticStage::Ir,
+        prefix => return Err(format!("unknown diagnostic prefix `{prefix}`")),
+    };
+    let source_index = parse_self_hosted_usize(fields[1], "source ID")?;
+    let start = parse_self_hosted_usize(fields[2], "span start")?;
+    let end = parse_self_hosted_usize(fields[3], "span end")?;
+    let source_id = SourceId::new(source_index);
+    let source = sources
+        .file(source_id)
+        .ok_or_else(|| format!("unknown source ID {source_index}"))?;
+    if start > end
+        || end > source.text().len()
+        || !source.text().is_char_boundary(start)
+        || !source.text().is_char_boundary(end)
+    {
+        return Err(format!("invalid source span {start}..{end}"));
+    }
+    let message = decode_self_hosted_bytes(fields[4])?;
+    Ok(source_diagnostic(
+        stage,
+        message,
+        sources,
+        mallang::Span::new(source_id, start, end),
+        None,
+    ))
+}
+
+fn parse_self_hosted_usize(value: &str, label: &str) -> Result<usize, String> {
+    value
+        .parse()
+        .map_err(|_| format!("invalid diagnostic {label}"))
+}
+
+fn decode_self_hosted_bytes(encoded: &str) -> Result<String, String> {
+    let bytes = if encoded.is_empty() {
+        Vec::new()
+    } else {
+        encoded
+            .split(',')
+            .map(|value| {
+                value
+                    .parse::<u8>()
+                    .map_err(|_| "invalid diagnostic message byte".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    String::from_utf8(bytes).map_err(|_| "diagnostic message is not valid UTF-8".to_string())
+}
+
+fn self_hosted_protocol_error(path: &str, detail: impl Into<String>) -> CliError {
+    CliError::one(
+        Diagnostic::error(
+            DiagnosticStage::Backend,
+            format!("invalid self-hosted compiler response: {}", detail.into()),
+        )
+        .with_path(path),
+    )
 }
 
 fn source_stem(source_path: &str) -> &str {
@@ -1189,8 +1330,9 @@ mod tests {
 
     use super::{
         child_signal_diagnostic, parse_assertion_marker, parse_global_options,
-        CompilerImplementation, DiagnosticFormat,
+        parse_self_hosted_diagnostics, CompilerImplementation, DiagnosticFormat,
     };
+    use mallang::SourceMap;
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
@@ -1233,6 +1375,41 @@ mod tests {
         );
         assert_eq!(parsed.compiler.self_compiler, None);
         assert_eq!(parsed.command_index, 1);
+    }
+
+    #[test]
+    fn decodes_self_hosted_diagnostics_with_unicode_messages() {
+        let mut sources = SourceMap::new();
+        sources.add_file("unicode.mlg", "\u{ac00}x\n");
+
+        let diagnostics =
+            parse_self_hosted_diagnostics("PERR|0|0|3|236,152,164,235,165,152\n", &sources)
+                .unwrap();
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].render_human(),
+            "unicode.mlg:1:1: \u{c624}\u{b958}"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_diagnostic_records() {
+        let mut sources = SourceMap::new();
+        sources.add_file("fixture.mlg", "func main() {}\n");
+
+        for record in [
+            "BERR|0|0|1|98,97,100",
+            "PERR|1|0|1|98,97,100",
+            "PERR|0|2|1|98,97,100",
+            "PERR|0|0|1|256",
+            "PERR|0|0|1",
+        ] {
+            assert!(
+                parse_self_hosted_diagnostics(record, &sources).is_err(),
+                "record should be rejected: {record}"
+            );
+        }
     }
 
     #[test]
