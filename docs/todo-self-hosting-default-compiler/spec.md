@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a, P179b1, P179b2a, P179b2b1 and P179b2b2a complete; P179b2b active
+Status: active; P179a, P179b1, P179b2a, P179b2b1, P179b2b2a and P179b2b2b complete; P179b2b active
 
 ## Objective
 
@@ -91,9 +91,17 @@ P179b2b2a adds a Mallang graph planner over canonical host snapshots. It owns
 project-name, dependency-path, key/name, collision, cycle, reachability and
 dependency-postorder decisions and emits the root-first `PROJECT|1` protocol.
 A local-dependency differential compares that plan with Rust through strict
-allocation and sanitizer execution. Public commands still call Rust project
-discovery, so path capability brokering and protocol decoding, source
-enumeration and public IR remain active P179b2b work.
+allocation and sanitizer execution.
+
+P179b2b2b connects both project protocols to the public self compiler path.
+The Rust host resolves the initial manifest, brokers canonical filesystem paths
+and enumerates source files, while `mlgc` parses every reachable manifest and
+owns graph validation and dependency postorder. The host strictly decodes and
+cross-checks the returned plan before materializing `Project`; malformed
+protocol output remains a backend failure without fallback. The transition
+gate proves `manifest`/`project-plan` routing and Stage0 parity for transitive
+project `check`/`build`/`run`, invalid dependency paths and dependency cycles in
+human and JSON formats. Public IR output remains the next P179b2b slice.
 
 ### P179c: Tooling And Native Workflow
 

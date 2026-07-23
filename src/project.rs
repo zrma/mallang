@@ -40,6 +40,14 @@ pub struct ProjectUnitRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectPlanUnit {
+    manifest_path: PathBuf,
+    manifest: ProjectManifest,
+    source_root: PathBuf,
+    direct_dependencies: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ProjectUnit {
     root: PathBuf,
     manifest_path: PathBuf,
@@ -48,6 +56,22 @@ struct ProjectUnit {
     source_files: Vec<PathBuf>,
     test_root: PathBuf,
     direct_dependencies: BTreeSet<String>,
+}
+
+impl ProjectPlanUnit {
+    pub fn new(
+        manifest_path: PathBuf,
+        manifest: ProjectManifest,
+        source_root: PathBuf,
+        direct_dependencies: BTreeSet<String>,
+    ) -> Self {
+        Self {
+            manifest_path,
+            manifest,
+            source_root,
+            direct_dependencies,
+        }
+    }
 }
 
 impl Project {
@@ -456,7 +480,42 @@ impl std::error::Error for ProjectError {
     }
 }
 
+#[derive(Debug)]
+pub enum ProjectMaterializationError {
+    InvalidPlan { detail: String },
+    Project(ProjectError),
+}
+
+impl std::fmt::Display for ProjectMaterializationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPlan { detail } => write!(formatter, "invalid project plan: {detail}"),
+            Self::Project(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for ProjectMaterializationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidPlan { .. } => None,
+            Self::Project(error) => Some(error),
+        }
+    }
+}
+
+impl From<ProjectError> for ProjectMaterializationError {
+    fn from(error: ProjectError) -> Self {
+        Self::Project(error)
+    }
+}
+
 pub fn discover_project(input: impl AsRef<Path>) -> Result<Project, ProjectError> {
+    let manifest_path = resolve_project_manifest(input)?;
+    ProjectLoader::new().load(manifest_path)
+}
+
+pub fn resolve_project_manifest(input: impl AsRef<Path>) -> Result<PathBuf, ProjectError> {
     let input = input.as_ref();
     let metadata = fs::metadata(input).map_err(|source| ProjectError::InspectInput {
         path: input.to_path_buf(),
@@ -486,7 +545,7 @@ pub fn discover_project(input: impl AsRef<Path>) -> Result<Project, ProjectError
             path: manifest_path,
             source,
         })?;
-    ProjectLoader::new().load(manifest_path)
+    Ok(manifest_path)
 }
 
 fn find_nearest_manifest(start: &Path) -> Option<PathBuf> {
@@ -573,7 +632,7 @@ impl ProjectLoader {
             .push((manifest_path.clone(), project.name().to_string()));
         let dependencies = project.manifest.dependencies.clone();
         for (dependency, specification) in dependencies {
-            let dependency_manifest = resolve_dependency_manifest(
+            let dependency_manifest = resolve_project_dependency(
                 &project.manifest_path,
                 &dependency,
                 &specification.path,
@@ -601,7 +660,7 @@ impl ProjectLoader {
     }
 }
 
-fn resolve_dependency_manifest(
+pub fn resolve_project_dependency(
     manifest: &Path,
     dependency: &str,
     path: &str,
@@ -637,6 +696,117 @@ fn resolve_dependency_manifest(
         dependency: dependency.to_string(),
         path: dependency_manifest,
         source,
+    })
+}
+
+pub fn materialize_project_plan(
+    root_manifest: &Path,
+    units: Vec<ProjectPlanUnit>,
+) -> Result<Project, ProjectMaterializationError> {
+    let Some(first) = units.first() else {
+        return Err(ProjectMaterializationError::InvalidPlan {
+            detail: "plan contains no units".to_string(),
+        });
+    };
+    if first.manifest_path != root_manifest {
+        return Err(ProjectMaterializationError::InvalidPlan {
+            detail: "first unit is not the requested root manifest".to_string(),
+        });
+    }
+
+    let mut manifests = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for unit in &units {
+        if !manifests.insert(unit.manifest_path.clone()) {
+            return Err(ProjectMaterializationError::InvalidPlan {
+                detail: format!("duplicate manifest {}", unit.manifest_path.display()),
+            });
+        }
+        if !names.insert(unit.manifest.project.name.clone()) {
+            return Err(ProjectMaterializationError::InvalidPlan {
+                detail: format!("duplicate project name `{}`", unit.manifest.project.name),
+            });
+        }
+    }
+    for unit in &units {
+        let declared_dependencies = unit
+            .manifest
+            .dependencies
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if unit.direct_dependencies != declared_dependencies {
+            return Err(ProjectMaterializationError::InvalidPlan {
+                detail: format!(
+                    "project `{}` plan dependencies do not match its manifest",
+                    unit.manifest.project.name
+                ),
+            });
+        }
+        if let Some(dependency) = unit
+            .direct_dependencies
+            .iter()
+            .find(|dependency| !names.contains(*dependency))
+        {
+            return Err(ProjectMaterializationError::InvalidPlan {
+                detail: format!(
+                    "project `{}` references unknown dependency `{dependency}`",
+                    unit.manifest.project.name
+                ),
+            });
+        }
+    }
+
+    let mut materialized = units
+        .into_iter()
+        .map(materialize_project_plan_unit)
+        .collect::<Result<Vec<_>, _>>()?;
+    let root_project = materialized.remove(0);
+    let project = Project {
+        root_project,
+        dependencies: materialized,
+    };
+    validate_project_boundaries(&project)?;
+    Ok(project)
+}
+
+fn materialize_project_plan_unit(
+    unit: ProjectPlanUnit,
+) -> Result<ProjectUnit, ProjectMaterializationError> {
+    let root = unit
+        .manifest_path
+        .parent()
+        .ok_or_else(|| ProjectMaterializationError::InvalidPlan {
+            detail: format!("manifest {} has no parent", unit.manifest_path.display()),
+        })?
+        .to_path_buf();
+    let expected_source_root = root.join("src");
+    if unit.source_root != expected_source_root {
+        return Err(ProjectMaterializationError::InvalidPlan {
+            detail: format!(
+                "project `{}` source root does not match its manifest",
+                unit.manifest.project.name
+            ),
+        });
+    }
+    if !unit.source_root.is_dir() {
+        return Err(ProjectError::MissingSourceRoot {
+            path: unit.source_root,
+        }
+        .into());
+    }
+
+    let mut source_files = Vec::new();
+    collect_source_files(&unit.source_root, &mut source_files)?;
+    sort_project_files(&root, &mut source_files);
+    Ok(ProjectUnit {
+        test_root: root.join("tests"),
+        root,
+        manifest_path: unit.manifest_path,
+        manifest: unit.manifest,
+        source_root: unit.source_root,
+        source_files,
+        direct_dependencies: unit.direct_dependencies,
     })
 }
 
@@ -1044,6 +1214,87 @@ mod tests {
             discovered.diagnostic_path(&project.root.join("src/main.mlg")),
             Path::new("src/main.mlg")
         );
+    }
+
+    #[test]
+    fn materializes_a_prevalidated_root_first_project_plan() {
+        let project = valid_project("materialized-plan");
+        project.write(
+            "mallang.toml",
+            "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"deps/text\" }\n",
+        );
+        project.write("deps/text/mallang.toml", "[project]\nname = \"text\"\n");
+        project.write(
+            "deps/text/src/text.mlg",
+            "package main\npub func Read() int { return 42 }\n",
+        );
+
+        let root_manifest = fs::canonicalize(project.root.join(MANIFEST_FILE)).unwrap();
+        let dependency_manifest =
+            fs::canonicalize(project.root.join("deps/text").join(MANIFEST_FILE)).unwrap();
+        let planned = materialize_project_plan(
+            &root_manifest,
+            vec![
+                ProjectPlanUnit::new(
+                    root_manifest.clone(),
+                    ProjectManifest {
+                        project: ProjectMetadata {
+                            name: "app".to_string(),
+                        },
+                        dependencies: BTreeMap::from([(
+                            "text".to_string(),
+                            PathDependency {
+                                path: "deps/text".to_string(),
+                            },
+                        )]),
+                    },
+                    project.root.join("src"),
+                    BTreeSet::from(["text".to_string()]),
+                ),
+                ProjectPlanUnit::new(
+                    dependency_manifest,
+                    ProjectManifest {
+                        project: ProjectMetadata {
+                            name: "text".to_string(),
+                        },
+                        dependencies: BTreeMap::new(),
+                    },
+                    project.root.join("deps/text/src"),
+                    BTreeSet::new(),
+                ),
+            ],
+        )
+        .unwrap();
+        let stage0 = discover_project(&project.root).unwrap();
+
+        assert_eq!(planned, stage0);
+        assert_eq!(planned.dependency_names().collect::<Vec<_>>(), vec!["text"]);
+    }
+
+    #[test]
+    fn rejects_a_project_plan_with_a_forged_source_root() {
+        let project = valid_project("forged-plan-source");
+        let root_manifest = fs::canonicalize(project.root.join(MANIFEST_FILE)).unwrap();
+        let error = materialize_project_plan(
+            &root_manifest,
+            vec![ProjectPlanUnit::new(
+                root_manifest.clone(),
+                ProjectManifest {
+                    project: ProjectMetadata {
+                        name: "hello".to_string(),
+                    },
+                    dependencies: BTreeMap::new(),
+                },
+                project.root.join("forged"),
+                BTreeSet::new(),
+            )],
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ProjectMaterializationError::InvalidPlan { .. }
+        ));
     }
 
     #[test]

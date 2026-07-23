@@ -832,9 +832,17 @@ native output과 dependency-source human/JSON diagnostics가 Stage0와 일치한
 40개 tracked `mallang.toml`을 Rust `toml` oracle, strict allocation과 sanitizer 경로에서
 비교한다. P179b2b2a는 canonical host snapshot의 project name/path/key identity, collision,
 cycle, reachability와 dependency-first postorder를 Mallang graph planner로 옮기고 `PROJECT|1`
-plan을 Rust oracle, strict allocation과 sanitizer에서 비교한다. Public driver는 아직 이
-protocol들을 소비하지 않으므로 canonical path capability brokering/plan decoding, source
-enumeration과 public IR output은 후속 P179b2b에 남아 있다.
+plan을 Rust oracle, strict allocation과 sanitizer에서 비교한다. P179b2b2b는 public self
+project 경로가 모든 reachable manifest를 `mlgc manifest`로 파싱하고 canonical host
+snapshot을 `mlgc project-plan`으로 검증하도록 연결했다. Rust driver는 root discovery,
+filesystem canonicalization과 source enumeration만 broker하고, strict decoder가 version,
+count, byte encoding, duplicate와 snapshot identity를 검증한 뒤 `Project`를 materialize한다.
+전환 gate는 실제 protocol invocation과 transitive `check`/`build`/`run`, invalid dependency
+path, cycle의 human/JSON Stage0 parity를 확인한다. Public IR output은 후속 P179b2b에 남아
+있다. Local acceptance는 canonical gate의 590 library/12 driver/4 hardening test와 B3
+backend gate, default-transition gate를 통과했고, B4 deep gate에서 477 compiler-pair
+fixture task, 172 parser corpus, 14 backend fixture, 8 backend project, 21 native pair와
+sanitizer fixed point를 다시 확인했다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

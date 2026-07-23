@@ -307,10 +307,18 @@ It validates lowercase/reserved names, relative dependency paths, exact
 key/name identity, canonical manifest collisions, reachability and cycles, then
 emits the existing root-first unit view with dependency-first postorder. The
 local-dependency differential matches the Rust oracle through Stage1, strict
-allocation accounting and sanitizer execution. The public driver does not
-consume these protocols yet: Rust still brokers canonical paths, assembles the
-snapshot, enumerates source files and owns public IR output. Host integration
-and public behavior parity are the next P179b2b slices.
+allocation accounting and sanitizer execution.
+
+P179b2b2b connects the manifest and graph protocols to public self-hosted
+project `check`, `build` and `run`. Rust is now a filesystem capability broker:
+it locates the root manifest, canonicalizes dependency targets and enumerates
+source files. Mallang parses every reachable manifest, validates the dependency
+graph and chooses dependency postorder. The host rejects malformed, duplicate
+or snapshot-inconsistent protocol records before materializing `Project`. The
+transition gate records actual `manifest`/`project-plan` invocations and proves
+Stage0 parity for transitive success, generated C, native output, invalid paths,
+cycles and dependency diagnostics. Public IR output remains active P179b2b
+work.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

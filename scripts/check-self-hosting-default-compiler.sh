@@ -33,6 +33,38 @@ project_artifact="pathapp"
 project_rejection="tests/fixtures/diagnostics/dependency-project/app"
 mkdir -p "$work"
 
+invalid_dependency="$work/invalid-dependency"
+dependency_cycle="$work/dependency-cycle"
+rm -rf "$invalid_dependency" "$dependency_cycle"
+mkdir -p \
+  "$invalid_dependency/src" \
+  "$dependency_cycle/src" \
+  "$dependency_cycle/deps/text/src"
+printf '%s\n' \
+  '[project]' \
+  'name = "app"' \
+  '' \
+  '[dependencies]' \
+  'text = { path = "/tmp/text" }' \
+  >"$invalid_dependency/mallang.toml"
+printf '%s\n' 'func main() {}' >"$invalid_dependency/src/main.mlg"
+printf '%s\n' \
+  '[project]' \
+  'name = "app"' \
+  '' \
+  '[dependencies]' \
+  'text = { path = "deps/text" }' \
+  >"$dependency_cycle/mallang.toml"
+printf '%s\n' 'func main() {}' >"$dependency_cycle/src/main.mlg"
+printf '%s\n' \
+  '[project]' \
+  'name = "text"' \
+  '' \
+  '[dependencies]' \
+  'app = { path = "../.." }' \
+  >"$dependency_cycle/deps/text/mallang.toml"
+printf '%s\n' 'package main' >"$dependency_cycle/deps/text/src/text.mlg"
+
 "${cargo_command[@]}" build --locked --quiet --lib --bin mlg
 scripts/build-self-hosted-compiler.sh --stage0 "$driver" --output "$self_compiler" >/dev/null
 
@@ -101,6 +133,29 @@ fi
 if ! cmp -s "$work/project-check.stage0.stdout" "$work/project-check.self.stdout" || \
    ! cmp -s "$work/project-check.stage0.stderr" "$work/project-check.self.stderr"; then
   echo "public Stage0/self project check parity failed" >&2
+  exit 1
+fi
+
+spy_compiler="$work/mlgc-spy"
+spy_log="$work/mlgc-spy.log"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "%s\n" "${1:-}" >>"$MLG_SPY_LOG"' \
+  'exec "$MLG_SPY_TARGET" "$@"' \
+  >"$spy_compiler"
+chmod +x "$spy_compiler"
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" check "$project_fixture" \
+  >"$work/project-spy.stdout" 2>"$work/project-spy.stderr"
+if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
+   [[ "$(grep -c '^project-plan$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^check-project$' "$spy_log")" -ne 1 ]] || \
+   [[ -s "$work/project-spy.stderr" ]]; then
+  echo "public self-hosted project protocol routing mismatch" >&2
+  cat "$spy_log" >&2
   exit 1
 fi
 
@@ -200,6 +255,37 @@ for diagnostic_format in human json; do
     echo "public Stage0/self $diagnostic_format project rejection parity failed" >&2
     exit 1
   fi
+done
+
+for graph_rejection in "$invalid_dependency" "$dependency_cycle"; do
+  rejection_name="$(basename "$graph_rejection")"
+  for diagnostic_format in human json; do
+    name="$rejection_name.$diagnostic_format"
+    set +e
+    if [[ "$diagnostic_format" == "json" ]]; then
+      "$driver" --diagnostic-format json --compiler stage0 check "$graph_rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" --diagnostic-format json --compiler self check "$graph_rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+      self_status=$?
+    else
+      "$driver" --compiler stage0 check "$graph_rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" --compiler self check "$graph_rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+      self_status=$?
+    fi
+    set -e
+    if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+       [[ "$stage0_status" -ne "$self_status" ]] || \
+       ! cmp -s "$work/$name.stage0.stdout" "$work/$name.self.stdout" || \
+       ! cmp -s "$work/$name.stage0.stderr" "$work/$name.self.stderr"; then
+      echo "public Stage0/self $diagnostic_format project graph rejection parity failed: $graph_rejection" >&2
+      exit 1
+    fi
+  done
 done
 
 if "$driver" --compiler self --self-compiler "$work/missing-mlgc" \

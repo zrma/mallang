@@ -44,8 +44,9 @@ pub use parser::{
     Parser, MAX_PARSE_ERRORS_PER_SOURCE,
 };
 pub use project::{
-    discover_project, PathDependency, Project, ProjectError, ProjectManifest, ProjectMetadata,
-    ProjectUnitRef, MANIFEST_FILE,
+    discover_project, materialize_project_plan, resolve_project_dependency,
+    resolve_project_manifest, PathDependency, Project, ProjectError, ProjectManifest,
+    ProjectMaterializationError, ProjectMetadata, ProjectPlanUnit, ProjectUnitRef, MANIFEST_FILE,
 };
 pub use semantic::{check, check_project, check_project_library, CheckedProgram, SemanticError};
 pub use source::{

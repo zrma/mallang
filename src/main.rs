@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
     env,
     ffi::{OsStr, OsString},
     fs,
@@ -11,9 +12,11 @@ use mallang::{
     check_project_sources_with_diagnostics, check_sources_with_diagnostics, discover_project,
     format_source, generate_c_project_sources_with_diagnostics,
     generate_c_sources_with_diagnostics, lex_with_source, load_source_files,
-    lower_sources_with_diagnostics, parse_sources_with_diagnostics,
-    prepare_project_tests_with_diagnostics, CompilerError, Diagnostic, DiagnosticStage,
-    FormatError, FrontendError, PackageTest, Project, SourceId, SourceLoadError, SourceMap,
+    lower_sources_with_diagnostics, materialize_project_plan, parse_sources_with_diagnostics,
+    prepare_project_tests_with_diagnostics, resolve_project_dependency, resolve_project_manifest,
+    CompilerError, Diagnostic, DiagnosticStage, FormatError, FrontendError, PackageTest,
+    PathDependency, Project, ProjectManifest, ProjectMaterializationError, ProjectMetadata,
+    ProjectPlanUnit, SourceId, SourceLoadError, SourceMap,
 };
 
 const SELF_COMPILER_BINARY: &str = "mlgc";
@@ -432,7 +435,7 @@ fn run_parse(program: &str, args: &[String]) -> CliResult<()> {
 fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_input_arg(program, "check", args)?;
     if compiler.implementation == CompilerImplementation::SelfHosted {
-        match load_compilation_input(path)? {
+        match load_compilation_input(path, compiler)? {
             CompilationInput::Standalone { sources, .. } => {
                 let stdout = invoke_self_hosted_compiler("check", path, compiler)?;
                 finish_self_hosted_check(path, stdout, &sources, None)?;
@@ -457,7 +460,7 @@ fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> Cl
         return Ok(());
     }
 
-    match load_compilation_input(path)? {
+    match load_compilation_input(path, compiler)? {
         CompilationInput::Standalone { sources, source_id } => {
             check_sources_with_diagnostics(&sources, &[source_id])
                 .map_err(|errors| compiler_diagnostics(&sources, None, path, errors))?;
@@ -908,7 +911,7 @@ fn compile_input(
     let (c_source, artifact_name, build_dir) = if compiler.implementation
         == CompilerImplementation::SelfHosted
     {
-        match load_compilation_input(input_path)? {
+        match load_compilation_input(input_path, compiler)? {
             CompilationInput::Standalone { sources, .. } => (
                 generate_self_hosted_c(input_path, &sources, compiler)?,
                 source_stem(input_path).to_string(),
@@ -935,7 +938,7 @@ fn compile_input(
             }
         }
     } else {
-        match load_compilation_input(input_path)? {
+        match load_compilation_input(input_path, compiler)? {
             CompilationInput::Standalone { sources, source_id } => {
                 let c_source = generate_c_sources_with_diagnostics(&sources, &[source_id])
                     .map_err(|errors| compiler_diagnostics(&sources, None, input_path, errors))?;
@@ -1243,11 +1246,11 @@ fn decode_self_hosted_bytes(encoded: &str) -> Result<String, String> {
             .map(|value| {
                 value
                     .parse::<u8>()
-                    .map_err(|_| "invalid diagnostic message byte".to_string())
+                    .map_err(|_| "invalid encoded byte".to_string())
             })
             .collect::<Result<Vec<_>, _>>()?
     };
-    String::from_utf8(bytes).map_err(|_| "diagnostic message is not valid UTF-8".to_string())
+    String::from_utf8(bytes).map_err(|_| "encoded value is not valid UTF-8".to_string())
 }
 
 fn self_hosted_protocol_error(path: &str, detail: impl Into<String>) -> CliError {
@@ -1301,7 +1304,34 @@ enum CompilationInput {
     },
 }
 
-fn load_compilation_input(path: &str) -> CliResult<CompilationInput> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelfHostedManifest {
+    name: String,
+    dependencies: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelfHostedSnapshotUnit {
+    manifest_path: PathBuf,
+    manifest: SelfHostedManifest,
+    resolved_dependencies: BTreeMap<String, PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelfHostedPlanUnit {
+    name: String,
+    manifest_path: PathBuf,
+    source_root: PathBuf,
+    direct_dependencies: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SelfHostedReply<T> {
+    Success(T),
+    Rejection(String),
+}
+
+fn load_compilation_input(path: &str, compiler: &CompilerSelection) -> CliResult<CompilationInput> {
     let input = Path::new(path);
     if input
         .extension()
@@ -1311,7 +1341,11 @@ fn load_compilation_input(path: &str) -> CliResult<CompilationInput> {
         return Ok(CompilationInput::Standalone { sources, source_id });
     }
 
-    let project = discover_project(input).map_err(|error| CliError::input(error.to_string()))?;
+    let project = if compiler.implementation == CompilerImplementation::SelfHosted {
+        discover_self_hosted_project(input, path, compiler)?
+    } else {
+        discover_project(input).map_err(|error| CliError::input(error.to_string()))?
+    };
     let loaded = load_source_files(project.compilation_source_files())
         .map_err(|error| project_source_load_error(&project, error))?;
     Ok(CompilationInput::Project {
@@ -1319,6 +1353,307 @@ fn load_compilation_input(path: &str) -> CliResult<CompilationInput> {
         sources: loaded.sources,
         source_ids: loaded.source_ids,
     })
+}
+
+fn discover_self_hosted_project(
+    input: &Path,
+    input_path: &str,
+    compiler: &CompilerSelection,
+) -> CliResult<Project> {
+    let root_manifest =
+        resolve_project_manifest(input).map_err(|error| CliError::input(error.to_string()))?;
+    let mut pending = VecDeque::from([root_manifest.clone()]);
+    let mut queued = BTreeSet::from([root_manifest.clone()]);
+    let mut snapshot = BTreeMap::new();
+
+    while let Some(manifest_path) = pending.pop_front() {
+        let stdout = invoke_self_hosted_compiler_args(
+            &[
+                OsString::from("manifest"),
+                manifest_path.as_os_str().to_owned(),
+            ],
+            input_path,
+            compiler,
+        )?;
+        let manifest = match parse_self_hosted_manifest_response(&stdout) {
+            Ok(SelfHostedReply::Success(manifest)) => manifest,
+            Ok(SelfHostedReply::Rejection(message)) => {
+                return Err(CliError::input(format!(
+                    "{}: invalid manifest: {message}",
+                    manifest_path.display()
+                )));
+            }
+            Err(detail) => return Err(self_hosted_protocol_error(input_path, detail)),
+        };
+
+        let mut resolved_dependencies = BTreeMap::new();
+        for (dependency, dependency_path) in &manifest.dependencies {
+            let target_manifest =
+                if dependency_path.is_empty() || !Path::new(dependency_path).is_relative() {
+                    // The Mallang planner owns this semantic rejection. A self target keeps
+                    // the snapshot structurally complete until it validates the path.
+                    manifest_path.clone()
+                } else {
+                    resolve_project_dependency(&manifest_path, dependency, dependency_path)
+                        .map_err(|error| CliError::input(error.to_string()))?
+                };
+            if queued.insert(target_manifest.clone()) {
+                pending.push_back(target_manifest.clone());
+            }
+            resolved_dependencies.insert(dependency.clone(), target_manifest);
+        }
+
+        snapshot.insert(
+            manifest_path.clone(),
+            SelfHostedSnapshotUnit {
+                manifest_path,
+                manifest,
+                resolved_dependencies,
+            },
+        );
+    }
+
+    let mut args = vec![
+        OsString::from("project-plan"),
+        root_manifest.as_os_str().to_owned(),
+        OsString::from(snapshot.len().to_string()),
+    ];
+    for unit in snapshot.values() {
+        args.push(unit.manifest_path.as_os_str().to_owned());
+        args.push(OsString::from(&unit.manifest.name));
+        args.push(OsString::from(unit.manifest.dependencies.len().to_string()));
+        for (dependency, dependency_path) in &unit.manifest.dependencies {
+            args.push(OsString::from(dependency));
+            args.push(OsString::from(dependency_path));
+            args.push(
+                unit.resolved_dependencies
+                    .get(dependency)
+                    .expect("every parsed dependency has a brokered target")
+                    .as_os_str()
+                    .to_owned(),
+            );
+        }
+    }
+
+    let stdout = invoke_self_hosted_compiler_args(&args, input_path, compiler)?;
+    let plan = match parse_self_hosted_project_plan_response(&stdout) {
+        Ok(SelfHostedReply::Success(plan)) => plan,
+        Ok(SelfHostedReply::Rejection(message)) => return Err(CliError::input(message)),
+        Err(detail) => return Err(self_hosted_protocol_error(input_path, detail)),
+    };
+    materialize_self_hosted_project(root_manifest, snapshot, plan, input_path)
+}
+
+fn materialize_self_hosted_project(
+    root_manifest: PathBuf,
+    snapshot: BTreeMap<PathBuf, SelfHostedSnapshotUnit>,
+    plan: Vec<SelfHostedPlanUnit>,
+    input_path: &str,
+) -> CliResult<Project> {
+    if plan.len() != snapshot.len() {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "project plan unit count does not match the brokered snapshot",
+        ));
+    }
+    if !matches!(
+        plan.first(),
+        Some(unit) if unit.manifest_path == root_manifest
+    ) {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "project plan does not begin with the requested root manifest",
+        ));
+    }
+
+    let mut represented = BTreeSet::new();
+    let mut units = Vec::with_capacity(plan.len());
+    for planned in plan {
+        let Some(brokered) = snapshot.get(&planned.manifest_path) else {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                format!(
+                    "project plan contains unknown manifest {}",
+                    planned.manifest_path.display()
+                ),
+            ));
+        };
+        if !represented.insert(planned.manifest_path.clone()) {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                format!(
+                    "project plan repeats manifest {}",
+                    planned.manifest_path.display()
+                ),
+            ));
+        }
+        if planned.name != brokered.manifest.name {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                format!(
+                    "project plan renamed manifest {}",
+                    planned.manifest_path.display()
+                ),
+            ));
+        }
+        let expected_dependencies = brokered
+            .manifest
+            .dependencies
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if planned.direct_dependencies != expected_dependencies {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                format!(
+                    "project plan changed dependencies for `{}`",
+                    brokered.manifest.name
+                ),
+            ));
+        }
+
+        let manifest = ProjectManifest {
+            project: ProjectMetadata {
+                name: brokered.manifest.name.clone(),
+            },
+            dependencies: brokered
+                .manifest
+                .dependencies
+                .iter()
+                .map(|(name, path)| (name.clone(), PathDependency { path: path.clone() }))
+                .collect(),
+        };
+        units.push(ProjectPlanUnit::new(
+            planned.manifest_path,
+            manifest,
+            planned.source_root,
+            planned.direct_dependencies,
+        ));
+    }
+    if represented.len() != snapshot.len() {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "project plan omitted a brokered manifest",
+        ));
+    }
+
+    materialize_project_plan(&root_manifest, units).map_err(|error| match error {
+        ProjectMaterializationError::InvalidPlan { detail } => {
+            self_hosted_protocol_error(input_path, detail)
+        }
+        ProjectMaterializationError::Project(error) => CliError::input(error.to_string()),
+    })
+}
+
+fn parse_self_hosted_manifest_response(
+    output: &str,
+) -> Result<SelfHostedReply<SelfHostedManifest>, String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    let Some(first) = lines.first() else {
+        return Err("manifest response is empty".to_string());
+    };
+    let header = first.split('|').collect::<Vec<_>>();
+    if header.first() == Some(&"MERR") {
+        if lines.len() != 1 || header.len() != 2 {
+            return Err("invalid MERR response".to_string());
+        }
+        return decode_self_hosted_bytes(header[1]).map(SelfHostedReply::Rejection);
+    }
+    if header.len() != 4 || header[0] != "MANIFEST" || header[1] != "1" {
+        return Err("invalid MANIFEST header".to_string());
+    }
+    let dependency_count = parse_self_hosted_count(header[3], "manifest dependency count")?;
+    if dependency_count != lines.len().saturating_sub(1) {
+        return Err("manifest dependency count does not match its records".to_string());
+    }
+    let name = decode_self_hosted_bytes(header[2])?;
+    let mut dependencies = BTreeMap::new();
+    for line in &lines[1..] {
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 3 || fields[0] != "DEPENDENCY" {
+            return Err("invalid DEPENDENCY record".to_string());
+        }
+        let dependency = decode_self_hosted_bytes(fields[1])?;
+        let path = decode_self_hosted_bytes(fields[2])?;
+        if dependencies.insert(dependency.clone(), path).is_some() {
+            return Err(format!(
+                "manifest response repeats dependency `{dependency}`"
+            ));
+        }
+    }
+    Ok(SelfHostedReply::Success(SelfHostedManifest {
+        name,
+        dependencies,
+    }))
+}
+
+fn parse_self_hosted_project_plan_response(
+    output: &str,
+) -> Result<SelfHostedReply<Vec<SelfHostedPlanUnit>>, String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    let Some(first) = lines.first() else {
+        return Err("project plan response is empty".to_string());
+    };
+    let header = first.split('|').collect::<Vec<_>>();
+    if header.first() == Some(&"GERR") {
+        if lines.len() != 1 || header.len() != 2 {
+            return Err("invalid GERR response".to_string());
+        }
+        return decode_self_hosted_bytes(header[1]).map(SelfHostedReply::Rejection);
+    }
+    if header.len() != 3 || header[0] != "PROJECT" || header[1] != "1" {
+        return Err("invalid PROJECT header".to_string());
+    }
+    let unit_count = parse_self_hosted_count(header[2], "project unit count")?;
+    if unit_count != lines.len().saturating_sub(1) {
+        return Err("project unit count does not match its records".to_string());
+    }
+
+    let mut units = Vec::with_capacity(unit_count);
+    let mut manifests = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for line in &lines[1..] {
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() < 5 || fields[0] != "UNIT" {
+            return Err("invalid UNIT record".to_string());
+        }
+        let dependency_count = parse_self_hosted_count(fields[4], "project unit dependency count")?;
+        if dependency_count != fields.len().saturating_sub(5) {
+            return Err("project unit dependency count does not match its fields".to_string());
+        }
+        let name = decode_self_hosted_bytes(fields[1])?;
+        let manifest_path = PathBuf::from(decode_self_hosted_bytes(fields[2])?);
+        let source_root = PathBuf::from(decode_self_hosted_bytes(fields[3])?);
+        if !names.insert(name.clone()) {
+            return Err(format!("project plan repeats project name `{name}`"));
+        }
+        if !manifests.insert(manifest_path.clone()) {
+            return Err(format!(
+                "project plan repeats manifest {}",
+                manifest_path.display()
+            ));
+        }
+        let mut direct_dependencies = BTreeSet::new();
+        for encoded in &fields[5..] {
+            let dependency = decode_self_hosted_bytes(encoded)?;
+            if !direct_dependencies.insert(dependency.clone()) {
+                return Err(format!(
+                    "project plan repeats dependency `{dependency}` for `{name}`"
+                ));
+            }
+        }
+        units.push(SelfHostedPlanUnit {
+            name,
+            manifest_path,
+            source_root,
+            direct_dependencies,
+        });
+    }
+    Ok(SelfHostedReply::Success(units))
+}
+
+fn parse_self_hosted_count(value: &str, label: &str) -> Result<usize, String> {
+    value.parse().map_err(|_| format!("invalid {label}"))
 }
 
 fn load_source(path: &str) -> CliResult<(SourceMap, SourceId)> {
@@ -1443,12 +1778,23 @@ mod tests {
 
     use super::{
         child_signal_diagnostic, parse_assertion_marker, parse_global_options,
-        parse_self_hosted_diagnostics, CompilerImplementation, DiagnosticFormat,
+        parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
+        parse_self_hosted_project_plan_response, CompilerImplementation, DiagnosticFormat,
+        SelfHostedReply,
     };
     use mallang::SourceMap;
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    fn encoded(value: &str) -> String {
+        value
+            .as_bytes()
+            .iter()
+            .map(u8::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
     }
 
     #[test]
@@ -1521,6 +1867,107 @@ mod tests {
             assert!(
                 parse_self_hosted_diagnostics(record, &sources, None).is_err(),
                 "record should be rejected: {record}"
+            );
+        }
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_manifest_responses() {
+        let output = format!(
+            "MANIFEST|1|{}|1\nDEPENDENCY|{}|{}\n",
+            encoded("app"),
+            encoded("text"),
+            encoded("../text")
+        );
+        let SelfHostedReply::Success(manifest) =
+            parse_self_hosted_manifest_response(&output).unwrap()
+        else {
+            panic!("manifest should succeed");
+        };
+
+        assert_eq!(manifest.name, "app");
+        assert_eq!(
+            manifest.dependencies.get("text").map(String::as_str),
+            Some("../text")
+        );
+
+        let SelfHostedReply::Rejection(message) =
+            parse_self_hosted_manifest_response(&format!("MERR|{}\n", encoded("bad field")))
+                .unwrap()
+        else {
+            panic!("manifest should be rejected");
+        };
+        assert_eq!(message, "bad field");
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_manifest_responses() {
+        for response in [
+            "",
+            "MANIFEST|2|97,112,112|0\n",
+            "MANIFEST|1|97,112,112|18446744073709551615\n",
+            "MANIFEST|1|97,112,112|1\n",
+            "MANIFEST|1|97,112,112|1\nUNKNOWN|116,101,120,116|46\n",
+            "MANIFEST|1|97,112,112|2\nDEPENDENCY|116|46\nDEPENDENCY|116|47\n",
+            "MERR|98,97,100\nDEPENDENCY|116|46\n",
+        ] {
+            assert!(
+                parse_self_hosted_manifest_response(response).is_err(),
+                "response should be rejected: {response}"
+            );
+        }
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_project_plan_responses() {
+        let output = format!(
+            "PROJECT|1|2\nUNIT|{}|{}|{}|1|{}\nUNIT|{}|{}|{}|0\n",
+            encoded("app"),
+            encoded("/work/app/mallang.toml"),
+            encoded("/work/app/src"),
+            encoded("text"),
+            encoded("text"),
+            encoded("/work/text/mallang.toml"),
+            encoded("/work/text/src")
+        );
+        let SelfHostedReply::Success(plan) =
+            parse_self_hosted_project_plan_response(&output).unwrap()
+        else {
+            panic!("project plan should succeed");
+        };
+
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].name, "app");
+        assert_eq!(
+            plan[0].direct_dependencies.iter().collect::<Vec<_>>(),
+            vec!["text"]
+        );
+
+        let SelfHostedReply::Rejection(message) =
+            parse_self_hosted_project_plan_response(&format!("GERR|{}\n", encoded("cycle")))
+                .unwrap()
+        else {
+            panic!("project plan should be rejected");
+        };
+        assert_eq!(message, "cycle");
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_project_plan_responses() {
+        for response in [
+            "",
+            "PROJECT|2|0\n",
+            "PROJECT|1|18446744073709551615\n",
+            "PROJECT|1|1\n",
+            "PROJECT|1|1\nUNKNOWN|97|47|47|0\n",
+            "PROJECT|1|1\nUNIT|97|47|47|1\n",
+            "PROJECT|1|2\nUNIT|97|47|47|0\nUNIT|98|47|47|0\n",
+            "PROJECT|1|1\nUNIT|97|47|47|2|98|98\n",
+            "GERR|98,97,100\nUNIT|97|47|47|0\n",
+        ] {
+            assert!(
+                parse_self_hosted_project_plan_response(response).is_err(),
+                "response should be rejected: {response}"
             );
         }
     }
