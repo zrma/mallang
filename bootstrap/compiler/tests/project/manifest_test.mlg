@@ -1,0 +1,75 @@
+package project
+
+test ParsesCanonicalManifestAndSortsDependencies() {
+    text := "[project]\nname = \"app\"\n\n[dependencies]\ntext = { path = \"../text\" }\nmodel = { path = \"../model\" }\n"
+    match Parse(con text) {
+        case Ok(manifest) {
+            assert(Normalize(con manifest) == "MANIFEST|1|97,112,112|2\nDEPENDENCY|109,111,100,101,108|46,46,47,109,111,100,101,108\nDEPENDENCY|116,101,120,116|46,46,47,116,101,120,116")
+            assert(Name(con manifest) == "app")
+            assert(DependencyCount(con manifest) == 2)
+            assert(DependencyName(con manifest, 0) == "model")
+            assert(DependencyPath(con manifest, 1) == "../text")
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test ParsesWhitespaceCommentsAndEscapes() {
+    text := "  [project] # project\n  name = \"hello\\tworld\" # name\n\n[dependencies]\ntext = { path = \"deps/\\\"text\\\"\" } # dependency\n"
+    match Parse(con text) {
+        case Ok(manifest) {
+            assert(Name(con manifest) == "hello\tworld")
+            assert(DependencyPath(con manifest, 0) == "deps/\"text\"")
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsUnknownAndDuplicateFields() {
+    unknown := "[project]\nname = \"app\"\nversion = \"1\"\n"
+    match Parse(con unknown) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(ErrorMessage(con error) == "line 3: unknown `[project]` field `version`")
+        }
+    }
+
+    duplicate := "[project]\nname = \"app\"\nname = \"other\"\n"
+    match Parse(con duplicate) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(ErrorMessage(con error) == "line 3: duplicate project `name` field")
+        }
+    }
+}
+
+test RejectsMalformedDependencyEntries() {
+    unknown := "[project]\nname = \"app\"\n[dependencies]\ntext = { path = \"deps/text\", version = \"1\" }\n"
+    match Parse(con unknown) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(ErrorMessage(con error) == "line 4: dependency entry only permits the `path` field")
+            assert(NormalizeError(con error) == "MERR|108,105,110,101,32,52,58,32,100,101,112,101,110,100,101,110,99,121,32,101,110,116,114,121,32,111,110,108,121,32,112,101,114,109,105,116,115,32,116,104,101,32,96,112,97,116,104,96,32,102,105,101,108,100")
+        }
+    }
+
+    missing := "[project]\nname = \"app\"\n[dependencies]\ntext = \"deps/text\"\n"
+    match Parse(con missing) {
+        case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(ErrorMessage(con error) == "line 4: dependency value must be `{ path = \"...\" }`")
+        }
+    }
+}

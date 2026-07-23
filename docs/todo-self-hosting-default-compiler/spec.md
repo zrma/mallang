@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a, P179b1 and P179b2a complete; P179b2b pending
+Status: active; P179a, P179b1, P179b2a and P179b2b1 complete; P179b2b active
 
 ## Objective
 
@@ -80,6 +80,14 @@ This is not yet the complete P179b boundary: Rust still finds and parses
 manifests, resolves path dependencies, validates graph boundaries and enumerates
 source files. P179b2b moves those decisions behind the Mallang boundary and
 migrates public IR output without changing its user-visible contract.
+
+P179b2b1 completes the first part of that move. The Mallang compiler now parses
+the normative `[project]` and `[dependencies]` manifest surface, rejects unknown
+or duplicate fields and emits a delimiter-safe, versioned manifest protocol.
+Its focused gate compares all tracked manifests with the Rust `toml` oracle and
+runs strict allocation and sanitizer checks. Public commands still call Rust
+project discovery, so path capability brokering, Mallang-owned graph assembly,
+source enumeration and public IR remain active P179b2b work.
 
 ### P179c: Tooling And Native Workflow
 

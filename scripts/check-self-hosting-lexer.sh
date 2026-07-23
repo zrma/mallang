@@ -8,7 +8,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/check-self-hosting-lexer.sh [--fast | --focus <area> | --compiler-pair <stage1> <stage2>] [--jobs <count>]
 
-areas: lexer parser packages linker specialize semantic ir standard
+areas: lexer parser packages project linker specialize semantic ir standard
 EOF
 }
 
@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$FOCUS" in
-  ""|lexer|parser|packages|linker|specialize|semantic|ir|standard)
+  ""|lexer|parser|packages|project|linker|specialize|semantic|ir|standard)
     ;;
   *)
     echo "unknown self-hosting focus area: $FOCUS" >&2
@@ -184,6 +184,12 @@ else
       focused_tests=(
         bootstrap_compiler/packages::BuildsCrossProjectDependencyGraph
         bootstrap_compiler/packages::RejectsUndeclaredTransitiveProjectImport
+      )
+      ;;
+    project)
+      focused_tests=(
+        bootstrap_compiler/project::ParsesCanonicalManifestAndSortsDependencies
+        bootstrap_compiler/project::RejectsMalformedDependencyEntries
       )
       ;;
     linker)
@@ -304,6 +310,13 @@ report_phase bootstrap
 
 compare_fixture() {
   scripts/check-self-hosting-fixture.sh "$@"
+}
+
+compare_manifest() {
+  local manifest="$1"
+  local stem="$2"
+  local profile="$3"
+  compare_project_invocation "$stem" "$profile" manifest "$manifest"
 }
 
 queue_fixture() {
@@ -608,6 +621,38 @@ fi
 
 run_fixture_tasks "$FIXTURE_TASKS"
 report_phase fixture-differentials
+
+if [[ "$MODE" != "focused" || "$FOCUS" == "project" ]]; then
+  manifest_profile="strict"
+  if [[ "$PAIR_MODE" == true ]]; then
+    manifest_profile="stage1"
+  fi
+  manifest_count=0
+  while IFS= read -r manifest; do
+    compare_manifest \
+      "$manifest" \
+      "manifest-$(printf '%03d' "$manifest_count")" \
+      "$manifest_profile"
+    manifest_count=$((manifest_count + 1))
+  done < <(
+    find . -type f -name mallang.toml \
+      -not -path './target/*' \
+      -not -path '*/target/*' \
+      -print | LC_ALL=C sort
+  )
+  if ((manifest_count < 40)); then
+    echo "self-hosting manifest corpus unexpectedly small: $manifest_count" >&2
+    exit 1
+  fi
+  if [[ "$PAIR_MODE" == false ]]; then
+    compare_manifest \
+      bootstrap/compiler/mallang.toml \
+      manifest-sanitizer \
+      full
+  fi
+fi
+
+report_phase manifest-differentials
 
 if [[ "$MODE" != "focused" || "$FOCUS" == "parser" || "$FOCUS" == "packages" ]]; then
   compare_source_set \

@@ -294,8 +294,16 @@ logic. The host passes a read-only root-first unit graph and dependency-first
 source order; a transitive local-dependency example proves generated-C and
 native parity, and dependency diagnostics preserve human/JSON paths. This
 exposed and fixed a nested imported generic type-argument specialization gap.
-Rust still interprets manifests, resolves graph paths/boundaries and enumerates
-files, so P179b2b owns that remaining compiler boundary plus public IR output.
+
+P179b2b1 adds the Mallang-owned strict manifest parser and byte-encoded
+`MANIFEST|1`/`DEPENDENCY`/`MERR` protocol. Unit tests cover canonical input,
+comments, whitespace, escapes, deterministic dependency ordering and malformed
+fields. The focused self-hosting gate differentially checks every tracked
+`mallang.toml` against the Rust `toml` oracle through Stage1, strict allocation
+accounting and a sanitizer representative. The public driver does not consume
+this protocol yet: Rust still resolves canonical paths, assembles and validates
+the dependency graph, enumerates source files and owns public IR output. Those
+remaining boundaries are the next P179b2b slices.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

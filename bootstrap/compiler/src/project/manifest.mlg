@@ -1,0 +1,444 @@
+package project
+
+import "std/strings"
+import "bootstrap_compiler/frontend/token"
+
+pub type Dependency struct {
+    name string
+    path string
+}
+
+pub type Manifest struct {
+    name string
+    dependencies []Dependency
+}
+
+pub type ManifestError struct {
+    message string
+}
+
+type ParsedString struct {
+    value string
+    next int
+}
+
+type ParsedDependency struct {
+    dependency Dependency
+    next int
+}
+
+pub func Parse(con text string) Result[Manifest, ManifestError] {
+    mut cursor := 0
+    mut lineNumber := 1
+    mut section := ""
+    mut sawProject := false
+    mut sawDependencies := false
+    mut sawName := false
+    mut name := ""
+    mut dependencies := []Dependency{}
+
+    for cursor < strings.byteLen(con text) {
+        end := lineEnd(con text, cursor)
+        mut raw := sliceOrEmpty(con text, cursor, end)
+        if endsWithCarriageReturn(con raw) {
+            raw = sliceOrEmpty(con raw, 0, strings.byteLen(con raw) - 1)
+        }
+        line := trim(con stripComment(con raw))
+        if line != "" {
+            if byteAt(con line, 0) == 91 {
+                match parseSection(con line, lineNumber) {
+                    case Ok(parsed) {
+                        if parsed == "project" {
+                            if sawProject {
+                                return Err(lineError(lineNumber, "duplicate `[project]` table"))
+                            }
+                            sawProject = true
+                        } else if parsed == "dependencies" {
+                            if sawDependencies {
+                                return Err(lineError(lineNumber, "duplicate `[dependencies]` table"))
+                            }
+                            sawDependencies = true
+                        } else {
+                            return Err(lineError(lineNumber, strings.join(con []string{"unknown manifest table `", token.CopyText(con parsed), "`",}, con "")))
+                        }
+                        section = parsed
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            } else if section == "project" {
+                match parseProjectName(con line, lineNumber) {
+                    case Ok(parsed) {
+                        if sawName {
+                            return Err(lineError(lineNumber, "duplicate project `name` field"))
+                        }
+                        name = parsed
+                        sawName = true
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            } else if section == "dependencies" {
+                match parseDependency(con line, lineNumber) {
+                    case Ok(parsed) {
+                        if findDependency(con dependencies, con parsed.name) >= 0 {
+                            return Err(lineError(lineNumber, strings.join(con []string{"duplicate dependency `", token.CopyText(con parsed.name), "`",}, con "")))
+                        }
+                        dependencies = append(dependencies, parsed)
+                    }
+                    case Err(error) {
+                        return Err(error)
+                    }
+                }
+            } else {
+                return Err(lineError(lineNumber, "manifest fields must belong to a table"))
+            }
+        }
+
+        cursor = end
+        if cursor < strings.byteLen(con text) && byteAt(con text, cursor) == 10 {
+            cursor = cursor + 1
+            lineNumber = lineNumber + 1
+        }
+    }
+
+    if !sawProject {
+        return Err(newError("manifest requires a `[project]` table"))
+    }
+    if !sawName {
+        return Err(newError("manifest requires `[project].name`"))
+    }
+    return Ok(Manifest{name: name, dependencies: sortDependencies(con dependencies),})
+}
+
+pub func Normalize(con manifest Manifest) string {
+    mut lines := []string{strings.join(con []string{"MANIFEST|1|", token.EncodeBytes(con manifest.name), "|", strings.fromInt(len(manifest.dependencies)),}, con ""),}
+    for mut index := 0; index < len(manifest.dependencies); index = index + 1 {
+        lines = append(lines, strings.join(con []string{"DEPENDENCY|", token.EncodeBytes(con manifest.dependencies[index].name), "|", token.EncodeBytes(con manifest.dependencies[index].path),}, con ""))
+    }
+    return strings.join(con lines, con "\n")
+}
+
+pub func NormalizeError(con error ManifestError) string {
+    return strings.join(con []string{"MERR|", token.EncodeBytes(con error.message),}, con "")
+}
+
+pub func ErrorMessage(con error ManifestError) string {
+    return token.CopyText(con error.message)
+}
+
+pub func Name(con manifest Manifest) string {
+    return token.CopyText(con manifest.name)
+}
+
+pub func DependencyCount(con manifest Manifest) int {
+    return len(manifest.dependencies)
+}
+
+pub func DependencyName(con manifest Manifest, index int) string {
+    return token.CopyText(con manifest.dependencies[index].name)
+}
+
+pub func DependencyPath(con manifest Manifest, index int) string {
+    return token.CopyText(con manifest.dependencies[index].path)
+}
+
+func parseSection(con line string, lineNumber int) Result[string, ManifestError] {
+    length := strings.byteLen(con line)
+    if length < 3 || byteAt(con line, length - 1) != 93 {
+        return Err(lineError(lineNumber, "invalid manifest table header"))
+    }
+    name := trim(con sliceOrEmpty(con line, 1, length - 1))
+    if name == "" {
+        return Err(lineError(lineNumber, "manifest table name cannot be empty"))
+    }
+    return Ok(name)
+}
+
+func parseProjectName(con line string, lineNumber int) Result[string, ManifestError] {
+    cursor := skipWhitespace(con line, 0)
+    keyEnd := scanKey(con line, cursor)
+    key := sliceOrEmpty(con line, cursor, keyEnd)
+    if key != "name" {
+        return Err(lineError(lineNumber, strings.join(con []string{"unknown `[project]` field `", key, "`",}, con "")))
+    }
+    mut valueStart := skipWhitespace(con line, keyEnd)
+    if valueStart >= strings.byteLen(con line) || byteAt(con line, valueStart) != 61 {
+        return Err(lineError(lineNumber, "project `name` requires `=`"))
+    }
+    valueStart = skipWhitespace(con line, valueStart + 1)
+    match parseString(con line, valueStart, lineNumber) {
+        case Ok(parsed) {
+            if skipWhitespace(con line, parsed.next) != strings.byteLen(con line) {
+                return Err(lineError(lineNumber, "unexpected content after project `name`"))
+            }
+            return Ok(token.CopyText(con parsed.value))
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func parseDependency(con line string, lineNumber int) Result[Dependency, ManifestError] {
+    cursor := skipWhitespace(con line, 0)
+    nameEnd := scanKey(con line, cursor)
+    name := sliceOrEmpty(con line, cursor, nameEnd)
+    if name == "" {
+        return Err(lineError(lineNumber, "dependency name cannot be empty"))
+    }
+    mut valueStart := skipWhitespace(con line, nameEnd)
+    if valueStart >= strings.byteLen(con line) || byteAt(con line, valueStart) != 61 {
+        return Err(lineError(lineNumber, "dependency entry requires `=`"))
+    }
+    valueStart = skipWhitespace(con line, valueStart + 1)
+    match parseDependencyValue(con line, valueStart, lineNumber) {
+        case Ok(parsed) {
+            if skipWhitespace(con line, parsed.next) != strings.byteLen(con line) {
+                return Err(lineError(lineNumber, "unexpected content after dependency entry"))
+            }
+            return Ok(Dependency{name: name, path: token.CopyText(con parsed.dependency.path),})
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func parseDependencyValue(con line string, start int, lineNumber int) Result[ParsedDependency, ManifestError] {
+    mut cursor := start
+    if cursor >= strings.byteLen(con line) || byteAt(con line, cursor) != 123 {
+        return Err(lineError(lineNumber, "dependency value must be `{ path = \"...\" }`"))
+    }
+    cursor = skipWhitespace(con line, cursor + 1)
+    keyEnd := scanKey(con line, cursor)
+    key := sliceOrEmpty(con line, cursor, keyEnd)
+    if key != "path" {
+        return Err(lineError(lineNumber, strings.join(con []string{"unknown dependency field `", key, "`",}, con "")))
+    }
+    cursor = skipWhitespace(con line, keyEnd)
+    if cursor >= strings.byteLen(con line) || byteAt(con line, cursor) != 61 {
+        return Err(lineError(lineNumber, "dependency `path` requires `=`"))
+    }
+    cursor = skipWhitespace(con line, cursor + 1)
+    match parseString(con line, cursor, lineNumber) {
+        case Ok(parsed) {
+            cursor = skipWhitespace(con line, parsed.next)
+            if cursor >= strings.byteLen(con line) || byteAt(con line, cursor) != 125 {
+                if cursor < strings.byteLen(con line) && byteAt(con line, cursor) == 44 {
+                    return Err(lineError(lineNumber, "dependency entry only permits the `path` field"))
+                }
+                return Err(lineError(lineNumber, "dependency inline table requires `}`"))
+            }
+            return Ok(ParsedDependency{dependency: Dependency{name: "", path: token.CopyText(con parsed.value),}, next: cursor + 1,})
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
+func parseString(con line string, start int, lineNumber int) Result[ParsedString, ManifestError] {
+    if start >= strings.byteLen(con line) || byteAt(con line, start) != 34 {
+        return Err(lineError(lineNumber, "manifest value must be a quoted string"))
+    }
+    mut cursor := start + 1
+    mut segmentStart := cursor
+    mut pieces := []string{}
+    for cursor < strings.byteLen(con line) {
+        current := byteAt(con line, cursor)
+        if current == 34 {
+            if cursor > segmentStart {
+                pieces = append(pieces, sliceOrEmpty(con line, segmentStart, cursor))
+            }
+            return Ok(ParsedString{value: strings.join(con pieces, con ""), next: cursor + 1,})
+        }
+        if current == 92 {
+            if cursor > segmentStart {
+                pieces = append(pieces, sliceOrEmpty(con line, segmentStart, cursor))
+            }
+            cursor = cursor + 1
+            if cursor >= strings.byteLen(con line) {
+                return Err(lineError(lineNumber, "unterminated manifest escape sequence"))
+            }
+            escaped := byteAt(con line, cursor)
+            if escaped == 110 {
+                pieces = append(pieces, "\n")
+            } else if escaped == 116 {
+                pieces = append(pieces, "\t")
+            } else if escaped == 34 {
+                pieces = append(pieces, "\"")
+            } else if escaped == 92 {
+                pieces = append(pieces, "\\")
+            } else {
+                return Err(lineError(lineNumber, "unsupported manifest string escape"))
+            }
+            cursor = cursor + 1
+            segmentStart = cursor
+        } else {
+            cursor = cursor + 1
+        }
+    }
+    return Err(lineError(lineNumber, "unterminated manifest string"))
+}
+
+func stripComment(con line string) string {
+    mut quoted := false
+    mut escaped := false
+    for mut index := 0; index < strings.byteLen(con line); index = index + 1 {
+        current := byteAt(con line, index)
+        if escaped {
+            escaped = false
+        } else if quoted && current == 92 {
+            escaped = true
+        } else if current == 34 {
+            quoted = !quoted
+        } else if(!quoted) && current == 35 {
+            return sliceOrEmpty(con line, 0, index)
+        }
+    }
+    return token.CopyText(con line)
+}
+
+func trim(con value string) string {
+    mut start := 0
+    mut end := strings.byteLen(con value)
+    for start < end && isWhitespace(byteAt(con value, start)) {
+        start = start + 1
+    }
+    for end > start && isWhitespace(byteAt(con value, end - 1)) {
+        end = end - 1
+    }
+    return sliceOrEmpty(con value, start, end)
+}
+
+func skipWhitespace(con value string, start int) int {
+    mut cursor := start
+    for cursor < strings.byteLen(con value) && isWhitespace(byteAt(con value, cursor)) {
+        cursor = cursor + 1
+    }
+    return cursor
+}
+
+func scanKey(con value string, start int) int {
+    mut cursor := start
+    for cursor < strings.byteLen(con value) && isKeyByte(byteAt(con value, cursor)) {
+        cursor = cursor + 1
+    }
+    return cursor
+}
+
+func isKeyByte(value int) bool {
+    return(value >= 97 && value <= 122) ||(value >= 65 && value <= 90) ||(value >= 48 && value <= 57) || value == 45 || value == 95
+}
+
+func isWhitespace(value int) bool {
+    return value == 32 || value == 9 || value == 13
+}
+
+func lineEnd(con text string, start int) int {
+    mut cursor := start
+    for cursor < strings.byteLen(con text) && byteAt(con text, cursor) != 10 {
+        cursor = cursor + 1
+    }
+    return cursor
+}
+
+func endsWithCarriageReturn(con value string) bool {
+    length := strings.byteLen(con value)
+    return length > 0 && byteAt(con value, length - 1) == 13
+}
+
+func byteAt(con value string, index int) int {
+    return match strings.byteAt(con value, index) {
+        case Ok(byte) {
+            byte
+        }
+        case Err(_) {
+            -1
+        }
+    }
+}
+
+func sliceOrEmpty(con value string, start int, end int) string {
+    return match strings.slice(con value, start, end) {
+        case Ok(sliced) {
+            sliced
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}
+
+func findDependency(con dependencies []Dependency, con name string) int {
+    for mut index := 0; index < len(dependencies); index = index + 1 {
+        if dependencies[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func sortDependencies(con dependencies []Dependency) []Dependency {
+    mut sorted := []Dependency{}
+    for mut index := 0; index < len(dependencies); index = index + 1 {
+        mut insertAt := len(sorted)
+        for mut candidate := 0; candidate < len(sorted); candidate = candidate + 1 {
+            if compareText(con dependencies[index].name, con sorted[candidate].name) < 0 {
+                insertAt = candidate
+                break
+            }
+        }
+        mut next := []Dependency{}
+        for mut existing := 0; existing < insertAt; existing = existing + 1 {
+            next = append(next, copyDependency(con sorted[existing]))
+        }
+        next = append(next, copyDependency(con dependencies[index]))
+        for mut existing := insertAt; existing < len(sorted); existing = existing + 1 {
+            next = append(next, copyDependency(con sorted[existing]))
+        }
+        sorted = next
+    }
+    return sorted
+}
+
+func compareText(con left string, con right string) int {
+    mut index := 0
+    mut limit := strings.byteLen(con left)
+    if strings.byteLen(con right) < limit {
+        limit = strings.byteLen(con right)
+    }
+    for index < limit {
+        leftByte := byteAt(con left, index)
+        rightByte := byteAt(con right, index)
+        if leftByte < rightByte {
+            return - 1
+        }
+        if leftByte > rightByte {
+            return 1
+        }
+        index = index + 1
+    }
+    if strings.byteLen(con left) < strings.byteLen(con right) {
+        return - 1
+    }
+    if strings.byteLen(con left) > strings.byteLen(con right) {
+        return 1
+    }
+    return 0
+}
+
+func copyDependency(con dependency Dependency) Dependency {
+    return Dependency{name: token.CopyText(con dependency.name), path: token.CopyText(con dependency.path),}
+}
+
+func lineError(line int, message string) ManifestError {
+    return newError(strings.join(con []string{"line ", strings.fromInt(line), ": ", message,}, con ""))
+}
+
+func newError(message string) ManifestError {
+    return ManifestError{message: token.CopyText(con message)}
+}

@@ -26,6 +26,36 @@ fn main() -> ExitCode {
         eprintln!("usage: bootstrap-frontend-oracle [parse|check|ir|ir-test] <source>");
         return ExitCode::from(2);
     };
+    if first == "manifest" {
+        let Some(path) = args.next() else {
+            eprintln!("usage: bootstrap-frontend-oracle manifest <mallang.toml>");
+            return ExitCode::from(2);
+        };
+        if args.next().is_some() {
+            eprintln!("usage: bootstrap-frontend-oracle manifest <mallang.toml>");
+            return ExitCode::from(2);
+        }
+        let project = match discover_project(&path) {
+            Ok(project) => project,
+            Err(error) => {
+                println!("MERR|{}", encode_bytes(&error.to_string()));
+                return ExitCode::SUCCESS;
+            }
+        };
+        println!(
+            "MANIFEST|1|{}|{}",
+            encode_bytes(&project.manifest().project.name),
+            project.manifest().dependencies.len()
+        );
+        for (name, dependency) in &project.manifest().dependencies {
+            println!(
+                "DEPENDENCY|{}|{}",
+                encode_bytes(name),
+                encode_bytes(&dependency.path)
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
     if first == "parse-sources" {
         let paths = args.collect::<Vec<_>>();
         if paths.is_empty() {

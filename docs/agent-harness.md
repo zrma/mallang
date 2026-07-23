@@ -51,6 +51,7 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - 기본 full gate: `scripts/check.sh`.
 - self-hosting inner loop: `scripts/check-self-hosting-lexer.sh --fast`; logical
   B2 change publication 전에는 인자 없는 full self-hosting gate를 실행한다.
+  Manifest/discovery 작업은 `--focus project`로 먼저 격리 검증한다.
 - B3 backend edit loop:
   `scripts/check-self-hosting-backend.sh --assume-bootstrap --fixtures-only`;
   compiler source가

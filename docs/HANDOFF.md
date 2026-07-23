@@ -828,8 +828,11 @@ P179b2a에서 host의 read-only root-first unit graph와 dependency-first source
 specialize/semantic/IR/C backend 경로로 연결했다. Transitive local dependency의 generated C,
 native output과 dependency-source human/JSON diagnostics가 Stage0와 일치한다. 이 과정에서
 발견한 imported nested generic type argument specialization 누락도 통합 회귀 테스트와 함께
-수정했다. Manifest parsing, path dependency/graph boundary resolution, source enumeration과
-public IR output은 P179b2b에 남아 있다.
+수정했다. P179b2b1은 Mallang-owned strict manifest parser와 versioned byte protocol을 추가하고
+40개 tracked `mallang.toml`을 Rust `toml` oracle, strict allocation과 sanitizer 경로에서
+비교한다. Public driver는 아직 이 protocol을 소비하지 않으므로 canonical path capability,
+dependency graph assembly/boundary validation, source enumeration과 public IR output은 후속
+P179b2b에 남아 있다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
@@ -838,7 +841,7 @@ ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는
 publication 직전에는 인자 없는 full gate를 사용한다. `--jobs`는 기본 최대 4개의
 bounded worker를 제어한다. `--fast`는
 전체 repository source의 Stage0/Stage1 differential을 유지하면서 focused
-accounting, 전체 263개 compiler project test의 단일 runner와
+accounting, 전체 269개 compiler project test의 단일 runner와
 lexer/parser/semantic/typed-IR sanitizer smoke를 실행한다. 인자 없는 full gate는 complete
 compiler-source link/prepare/check/IR와
 corpus accounting/sanitizer를 실행하며 milestone, publication과 release evidence로
