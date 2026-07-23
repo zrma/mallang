@@ -54,6 +54,13 @@ pub type TypeShape struct {
     arrayLength int
 }
 
+pub type CallableType struct {
+    name string
+    mutable bool
+    params []Param
+    returnType string
+}
+
 pub type StructField struct {
     name string
     ty string
@@ -88,6 +95,7 @@ pub type EnumDef struct {
 
 pub type Program struct {
     typeShapes []TypeShape
+    callableTypes []CallableType
     structs []StructDef
     enums []EnumDef
     nodes []Node
@@ -128,7 +136,7 @@ pub func Lower(con syntax ast.Program, con checked semantic.CheckedProgram) Resu
     mut lowerer := Lowerer{nodes: []Node{}, functions: []Function{}, closures: []Closure{},}
     match lowerer.lowerProgramDeclarations(con syntax, con checked) {
         case Ok(_) {
-            return Ok(Program{typeShapes: copyTypeShapes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
+            return Ok(Program{typeShapes: copyTypeShapes(con checked), callableTypes: copyCallableTypes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: lowerer.functions, closures: lowerer.closures})
         }
         case Err(error) {
             return Err(error)
@@ -178,7 +186,7 @@ pub func LowerTest(con syntax ast.Program, con checked semantic.CheckedProgram, 
         }
     }
     functions = append(functions, Function{name: "main", params: []Param{}, returnType: "unit", body: testBody,})
-    return Ok(Program{typeShapes: copyTypeShapes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
+    return Ok(Program{typeShapes: copyTypeShapes(con checked), callableTypes: copyCallableTypes(con checked), structs: copyStructs(con checked), enums: copyEnums(con checked), nodes: lowerer.nodes, functions: functions, closures: lowerer.closures})
 }
 
 func copyTypeShapes(con checked semantic.CheckedProgram) []TypeShape {
@@ -193,6 +201,31 @@ func copyTypeShapes(con checked semantic.CheckedProgram) []TypeShape {
         shapes = append(shapes, TypeShape{name: semantic.TypeShapeName(con checked, shape), kind: semantic.TypeShapeKind(con checked, shape), copy: semantic.TypeShapeIsCopy(con checked, shape), cleanup: semantic.TypeShapeNeedsCleanup(con checked, shape), arguments: arguments, argumentCleanup: argumentCleanup, arrayLength: semantic.TypeShapeArrayLength(con checked, shape),})
     }
     return shapes
+}
+
+func callableTypeIndex(con values []CallableType, con name string) int {
+    for mut index := 0; index < len(values); index = index + 1 {
+        if values[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func copyCallableTypes(con checked semantic.CheckedProgram) []CallableType {
+    mut callables := []CallableType{}
+    for mut callable := 0; callable < semantic.CallableTypeCount(con checked); callable = callable + 1 {
+        name := semantic.CallableTypeName(con checked, callable)
+        if callableTypeIndex(con callables, con name) >= 0 {
+            continue
+        }
+        mut params := []Param{}
+        for mut param := 0; param < semantic.CallableTypeParamCount(con checked, callable); param = param + 1 {
+            params = append(params, Param{name: "", mode: semantic.CallableTypeParamMode(con checked, callable, param), ty: semantic.CallableTypeParam(con checked, callable, param),})
+        }
+        callables = append(callables, CallableType{name: name, mutable: semantic.CallableTypeMutable(con checked, callable), params: params, returnType: semantic.CallableTypeReturn(con checked, callable),})
+    }
+    return callables
 }
 
 func copyStructs(con checked semantic.CheckedProgram) []StructDef {
@@ -383,6 +416,34 @@ pub func TypeShapeArgumentNeedsCleanup(con program Program, shape int, argument 
 
 pub func TypeShapeArrayLength(con program Program, shape int) int {
     return program.typeShapes[shape].arrayLength
+}
+
+pub func CallableTypeCount(con program Program) int {
+    return len(program.callableTypes)
+}
+
+pub func CallableTypeName(con program Program, callable int) string {
+    return token.CopyText(con program.callableTypes[callable].name)
+}
+
+pub func CallableTypeMutable(con program Program, callable int) bool {
+    return program.callableTypes[callable].mutable
+}
+
+pub func CallableTypeParamCount(con program Program, callable int) int {
+    return len(program.callableTypes[callable].params)
+}
+
+pub func CallableTypeParamMode(con program Program, callable int, param int) string {
+    return token.CopyText(con program.callableTypes[callable].params[param].mode)
+}
+
+pub func CallableTypeParam(con program Program, callable int, param int) string {
+    return token.CopyText(con program.callableTypes[callable].params[param].ty)
+}
+
+pub func CallableTypeReturn(con program Program, callable int) string {
+    return token.CopyText(con program.callableTypes[callable].returnType)
 }
 
 pub func StructCount(con program Program) int {

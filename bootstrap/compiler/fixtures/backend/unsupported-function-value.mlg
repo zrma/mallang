@@ -1,8 +1,0 @@
-func double(value int) int {
-    return value * 2
-}
-
-func main() {
-    transform := double
-    print(transform(4))
-}

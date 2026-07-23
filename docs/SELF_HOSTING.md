@@ -178,6 +178,16 @@ sanitizer checks, and the compiler source matches across 857 normalized
 typed-IR functions. Function values, closures, remaining intrinsics and the
 broader project surface remain in P177c.
 
+P177c2 retains callable signatures in the typed IR and uses them for function
+type mangling, the environment/drop/call C ABI and exact-once callable cleanup.
+Named function values validate their declaration signature and use generated
+thunks; indirect calls evaluate the callee once and preserve owned, `con` and
+`mut` argument evaluation and reverse cleanup order. The tenth positive fixture
+passes byte parity, strict native, accounting and sanitizer checks, while a
+closure remains the single explicit boundary. The compiler source matches
+Stage0 across 880 normalized typed-IR functions. Intrinsic function values,
+closures/captures and the broader project surface remain in P177c.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the

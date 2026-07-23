@@ -328,6 +328,45 @@ pub func TypeShapeArrayLength(con checked CheckedProgram, shape int) int {
     return checked.typeShapes[shape].arrayLength
 }
 
+func callableTypeFunctionIndex(con checked CheckedProgram, callable int) int {
+    if callable < len(checked.functions) {
+        return callable
+    }
+    return encodeFunctionTypeIndex(callable - len(checked.functions))
+}
+
+pub func CallableTypeCount(con checked CheckedProgram) int {
+    return len(checked.functions) + len(checked.functionTypes)
+}
+
+pub func CallableTypeName(con checked CheckedProgram, callable int) string {
+    function := callableTypeFunctionIndex(con checked, callable)
+    ty := checked.functionType(function)
+    return token.CopyText(con ty.text)
+}
+
+pub func CallableTypeMutable(con checked CheckedProgram, callable int) bool {
+    return checked.callableMutable(callableTypeFunctionIndex(con checked, callable))
+}
+
+pub func CallableTypeParamCount(con checked CheckedProgram, callable int) int {
+    return checked.callableParamCount(callableTypeFunctionIndex(con checked, callable))
+}
+
+pub func CallableTypeParamMode(con checked CheckedProgram, callable int, param int) string {
+    return checked.callableParamMode(callableTypeFunctionIndex(con checked, callable), param)
+}
+
+pub func CallableTypeParam(con checked CheckedProgram, callable int, param int) string {
+    ty := checked.callableParamType(callableTypeFunctionIndex(con checked, callable), param)
+    return token.CopyText(con ty.text)
+}
+
+pub func CallableTypeReturn(con checked CheckedProgram, callable int) string {
+    ty := checked.callableReturnType(callableTypeFunctionIndex(con checked, callable))
+    return token.CopyText(con ty.text)
+}
+
 pub func StructCount(con checked CheckedProgram) int {
     return len(checked.structs)
 }

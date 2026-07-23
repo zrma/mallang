@@ -52,12 +52,12 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables)
+FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values)
 PROJECT_FIXTURES=(dynamic-owned-string)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds)
 ALLOCATION_REJECTION_FIXTURES=(adt-allocation-failure slice-append-allocation-failure)
 PROJECT_ALLOCATION_REJECTION_FIXTURES=(dynamic-string-allocation-failure)
-BOUNDARY_REJECTION_FIXTURES=(unsupported-function-value)
+BOUNDARY_REJECTION_FIXTURES=(unsupported-closure)
 OPTIMIZED_FLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 SANITIZER_FLAGS=(
   -std=c11
@@ -181,6 +181,9 @@ EOF
       ;;
     borrowed-callables)
       expected=$'1\n2\nkim\nlee\n2\n4'
+      ;;
+    function-values)
+      expected=$'20\n22\n42\nkim\n1\n2'
       ;;
     *)
       echo "self-hosting backend fixture has no expected output: $name" >&2
@@ -461,8 +464,8 @@ for name in "${BOUNDARY_REJECTION_FIXTURES[@]}"; do
   "$STAGE1" c "$fixture" >"$second" 2>"$second_stderr"
   expected=""
   case "$name" in
-    unsupported-function-value)
-      expected="B3 C backend does not yet support Expr.FunctionValue"
+    unsupported-closure)
+      expected="B3 C backend does not yet support closures"
       ;;
     *)
       echo "self-hosting backend boundary fixture has no expected diagnostic: $name" >&2

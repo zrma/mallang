@@ -1,0 +1,7 @@
+func main() {
+    value := 1
+    closure := func() int {
+        return value
+    }
+    print(closure())
+}

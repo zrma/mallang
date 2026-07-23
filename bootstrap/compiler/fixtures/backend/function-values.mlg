@@ -1,0 +1,36 @@
+func double(value int) int {
+    return value * 2
+}
+
+func select() func(int) int {
+    return double
+}
+
+func apply(value int, transform func(int) int) int {
+    return transform(value)
+}
+
+func show(con value string) int {
+    print(value)
+    return 1
+}
+
+func increment(mut value int) {
+    value = value + 1
+}
+
+func main() {
+    transform := select()
+    print(transform(10))
+    print(transform(11))
+    print(apply(21, double))
+
+    showValue := show
+    text := "kim"
+    print(showValue(con text))
+
+    incrementValue := increment
+    mut value := 1
+    incrementValue(mut value)
+    print(value)
+}

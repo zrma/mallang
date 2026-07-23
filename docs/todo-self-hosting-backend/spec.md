@@ -1,6 +1,6 @@
 # Spec: B3 Self-Hosting C Backend
 
-Status: active; P177a-P177b and P177c1 complete
+Status: active; P177a-P177b and P177c1-P177c2 complete
 
 ## Objective
 
@@ -135,6 +135,18 @@ runtime-rejection and one explicit function-value boundary path pass the
 applicable byte parity, native, accounting and sanitizer checks. The compiler
 source matches Stage0 across 857 normalized typed-IR functions.
 
+P177c2 is complete. Callable signatures are retained as typed-IR metadata and
+drive the same function-type mangling, C struct ABI and exact-once drop helper
+as Stage0. Named function values validate their declaration signature before
+using a generated thunk. Indirect calls evaluate the callee once, preserve
+owned/`con`/`mut` argument order and unwind temporary cleanup in reverse order.
+The `function-values` fixture covers returned, passed and repeatedly invoked
+named functions plus borrowed and mutable arguments. Ten positive, four
+runtime-rejection and one explicit closure boundary path pass the applicable
+byte parity, native, accounting and sanitizer checks. The compiler source
+matches Stage0 across 880 normalized typed-IR functions. Intrinsic function
+values, closures/captures and the broader project surface remain in P177c.
+
 ### P177d: B3 Closure
 
 - cover every typed-IR node required by the Mallang compiler source set
@@ -165,7 +177,8 @@ took about eighteen seconds and the fresh backend gate about twenty-eight
 seconds. The focused compiler-source IR comparison reported about sixteen
 seconds across Stage0 and Stage1. After P177c1 added the borrowed-callable path
 and one boundary fixture, the reuse and fresh backend gates took about thirty
-and thirty-two seconds respectively.
+and thirty-two seconds respectively. The ten-positive P177c2 reuse gate
+remained about thirty seconds.
 These observations justify the layer split; they are not portable performance
 thresholds.
 
@@ -194,6 +207,8 @@ thresholds.
 - [x] eight positive, four runtime-rejection and zero boundary-rejection paths
 - [x] P177c1 `con`/`mut` pointer ABI, direct borrowed arguments and receiver methods
 - [x] nine positive, four runtime-rejection and one function-value boundary path
+- [x] P177c2 named function values, callable ABI/drop helpers and indirect calls
+- [x] ten positive, four runtime-rejection and one closure boundary path
 - [ ] callable, specialization and project surface
 - [ ] complete compiler-source C generation
 - [ ] B3 canonical, publication and supported-platform CI acceptance

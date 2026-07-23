@@ -106,6 +106,24 @@ func enumIndex(con program ir.Program, con name string) int {
     return - 1
 }
 
+func callableTypeIndex(con program ir.Program, con name string) int {
+    for mut callable := 0; callable < ir.CallableTypeCount(con program); callable = callable + 1 {
+        if ir.CallableTypeName(con program, callable) == name {
+            return callable
+        }
+    }
+    return - 1
+}
+
+func functionIndex(con program ir.Program, con name string) int {
+    for mut function := 0; function < ir.FunctionCount(con program); function = function + 1 {
+        if ir.FunctionName(con program, function) == name {
+            return function
+        }
+    }
+    return - 1
+}
+
 func enumVariantIndex(con program ir.Program, enumeration int, con name string) int {
     if enumeration < 0 {
         return - 1
@@ -131,6 +149,9 @@ func typeKind(con program ir.Program, con ty string) string {
     }
     if enumIndex(con program, con ty) >= 0 {
         return "enum"
+    }
+    if callableTypeIndex(con program, con ty) >= 0 {
+        return "function"
     }
     return ""
 }
@@ -160,6 +181,9 @@ func typeNeedsCleanup(con program ir.Program, con ty string) bool {
         if ir.EnumIntrinsic(con program, enumeration) == "ErrorKind" {
             return false
         }
+        return true
+    }
+    if callableTypeIndex(con program, con ty) >= 0 {
         return true
     }
     return false
@@ -307,6 +331,18 @@ func mangleType(con program ir.Program, con ty string) string {
     if kind == "enum" {
         return strings.join(con []string{"Enum_", cTypeIdent(con ty),}, con "")
     }
+    if kind == "function" {
+        callable := callableTypeIndex(con program, con ty)
+        mut mutable := "con"
+        if ir.CallableTypeMutable(con program, callable) {
+            mutable = "mut"
+        }
+        mut params := []string{}
+        for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+            params = append(params, strings.join(con []string{ir.CallableTypeParamMode(con program, callable, param), "_", mangleType(con program, con ir.CallableTypeParam(con program, callable, param)),}, con ""))
+        }
+        return strings.join(con []string{"Function_", token.CopyText(con mutable), "_", strings.join(con params, con "_"), "_ret_", mangleType(con program, con ir.CallableTypeReturn(con program, callable)),}, con "")
+    }
     return ""
 }
 
@@ -316,7 +352,7 @@ func cTypeFor(con program ir.Program, con ty string) string {
         return primitive
     }
     kind := typeKind(con program, con ty)
-    if kind == "array" || kind == "slice" || kind == "option" || kind == "result" {
+    if kind == "array" || kind == "slice" || kind == "option" || kind == "result" || kind == "function" {
         return strings.join(con []string{"mlg_", mangleType(con program, con ty),}, con "")
     }
     if kind == "struct" {
@@ -383,6 +419,12 @@ func collectType(con program ir.Program, con values []string, con ty string) []s
     } else if kind == "result" {
         okTypes := collectType(con program, con nestedTypes, con typeArgument(con program, con ty, 0))
         nestedTypes = collectType(con program, con okTypes, con typeArgument(con program, con ty, 1))
+    } else if kind == "function" {
+        callable := callableTypeIndex(con program, con ty)
+        for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+            nestedTypes = collectType(con program, con nestedTypes, con ir.CallableTypeParam(con program, callable, param))
+        }
+        nestedTypes = collectType(con program, con nestedTypes, con ir.CallableTypeReturn(con program, callable))
     }
     types := appendMissingLines(copyLines([]string{}, con values), con nestedTypes)
     if kind == "int" || kind == "bool" || kind == "unit" || kind == "" {
@@ -474,6 +516,22 @@ func (mut self TypeEmitter) emitTypeDefinition(con program ir.Program, con ty st
             }
         }
         match self.emitTypeDefinition(con program, con typeArgument(con program, con ty, 1)) {
+            case Ok(_) {}
+            case Err(message) {
+                return Err(message)
+            }
+        }
+    } else if kind == "function" {
+        callable := callableTypeIndex(con program, con ty)
+        for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+            match self.emitTypeDefinition(con program, con ir.CallableTypeParam(con program, callable, param)) {
+                case Ok(_) {}
+                case Err(message) {
+                    return Err(message)
+                }
+            }
+        }
+        match self.emitTypeDefinition(con program, con ir.CallableTypeReturn(con program, callable)) {
             case Ok(_) {}
             case Err(message) {
                 return Err(message)
@@ -571,6 +629,18 @@ func (mut self TypeEmitter) emitTypeDefinition(con program ir.Program, con ty st
             }
             self.lines = append(self.lines, strings.join(con []string{"    } ", cField(con "payload"), ";",}, con ""))
         }
+        self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
+    } else if kind == "function" {
+        callable := callableTypeIndex(con program, con ty)
+        mut params := []string{"void *mlg_env",}
+        for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+            paramType := cParamType(con program, con ir.CallableTypeParam(con program, callable, param), con ir.CallableTypeParamMode(con program, callable, param))
+            params = append(params, strings.join(con []string{paramType, " mlg_arg_", strings.fromInt(param),}, con ""))
+        }
+        self.lines = append(self.lines, "typedef struct {")
+        self.lines = append(self.lines, "    void *mlg_env;")
+        self.lines = append(self.lines, "    void (*mlg_drop)(void *);")
+        self.lines = append(self.lines, strings.join(con []string{"    ", cTypeFor(con program, con ir.CallableTypeReturn(con program, callable)), " (*mlg_call)(", strings.join(con params, con ", "), ");",}, con ""))
         self.lines = append(self.lines, strings.join(con []string{"} ", cTypeFor(con program, con ty), ";",}, con ""))
     } else if kind == "enum" {
         enumeration := enumIndex(con program, con ty)
@@ -704,7 +774,7 @@ func (mut self TypeEmitter) emitDropHelper(con program ir.Program, con ty string
                 }
             }
         }
-    } else if kind != "string" {
+    } else if kind != "string" && kind != "function" {
         return Err(unsupported(con strings.join(con []string{"drop helper ", token.CopyText(con ty),}, con "")))
     }
 
@@ -715,6 +785,13 @@ func (mut self TypeEmitter) emitDropHelper(con program ir.Program, con ty string
         self.lines = append(self.lines, "        mallang_dealloc((void *)mlg_value->mlg_data);")
         self.lines = append(self.lines, "    }")
         self.lines = append(self.lines, "    *mlg_value = (mlg_String){ .mlg_data = \"\", .mlg_len = 0, .mlg_storage = MLG_STRING_STATIC };")
+    } else if kind == "function" {
+        self.lines = append(self.lines, "    if (mlg_value->mlg_drop != NULL) {")
+        self.lines = append(self.lines, "        mlg_value->mlg_drop(mlg_value->mlg_env);")
+        self.lines = append(self.lines, "    }")
+        self.lines = append(self.lines, "    mlg_value->mlg_env = NULL;")
+        self.lines = append(self.lines, "    mlg_value->mlg_drop = NULL;")
+        self.lines = append(self.lines, "    mlg_value->mlg_call = NULL;")
     } else if kind == "slice" {
         element := typeArgument(con program, con ty, 0)
         if typeNeedsCleanup(con program, con element) {
@@ -1180,6 +1257,103 @@ func emitCallArgument(con program ir.Program, argument int, con indent string, c
         return emitBorrowLvalue(con program, expression, con indent, con env)
     }
     return Err("B3 C backend received invalid call argument mode")
+}
+
+func callableTypeMatchesFunction(con program ir.Program, callable int, function int) bool {
+    if callable < 0 || function < 0 || ir.CallableTypeMutable(con program, callable) {
+        return false
+    }
+    if ir.CallableTypeReturn(con program, callable) != ir.FunctionReturnType(con program, function) {
+        return false
+    }
+    if ir.CallableTypeParamCount(con program, callable) != ir.FunctionParamCount(con program, function) {
+        return false
+    }
+    for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+        if ir.CallableTypeParamMode(con program, callable, param) != ir.FunctionParamMode(con program, function, param) {
+            return false
+        }
+        if ir.CallableTypeParam(con program, callable, param) != ir.FunctionParamType(con program, function, param) {
+            return false
+        }
+    }
+    return true
+}
+
+func emitFunctionValue(con program ir.Program, node int) Result[EmittedExpr, string] {
+    ty := ir.NodeType(con program, node)
+    callable := callableTypeIndex(con program, con ty)
+    name := ir.NodeValue(con program, node)
+    function := functionIndex(con program, con name)
+    if !callableTypeMatchesFunction(con program, callable, function) {
+        return Err("B3 C backend received a mismatched named function value")
+    }
+    value := strings.join(con []string{"(", cTypeFor(con program, con ty), "){ .mlg_env = NULL, .mlg_drop = NULL, .mlg_call = mallang_callable_thunk_", cFunctionName(con name), " }",}, con "")
+    return Ok(EmittedExpr{lines: []string{}, value: value, postLines: []string{},})
+}
+
+func callArgumentMode(con program ir.Program, argument int) string {
+    kind := ir.NodeKind(con program, argument)
+    if kind == "Arg.Owned" {
+        return "owned"
+    }
+    if kind == "Arg.Con" {
+        return "con"
+    }
+    if kind == "Arg.Mut" {
+        return "mut"
+    }
+    return ""
+}
+
+func emitIndirectCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
+    if ir.NodeChildCount(con program, node) < 1 {
+        return Err("B3 C backend received malformed indirect call IR")
+    }
+    calleeNode := ir.NodeChild(con program, node, 0)
+    calleeType := ir.NodeType(con program, calleeNode)
+    callable := callableTypeIndex(con program, con calleeType)
+    if callable < 0 {
+        return Err("B3 C backend received an indirect call without a callable type")
+    }
+    if ir.NodeType(con program, node) != ir.CallableTypeReturn(con program, callable) || ir.NodeChildCount(con program, node) != ir.CallableTypeParamCount(con program, callable) + 1 {
+        return Err("B3 C backend received a mismatched indirect call signature")
+    }
+    match emitExpression(con program, calleeNode, con indent, con env) {
+        case Ok(callee) {
+            temp := strings.join(con []string{"mallang_callable_tmp_", spanSuffix(con program, node),}, con "")
+            mut lines := copyLines([]string{}, con callee.lines)
+            lines = append(lines, strings.join(con []string{token.CopyText(con indent), cTypeFor(con program, con calleeType), " ", token.CopyText(con temp), " = ", token.CopyText(con callee.value), ";",}, con ""))
+            mut postLines := copyLines([]string{}, con callee.postLines)
+            mut args := []string{strings.join(con []string{token.CopyText(con temp), ".mlg_env",}, con ""),}
+            for mut param := 0; param < ir.CallableTypeParamCount(con program, callable); param = param + 1 {
+                argument := ir.NodeChild(con program, node, param + 1)
+                mode := callArgumentMode(con program, argument)
+                if mode != ir.CallableTypeParamMode(con program, callable, param) || ir.NodeType(con program, argument) != ir.CallableTypeParam(con program, callable, param) {
+                    return Err("B3 C backend received a mismatched indirect call argument")
+                }
+                match emitCallArgument(con program, argument, con indent, con env) {
+                    case Ok(emitted) {
+                        lines = copyLines(lines, con emitted.lines)
+                        mut value := token.CopyText(con emitted.value)
+                        if mode == "con" || mode == "mut" {
+                            value = strings.join(con []string{"&(", token.CopyText(con value), ")",}, con "")
+                        }
+                        args = append(args, value)
+                        postLines = copyLines(emitted.postLines, con postLines)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            value := strings.join(con []string{token.CopyText(con temp), ".mlg_call(", strings.join(con args, con ", "), ")",}, con "")
+            return Ok(EmittedExpr{lines: lines, value: value, postLines: postLines,})
+        }
+        case Err(message) {
+            return Err(message)
+        }
+    }
 }
 
 func emitCall(con program ir.Program, node int, con indent string, con env EmitEnv) Result[EmittedExpr, string] {
@@ -1916,6 +2090,9 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
     if kind == "Expr.Var" {
         return Ok(EmittedExpr{lines: []string{}, value: envVariableName(con env, con ir.NodeValue(con program, node)), postLines: []string{},})
     }
+    if kind == "Expr.FunctionValue" {
+        return emitFunctionValue(con program, node)
+    }
     if kind == "Expr.FullExprTemporary" {
         if ir.NodeChildCount(con program, node) != 1 {
             return Err("B3 C backend received malformed full-expression temporary IR")
@@ -1950,6 +2127,9 @@ func emitExpression(con program ir.Program, node int, con indent string, con env
     }
     if kind == "Expr.Call" {
         return emitCall(con program, node, con indent, con env)
+    }
+    if kind == "Expr.IndirectCall" {
+        return emitIndirectCall(con program, node, con indent, con env)
     }
     if kind == "Expr.IntrinsicCall" {
         return emitDynamicStringCall(con program, node, con indent, con env)
