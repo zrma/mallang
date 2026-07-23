@@ -11,6 +11,11 @@ report_failure() {
 }
 trap report_failure ERR
 
+if [[ "${MALLANG_RELEASE_TRACE:-0}" == "1" ]]; then
+  PS4='+ ${BASH_SOURCE}:${LINENO}: '
+  set -x
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

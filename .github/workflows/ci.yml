@@ -134,6 +134,8 @@ jobs:
 
       - name: Run v1 release acceptance
         run: scripts/check-v1x-acceptance.sh --skip-core-check --skip-deep-sanitizers
+        env:
+          MALLANG_RELEASE_TRACE: "1"
 
       - name: Upload platform archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
