@@ -1,6 +1,6 @@
 # Open Questions: B4 Self-Hosting Fixed Point
 
-Status: active; P178a decisions frozen, P178b-P178c unresolved only by evidence
+Status: active; P178a-P178b decisions frozen, P178c unresolved only by evidence
 
 ## Is Stage1-To-Stage2 Native Binary Identity Required?
 

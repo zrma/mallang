@@ -154,64 +154,29 @@ if [[ "$SKIP_SANITIZERS" == false ]]; then
   fi
 fi
 
-PAIR_TASKS="$WORK/compiler-pair-tasks.bin"
-: >"$PAIR_TASKS"
-pair_count=0
+scripts/check-self-hosting-lexer.sh \
+  --compiler-pair "$STAGE1" "$STAGE2" --jobs "$JOBS"
+
+BACKEND_PAIR_TASKS="$WORK/backend-pair-tasks.bin"
+: >"$BACKEND_PAIR_TASKS"
+backend_fixture_count=0
 queue_pair_fixture() {
   local kind="$1"
   local fixture="$2"
   local stem="$3"
   printf '%s\0' \
     "$STAGE1" "$STAGE2" "$kind" "$fixture" "$WORK" "$stem" \
-    >>"$PAIR_TASKS"
-  pair_count=$((pair_count + 1))
+    >>"$BACKEND_PAIR_TASKS"
+  backend_fixture_count=$((backend_fixture_count + 1))
 }
 
-for fixture in "$PROJECT/fixtures/lexer"/*.mlg; do
-  queue_pair_fixture lexer "$fixture" \
-    "lexer-$(basename "$fixture" .mlg)"
-done
-for fixture in "$PROJECT/fixtures/parser"/*.mlg; do
-  queue_pair_fixture parser "$fixture" \
-    "parser-$(basename "$fixture" .mlg)"
-done
-for fixture in "$PROJECT/fixtures/semantic"/*.mlg; do
-  queue_pair_fixture semantic "$fixture" \
-    "semantic-$(basename "$fixture" .mlg)"
-done
-for fixture in "$PROJECT/fixtures/ir"/*.mlg; do
-  queue_pair_fixture ir "$fixture" \
-    "ir-$(basename "$fixture" .mlg)"
-done
-for fixture in "$PROJECT/fixtures/ir-test"/*.mlg; do
-  queue_pair_fixture ir-test "$fixture" \
-    "ir-test-$(basename "$fixture" .mlg)"
-done
 for fixture in "$PROJECT/fixtures/backend"/*.mlg; do
   queue_pair_fixture c "$fixture" \
     "backend-$(basename "$fixture" .mlg)"
 done
 
-corpus_count=0
-while IFS= read -r fixture; do
-  queue_pair_fixture parser "$fixture" \
-    "parser-corpus-$(printf '%04d' "$corpus_count")"
-  corpus_count=$((corpus_count + 1))
-done < <(
-  find \
-    "$PROJECT/src" \
-    "$PROJECT/tests" \
-    examples \
-    tests/fixtures \
-    -type f -name '*.mlg' -print | LC_ALL=C sort
-)
-if ((corpus_count < 150)); then
-  echo "self-hosting fixed-point parser corpus unexpectedly small: $corpus_count" >&2
-  exit 1
-fi
-
 xargs -0 -n 6 -P "$JOBS" \
-  scripts/check-self-hosting-compiler-pair-fixture.sh <"$PAIR_TASKS"
+  scripts/check-self-hosting-compiler-pair-fixture.sh <"$BACKEND_PAIR_TASKS"
 
 compare_invocation() {
   local stem="$1"
@@ -240,14 +205,6 @@ compare_invocation() {
   done
 }
 
-for operation in link prepare check ir; do
-  compare_invocation \
-    "compiler-project-$operation" \
-    "$operation-project" \
-    1 bootstrap_compiler "$PROJECT/src" 0 \
-    "${compiler_sources[@]}"
-done
-
 backend_project_count=0
 while IFS= read -r source_root; do
   fixture_root="$(dirname "$source_root")"
@@ -263,9 +220,88 @@ done < <(
     -mindepth 2 -maxdepth 2 -type d -name src -print | LC_ALL=C sort
 )
 
+native_pair_count=0
+compare_native_pair() {
+  local stem="$1"
+  local allocation_failure="$2"
+  local -a stage1_compile=(
+    "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -x c
+  )
+  local -a stage2_compile=(
+    "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" -x c
+  )
+  local stage1_status
+  local stage2_status
+
+  if [[ "$allocation_failure" == true ]]; then
+    stage1_compile+=(-DMLG_ALLOCATION_FAIL_AFTER=0)
+    stage2_compile+=(-DMLG_ALLOCATION_FAIL_AFTER=0)
+  fi
+  stage1_compile+=("$WORK/$stem.stage1.stdout" -o "$WORK/$stem.stage1-native")
+  stage2_compile+=("$WORK/$stem.stage2.stdout" -o "$WORK/$stem.stage2-native")
+  "${stage1_compile[@]}"
+  "${stage2_compile[@]}"
+
+  set +e
+  "$WORK/$stem.stage1-native" >"$WORK/$stem.stage1-native.stdout" \
+    2>"$WORK/$stem.stage1-native.stderr"
+  stage1_status=$?
+  "$WORK/$stem.stage2-native" >"$WORK/$stem.stage2-native.stdout" \
+    2>"$WORK/$stem.stage2-native.stderr"
+  stage2_status=$?
+  set -e
+
+  printf '%s\n' "$stage1_status" >"$WORK/$stem.stage1-native.status"
+  printf '%s\n' "$stage2_status" >"$WORK/$stem.stage2-native.status"
+  for suffix in stdout stderr status; do
+    if ! cmp -s \
+      "$WORK/$stem.stage1-native.$suffix" \
+      "$WORK/$stem.stage2-native.$suffix"; then
+      echo "self-hosting native compiler-pair mismatch: $stem ($suffix)" >&2
+      diff -u \
+        "$WORK/$stem.stage1-native.$suffix" \
+        "$WORK/$stem.stage2-native.$suffix" >&2 || true
+      exit 1
+    fi
+  done
+  native_pair_count=$((native_pair_count + 1))
+}
+
+for name in \
+  scalars \
+  owned-control \
+  composite-values \
+  adt-match \
+  control-flow-loops \
+  owned-overwrite \
+  slice-append \
+  borrowed-callables \
+  function-values \
+  composite-bounds \
+  integer-division-zero; do
+  compare_native_pair "backend-$name" false
+done
+for name in adt-allocation-failure slice-append-allocation-failure; do
+  compare_native_pair "backend-$name" true
+done
+for name in \
+  dynamic-owned-string \
+  string-intrinsics \
+  platform-intrinsics \
+  platform-exit-range; do
+  compare_native_pair "backend-project-$name" false
+done
+for name in \
+  dynamic-string-allocation-failure \
+  string-join-allocation-failure \
+  platform-os-args-allocation-failure \
+  platform-fs-read-allocation-failure; do
+  compare_native_pair "backend-project-$name" true
+done
+
 compiler_bytes="$(wc -c <"$STAGE2_C" | tr -d ' ')"
 sanitizer_status="passed"
 if [[ "$SKIP_SANITIZERS" == true ]]; then
   sanitizer_status="skipped"
 fi
-echo "self-hosting B4 fixed-point gate passed: bytes=$compiler_bytes fixtures=$pair_count parser-corpus=$corpus_count backend-projects=$backend_project_count sanitizer=$sanitizer_status elapsed=$((SECONDS - started))s"
+echo "self-hosting B4 fixed-point gate passed: bytes=$compiler_bytes conformance=full backend-fixtures=$backend_fixture_count backend-projects=$backend_project_count native-pairs=$native_pair_count sanitizer=$sanitizer_status elapsed=$((SECONDS - started))s"

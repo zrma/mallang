@@ -1836,7 +1836,7 @@ B4 work.
 
 ## P178: B4 Self-Hosting Fixed Point
 
-상태: active; P178a complete, P178b-P178c pending (2026-07-23)
+상태: active; P178a-P178b complete, P178c pending (2026-07-23)
 
 - [x] Stage0가 declared compiler source set에서 Stage1 생성
 - [x] Stage1이 identical input에서 strict-C11 Stage2 생성
@@ -1844,8 +1844,8 @@ B4 work.
 - [x] ASan/UBSan Stage2의 identical compiler regeneration
 - [x] complete compiler-core fixture와 parser corpus behavior parity
 - [x] compiler project와 linked backend-project C parity
-- [ ] complete package/linker/standard-project conformance parity
-- [ ] native output, rejection, accounting과 sanitizer parity
+- [x] complete package/linker/standard-project conformance parity
+- [x] native output, rejection, accounting과 sanitizer parity
 - [ ] macOS arm64/Linux x86_64 fixed-point CI와 publication acceptance
 
 Exact scope and deep-gate layering are owned by

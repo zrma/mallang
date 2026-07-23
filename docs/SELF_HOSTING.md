@@ -247,6 +247,14 @@ point, reproduces it under ASan/UBSan and matches 487 compiler-pair fixtures,
 the 168-source parser corpus, four compiler project operations and eight linked
 backend projects. P178b-P178c remain active.
 
+P178b is complete. The existing B2 harness exposes a compiler-pair mode, so
+Stage1 and Stage2 traverse the same complete package-layout, linker,
+standard-project, compiler-project, fixture and parser-corpus inventory. The B4
+gate additionally compares fourteen flat and eight linked backend C outputs and
+runs twenty-one strict native positive/rejection/allocation pairs. B3 accounting
+and Stage0 parity apply transitively to the byte-identical C. P178c remote
+supported-platform acceptance remains open.
+
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
 strict-accounting and sanitizer execution. B2 is complete: P176a provides the

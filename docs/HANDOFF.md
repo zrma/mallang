@@ -803,6 +803,11 @@ native behavior parity는 P178b, supported-platform publication closure는 P178c
 P178a full deep gate는 9,780,069-byte compiler C fixed point, 487 pair fixture,
 168-source parser corpus, 8 backend project와 ASan/UBSan regeneration을 통과했다. 관측된
 360초는 host-local evidence이며 threshold가 아니다.
+P178b는 기존 B2 harness에 `--compiler-pair <stage1> <stage2>`를 추가해 fixture,
+package-layout, linker, standard/compiler project와 parser corpus inventory를 재사용한다.
+B4 deep gate는 별도로 14 flat/8 linked backend C와 21 strict native
+positive/rejection/allocation pair를 비교한다. Full sanitizer gate는 295초에 통과했으며,
+P178c supported-platform publication acceptance만 남았다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

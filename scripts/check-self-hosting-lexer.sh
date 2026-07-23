@@ -6,7 +6,7 @@ cd "$ROOT"
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/check-self-hosting-lexer.sh [--fast | --focus <area>] [--jobs <count>]
+usage: scripts/check-self-hosting-lexer.sh [--fast | --focus <area> | --compiler-pair <stage1> <stage2>] [--jobs <count>]
 
 areas: lexer parser packages linker specialize semantic ir standard
 EOF
@@ -14,11 +14,14 @@ EOF
 
 MODE="full"
 FOCUS=""
+PAIR_MODE=false
+PAIR_STAGE1=""
+PAIR_STAGE2=""
 JOBS="${SELF_HOSTING_JOBS:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fast)
-      if [[ "$MODE" != "full" ]]; then
+      if [[ "$MODE" != "full" || "$PAIR_MODE" == true ]]; then
         usage
         exit 2
       fi
@@ -26,13 +29,23 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --focus)
-      if [[ "$MODE" != "full" || $# -lt 2 ]]; then
+      if [[ "$MODE" != "full" || "$PAIR_MODE" == true || $# -lt 2 ]]; then
         usage
         exit 2
       fi
       MODE="focused"
       FOCUS="$2"
       shift 2
+      ;;
+    --compiler-pair)
+      if [[ "$MODE" != "full" || "$PAIR_MODE" == true || $# -lt 3 ]]; then
+        usage
+        exit 2
+      fi
+      PAIR_MODE=true
+      PAIR_STAGE1="$2"
+      PAIR_STAGE2="$3"
+      shift 3
       ;;
     --jobs)
       if [[ $# -lt 2 ]]; then
@@ -74,34 +87,47 @@ if [[ ! "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
-if command -v cargo >/dev/null 2>&1; then
-  CARGO=(cargo)
-elif command -v rustup >/dev/null 2>&1; then
-  CARGO=(rustup run stable cargo)
-else
-  echo "self-hosting lexer check failed: cargo is required" >&2
-  exit 1
-fi
-
-if command -v rustc >/dev/null 2>&1; then
-  RUSTC=(rustc)
-elif command -v rustup >/dev/null 2>&1; then
-  RUSTC=(rustup run stable rustc)
-else
-  echo "self-hosting lexer check failed: rustc is required" >&2
-  exit 1
-fi
-
+CARGO=()
+RUSTC=()
 CLANG_BIN="${CLANG:-clang}"
-command -v "$CLANG_BIN" >/dev/null 2>&1 || {
-  echo "self-hosting lexer check failed: clang is required" >&2
-  exit 1
-}
+if [[ "$PAIR_MODE" == false ]]; then
+  if command -v cargo >/dev/null 2>&1; then
+    CARGO=(cargo)
+  elif command -v rustup >/dev/null 2>&1; then
+    CARGO=(rustup run stable cargo)
+  else
+    echo "self-hosting lexer check failed: cargo is required" >&2
+    exit 1
+  fi
+
+  if command -v rustc >/dev/null 2>&1; then
+    RUSTC=(rustc)
+  elif command -v rustup >/dev/null 2>&1; then
+    RUSTC=(rustup run stable rustc)
+  else
+    echo "self-hosting lexer check failed: rustc is required" >&2
+    exit 1
+  fi
+
+  command -v "$CLANG_BIN" >/dev/null 2>&1 || {
+    echo "self-hosting lexer check failed: clang is required" >&2
+    exit 1
+  }
+fi
 
 WORK="target/mallang/self-hosting/b1-lexer"
 STAGE0="target/debug/mlg"
 STAGE1="$WORK/bootstrap-frontend"
 ORACLE="$WORK/bootstrap-frontend-oracle"
+if [[ "$PAIR_MODE" == true ]]; then
+  if [[ ! -x "$PAIR_STAGE1" || ! -x "$PAIR_STAGE2" ]]; then
+    echo "self-hosting compiler-pair check requires two executable compilers" >&2
+    exit 1
+  fi
+  WORK="target/mallang/self-hosting/b4-fixed-point/conformance"
+  STAGE1="$PAIR_STAGE2"
+  ORACLE="$PAIR_STAGE1"
+fi
 PROJECT="bootstrap/compiler"
 GENERATED_C="$PROJECT/target/mallang/bootstrap_compiler.c"
 FIXTURES="$PROJECT/fixtures/lexer"
@@ -134,6 +160,7 @@ report_phase() {
   phase_started=$SECONDS
 }
 
+if [[ "$PAIR_MODE" == false ]]; then
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
 "$STAGE0" fmt --check "$PROJECT"
 "$STAGE0" check "$PROJECT" >/dev/null
@@ -259,11 +286,18 @@ if [[ "$bootstrap_build_failed" -ne 0 ]]; then
   exit 1
 fi
 
+ACCOUNTING="$WORK/accounting"
+SANITIZER="$WORK/accounting-san"
+else
+  ACCOUNTING="$STAGE1"
+  SANITIZER="$STAGE1"
+fi
+
 export SELF_HOSTING_WORK="$WORK"
 export SELF_HOSTING_STAGE1="$STAGE1"
 export SELF_HOSTING_ORACLE="$ORACLE"
-export SELF_HOSTING_ACCOUNTING="$WORK/accounting"
-export SELF_HOSTING_SANITIZER="$WORK/accounting-san"
+export SELF_HOSTING_ACCOUNTING="$ACCOUNTING"
+export SELF_HOSTING_SANITIZER="$SANITIZER"
 
 report_phase bootstrap
 
@@ -451,7 +485,10 @@ compare_project_link() {
 
 fixture_profile="full"
 corpus_profile="full"
-if [[ "$MODE" == "fast" ]]; then
+if [[ "$PAIR_MODE" == true ]]; then
+  fixture_profile="stage1"
+  corpus_profile="stage1"
+elif [[ "$MODE" == "fast" ]]; then
   fixture_profile="strict"
   corpus_profile="stage1"
 elif [[ "$MODE" == "focused" ]]; then
@@ -865,7 +902,9 @@ fi
 report_phase parser-corpus
 
 cleanup_regressions=()
-if [[ "$MODE" != "focused" ]]; then
+if [[ "$PAIR_MODE" == true ]]; then
+  cleanup_regressions=()
+elif [[ "$MODE" != "focused" ]]; then
   cleanup_regressions=(
     append-match
     append-match-loop
@@ -932,7 +971,9 @@ EOF
 done
 fi
 
-if [[ "$MODE" != "focused" ]]; then
+if [[ "$PAIR_MODE" == true ]]; then
+  :
+elif [[ "$MODE" != "focused" ]]; then
   if [[ "$(cat "$WORK/append-match.stdout")" != "2" ]] || \
     [[ "$(cat "$WORK/append-match-loop.stdout")" != "1" ]] || \
     [[ "$(cat "$WORK/match-arm-return-temp.stdout")" != "7" ]] || \
@@ -953,7 +994,9 @@ fi
 
 report_phase cleanup-regressions
 
-if [[ "$MODE" == "focused" ]]; then
+if [[ "$PAIR_MODE" == true ]]; then
+  echo "self-hosting compiler-pair gate passed: fixture-tasks=$FIXTURE_TASK_COUNT parser-corpus=$parser_corpus_count jobs=$JOBS elapsed=$((SECONDS - gate_started))s"
+elif [[ "$MODE" == "focused" ]]; then
   echo "self-hosting B2 focused gate passed: focus=$FOCUS fixture-tasks=$FIXTURE_TASK_COUNT jobs=$JOBS elapsed=$((SECONDS - gate_started))s"
 else
   echo "self-hosting B2 $MODE gate passed: parser-corpus=$parser_corpus_count jobs=$JOBS elapsed=$((SECONDS - gate_started))s"

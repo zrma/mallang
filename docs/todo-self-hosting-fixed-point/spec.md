@@ -1,6 +1,6 @@
 # Spec: B4 Self-Hosting Fixed Point
 
-Status: active; P178a complete, P178b-P178c pending
+Status: active; P178a-P178b complete, P178c pending
 
 ## Objective
 
@@ -47,6 +47,16 @@ took 360 seconds; this is evidence for gate isolation, not a threshold.
   across the fixed-point compiler
 - retain deterministic diagnostics for malformed and crash-corpus inputs
 
+P178b is complete. The B2 differential harness now has an explicit
+`--compiler-pair <stage1> <stage2>` mode that reuses its complete fixture,
+package-layout, linker, standard-project, compiler-project and parser-corpus
+inventory without rebuilding Rust or native accounting artifacts. The B4 gate
+adds fourteen flat and eight linked backend C comparisons, then strict-compiles
+and runs twenty-one positive, runtime-rejection and forced-allocation compiler
+pairs. Stage1 and Stage2 status, stdout and stderr agree throughout. The closed
+B3 gate supplies allocation-accounting and Stage0 parity for the identical C.
+One complete P178b deep-gate run took 295 seconds; this is not a threshold.
+
 ### P178c: B4 Closure
 
 - run the argument-free fixed-point gate on every supported platform
@@ -74,8 +84,8 @@ took 360 seconds; this is evidence for gate isolation, not a threshold.
 - [x] sanitized Stage2 regenerates the identical fixed-point C
 - [x] compiler-core fixture and repository parser-corpus behavior matches
 - [x] compiler project and linked backend-project output matches
-- [ ] complete project-graph and standard-project conformance matches
-- [ ] native output, rejection, accounting and sanitizer behavior matches
+- [x] complete project-graph and standard-project conformance matches
+- [x] native output, rejection, accounting and sanitizer behavior matches
 - [ ] macOS arm64 and Linux x86_64 fixed-point CI acceptance
 - [ ] B4 canonical publication acceptance
 

@@ -26,7 +26,9 @@ expect_status_2() {
 scripts/check-self-hosting-lexer.sh --help \
   >"$work/self-hosting-help.stdout" 2>"$work/self-hosting-help.stderr"
 if ! grep -Fq -- '--focus <area>' "$work/self-hosting-help.stderr" || \
-  ! grep -Fq -- '--jobs <count>' "$work/self-hosting-help.stderr"; then
+  ! grep -Fq -- '--jobs <count>' "$work/self-hosting-help.stderr" || \
+  ! grep -Fq -- '--compiler-pair <stage1> <stage2>' \
+    "$work/self-hosting-help.stderr"; then
   echo "self-hosting gate help is missing focused or worker controls" >&2
   exit 1
 fi
@@ -36,6 +38,11 @@ grep -Fq 'unknown self-hosting focus area: nope' "$work/invalid-focus.stderr"
 
 expect_status_2 invalid-jobs scripts/check-self-hosting-lexer.sh --jobs 0
 grep -Fq 'self-hosting jobs must be a positive integer' "$work/invalid-jobs.stderr"
+
+expect_status_2 missing-compiler-pair \
+  scripts/check-self-hosting-lexer.sh --compiler-pair stage1
+grep -Fq 'usage: scripts/check-self-hosting-lexer.sh' \
+  "$work/missing-compiler-pair.stderr"
 
 expect_status_2 missing-worker-args scripts/check-self-hosting-fixture.sh
 grep -Fq 'usage: scripts/check-self-hosting-fixture.sh' "$work/missing-worker-args.stderr"
