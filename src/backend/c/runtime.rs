@@ -208,8 +208,8 @@ static mlg_String MLG_UNUSED mallang_string_owned_copy(mlg_String mlg_source) {
 }
 
 static bool MLG_UNUSED mallang_string_equal(mlg_String mlg_left, mlg_String mlg_right) {
-    mallang_validate_string(mlg_left);
-    mallang_validate_string(mlg_right);
+    mallang_validate_string_layout(mlg_left);
+    mallang_validate_string_layout(mlg_right);
     return mlg_left.mlg_len == mlg_right.mlg_len &&
         (mlg_left.mlg_len == 0 ||
          memcmp(mlg_left.mlg_data, mlg_right.mlg_data, mlg_left.mlg_len) == 0);

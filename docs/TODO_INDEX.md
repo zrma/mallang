@@ -32,6 +32,7 @@ Status: canonical
 - v0.1-v1.0 언어·컴파일러·배포 마일스톤
 - v1.1 streaming text I/O
 - v1.2 self-hosting B0-B5와 기본 컴파일러 전환
+- self-hosted compiler project `check` 성능 개선
 - 세부 ownership, parser, backend, runtime 결정과 회귀 작업
 
 완료 기록은 다음 명령으로 찾는다.

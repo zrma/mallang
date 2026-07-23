@@ -313,10 +313,13 @@ signatures are listed in `docs/STANDARD_LIBRARY.md`.
 - Accepted standard calls and function values retain a typed intrinsic identity
   in IR. Implemented standard functions also work through ordinary function
   values and indirect calls.
-- `string` values are immutable valid UTF-8. `std/strings` implements byte
-  length, Unicode scalar count, byte-offset search, split, join, integer and
-  boolean formatting, and strict parsing with the signatures fixed by the v0.6
-  contract.
+- `string` values are immutable valid UTF-8. Literals and external byte ingress
+  establish this invariant; owned-string operations accept validated input or
+  preserve UTF-8 boundaries. Byte equality guards storage, data, and length
+  before comparing valid values without a repeated full UTF-8 scan.
+  `std/strings` implements byte length, Unicode scalar count, byte-offset search,
+  split, join, integer and boolean formatting, and strict parsing with the
+  signatures fixed by the v0.6 contract.
 - `find` returns the first byte offset, including `Some(0)` for an empty needle.
   Splitting on a non-empty separator preserves empty fields; an empty separator
   splits by Unicode scalar value and returns an empty slice for empty input.

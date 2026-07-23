@@ -2356,6 +2356,13 @@ print(word != "rust")
             .count(),
         2
     );
+    assert!(c.contains(
+        "mallang_validate_string_layout(mlg_left);\n    \
+         mallang_validate_string_layout(mlg_right);"
+    ));
+    assert!(
+        !c.contains("mallang_validate_string(mlg_left);\n    mallang_validate_string(mlg_right);")
+    );
     assert!(c.contains("memcmp(mlg_left.mlg_data, mlg_right.mlg_data, mlg_left.mlg_len)"));
     assert!(c.contains("mlg_drop_string(&(mlg_word));"));
 }

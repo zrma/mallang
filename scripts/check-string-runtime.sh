@@ -54,6 +54,27 @@ int main(void) {
 }
 EOF
 
+cat >"$OUT_DIR/malformed-equality.c" <<EOF
+#define main mallang_example_main
+#include "$(cd "$(dirname "$GENERATED_C")" && pwd)/$(basename "$GENERATED_C")"
+#undef main
+
+int main(void) {
+    mlg_String mlg_invalid = (mlg_String){
+        .mlg_data = NULL,
+        .mlg_len = 1,
+        .mlg_storage = MLG_STRING_STATIC
+    };
+    mlg_String mlg_valid = (mlg_String){
+        .mlg_data = "x",
+        .mlg_len = 1,
+        .mlg_storage = MLG_STRING_STATIC
+    };
+    (void)mallang_string_equal(mlg_invalid, mlg_valid);
+    return 0;
+}
+EOF
+
 cat >"$OUT_DIR/overflow.c" <<EOF
 #define main mallang_example_main
 #include "$(cd "$(dirname "$GENERATED_C")" && pwd)/$(basename "$GENERATED_C")"
@@ -122,6 +143,7 @@ expect_failure() {
 }
 
 expect_failure malformed "invalid string data"
+expect_failure malformed-equality "invalid string data"
 expect_failure overflow "string allocation size overflow"
 expect_failure invalid-utf8 "invalid UTF-8 string data"
 
