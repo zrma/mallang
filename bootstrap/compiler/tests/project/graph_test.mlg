@@ -1,0 +1,89 @@
+package project
+
+test BuildsRootFirstDependencyPostorderPlan() {
+    shared := NewSnapshotUnit(con "/repo/deps/shared/mallang.toml", con "shared", con []SnapshotDependency{})
+    textDependency := NewSnapshotDependency(con "shared", con "../shared", con "/repo/deps/shared/mallang.toml")
+    text := NewSnapshotUnit(con "/repo/deps/text/mallang.toml", con "text", con []SnapshotDependency{textDependency})
+    rootText := NewSnapshotDependency(con "text", con "deps/text", con "/repo/deps/text/mallang.toml")
+    rootShared := NewSnapshotDependency(con "shared", con "deps/shared", con "/repo/deps/shared/mallang.toml")
+    root := NewSnapshotUnit(con "/repo/mallang.toml", con "app", con []SnapshotDependency{rootText, rootShared})
+
+    match BuildPlan(con "/repo/mallang.toml", con []SnapshotUnit {
+        text, root, shared
+    }
+    ){case Ok(plan) {
+            assert(PlanUnitCount(con plan) == 3)
+            assert(PlanUnitName(con plan, 0) == "app")
+            assert(PlanUnitName(con plan, 1) == "shared")
+            assert(PlanUnitName(con plan, 2) == "text")
+            assert(PlanUnitSourceRoot(con plan, 0) == "/repo/src")
+            assert(PlanUnitDependencyCount(con plan, 0) == 2)
+            assert(PlanUnitDependency(con plan, 0, 0) == "shared")
+            assert(PlanUnitDependency(con plan, 0, 1) == "text")
+            assert(PlanUnitDependency(con plan, 2, 0) == "shared")
+        }
+        case Err(_) {
+            assert(false)
+        }
+    }
+}
+
+test RejectsDependencyCycleAndNameMismatch() {
+    appToText := NewSnapshotDependency(con "text", con "deps/text", con "/repo/deps/text/mallang.toml")
+    textToApp := NewSnapshotDependency(con "app", con "../..", con "/repo/mallang.toml")
+    app := NewSnapshotUnit(con "/repo/mallang.toml", con "app", con []SnapshotDependency{appToText})
+    text := NewSnapshotUnit(con "/repo/deps/text/mallang.toml", con "text", con []SnapshotDependency{textToApp})
+    match BuildPlan(con "/repo/mallang.toml", con []SnapshotUnit {
+        app, text
+    }
+    ){case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(PlanErrorMessage(con error) == "project dependency cycle: app -> text -> app")
+        }
+    }
+
+    wrong := NewSnapshotDependency(con "wrong", con "deps/text", con "/repo/deps/text/mallang.toml")
+    mismatch := NewSnapshotUnit(con "/repo/mallang.toml", con "app", con []SnapshotDependency{wrong})
+    mismatchText := NewSnapshotUnit(con "/repo/deps/text/mallang.toml", con "text", con []SnapshotDependency{})
+    match BuildPlan(con "/repo/mallang.toml", con []SnapshotUnit {
+        mismatch, mismatchText
+    }
+    ){case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(PlanErrorMessage(con error) == "/repo/mallang.toml: dependency key `wrong` does not match target project name `text`")
+        }
+    }
+}
+
+test RejectsProjectNameCollisionAndInvalidPath() {
+    left := NewSnapshotUnit(con "/repo/left/mallang.toml", con "shared", con []SnapshotDependency{})
+    right := NewSnapshotUnit(con "/repo/right/mallang.toml", con "shared", con []SnapshotDependency{})
+    match BuildPlan(con "/repo/left/mallang.toml", con []SnapshotUnit {
+        left, right
+    }
+    ){case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(PlanErrorMessage(con error) == "project name `shared` resolves to multiple manifests: /repo/left/mallang.toml and /repo/right/mallang.toml")
+        }
+    }
+
+    absolute := NewSnapshotDependency(con "text", con "/repo/text", con "/repo/text/mallang.toml")
+    app := NewSnapshotUnit(con "/repo/mallang.toml", con "app", con []SnapshotDependency{absolute})
+    text := NewSnapshotUnit(con "/repo/text/mallang.toml", con "text", con []SnapshotDependency{})
+    match BuildPlan(con "/repo/mallang.toml", con []SnapshotUnit {
+        app, text
+    }
+    ){case Ok(_) {
+            assert(false)
+        }
+        case Err(error) {
+            assert(PlanErrorMessage(con error) == "/repo/mallang.toml: dependency `text` path `/repo/text` must be a non-empty relative directory path")
+        }
+    }
+}

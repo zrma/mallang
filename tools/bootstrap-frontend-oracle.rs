@@ -56,6 +56,62 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
+    if first == "project-plan" {
+        let Some(root_manifest) = args.next() else {
+            eprintln!("usage: bootstrap-frontend-oracle project-plan <root-manifest> <snapshot>...");
+            return ExitCode::from(2);
+        };
+        let Some(unit_count) = args.next().and_then(|value| value.parse::<usize>().ok()) else {
+            eprintln!("bootstrap frontend oracle received an invalid project snapshot count");
+            return ExitCode::from(2);
+        };
+        for _ in 0..unit_count {
+            if args.next().is_none() || args.next().is_none() {
+                eprintln!("bootstrap frontend oracle received an incomplete project snapshot unit");
+                return ExitCode::from(2);
+            }
+            let Some(dependency_count) =
+                args.next().and_then(|value| value.parse::<usize>().ok())
+            else {
+                eprintln!("bootstrap frontend oracle received an invalid project dependency count");
+                return ExitCode::from(2);
+            };
+            for _ in 0..dependency_count {
+                if args.next().is_none() || args.next().is_none() || args.next().is_none() {
+                    eprintln!("bootstrap frontend oracle received an incomplete project snapshot dependency");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        if args.next().is_some() {
+            eprintln!("bootstrap frontend oracle received trailing project snapshot arguments");
+            return ExitCode::from(2);
+        }
+        let project = match discover_project(&root_manifest) {
+            Ok(project) => project,
+            Err(error) => {
+                println!("GERR|{}", encode_bytes(&error.to_string()));
+                return ExitCode::SUCCESS;
+            }
+        };
+        let units = project.compiler_units().collect::<Vec<_>>();
+        println!("PROJECT|1|{}", units.len());
+        for unit in units {
+            let dependencies = unit.direct_dependencies().collect::<Vec<_>>();
+            print!(
+                "UNIT|{}|{}|{}|{}",
+                encode_bytes(unit.name()),
+                encode_bytes(&unit.manifest_path().to_string_lossy()),
+                encode_bytes(&unit.source_root().to_string_lossy()),
+                dependencies.len()
+            );
+            for dependency in dependencies {
+                print!("|{}", encode_bytes(dependency));
+            }
+            println!();
+        }
+        return ExitCode::SUCCESS;
+    }
     if first == "parse-sources" {
         let paths = args.collect::<Vec<_>>();
         if paths.is_empty() {

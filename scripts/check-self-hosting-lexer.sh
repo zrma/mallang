@@ -190,6 +190,8 @@ else
       focused_tests=(
         bootstrap_compiler/project::ParsesCanonicalManifestAndSortsDependencies
         bootstrap_compiler/project::RejectsMalformedDependencyEntries
+        bootstrap_compiler/project::BuildsRootFirstDependencyPostorderPlan
+        bootstrap_compiler/project::RejectsDependencyCycleAndNameMismatch
       )
       ;;
     linker)
@@ -653,6 +655,26 @@ if [[ "$MODE" != "focused" || "$FOCUS" == "project" ]]; then
 fi
 
 report_phase manifest-differentials
+
+if [[ "$MODE" != "focused" || "$FOCUS" == "project" ]]; then
+  project_plan_root="$(cd examples/projects/local-deps/app && pwd)/mallang.toml"
+  project_plan_model="$(cd examples/projects/local-deps/model && pwd)/mallang.toml"
+  project_plan_text="$(cd examples/projects/local-deps/text && pwd)/mallang.toml"
+  compare_project_invocation \
+    project-plan-local-deps \
+    "$fixture_profile" \
+    project-plan \
+    "$project_plan_root" \
+    3 \
+    "$project_plan_root" pathapp 2 \
+    model ../model "$project_plan_model" \
+    text ../text "$project_plan_text" \
+    "$project_plan_model" model 0 \
+    "$project_plan_text" text 1 \
+    model ../model "$project_plan_model"
+fi
+
+report_phase project-plan-differential
 
 if [[ "$MODE" != "focused" || "$FOCUS" == "parser" || "$FOCUS" == "packages" ]]; then
   compare_source_set \

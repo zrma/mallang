@@ -300,10 +300,17 @@ P179b2b1 adds the Mallang-owned strict manifest parser and byte-encoded
 comments, whitespace, escapes, deterministic dependency ordering and malformed
 fields. The focused self-hosting gate differentially checks every tracked
 `mallang.toml` against the Rust `toml` oracle through Stage1, strict allocation
-accounting and a sanitizer representative. The public driver does not consume
-this protocol yet: Rust still resolves canonical paths, assembles and validates
-the dependency graph, enumerates source files and owns public IR output. Those
-remaining boundaries are the next P179b2b slices.
+accounting and a sanitizer representative.
+
+P179b2b2a adds the Mallang-owned graph planner and versioned `PROJECT|1` plan.
+It validates lowercase/reserved names, relative dependency paths, exact
+key/name identity, canonical manifest collisions, reachability and cycles, then
+emits the existing root-first unit view with dependency-first postorder. The
+local-dependency differential matches the Rust oracle through Stage1, strict
+allocation accounting and sanitizer execution. The public driver does not
+consume these protocols yet: Rust still brokers canonical paths, assembles the
+snapshot, enumerates source files and owns public IR output. Host integration
+and public behavior parity are the next P179b2b slices.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

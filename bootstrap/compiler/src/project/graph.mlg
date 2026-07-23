@@ -1,0 +1,334 @@
+package project
+
+import "std/strings"
+import "bootstrap_compiler/frontend/token"
+
+pub type SnapshotDependency struct {
+    name string
+    path string
+    targetManifest string
+}
+
+pub type SnapshotUnit struct {
+    manifestPath string
+    name string
+    dependencies []SnapshotDependency
+}
+
+pub type PlanUnit struct {
+    manifestPath string
+    name string
+    sourceRoot string
+    directDependencies []string
+}
+
+pub type Plan struct {
+    units []PlanUnit
+}
+
+pub type PlanError struct {
+    message string
+}
+
+type Planner struct {
+    snapshot []SnapshotUnit
+    states []int
+    stack []string
+    depth int
+    order []int
+}
+
+pub func NewSnapshotDependency(con name string, con path string, con targetManifest string) SnapshotDependency {
+    return SnapshotDependency{name: token.CopyText(con name), path: token.CopyText(con path), targetManifest: token.CopyText(con targetManifest),}
+}
+
+pub func NewSnapshotUnit(con manifestPath string, con name string, con dependencies []SnapshotDependency) SnapshotUnit {
+    return SnapshotUnit{manifestPath: token.CopyText(con manifestPath), name: token.CopyText(con name), dependencies: sortSnapshotDependencies(con dependencies),}
+}
+
+pub func BuildPlan(con rootManifest string, con units []SnapshotUnit) Result[Plan, PlanError] {
+    if len(units) == 0 {
+        return Err(newPlanError("project snapshot cannot be empty"))
+    }
+    mut snapshot := []SnapshotUnit{}
+    mut states := []int{}
+    for mut index := 0; index < len(units); index = index + 1 {
+        snapshot = append(snapshot, copySnapshotUnit(con units[index]))
+        states = append(states, 0)
+    }
+    root := findSnapshotUnit(con snapshot, con rootManifest)
+    if root < 0 {
+        return Err(newPlanError("project snapshot does not contain the root manifest"))
+    }
+    match validateSnapshot(con snapshot) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+
+    mut planner := Planner{snapshot: snapshot, states: states, stack: []string{}, depth: 0, order: []int{},}
+    match planner.visit(root) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    for mut index := 0; index < len(planner.states); index = index + 1 {
+        if planner.states[index]!= 2 {
+            return Err(newPlanError("project snapshot contains an unreachable manifest"))
+        }
+    }
+
+    mut planned := []PlanUnit{planUnit(con planner.snapshot[root]),}
+    for mut index := 0; index < len(planner.order); index = index + 1 {
+        unit := planner.order[index]
+        if unit != root {
+            planned = append(planned, planUnit(con planner.snapshot[unit]))
+        }
+    }
+    return Ok(Plan{units: planned})
+}
+
+pub func NormalizePlan(con plan Plan) string {
+    mut lines := []string{strings.join(con []string{"PROJECT|1|", strings.fromInt(len(plan.units)),}, con ""),}
+    for mut unit := 0; unit < len(plan.units); unit = unit + 1 {
+        mut line := strings.join(con []string{"UNIT|", token.EncodeBytes(con plan.units[unit].name), "|", token.EncodeBytes(con plan.units[unit].manifestPath), "|", token.EncodeBytes(con plan.units[unit].sourceRoot), "|", strings.fromInt(len(plan.units[unit].directDependencies)),}, con "")
+        for mut dependency := 0; dependency < len(plan.units[unit].directDependencies); dependency = dependency + 1 {
+            line = strings.join(con []string{line, "|", token.EncodeBytes(con plan.units[unit].directDependencies[dependency]),}, con "")
+        }
+        lines = append(lines, line)
+    }
+    return strings.join(con lines, con "\n")
+}
+
+pub func NormalizePlanError(con error PlanError) string {
+    return strings.join(con []string{"GERR|", token.EncodeBytes(con error.message),}, con "")
+}
+
+pub func PlanErrorMessage(con error PlanError) string {
+    return token.CopyText(con error.message)
+}
+
+pub func PlanUnitCount(con plan Plan) int {
+    return len(plan.units)
+}
+
+pub func PlanUnitName(con plan Plan, index int) string {
+    return token.CopyText(con plan.units[index].name)
+}
+
+pub func PlanUnitManifest(con plan Plan, index int) string {
+    return token.CopyText(con plan.units[index].manifestPath)
+}
+
+pub func PlanUnitSourceRoot(con plan Plan, index int) string {
+    return token.CopyText(con plan.units[index].sourceRoot)
+}
+
+pub func PlanUnitDependencyCount(con plan Plan, index int) int {
+    return len(plan.units[index].directDependencies)
+}
+
+pub func PlanUnitDependency(con plan Plan, unit int, dependency int) string {
+    return token.CopyText(con plan.units[unit].directDependencies[dependency])
+}
+
+func validateSnapshot(con snapshot []SnapshotUnit) Result[bool, PlanError] {
+    for mut index := 0; index < len(snapshot); index = index + 1 {
+        if snapshot[index].manifestPath == "" {
+            return Err(newPlanError("project snapshot manifest path cannot be empty"))
+        }
+        for mut previous := 0; previous < index; previous = previous + 1 {
+            if snapshot[previous].manifestPath == snapshot[index].manifestPath {
+                return Err(newPlanError(strings.join(con []string{"project snapshot repeats manifest `", token.CopyText(con snapshot[index].manifestPath), "`",}, con "")))
+            }
+            if snapshot[previous].name == snapshot[index].name {
+                return Err(newPlanError(strings.join(con []string{"project name `", token.CopyText(con snapshot[index].name), "` resolves to multiple manifests: ", token.CopyText(con snapshot[previous].manifestPath), " and ", token.CopyText(con snapshot[index].manifestPath),}, con "")))
+            }
+        }
+        if !isValidProjectName(con snapshot[index].name) {
+            return Err(newPlanError(strings.join(con []string{token.CopyText(con snapshot[index].manifestPath), ": invalid project name `", token.CopyText(con snapshot[index].name), "`; expected a lowercase path name",}, con "")))
+        }
+        if snapshot[index].name == "std" {
+            return Err(newPlanError(strings.join(con []string{token.CopyText(con snapshot[index].manifestPath), ": project name `std` is reserved for compiler-owned standard packages",}, con "")))
+        }
+        for mut dependency := 0; dependency < len(snapshot[index].dependencies); dependency = dependency + 1 {
+            item := copySnapshotDependency(con snapshot[index].dependencies[dependency])
+            if item.path == "" || startsWithSlash(con item.path) {
+                return Err(newPlanError(strings.join(con []string{token.CopyText(con snapshot[index].manifestPath), ": dependency `", token.CopyText(con item.name), "` path `", token.CopyText(con item.path), "` must be a non-empty relative directory path",}, con "")))
+            }
+            target := findSnapshotUnit(con snapshot, con item.targetManifest)
+            if target < 0 {
+                return Err(newPlanError(strings.join(con []string{"dependency target manifest `", token.CopyText(con item.targetManifest), "` is not part of the project snapshot",}, con "")))
+            }
+            if snapshot[target].name != item.name {
+                return Err(newPlanError(strings.join(con []string{token.CopyText(con snapshot[index].manifestPath), ": dependency key `", token.CopyText(con item.name), "` does not match target project name `", token.CopyText(con snapshot[target].name), "`",}, con "")))
+            }
+        }
+    }
+    return Ok(true)
+}
+
+func (mut self Planner) visit(index int) Result[bool, PlanError] {
+    if self.states[index]== 2 {
+        return Ok(true)
+    }
+    self.states[index]= 1
+    name := token.CopyText(con self.snapshot[index].name)
+    if self.depth < len(self.stack) {
+        self.stack[self.depth]= token.CopyText(con name)
+    } else {
+        self.stack = append(self.stack, token.CopyText(con name))
+    }
+    self.depth = self.depth + 1
+
+    for mut dependency := 0; dependency < len(self.snapshot[index].dependencies); dependency = dependency + 1 {
+        targetManifest := token.CopyText(con self.snapshot[index].dependencies[dependency].targetManifest)
+        target := findSnapshotUnit(con self.snapshot, con targetManifest)
+        if target < 0 {
+            return Err(newPlanError("project planner lost a validated dependency target"))
+        }
+        if self.states[target]== 1 {
+            mut cycleStart := 0
+            for mut stackIndex := 0; stackIndex < self.depth; stackIndex = stackIndex + 1 {
+                if self.stack[stackIndex]== self.snapshot[target].name {
+                    cycleStart = stackIndex
+                }
+            }
+            mut cycle := ""
+            for mut stackIndex := cycleStart; stackIndex < self.depth; stackIndex = stackIndex + 1 {
+                if cycle != "" {
+                    cycle = strings.join(con []string{cycle, " -> ",}, con "")
+                }
+                cycle = strings.join(con []string{cycle, token.CopyText(con self.stack[stackIndex]),}, con "")
+            }
+            cycle = strings.join(con []string{cycle, " -> ", token.CopyText(con self.snapshot[target].name),}, con "")
+            return Err(newPlanError(strings.join(con []string{"project dependency cycle: ", cycle,}, con "")))
+        }
+        if self.states[target]== 0 {
+            match self.visit(target) {
+                case Ok(_) {}
+                case Err(error) {
+                    return Err(error)
+                }
+            }
+        }
+    }
+    self.depth = self.depth - 1
+    self.states[index]= 2
+    self.order = append(self.order, index)
+    return Ok(true)
+}
+
+func planUnit(con unit SnapshotUnit) PlanUnit {
+    mut dependencies := []string{}
+    for mut index := 0; index < len(unit.dependencies); index = index + 1 {
+        dependencies = append(dependencies, token.CopyText(con unit.dependencies[index].name))
+    }
+    return PlanUnit{manifestPath: token.CopyText(con unit.manifestPath), name: token.CopyText(con unit.name), sourceRoot: sourceRoot(con unit.manifestPath), directDependencies: dependencies,}
+}
+
+func sourceRoot(con manifestPath string) string {
+    mut separator := -1
+    for mut index := 0; index < strings.byteLen(con manifestPath); index = index + 1 {
+        match strings.byteAt(con manifestPath, index) {
+            case Ok(byte) {
+                if byte == 47 {
+                    separator = index
+                }
+            }
+            case Err(_) {}
+        }
+    }
+    if separator < 0 {
+        return "src"
+    }
+    directory := sliceOrEmpty(con manifestPath, 0, separator)
+    return strings.join(con []string{directory, "/src",}, con "")
+}
+
+func findSnapshotUnit(con units []SnapshotUnit, con manifestPath string) int {
+    for mut index := 0; index < len(units); index = index + 1 {
+        if units[index].manifestPath == manifestPath {
+            return index
+        }
+    }
+    return - 1
+}
+
+func sortSnapshotDependencies(con dependencies []SnapshotDependency) []SnapshotDependency {
+    mut sorted := []SnapshotDependency{}
+    for mut index := 0; index < len(dependencies); index = index + 1 {
+        mut insertAt := len(sorted)
+        for mut candidate := 0; candidate < len(sorted); candidate = candidate + 1 {
+            if compareText(con dependencies[index].name, con sorted[candidate].name) < 0 {
+                insertAt = candidate
+                break
+            }
+        }
+        mut next := []SnapshotDependency{}
+        for mut existing := 0; existing < insertAt; existing = existing + 1 {
+            next = append(next, copySnapshotDependency(con sorted[existing]))
+        }
+        next = append(next, copySnapshotDependency(con dependencies[index]))
+        for mut existing := insertAt; existing < len(sorted); existing = existing + 1 {
+            next = append(next, copySnapshotDependency(con sorted[existing]))
+        }
+        sorted = next
+    }
+    return sorted
+}
+
+func copySnapshotUnit(con unit SnapshotUnit) SnapshotUnit {
+    mut dependencies := []SnapshotDependency{}
+    for mut index := 0; index < len(unit.dependencies); index = index + 1 {
+        dependencies = append(dependencies, copySnapshotDependency(con unit.dependencies[index]))
+    }
+    return SnapshotUnit{manifestPath: token.CopyText(con unit.manifestPath), name: token.CopyText(con unit.name), dependencies: dependencies,}
+}
+
+func copySnapshotDependency(con dependency SnapshotDependency) SnapshotDependency {
+    return SnapshotDependency{name: token.CopyText(con dependency.name), path: token.CopyText(con dependency.path), targetManifest: token.CopyText(con dependency.targetManifest),}
+}
+
+func startsWithSlash(con value string) bool {
+    if strings.byteLen(con value) == 0 {
+        return false
+    }
+    return match strings.byteAt(con value, 0) {
+        case Ok(byte) {
+            byte == 47
+        }
+        case Err(_) {
+            false
+        }
+    }
+}
+
+func isValidProjectName(con name string) bool {
+    if strings.byteLen(con name) == 0 {
+        return false
+    }
+    for mut index := 0; index < strings.byteLen(con name); index = index + 1 {
+        match strings.byteAt(con name, index) {
+            case Ok(byte) {
+                if index == 0 {
+                    if byte < 97 || byte > 122 {
+                        return false
+                    }
+                } else if !((byte >= 97 && byte <= 122) ||(byte >= 48 && byte <= 57) || byte == 45 || byte == 95) {
+                    return false
+                }
+            }
+            case Err(_) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+func newPlanError(message string) PlanError {
+    return PlanError{message: token.CopyText(con message)}
+}

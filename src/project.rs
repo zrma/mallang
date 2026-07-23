@@ -199,6 +199,10 @@ impl<'a> ProjectUnitRef<'a> {
         self.unit.name()
     }
 
+    pub fn manifest_path(self) -> &'a Path {
+        &self.unit.manifest_path
+    }
+
     pub fn source_root(self) -> &'a Path {
         &self.unit.source_root
     }

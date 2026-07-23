@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a, P179b1, P179b2a and P179b2b1 complete; P179b2b active
+Status: active; P179a, P179b1, P179b2a, P179b2b1 and P179b2b2a complete; P179b2b active
 
 ## Objective
 
@@ -85,9 +85,15 @@ P179b2b1 completes the first part of that move. The Mallang compiler now parses
 the normative `[project]` and `[dependencies]` manifest surface, rejects unknown
 or duplicate fields and emits a delimiter-safe, versioned manifest protocol.
 Its focused gate compares all tracked manifests with the Rust `toml` oracle and
-runs strict allocation and sanitizer checks. Public commands still call Rust
-project discovery, so path capability brokering, Mallang-owned graph assembly,
-source enumeration and public IR remain active P179b2b work.
+runs strict allocation and sanitizer checks.
+
+P179b2b2a adds a Mallang graph planner over canonical host snapshots. It owns
+project-name, dependency-path, key/name, collision, cycle, reachability and
+dependency-postorder decisions and emits the root-first `PROJECT|1` protocol.
+A local-dependency differential compares that plan with Rust through strict
+allocation and sanitizer execution. Public commands still call Rust project
+discovery, so path capability brokering and protocol decoding, source
+enumeration and public IR remain active P179b2b work.
 
 ### P179c: Tooling And Native Workflow
 

@@ -193,6 +193,44 @@ func runManifest(con args []string) {
     }
 }
 
+func runProjectPlan(con args []string) {
+    if len(args) < 5 {
+        fail(con "usage: bootstrap-frontend project-plan <root-manifest> <unit-count> (<manifest> <name> <dependency-count> (<name> <path> <target-manifest>)*)*\n")
+    }
+    unitCount := parseCliCount(con args[3])
+    mut argument := 4
+    mut units := []project.SnapshotUnit{}
+    for mut unit := 0; unit < unitCount; unit = unit + 1 {
+        if argument + 2 >= len(args) {
+            fail(con "bootstrap compiler received an incomplete project snapshot unit\n")
+        }
+        manifestPath := token.CopyText(con args[argument])
+        name := token.CopyText(con args[argument + 1])
+        dependencyCount := parseCliCount(con args[argument + 2])
+        argument = argument + 3
+        mut dependencies := []project.SnapshotDependency{}
+        for mut dependency := 0; dependency < dependencyCount; dependency = dependency + 1 {
+            if argument + 2 >= len(args) {
+                fail(con "bootstrap compiler received an incomplete project snapshot dependency\n")
+            }
+            dependencies = append(dependencies, project.NewSnapshotDependency(con args[argument], con args[argument + 1], con args[argument + 2]))
+            argument = argument + 3
+        }
+        units = append(units, project.NewSnapshotUnit(con manifestPath, con name, con dependencies))
+    }
+    if argument != len(args) {
+        fail(con "bootstrap compiler received trailing project snapshot arguments\n")
+    }
+    match project.BuildPlan(con args[2], con units) {
+        case Ok(plan) {
+            print(project.NormalizePlan(con plan))
+        }
+        case Err(error) {
+            print(project.NormalizePlanError(con error))
+        }
+    }
+}
+
 func parseCliCount(con value string) int {
     match strings.parseInt(con value) {
         case Ok(count) {
@@ -542,6 +580,10 @@ func main() {
             }
             if len(args) >= 2 && args[1]== "manifest" {
                 runManifest(con args)
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "project-plan" {
+                runProjectPlan(con args)
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "ir-project" {
