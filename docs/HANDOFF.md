@@ -509,6 +509,7 @@ target/mallang/match-statement
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
 - `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
 - `docs/todo-self-hosting-backend/`: closed B3 Mallang C backend contract
+- `docs/todo-self-hosting-fixed-point/`: active B4 fixed-point and conformance contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
@@ -794,6 +795,14 @@ source 908개 normalized IR function이 일치한다. P177d는 Stage1이 complet
 stable path order로 두 번 C 생성하고 byte identity 및 strict C11 compile을 확인해 B3를 닫았다.
 Source discovery, project graph argument assembly와 `clang` invocation은 declared host harness로
 남고, Stage1-to-Stage2 fixed point와 conformance behavior는 B4가 담당한다.
+P178a는 `scripts/check-self-hosting-fixed-point.sh`로 fresh Stage1, strict-C11 Stage2,
+Stage2 compiler regeneration과 ASan/UBSan regeneration을 분리된 deep gate에 둔다. 모든
+compiler-core fixture, repository parser corpus, compiler project operation과 linked backend
+project C를 Stage1/Stage2 status/stdout/stderr 기준으로 비교한다. Complete project-graph와
+native behavior parity는 P178b, supported-platform publication closure는 P178c에 남는다.
+P178a full deep gate는 9,780,069-byte compiler C fixed point, 487 pair fixture,
+168-source parser corpus, 8 backend project와 ASan/UBSan regeneration을 통과했다. 관측된
+360초는 host-local evidence이며 threshold가 아니다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

@@ -33,6 +33,37 @@ jobs:
           scripts/check.sh
           scripts/check-generated-c-sanitizers.sh --assume-generated
 
+  self-hosting-fixed-point:
+    name: Self-hosting fixed point (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux compiler prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang
+
+      - name: Run self-hosting fixed-point gate
+        run: scripts/check-self-hosting-fixed-point.sh
+
   release-artifact:
     name: Release artifact (${{ matrix.target }})
     runs-on: ${{ matrix.os }}

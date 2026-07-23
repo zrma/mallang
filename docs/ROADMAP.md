@@ -1834,6 +1834,25 @@ not used by the current compiler source and remain outside the closed B3
 bootstrap-critical surface. Stage2 generation and fixed-point conformance are
 B4 work.
 
+## P178: B4 Self-Hosting Fixed Point
+
+상태: active; P178a complete, P178b-P178c pending (2026-07-23)
+
+- [x] Stage0가 declared compiler source set에서 Stage1 생성
+- [x] Stage1이 identical input에서 strict-C11 Stage2 생성
+- [x] Stage1/Stage2 compiler-generated C byte identity
+- [x] ASan/UBSan Stage2의 identical compiler regeneration
+- [x] complete compiler-core fixture와 parser corpus behavior parity
+- [x] compiler project와 linked backend-project C parity
+- [ ] complete package/linker/standard-project conformance parity
+- [ ] native output, rejection, accounting과 sanitizer parity
+- [ ] macOS arm64/Linux x86_64 fixed-point CI와 publication acceptance
+
+Exact scope and deep-gate layering are owned by
+`docs/todo-self-hosting-fixed-point/`. The fixed-point gate remains parallel to
+the ordinary canonical repository gate so self-compiler sanitizer cost does not
+slow every edit loop. Default compiler transition remains B5 work.
+
 ## Deferred 2.0 Naming Conventions
 
 - [x] keep visibility controlled only by explicit `pub`

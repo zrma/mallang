@@ -24,6 +24,7 @@ commands:
   check_self_hosting_focused: scripts/check-self-hosting-lexer.sh --focus <area>
   check_self_hosting_backend: scripts/check-self-hosting-backend.sh
   check_self_hosting_backend_reuse: scripts/check-self-hosting-backend.sh --assume-bootstrap --fixtures-only
+  check_self_hosting_fixed_point: scripts/check-self-hosting-fixed-point.sh
   check_self_hosting_string_cursor: scripts/check-self-hosting-string-cursor.sh target/mallang/string-cursor.c
   check_path_dependencies: scripts/check-path-dependencies.sh target/debug/mlg
   check_diagnostics: scripts/check-diagnostics.sh target/debug/mlg

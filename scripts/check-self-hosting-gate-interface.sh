@@ -53,6 +53,16 @@ expect_status_2 invalid-backend-mode scripts/check-self-hosting-backend.sh --fas
 grep -Fq 'usage: scripts/check-self-hosting-backend.sh' \
   "$work/invalid-backend-mode.stderr"
 
+scripts/check-self-hosting-fixed-point.sh --help \
+  >"$work/fixed-point-help.stdout" 2>"$work/fixed-point-help.stderr"
+grep -Fq -- '--assume-bootstrap' "$work/fixed-point-help.stderr"
+grep -Fq -- '--skip-sanitizers' "$work/fixed-point-help.stderr"
+grep -Fq -- '--jobs <count>' "$work/fixed-point-help.stderr"
+expect_status_2 invalid-fixed-point-mode \
+  scripts/check-self-hosting-fixed-point.sh --fast
+grep -Fq 'usage: scripts/check-self-hosting-fixed-point.sh' \
+  "$work/invalid-fixed-point-mode.stderr"
+
 cat >"$work/ir-expected.txt" <<'EOF'
 IR|2
 FUNCTION|first|unit|0|1
@@ -102,5 +112,6 @@ if [[ "$(grep -Fc 'scripts/check.sh' .github/workflows/ci.yml)" -ne 1 ]] || \
 fi
 
 grep -Fq 'scripts/check-self-hosting-backend.sh --assume-bootstrap' scripts/check.sh
+grep -Fq 'scripts/check-self-hosting-fixed-point.sh' .github/workflows/ci.yml
 
 echo "self-hosting gate interface and CI role separation passed"

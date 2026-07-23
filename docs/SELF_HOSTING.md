@@ -84,10 +84,15 @@ Mallang to specific 1.x versions.
   gate. The complete gate also generates the compiler project twice and
   compiles it as strict C11. `--assume-bootstrap --fixtures-only` is the
   explicit artifact-reuse edit loop.
+- `scripts/check-self-hosting-fixed-point.sh`: isolated B4 Stage1/Stage2 C
+  identity, strict compile, compiler-core differential and ASan/UBSan deep gate.
+  It runs outside the ordinary canonical edit loop.
 - `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
 - `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
 - `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
 - `docs/todo-self-hosting-backend/`: closed B3 work breakdown and decisions.
+- `docs/todo-self-hosting-fixed-point/`: active B4 fixed-point work breakdown
+  and decisions.
 - `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
@@ -226,6 +231,21 @@ values remain valid language features but are not used by the current compiler
 source set, so their backend support is outside the B3 bootstrap-critical
 surface. The canonical repository and supported-platform CI gates protect the
 closed boundary. B4 owns Stage1-to-Stage2 fixed-point and conformance behavior.
+
+## B4 Current Slice
+
+P178a introduces an isolated deep gate. Rust Stage0 builds Stage1 from the
+declared source set; Stage1 emits strict-C11 Stage2, and Stage2 must emit the
+same compiler C byte-for-byte. A sanitizer-instrumented Stage2 must regenerate
+the same output. The gate also compares Stage1 and Stage2 across every tracked
+compiler-core fixture, the complete parser corpus, compiler project operations
+and linked backend project C generation. P178b retains complete project-graph
+and native behavior conformance before B4 can close.
+
+P178a is complete. The full gate reaches a 9,780,069-byte compiler-C fixed
+point, reproduces it under ASan/UBSan and matches 487 compiler-pair fixtures,
+the 168-source parser corpus, four compiler project operations and eight linked
+backend projects. P178b-P178c remain active.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

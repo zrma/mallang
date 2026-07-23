@@ -58,6 +58,10 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - compiler-source IR 진단: `scripts/diagnose-self-hosting-compiler-ir.sh
   --rebuild-bootstrap`; `--reuse-bootstrap`은 stale artifact를 허용하는 비게이트
   탐색에만 사용한다.
+- B4 fixed-point deep gate: `scripts/check-self-hosting-fixed-point.sh`;
+  `--assume-bootstrap --skip-sanitizers`는 진단 전용이며 milestone/publication
+  evidence가 아니다. 일반 `scripts/check.sh`와 분리된 supported-platform CI job으로
+  실행한다.
 - frontend 변경: lexer/parser/semantic targeted tests와 example diagnostics.
 - backend/runtime 변경: generated C warning/sanitizer 검사와 native smoke.
 - 최종 증거에는 acceptance별 test, planned/implemented 문서 상태, local/remote bookmark, CI를 포함한다.
