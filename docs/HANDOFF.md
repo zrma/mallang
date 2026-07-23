@@ -844,10 +844,20 @@ path, cycle의 human/JSON Stage0 parity를 확인한다. P179b2b3은 standalone/
 UTF-8 span, encoded payload, node depth와 child count를 엄격히 검증한다. 전환 gate는 48개
 typed-IR fixture, transitive project, human/JSON semantic rejection과 malformed protocol의
 no-fallback 처리를 확인해 P179b를 닫았다. Local acceptance는 canonical gate의 591
-library/14 driver/4 hardening test와 B3
-backend gate, default-transition gate를 통과했고, B4 deep gate에서 477 compiler-pair
-fixture task, 172 parser corpus, 14 backend fixture, 8 backend project, 21 native pair와
+library/16 driver/4 hardening test와 B3
+backend gate, default-transition gate를 통과했고, B4 deep gate에서 478 compiler-pair
+fixture task, 173 parser corpus, 14 backend fixture, 8 backend project, 21 native pair와
 sanitizer fixed point를 다시 확인했다.
+P179c1은 canonical formatter를 Mallang compiler source로 옮기고 public standalone/project
+`fmt`를 `mlgc format`의 length-framed `FORMAT|1` 응답으로 연결했다. Host는 전체 payload를
+검증하고 모든 파일이 성공한 뒤에만 write한다. Stage0/self formatter smoke, tracked
+example/compiler corpus, human/JSON rejection, project order/atomic failure와 malformed
+no-fallback 처리가 일치한다. Formatter profiling에서 각 token slice마다 전체 source UTF-8을
+재검사하던 병목을 확인해 두 C backend의 `strings.slice`를 valid-string invariant,
+layout/boundary 검사로 정렬했다. Standard-string과 self-hosting cursor allocation,
+failure-injection, sanitizer gate는 유지된다. P179c2는 test selection/runner generation,
+P179c3은 남은 native process workflow를 소유한다. P179c1 local acceptance는 canonical,
+default-transition, deep fixed-point와 release-archive gate를 모두 통과했다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

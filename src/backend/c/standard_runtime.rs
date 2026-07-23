@@ -1198,7 +1198,7 @@ const STRING_SLICE_HELPER: &str = r#"static <RESULT_STRING_ERROR> MLG_UNUSED mal
     int64_t mlg_start,
     int64_t mlg_end
 ) {
-    mallang_validate_string(*mlg_text);
+    mallang_validate_string_layout(*mlg_text);
     if (mlg_start < 0 ||
         mlg_end < 0 ||
         mlg_start > mlg_end ||

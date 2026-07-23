@@ -162,38 +162,37 @@ fn main() {
     };
     let command_args = &args[options.command_index + 1..];
 
-    let result = match command.to_str() {
-        Some("lex") => require_stage0(&options.compiler, "lex")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_lex(&program, &args)),
-        Some("parse") => require_stage0(&options.compiler, "parse")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_parse(&program, &args)),
-        Some("check") => utf8_cli_args(command_args)
-            .and_then(|args| run_check(&program, &args, &options.compiler)),
-        Some("fmt") => require_stage0(&options.compiler, "fmt")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_fmt(&program, &args)),
-        Some("ir") => {
-            utf8_cli_args(command_args).and_then(|args| run_ir(&program, &args, &options.compiler))
-        }
-        Some("build") => utf8_cli_args(command_args)
-            .and_then(|args| run_build(&program, &args, &options.compiler)),
-        Some("run") => run_run(&program, command_args, &options.compiler),
-        Some("test") => require_stage0(&options.compiler, "test")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_test(&program, &args, diagnostic_format)),
-        Some("-V" | "--version") => run_version(&program, command_args, &options.compiler),
-        Some("-h" | "--help") => {
-            let mut stdout = io::stdout().lock();
-            write_usage(&mut stdout, &program)
-                .map_err(|error| CliError::cli(format!("failed to write usage: {error}")))
-        }
-        Some(command) => Err(CliError::cli(format!(
-            "unknown subcommand `{command}`; run `{program} --help` for usage"
-        ))),
-        None => Err(CliError::cli("subcommand is not valid UTF-8")),
-    };
+    let result =
+        match command.to_str() {
+            Some("lex") => require_stage0(&options.compiler, "lex")
+                .and_then(|()| utf8_cli_args(command_args))
+                .and_then(|args| run_lex(&program, &args)),
+            Some("parse") => require_stage0(&options.compiler, "parse")
+                .and_then(|()| utf8_cli_args(command_args))
+                .and_then(|args| run_parse(&program, &args)),
+            Some("check") => utf8_cli_args(command_args)
+                .and_then(|args| run_check(&program, &args, &options.compiler)),
+            Some("fmt") => utf8_cli_args(command_args)
+                .and_then(|args| run_fmt(&program, &args, &options.compiler)),
+            Some("ir") => utf8_cli_args(command_args)
+                .and_then(|args| run_ir(&program, &args, &options.compiler)),
+            Some("build") => utf8_cli_args(command_args)
+                .and_then(|args| run_build(&program, &args, &options.compiler)),
+            Some("run") => run_run(&program, command_args, &options.compiler),
+            Some("test") => require_stage0(&options.compiler, "test")
+                .and_then(|()| utf8_cli_args(command_args))
+                .and_then(|args| run_test(&program, &args, diagnostic_format)),
+            Some("-V" | "--version") => run_version(&program, command_args, &options.compiler),
+            Some("-h" | "--help") => {
+                let mut stdout = io::stdout().lock();
+                write_usage(&mut stdout, &program)
+                    .map_err(|error| CliError::cli(format!("failed to write usage: {error}")))
+            }
+            Some(command) => Err(CliError::cli(format!(
+                "unknown subcommand `{command}`; run `{program} --help` for usage"
+            ))),
+            None => Err(CliError::cli("subcommand is not valid UTF-8")),
+        };
 
     if let Err(error) = result {
         emit_diagnostics(error, diagnostic_format);
@@ -479,7 +478,7 @@ fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> Cl
     Ok(())
 }
 
-fn run_fmt(program: &str, args: &[String]) -> CliResult<()> {
+fn run_fmt(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let (check_only, input) = match args {
         [input] if input != "--check" => (false, input.as_str()),
         [flag, input] if flag == "--check" => (true, input.as_str()),
@@ -493,12 +492,25 @@ fn run_fmt(program: &str, args: &[String]) -> CliResult<()> {
         }
     };
 
-    let files = load_format_inputs(input)?;
+    let files = load_format_inputs(input, compiler)?;
     let mut changes = Vec::new();
 
     for file in files {
-        let formatted = format_source(&file.source)
-            .map_err(|error| format_format_error(&file.display_path, &file.source, error))?;
+        let formatted = match compiler.implementation {
+            CompilerImplementation::Stage0 => format_source(&file.source)
+                .map_err(|error| format_format_error(&file.display_path, &file.source, error))?,
+            CompilerImplementation::SelfHosted => {
+                let mut sources = SourceMap::new();
+                sources.add_file(&file.display_path, &file.source);
+                let display_path = file.display_path.to_string_lossy();
+                let stdout = invoke_self_hosted_compiler_args(
+                    &[OsString::from("format"), file.path.as_os_str().to_owned()],
+                    &display_path,
+                    compiler,
+                )?;
+                finish_self_hosted_format(&display_path, stdout, &sources)?
+            }
+        };
         if formatted != file.source {
             changes.push((file.path, file.display_path, formatted));
         }
@@ -540,7 +552,7 @@ struct FormatInput {
     source: String,
 }
 
-fn load_format_inputs(input: &str) -> CliResult<Vec<FormatInput>> {
+fn load_format_inputs(input: &str, compiler: &CompilerSelection) -> CliResult<Vec<FormatInput>> {
     let input_path = Path::new(input);
     if input_path
         .extension()
@@ -552,8 +564,11 @@ fn load_format_inputs(input: &str) -> CliResult<Vec<FormatInput>> {
         )?]);
     }
 
-    let project =
-        discover_project(input_path).map_err(|error| CliError::input(error.to_string()))?;
+    let project = if compiler.implementation == CompilerImplementation::SelfHosted {
+        discover_self_hosted_project(input_path, input, compiler)?
+    } else {
+        discover_project(input_path).map_err(|error| CliError::input(error.to_string()))?
+    };
     let test_files = project
         .discover_test_files()
         .map_err(|error| CliError::input(error.to_string()))?;
@@ -598,6 +613,47 @@ fn format_format_error(display_path: &Path, source: &str, error: FormatError) ->
         mallang::Span::new(source_id, error.span.start, error.span.end),
         Some(display_path),
     )
+}
+
+fn finish_self_hosted_format(
+    input_path: &str,
+    stdout: String,
+    sources: &SourceMap,
+) -> CliResult<String> {
+    let Some((header, payload)) = stdout.split_once('\n') else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "format response is missing its payload separator",
+        ));
+    };
+    if header.starts_with("FORMAT|") {
+        let fields = header.split('|').collect::<Vec<_>>();
+        if fields.len() != 3 || fields[0] != "FORMAT" || fields[1] != "1" {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                "invalid format response header",
+            ));
+        }
+        let byte_length = parse_self_hosted_count(fields[2], "format payload byte length")
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?;
+        if payload.len() != byte_length {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                "format payload byte length does not match its header",
+            ));
+        }
+        if !payload.ends_with('\n') {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                "format payload does not end with a newline",
+            ));
+        }
+        return Ok(payload.to_string());
+    }
+    Err(CliError::many(
+        parse_self_hosted_diagnostics(&stdout, sources, None)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+    ))
 }
 
 fn run_ir(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
@@ -1986,8 +2042,8 @@ mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
     use super::{
-        child_signal_diagnostic, parse_assertion_marker, parse_global_options,
-        parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
+        child_signal_diagnostic, finish_self_hosted_format, parse_assertion_marker,
+        parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
         parse_self_hosted_project_plan_response, validate_self_hosted_ir, CompilerImplementation,
         DiagnosticFormat, SelfHostedReply,
     };
@@ -2215,6 +2271,41 @@ mod tests {
             assert!(
                 validate_self_hosted_ir(response, &sources).is_err(),
                 "response should be rejected: {response}"
+            );
+        }
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_format_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("fixture.mlg", "func main() {}\n");
+        let payload = "// \u{ac00}\n";
+        let response = format!("FORMAT|1|{}\n{payload}", payload.len());
+
+        assert_eq!(
+            finish_self_hosted_format("fixture.mlg", response, &sources).unwrap(),
+            payload
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_format_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("fixture.mlg", "func main() {}\n");
+
+        for response in [
+            "",
+            "FORMAT|1|1",
+            "FORMAT|2|1\n\n",
+            "FORMAT|1|2\n\n",
+            "FORMAT|1|0\n",
+            "FORMAT|1|1\nx",
+            "FORMAT|1|1\n\ntrailing",
+            "UNKNOWN|1|1\n\n",
+        ] {
+            assert!(
+                finish_self_hosted_format("fixture.mlg", response.to_string(), &sources).is_err(),
+                "response should be rejected: {response:?}"
             );
         }
     }

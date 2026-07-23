@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179b complete through P179b2b3; P179c active
+Status: active; P179a-P179b and P179c1 complete; P179c2 active
 
 ## Objective
 
@@ -119,6 +119,31 @@ without fallback.
 - preserve `fmt`, `test`, `run`, install and generated-C contracts
 - retain strict C11, allocation accounting, sanitizer and crash-corpus evidence
 
+P179c1 moves canonical formatting behind the Mallang implementation. `mlgc`
+parses and formats one source through a length-framed `FORMAT|1` response; the
+Rust host validates the complete UTF-8 payload before comparing or writing it.
+Project discovery follows the same Mallang-owned manifest/graph path as the
+other public self commands, and all outputs are collected before any write.
+The transition gate runs the standalone/project formatter smoke through both
+implementations, compares the tracked example/compiler corpus byte-for-byte,
+checks human/JSON rejection parity and rejects malformed responses without
+fallback or mutation.
+
+The formatter exposed an O(source-bytes times token-count) runtime cost:
+`strings.slice` revalidated the complete UTF-8 source for every token span.
+Both C backends now use the existing valid-string invariant and validate only
+string layout plus slice boundaries, as `byteLen` and `byteAt` already do.
+UTF-8 boundary rejection, allocation accounting, failure injection and
+sanitizer gates remain unchanged. On the development reference machine, the
+largest compiler source format check fell from tens of seconds to below one
+second; this is evidence for the algorithmic fix, not a portable threshold.
+Canonical acceptance, the default-transition differential, the complete
+Stage1/Stage2 fixed point and release-archive smoke all pass with this boundary.
+
+P179c2 owns Mallang-side test selection and runner generation. P179c3 then
+moves the remaining native process workflow behind the Mallang boundary before
+P179d changes the packaged default.
+
 ### P179d: Default Switch And Packaging
 
 - make release and install artifacts invoke the self-hosted compiler by default
@@ -141,7 +166,9 @@ without fallback.
 - [x] deterministic clean-checkout Stage0 -> Stage1 -> Stage2 build graph
 - [x] explicit non-silent Stage0 diagnostic and rollback selector
 - [x] self-hosted public project discovery, diagnostics, check, IR and build
-- [ ] self-hosted format, test, run and native process workflow
+- [x] self-hosted format and project-wide atomic write/check workflow
+- [ ] self-hosted test selection and runner generation
+- [ ] self-hosted run and native process workflow
 - [ ] complete Stage0/default command and conformance parity
 - [ ] default release artifacts use the Mallang compiler core
 - [ ] macOS arm64 and Linux x86_64 packaging and clean-install acceptance

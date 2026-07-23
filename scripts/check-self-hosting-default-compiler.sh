@@ -69,6 +69,37 @@ printf '%s\n' 'package main' >"$dependency_cycle/deps/text/src/text.mlg"
 "${cargo_command[@]}" build --locked --quiet --lib --bin mlg
 scripts/build-self-hosted-compiler.sh --stage0 "$driver" --output "$self_compiler" >/dev/null
 
+scripts/check-formatter.sh "$driver" --compiler stage0 >/dev/null
+scripts/check-formatter.sh \
+  "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+
+formatter_corpus="$work/formatter-corpus"
+rm -rf "$formatter_corpus"
+formatter_fixture_count=0
+while IFS= read -r source_path; do
+  stage0_path="$formatter_corpus/stage0/$source_path"
+  self_path="$formatter_corpus/self/$source_path"
+  mkdir -p "$(dirname "$stage0_path")" "$(dirname "$self_path")"
+  cp "$source_path" "$stage0_path"
+  cp "$source_path" "$self_path"
+  "$driver" --compiler stage0 fmt "$stage0_path" >/dev/null
+  "$driver" --compiler self --self-compiler "$self_compiler" \
+    fmt "$self_path" >/dev/null
+  if ! cmp -s "$stage0_path" "$self_path"; then
+    echo "public Stage0/self formatter corpus parity failed: $source_path" >&2
+    diff -u "$stage0_path" "$self_path" >&2 || true
+    exit 1
+  fi
+  formatter_fixture_count=$((formatter_fixture_count + 1))
+done < <(
+  find examples bootstrap/compiler/src -type f -name '*.mlg' -print |
+    LC_ALL=C sort
+)
+if [[ "$formatter_fixture_count" -lt 20 ]]; then
+  echo "public formatter corpus unexpectedly small: $formatter_fixture_count" >&2
+  exit 1
+fi
+
 crate_version="$(
   sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1
 )"
@@ -200,6 +231,91 @@ if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
    [[ -s "$work/project-ir-spy.stderr" ]]; then
   echo "public self-hosted project IR protocol routing mismatch" >&2
   cat "$spy_log" >&2
+  exit 1
+fi
+
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  fmt --check examples/hello.mlg \
+  >"$work/formatter-spy.stdout" 2>"$work/formatter-spy.stderr"
+if [[ "$(grep -c '^format$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 1 ]] || \
+   [[ -s "$work/formatter-spy.stdout" || -s "$work/formatter-spy.stderr" ]]; then
+  echo "public self-hosted formatter protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
+formatter_json="$work/formatter-json.mlg"
+printf '%s\n' 'func main(){print(1)}' >"$formatter_json"
+set +e
+"$driver" --diagnostic-format json --compiler stage0 \
+  fmt --check "$formatter_json" \
+  >"$work/formatter-json.stage0.stdout" 2>"$work/formatter-json.stage0.stderr"
+stage0_status=$?
+"$driver" --diagnostic-format json --compiler self \
+  fmt --check "$formatter_json" \
+  >"$work/formatter-json.self.stdout" 2>"$work/formatter-json.self.stderr"
+self_status=$?
+set -e
+if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+   [[ "$stage0_status" -ne "$self_status" ]] || \
+   ! cmp -s "$work/formatter-json.stage0.stdout" "$work/formatter-json.self.stdout" || \
+   ! cmp -s "$work/formatter-json.stage0.stderr" "$work/formatter-json.self.stderr"; then
+  echo "public Stage0/self JSON formatter check parity failed" >&2
+  exit 1
+fi
+
+for diagnostic_format in human json; do
+  name="formatter-rejection.$diagnostic_format"
+  set +e
+  if [[ "$diagnostic_format" == "json" ]]; then
+    "$driver" --diagnostic-format json --compiler stage0 fmt "$parser_rejection" \
+      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    stage0_status=$?
+    "$driver" --diagnostic-format json --compiler self fmt "$parser_rejection" \
+      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    self_status=$?
+  else
+    "$driver" --compiler stage0 fmt "$parser_rejection" \
+      >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+    stage0_status=$?
+    "$driver" --compiler self fmt "$parser_rejection" \
+      >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+    self_status=$?
+  fi
+  set -e
+  if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+     [[ "$stage0_status" -ne "$self_status" ]] || \
+     ! cmp -s "$work/$name.stage0.stdout" "$work/$name.self.stdout" || \
+     ! cmp -s "$work/$name.stage0.stderr" "$work/$name.self.stderr"; then
+    echo "public Stage0/self $diagnostic_format formatter rejection parity failed" >&2
+    exit 1
+  fi
+done
+
+malformed_formatter="$work/mlgc-malformed-formatter"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "FORMAT|1|2\n\n"' \
+  >"$malformed_formatter"
+chmod +x "$malformed_formatter"
+cp examples/hello.mlg "$work/malformed-format.mlg"
+cp "$work/malformed-format.mlg" "$work/malformed-format.before.mlg"
+if "$driver" --compiler self --self-compiler "$malformed_formatter" \
+  fmt "$work/malformed-format.mlg" \
+  >"$work/malformed-format.stdout" 2>"$work/malformed-format.stderr"; then
+  echo "malformed formatter response unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "$work/malformed-format.stdout" ]] || \
+   ! grep -Fq 'format payload byte length does not match its header' \
+     "$work/malformed-format.stderr" || \
+   ! cmp -s "$work/malformed-format.mlg" "$work/malformed-format.before.mlg"; then
+  echo "malformed formatter response handling mismatch" >&2
   exit 1
 fi
 
@@ -374,4 +490,4 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,ir,build,run diagnostics=human,json fallback=explicit-only"
+echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,fmt,ir,build,run diagnostics=human,json fallback=explicit-only"

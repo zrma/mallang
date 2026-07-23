@@ -101,6 +101,8 @@ and normative v1 contract.
   `mlg build`, and `mlg run` accept either a standalone `.mlg` file or a project
   directory or manifest. `mlg ir` emits the deterministic normalized
   self-hosting IR view rather than implementation-specific Rust debug output.
+  During B5, explicit `--compiler self` owns `fmt`, `check`, `ir`, `build`, and
+  `run`; the no-flag release default remains Stage0 until the packaged switch.
 - Optional `[dependencies]` entries map an exact project name to a
   manifest-relative local directory path. Dependencies load in deterministic
   dependency-first order and expose only ordinary `pub` package APIs. Project

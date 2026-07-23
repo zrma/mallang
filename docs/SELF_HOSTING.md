@@ -325,7 +325,19 @@ by the self-hosting differential instead of Rust-specific pretty debug output.
 The host validates the complete bounded record structure before publication.
 The transition gate compares all 48 typed-IR fixtures, a transitive project,
 human/JSON semantic rejection and malformed protocol handling without fallback.
-P179c now owns the remaining formatter, test and native workflow transition.
+P179c1 moves public standalone and project `fmt` through `mlgc`. The
+Mallang-owned formatter emits a strict length-framed `FORMAT|1` payload, while
+the Rust host brokers source files, validates the complete response and defers
+all writes until every source succeeds. Stage0/self smoke, tracked
+example/compiler corpus, human/JSON rejection, deterministic project ordering,
+atomic failure and malformed no-fallback behavior agree. The formatter also
+identified and removed full-source UTF-8 revalidation from each valid
+`strings.slice` call; layout and UTF-8 boundaries remain checked, with
+allocation, failure-injection and sanitizer evidence preserved. P179c2 now owns
+test selection and runner generation, followed by the remaining native process
+workflow in P179c3. P179c1 local acceptance covers the canonical and
+default-transition gates plus the full Stage1/Stage2 fixed point and release
+archive smoke.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

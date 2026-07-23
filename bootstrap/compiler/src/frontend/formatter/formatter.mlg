@@ -1,0 +1,643 @@
+package formatter
+
+import "std/strings"
+import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/lexer"
+import "bootstrap_compiler/frontend/parser"
+import "bootstrap_compiler/frontend/source"
+import "bootstrap_compiler/frontend/token"
+
+type BreakHint struct {
+    offset int
+    count int
+}
+
+type LayoutHints struct {
+    breaks []BreakHint
+    typeStarts []int
+    receiverStarts []int
+    receiverOpens []int
+    contextualBlockOpens []int
+}
+
+type Comment struct {
+    text string
+    trailing bool
+    blankBefore bool
+}
+
+type Gap struct {
+    comments []Comment
+    trailingNewlines int
+    totalNewlines int
+}
+
+type BraceFrame struct {
+    block bool
+    multiline bool
+}
+
+type Output struct {
+    parts []string
+    indent int
+    hasText bool
+    pendingSpace bool
+    pendingNewlines int
+}
+
+type Formatter struct {
+    text string
+    tokens []token.Token
+    hints LayoutHints
+    output Output
+    braces []BraceFrame
+    braceDepth int
+    pendingBlock bool
+    previousUnary bool
+    previousRightBraceWasBlock bool
+}
+
+pub func Format(text string) Result[string, ast.ParseError] {
+    match lexer.Lex(token.CopyText(con text)) {
+        case Ok(parseTokens) {
+            match parser.Parse(parseTokens) {
+                case Ok(program) {
+                    match lexer.Lex(token.CopyText(con text)) {
+                        case Ok(formatTokens) {
+                            hints := buildLayoutHints(con program, con formatTokens)
+                            mut formatter := Formatter{text: text, tokens: formatTokens, hints: hints, output: Output{parts: []string{}, indent: 0, hasText: false, pendingSpace: false, pendingNewlines: 0,}, braces: []BraceFrame{}, braceDepth: 0, pendingBlock: false, previousUnary: false, previousRightBraceWasBlock: false,}
+                            return Ok(formatter.format())
+                        }
+                        case Err(error) {
+                            return Err(lexError(con error))
+                        }
+                    }
+                }
+                case Err(errors) {
+                    if len(errors) > 0 {
+                        return Err(ast.NewError(ast.ErrorMessage(con errors[0]), ast.ErrorSpan(con errors[0])))
+                    }
+                    return Err(ast.NewError("parser rejected source without a diagnostic", source.NewSpan(0, 0, 0)))
+                }
+            }
+        }
+        case Err(error) {
+            return Err(lexError(con error))
+        }
+    }
+}
+
+pub func Encode(con formatted string) string {
+    header := strings.join(con []string{"FORMAT|1|", strings.fromInt(strings.byteLen(con formatted)), "\n"}, con "")
+    return strings.join(con []string{header, token.CopyText(con formatted)}, con "")
+}
+
+func lexError(con error token.LexError) ast.ParseError {
+    span := source.NewSpan(token.ErrorSource(con error), token.ErrorStart(con error), token.ErrorEnd(con error))
+    return ast.NewError(token.ErrorMessage(con error), span)
+}
+
+func buildLayoutHints(con program ast.Program, con tokens []token.Token) LayoutHints {
+    mut hints := LayoutHints{breaks: []BreakHint{}, typeStarts: []int{}, receiverStarts: []int{}, receiverOpens: []int{}, contextualBlockOpens: []int{},}
+    root := ast.Root(con program)
+    for mut childIndex := 0; childIndex < ast.ChildCount(con program, root); childIndex = childIndex + 1 {
+        child := ast.Child(con program, root, childIndex)
+        kind := ast.Kind(con program, child)
+        if kind == "SourceUnit" {
+            hints.visitSourceUnit(con program, child)
+        } else if isTopDeclaration(con kind) {
+            span := ast.Span(con program, child)
+            hints.addBreak(source.End(con span), 2)
+        }
+        hints.visitNode(con program, child)
+    }
+    hints.prepareTokens(con tokens)
+    return hints
+}
+
+func (mut self LayoutHints) visitSourceUnit(con program ast.Program, unit int) {
+    mut importCount := 0
+    for mut childIndex := 0; childIndex < ast.ChildCount(con program, unit); childIndex = childIndex + 1 {
+        child := ast.Child(con program, unit, childIndex)
+        if ast.Kind(con program, child) == "ImportDecl" {
+            importCount = importCount + 1
+        }
+    }
+
+    mut importIndex := 0
+    for mut childIndex := 0; childIndex < ast.ChildCount(con program, unit); childIndex = childIndex + 1 {
+        child := ast.Child(con program, unit, childIndex)
+        kind := ast.Kind(con program, child)
+        span := ast.Span(con program, child)
+        if kind == "PackageDecl" {
+            self.addBreak(source.End(con span), 2)
+        } else if kind == "ImportDecl" {
+            importIndex = importIndex + 1
+            if importIndex == importCount {
+                self.addBreak(source.End(con span), 2)
+            } else {
+                self.addBreak(source.End(con span), 1)
+            }
+        }
+    }
+}
+
+func (mut self LayoutHints) visitNode(con program ast.Program, node int) {
+    kind := ast.Kind(con program, node)
+    span := ast.Span(con program, node)
+    start := source.Start(con span)
+    end := source.End(con span)
+
+    if startsWith(con kind, con "Type.") {
+        self.typeStarts = append(self.typeStarts, start)
+    }
+    if kind == "Receiver" {
+        self.receiverStarts = append(self.receiverStarts, start)
+    }
+    if kind == "FieldDecl" || kind == "EnumVariant" || kind == "MatchArm" || kind == "MatchBlockArm" || startsWith(con kind, con "Stmt.") {
+        self.addBreak(end, 1)
+    }
+    if kind == "TestDecl" {
+        for mut childIndex := 0; childIndex < ast.ChildCount(con program, node); childIndex = childIndex + 1 {
+            child := ast.Child(con program, node, childIndex)
+            if ast.Kind(con program, child) == "Block" {
+                bodySpan := ast.Span(con program, child)
+                self.contextualBlockOpens = append(self.contextualBlockOpens, source.Start(con bodySpan))
+            }
+        }
+    }
+
+    for mut childIndex := 0; childIndex < ast.ChildCount(con program, node); childIndex = childIndex + 1 {
+        self.visitNode(con program, ast.Child(con program, node, childIndex))
+    }
+}
+
+func (mut self LayoutHints) addBreak(offset int, count int) {
+    self.breaks = append(self.breaks, BreakHint{offset: offset, count: count})
+}
+
+func (mut self LayoutHints) takeBreak(offset int) int {
+    mut count := 0
+    mut index := lowerBoundBreaks(con self.breaks, offset)
+    for index < len(self.breaks) && self.breaks[index].offset == offset {
+        if self.breaks[index].count > count {
+            count = self.breaks[index].count
+        }
+        self.breaks[index].count = 0
+        index = index + 1
+    }
+    return count
+}
+
+func (con self LayoutHints) breakAt(offset int) int {
+    mut count := 0
+    mut index := lowerBoundBreaks(con self.breaks, offset)
+    for index < len(self.breaks) && self.breaks[index].offset == offset {
+        if self.breaks[index].count > count {
+            count = self.breaks[index].count
+        }
+        index = index + 1
+    }
+    return count
+}
+
+func (mut self LayoutHints) prepareTokens(con tokens []token.Token) {
+    self.breaks = sortBreaks(con self.breaks)
+    for mut index := 1; index < len(tokens); index = index + 1 {
+        if token.HasKind(con tokens[index], con "Semicolon") {
+            count := self.takeBreak(token.End(con tokens[index - 1]))
+            if count > 0 {
+                self.addBreak(token.End(con tokens[index]), count)
+            }
+        }
+    }
+    self.breaks = sortBreaks(con self.breaks)
+    self.receiverStarts = sortInts(con self.receiverStarts)
+
+    mut open := -1
+    for mut index := 0; index < len(tokens); index = index + 1 {
+        start := token.Start(con tokens[index])
+        if containsSorted(con self.receiverStarts, start) && open >= 0 {
+            self.receiverOpens = append(self.receiverOpens, open)
+        }
+        if token.HasKind(con tokens[index], con "LeftParen") {
+            open = start
+        }
+    }
+    self.receiverOpens = sortInts(con self.receiverOpens)
+    self.typeStarts = sortInts(con self.typeStarts)
+    self.contextualBlockOpens = sortInts(con self.contextualBlockOpens)
+}
+
+func (mut self Formatter) format() string {
+    mut previousIndex := -1
+    mut cursor := 0
+
+    for mut index := 0; index < len(self.tokens); index = index + 1 {
+        if token.HasKind(con self.tokens[index], con "Eof") {
+            break
+        }
+        start := token.Start(con self.tokens[index])
+        end := token.End(con self.tokens[index])
+        gapText := sliceOrEmpty(con self.text, cursor, start)
+        gap := parseGap(gapText, previousIndex >= 0)
+        if len(gap.comments) > 0 && self.braceDepth > 0 {
+            self.braces[self.braceDepth - 1].multiline = true
+        }
+
+        kind := token.Kind(con self.tokens[index])
+        mut currentIsBlockClose := false
+        mut currentIsMultilineLiteralClose := false
+        if kind == "RightBrace" && self.braceDepth > 0 {
+            currentIsBlockClose = self.braces[self.braceDepth - 1].block
+            currentIsMultilineLiteralClose = !self.braces[self.braceDepth - 1].block && self.braces[self.braceDepth - 1].multiline
+        }
+        contextualBlockOpen := containsSorted(con self.hints.contextualBlockOpens, start)
+        mut currentIsBlockOpen := false
+        if kind == "LeftBrace" &&(self.pendingBlock || contextualBlockOpen) {
+            currentIsBlockOpen = true
+        }
+        emptyBlock := currentIsBlockClose && previousIndex >= 0 && token.HasKind(con self.tokens[previousIndex], con "LeftBrace") && len(gap.comments) == 0
+
+        if kind == "RightBrace" {
+            self.output.decreaseIndent()
+        }
+
+        mut lineBreak := 0
+        if previousIndex >= 0 {
+            previousEnd := token.End(con self.tokens[previousIndex])
+            lineBreak = self.hints.breakAt(previousEnd)
+            if token.HasKind(con self.tokens[previousIndex], con "LeftBrace") && self.braceDepth > 0 && self.braces[self.braceDepth - 1].block {
+                lineBreak = maxInt(lineBreak, 1)
+            }
+            if token.HasKind(con self.tokens[previousIndex], con "RightBrace") && self.previousRightBraceWasBlock {
+                lineBreak = maxInt(lineBreak, 1)
+            }
+        }
+        if currentIsBlockClose || currentIsMultilineLiteralClose {
+            lineBreak = maxInt(lineBreak, 1)
+        }
+        if kind == "Semicolon" || emptyBlock ||(kind == "Keyword.Else" && previousIndex >= 0 && token.HasKind(con self.tokens[previousIndex], con "RightBrace")) {
+            lineBreak = 0
+        }
+
+        self.output.writeGap(con gap, lineBreak)
+
+        mut previousKind := ""
+        if previousIndex >= 0 {
+            previousKind = token.Kind(con self.tokens[previousIndex])
+        }
+        unary := isUnary(con kind, con previousKind, previousIndex >= 0)
+        if previousIndex >= 0 && needsSpace(con previousKind, con kind, self.previousUnary, currentIsBlockOpen, containsSorted(con self.hints.typeStarts, start), containsSorted(con self.hints.receiverOpens, start)) {
+            self.output.space()
+        }
+        self.output.write(sliceOrEmpty(con self.text, start, end))
+
+        if kind == "LeftBrace" {
+            frame := BraceFrame{block: currentIsBlockOpen, multiline: currentIsBlockOpen}
+            if self.braceDepth < len(self.braces) {
+                self.braces[self.braceDepth]= frame
+            } else {
+                self.braces = append(self.braces, frame)
+            }
+            self.braceDepth = self.braceDepth + 1
+            self.output.increaseIndent()
+            if currentIsBlockOpen {
+                self.pendingBlock = false
+            }
+        } else if kind == "RightBrace" {
+            if self.braceDepth > 0 {
+                self.braceDepth = self.braceDepth - 1
+            }
+        } else if isBlockKeyword(con kind) {
+            self.pendingBlock = true
+        }
+
+        self.previousUnary = unary
+        self.previousRightBraceWasBlock = currentIsBlockClose
+        cursor = end
+        previousIndex = index
+    }
+
+    trailingText := sliceOrEmpty(con self.text, cursor, strings.byteLen(con self.text))
+    trailingGap := parseGap(trailingText, previousIndex >= 0)
+    mut trailingBreak := 0
+    if previousIndex >= 0 {
+        trailingBreak = self.hints.breakAt(token.End(con self.tokens[previousIndex]))
+    }
+    self.output.writeGap(con trailingGap, trailingBreak)
+    return self.output.finish()
+}
+
+func (mut self Output) writeGap(con gap Gap, lineBreak int) {
+    mut requested := lineBreak
+    for mut index := 0; index < len(gap.comments); index = index + 1 {
+        if gap.comments[index].trailing {
+            self.space()
+        } else {
+            mut commentBreak := 1
+            if gap.comments[index].blankBefore {
+                commentBreak = 2
+            }
+            self.newlines(maxInt(requested, commentBreak))
+            requested = 0
+        }
+        self.write(token.CopyText(con gap.comments[index].text))
+        self.newlines(1)
+    }
+
+    if len(gap.comments) == 0 {
+        if requested > 0 && gap.totalNewlines >= 2 {
+            requested = maxInt(requested, 2)
+        }
+    } else if gap.trailingNewlines >= 2 {
+        requested = maxInt(requested, 2)
+    } else if gap.trailingNewlines > 0 {
+        requested = maxInt(requested, 1)
+    }
+    self.newlines(requested)
+}
+
+func (mut self Output) write(text string) {
+    if self.pendingNewlines > 0 {
+        for mut count := 0; count < self.pendingNewlines; count = count + 1 {
+            self.parts = append(self.parts, "\n")
+        }
+        self.pendingNewlines = 0
+        self.pendingSpace = false
+        for mut count := 0; count < self.indent; count = count + 1 {
+            self.parts = append(self.parts, "    ")
+        }
+    } else if !self.hasText {
+        for mut count := 0; count < self.indent; count = count + 1 {
+            self.parts = append(self.parts, "    ")
+        }
+    } else if self.pendingSpace {
+        self.parts = append(self.parts, " ")
+        self.pendingSpace = false
+    }
+    self.parts = append(self.parts, text)
+    self.hasText = true
+}
+
+func (mut self Output) space() {
+    if self.hasText && self.pendingNewlines == 0 {
+        self.pendingSpace = true
+    }
+}
+
+func (mut self Output) newlines(count int) {
+    if count > 0 && self.hasText {
+        self.pendingSpace = false
+        mut bounded := count
+        if bounded > 2 {
+            bounded = 2
+        }
+        if bounded > self.pendingNewlines {
+            self.pendingNewlines = bounded
+        }
+    }
+}
+
+func (mut self Output) increaseIndent() {
+    self.indent = self.indent + 1
+}
+
+func (mut self Output) decreaseIndent() {
+    if self.indent > 0 {
+        self.indent = self.indent - 1
+    }
+}
+
+func (mut self Output) finish() string {
+    self.pendingSpace = false
+    self.pendingNewlines = 0
+    self.parts = append(self.parts, "\n")
+    return strings.join(con self.parts, con "")
+}
+
+func parseGap(text string, hasPrevious bool) Gap {
+    mut comments := []Comment{}
+    mut cursor := 0
+    mut newlines := 0
+    mut totalNewlines := 0
+    length := strings.byteLen(con text)
+
+    for cursor < length {
+        if byteAt(con text, cursor) == 47 && cursor + 1 < length && byteAt(con text, cursor + 1) == 47 {
+            start := cursor
+            cursor = cursor + 2
+            for cursor < length && byteAt(con text, cursor) != 10 && byteAt(con text, cursor) != 13 {
+                cursor = cursor + 1
+            }
+            trailing := hasPrevious && len(comments) == 0 && newlines == 0
+            comments = append(comments, Comment{text: sliceOrEmpty(con text, start, cursor), trailing: trailing, blankBefore: newlines >= 2,})
+            newlines = 0
+        } else if byteAt(con text, cursor) == 13 && cursor + 1 < length && byteAt(con text, cursor + 1) == 10 {
+            cursor = cursor + 2
+            newlines = newlines + 1
+            totalNewlines = totalNewlines + 1
+        } else if byteAt(con text, cursor) == 13 || byteAt(con text, cursor) == 10 {
+            cursor = cursor + 1
+            newlines = newlines + 1
+            totalNewlines = totalNewlines + 1
+        } else {
+            cursor = cursor + 1
+        }
+    }
+
+    return Gap{comments: comments, trailingNewlines: newlines, totalNewlines: totalNewlines}
+}
+
+func isUnary(con current string, con previous string, hasPrevious bool) bool {
+    if current == "Bang" {
+        return true
+    }
+    if current != "Minus" {
+        return false
+    }
+    if !hasPrevious {
+        return true
+    }
+    return previous == "LeftParen" || previous == "LeftBracket" || previous == "LeftBrace" || previous == "Comma" || previous == "Colon" || previous == "Semicolon" || isOperator(con previous)
+}
+
+func needsSpace(con previous string, con current string, previousUnary bool, currentIsBlockOpen bool, currentStartsType bool, currentOpensReceiver bool) bool {
+    if current == "RightParen" || current == "RightBracket" || current == "RightBrace" || current == "Comma" || current == "Dot" || current == "Semicolon" || current == "Colon" {
+        return false
+    }
+    if previous == "LeftParen" || previous == "LeftBracket" || previous == "Dot" || previousUnary {
+        return false
+    }
+    if current == "LeftParen" {
+        return previous == "Keyword.Func" && currentOpensReceiver
+    }
+    if current == "LeftBracket" {
+        if isOperator(con previous) || previous == "Comma" || previous == "Colon" || previous == "Semicolon" || previous == "Keyword.Return" || previous == "Keyword.Range" || previous == "Keyword.Con" || previous == "Keyword.Mut" {
+            return true
+        }
+        typeFollower := previous == "Ident" || previous == "RightParen"
+        return currentStartsType && typeFollower
+    }
+    if current == "LeftBrace" {
+        return currentIsBlockOpen
+    }
+    if previous == "LeftBrace" || previous == "RightBracket" {
+        return false
+    }
+    if previous == "Comma" || previous == "Colon" || previous == "Semicolon" {
+        return true
+    }
+    if isOperator(con previous) || isOperator(con current) {
+        return true
+    }
+    return isWord(con previous) || previous == "RightParen" || previous == "RightBrace" || isWord(con current)
+}
+
+func isOperator(con kind string) bool {
+    return kind == "Plus" || kind == "Minus" || kind == "Star" || kind == "Slash" || kind == "Percent" || kind == "Equal" || kind == "EqualEqual" || kind == "Bang" || kind == "BangEqual" || kind == "AmpAmp" || kind == "PipePipe" || kind == "Less" || kind == "LessEqual" || kind == "Greater" || kind == "GreaterEqual" || kind == "ColonEqual" || kind == "Arrow" || kind == "PipeGreater"
+}
+
+func isWord(con kind string) bool {
+    return kind == "Ident" || kind == "Int" || kind == "String" || startsWith(con kind, con "Keyword.")
+}
+
+func isBlockKeyword(con kind string) bool {
+    return kind == "Keyword.Func" || kind == "Keyword.If" || kind == "Keyword.Else" || kind == "Keyword.For" || kind == "Keyword.Match" || kind == "Keyword.Case" || kind == "Keyword.Struct" || kind == "Keyword.Enum"
+}
+
+func isTopDeclaration(con kind string) bool {
+    return startsWith(con kind, con "StructDecl.") || startsWith(con kind, con "EnumDecl.") || startsWith(con kind, con "FunctionDecl.") || kind == "TestDecl"
+}
+
+func sortBreaks(con values []BreakHint) []BreakHint {
+    if len(values) <= 1 {
+        mut copied := []BreakHint{}
+        for mut index := 0; index < len(values); index = index + 1 {
+            copied = append(copied, BreakHint{offset: values[index].offset, count: values[index].count})
+        }
+        return copied
+    }
+    middle := len(values) / 2
+    mut leftValues := []BreakHint{}
+    mut rightValues := []BreakHint{}
+    for mut index := 0; index < middle; index = index + 1 {
+        leftValues = append(leftValues, BreakHint{offset: values[index].offset, count: values[index].count})
+    }
+    for mut index := middle; index < len(values); index = index + 1 {
+        rightValues = append(rightValues, BreakHint{offset: values[index].offset, count: values[index].count})
+    }
+    left := sortBreaks(con leftValues)
+    right := sortBreaks(con rightValues)
+    mut sorted := []BreakHint{}
+    mut leftIndex := 0
+    mut rightIndex := 0
+    for leftIndex < len(left) || rightIndex < len(right) {
+        if rightIndex >= len(right) ||(leftIndex < len(left) && left[leftIndex].offset <= right[rightIndex].offset) {
+            sorted = append(sorted, BreakHint{offset: left[leftIndex].offset, count: left[leftIndex].count})
+            leftIndex = leftIndex + 1
+        } else {
+            sorted = append(sorted, BreakHint{offset: right[rightIndex].offset, count: right[rightIndex].count})
+            rightIndex = rightIndex + 1
+        }
+    }
+    return sorted
+}
+
+func sortInts(con values []int) []int {
+    if len(values) <= 1 {
+        mut copied := []int{}
+        for mut index := 0; index < len(values); index = index + 1 {
+            copied = append(copied, values[index])
+        }
+        return copied
+    }
+    middle := len(values) / 2
+    mut leftValues := []int{}
+    mut rightValues := []int{}
+    for mut index := 0; index < middle; index = index + 1 {
+        leftValues = append(leftValues, values[index])
+    }
+    for mut index := middle; index < len(values); index = index + 1 {
+        rightValues = append(rightValues, values[index])
+    }
+    left := sortInts(con leftValues)
+    right := sortInts(con rightValues)
+    mut sorted := []int{}
+    mut leftIndex := 0
+    mut rightIndex := 0
+    for leftIndex < len(left) || rightIndex < len(right) {
+        if rightIndex >= len(right) ||(leftIndex < len(left) && left[leftIndex]<= right[rightIndex]) {
+            sorted = append(sorted, left[leftIndex])
+            leftIndex = leftIndex + 1
+        } else {
+            sorted = append(sorted, right[rightIndex])
+            rightIndex = rightIndex + 1
+        }
+    }
+    return sorted
+}
+
+func lowerBoundBreaks(con values []BreakHint, offset int) int {
+    mut low := 0
+    mut high := len(values)
+    for low < high {
+        middle := low +(high - low) / 2
+        if values[middle].offset < offset {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    return low
+}
+
+func containsSorted(con values []int, value int) bool {
+    mut low := 0
+    mut high := len(values)
+    for low < high {
+        middle := low +(high - low) / 2
+        if values[middle]< value {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    return low < len(values) && values[low]== value
+}
+
+func maxInt(left int, right int) int {
+    if left >= right {
+        return left
+    }
+    return right
+}
+
+func startsWith(con value string, con prefix string) bool {
+    if strings.byteLen(con value) < strings.byteLen(con prefix) {
+        return false
+    }
+    return sliceOrEmpty(con value, 0, strings.byteLen(con prefix)) == prefix
+}
+
+func byteAt(con value string, index int) int {
+    return match strings.byteAt(con value, index) {
+        case Ok(byte) {
+            byte
+        }
+        case Err(_) {
+            -1
+        }
+    }
+}
+
+func sliceOrEmpty(con value string, start int, end int) string {
+    return match strings.slice(con value, start, end) {
+        case Ok(sliced) {
+            sliced
+        }
+        case Err(_) {
+            ""
+        }
+    }
+}

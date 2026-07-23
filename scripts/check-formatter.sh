@@ -5,6 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BIN="${1:-target/debug/mlg}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+MLG_ARGS=("$@")
 WORK="target/mallang/formatter-smoke"
 DIRECT="$WORK/direct.mlg"
 EXPECTED="$WORK/direct.expected.mlg"
@@ -15,6 +19,10 @@ if [[ ! -x "$BIN" ]]; then
   echo "formatter smoke binary is not executable: $BIN" >&2
   exit 1
 fi
+
+run_mlg() {
+  "$BIN" "${MLG_ARGS[@]}" "$@"
+}
 
 rm -rf "$WORK"
 mkdir -p "$PROJECT/src/pkg" "$PROJECT/tests/pkg" "$ATOMIC_PROJECT/src/pkg"
@@ -38,7 +46,7 @@ func main() { // body
 MLG
 
 cp "$DIRECT" "$WORK/direct.before.mlg"
-if "$BIN" fmt --check "$DIRECT" >"$WORK/direct-check.stdout" 2>"$WORK/direct-check.stderr"; then
+if run_mlg fmt --check "$DIRECT" >"$WORK/direct-check.stdout" 2>"$WORK/direct-check.stderr"; then
   echo "formatter direct check smoke failed: expected non-zero exit" >&2
   exit 1
 fi
@@ -49,7 +57,7 @@ if [[ -s "$WORK/direct-check.stdout" ]] || \
   exit 1
 fi
 
-"$BIN" fmt "$DIRECT" >"$WORK/direct-write.stdout" 2>"$WORK/direct-write.stderr"
+run_mlg fmt "$DIRECT" >"$WORK/direct-write.stdout" 2>"$WORK/direct-write.stderr"
 if [[ "$(cat "$WORK/direct-write.stdout")" != "$DIRECT: formatted" ]] || \
   [[ -s "$WORK/direct-write.stderr" ]] || \
   ! cmp -s "$DIRECT" "$EXPECTED"; then
@@ -58,9 +66,9 @@ if [[ "$(cat "$WORK/direct-write.stdout")" != "$DIRECT: formatted" ]] || \
   exit 1
 fi
 
-"$BIN" fmt --check "$DIRECT" >"$WORK/direct-clean.stdout" 2>"$WORK/direct-clean.stderr"
+run_mlg fmt --check "$DIRECT" >"$WORK/direct-clean.stdout" 2>"$WORK/direct-clean.stderr"
 cp "$DIRECT" "$WORK/direct.canonical.mlg"
-"$BIN" fmt "$DIRECT" >"$WORK/direct-idempotent.stdout" 2>"$WORK/direct-idempotent.stderr"
+run_mlg fmt "$DIRECT" >"$WORK/direct-idempotent.stdout" 2>"$WORK/direct-idempotent.stderr"
 if [[ -s "$WORK/direct-clean.stdout" || -s "$WORK/direct-clean.stderr" || \
   -s "$WORK/direct-idempotent.stdout" || -s "$WORK/direct-idempotent.stderr" ]] || \
   ! cmp -s "$DIRECT" "$WORK/direct.canonical.mlg"; then
@@ -85,7 +93,7 @@ package pkg
 test HelperWorks(){assert(helper()==1)}
 MLG
 
-if "$BIN" fmt --check "$PROJECT" >"$WORK/project-check.stdout" 2>"$WORK/project-check.stderr"; then
+if run_mlg fmt --check "$PROJECT" >"$WORK/project-check.stdout" 2>"$WORK/project-check.stderr"; then
   echo "formatter project check smoke failed: expected non-zero exit" >&2
   exit 1
 fi
@@ -100,7 +108,7 @@ if [[ -s "$WORK/project-check.stdout" ]] || \
   exit 1
 fi
 
-"$BIN" fmt "$PROJECT" >"$WORK/project-write.stdout" 2>"$WORK/project-write.stderr"
+run_mlg fmt "$PROJECT" >"$WORK/project-write.stdout" 2>"$WORK/project-write.stderr"
 cat >"$WORK/project-write.expected" <<'OUT'
 src/main.mlg: formatted
 src/pkg/helper.mlg: formatted
@@ -111,7 +119,7 @@ if [[ -s "$WORK/project-write.stderr" ]] || \
   echo "formatter project write smoke failed: paths are not deterministic" >&2
   exit 1
 fi
-"$BIN" fmt --check "$PROJECT" >"$WORK/project-clean.stdout" 2>"$WORK/project-clean.stderr"
+run_mlg fmt --check "$PROJECT" >"$WORK/project-clean.stdout" 2>"$WORK/project-clean.stderr"
 if [[ -s "$WORK/project-clean.stdout" || -s "$WORK/project-clean.stderr" ]]; then
   echo "formatter clean project check smoke failed" >&2
   exit 1
@@ -130,7 +138,7 @@ package pkg
 func broken( {
 MLG
 cp "$ATOMIC_PROJECT/src/main.mlg" "$WORK/atomic-main.before.mlg"
-if "$BIN" fmt "$ATOMIC_PROJECT" >"$WORK/atomic.stdout" 2>"$WORK/atomic.stderr"; then
+if run_mlg fmt "$ATOMIC_PROJECT" >"$WORK/atomic.stdout" 2>"$WORK/atomic.stderr"; then
   echo "formatter atomic failure smoke failed: expected non-zero exit" >&2
   exit 1
 fi

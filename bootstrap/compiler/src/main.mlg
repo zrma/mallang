@@ -6,6 +6,7 @@ import "std/os"
 import "std/strings"
 import "bootstrap_compiler/backend"
 import "bootstrap_compiler/frontend/ast"
+import "bootstrap_compiler/frontend/formatter"
 import "bootstrap_compiler/frontend/lexer"
 import "bootstrap_compiler/frontend/parser"
 import "bootstrap_compiler/frontend/source"
@@ -85,6 +86,17 @@ func runParse(text string) {
             span := source.NewSpan(0, token.ErrorStart(con error), token.ErrorEnd(con error))
             parseError := ast.NewError(token.ErrorMessage(con error), span)
             print(ast.NormalizeError(con parseError))
+        }
+    }
+}
+
+func runFormat(text string) {
+    match formatter.Format(text) {
+        case Ok(formatted) {
+            writeStdout(con formatter.Encode(con formatted))
+        }
+        case Err(error) {
+            print(ast.NormalizeError(con error))
         }
     }
 }
@@ -622,6 +634,17 @@ func main() {
                     fail(con "usage: bootstrap-frontend parse-sources <source>...\n")
                 }
                 runParseSources(con args, 2)
+                os.exit(0)
+            }
+            if len(args) == 3 && args[1]== "format" {
+                match fs.readText(con args[2]) {
+                    case Ok(source) {
+                        runFormat(source)
+                    }
+                    case Err(_) {
+                        fail(con "bootstrap formatter could not read source\n")
+                    }
+                }
                 os.exit(0)
             }
             mut mode := "lex"

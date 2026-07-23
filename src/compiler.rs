@@ -599,6 +599,7 @@ mod tests {
         for helper in [
             "mallang_std_strings_byte_len(",
             "mallang_std_strings_byte_at(",
+            "mallang_std_strings_slice(",
         ] {
             let start = c.find(helper).expect("missing string cursor helper");
             let body = &c[start..];
