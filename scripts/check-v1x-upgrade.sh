@@ -38,8 +38,11 @@ fi
 
 current_checksums="$artifact_work/offline/SHA256SUMS"
 clean_installed="$artifact_work/home/.local/bin/mlg"
-if [[ ! -f "$current_archive" || ! -f "$current_checksums" || ! -x "$clean_installed" ]] || \
-  [[ "$($clean_installed --version)" != "mlg $current_version" ]]; then
+clean_compiler="$artifact_work/home/.local/bin/mlgc"
+if [[ ! -f "$current_archive" || ! -f "$current_checksums" ]] || \
+  [[ ! -x "$clean_installed" || ! -x "$clean_compiler" ]] || \
+  [[ "$($clean_installed --version)" != "mlg $current_version" ]] || \
+  [[ "$($clean_compiler --version)" != "mlgc protocol 1" ]]; then
   echo "v1.x upgrade rehearsal reusable clean-install evidence is incomplete" >&2
   exit 1
 fi
@@ -47,6 +50,7 @@ fi
 work="target/mallang/v1x-upgrade"
 prefix="$work/prefix"
 mlg="$prefix/bin/mlg"
+mlgc="$prefix/bin/mlgc"
 rm -rf "$work"
 mkdir -p "$prefix/bin"
 
@@ -55,7 +59,8 @@ install_base() {
   ./install.sh --version "$base_version" --bin-dir "$prefix/bin" \
     >"$work/$label-install.stdout" 2>"$work/$label-install.stderr"
   if [[ "$(cat "$work/$label-install.stdout")" != "installed mlg $base_version to $mlg" ]] || \
-    [[ -s "$work/$label-install.stderr" ]] || [[ "$($mlg --version)" != "mlg $base_version" ]]; then
+    [[ -s "$work/$label-install.stderr" ]] || \
+    [[ "$($mlg --version)" != "mlg $base_version" ]] || [[ -e "$mlgc" ]]; then
     echo "v1.x upgrade rehearsal $label base installation mismatch" >&2
     exit 1
   fi
@@ -63,14 +68,18 @@ install_base() {
 
 install_current() {
   local label="$1"
+  local expected_output
   ./install.sh \
     --version "$current_version" \
     --bin-dir "$prefix/bin" \
     --archive "$current_archive" \
     --checksums "$current_checksums" \
     >"$work/$label-install.stdout" 2>"$work/$label-install.stderr"
-  if [[ "$(cat "$work/$label-install.stdout")" != "installed mlg $current_version to $mlg" ]] || \
-    [[ -s "$work/$label-install.stderr" ]] || [[ "$($mlg --version)" != "mlg $current_version" ]]; then
+  expected_output="installed Mallang $current_version to $prefix/bin (mlg + mlgc)"
+  if [[ "$(cat "$work/$label-install.stdout")" != "$expected_output" ]] || \
+    [[ -s "$work/$label-install.stderr" ]] || \
+    [[ "$($mlg --version)" != "mlg $current_version" ]] || \
+    [[ "$($mlgc --version)" != "mlgc protocol 1" ]]; then
     echo "v1.x upgrade rehearsal $label current installation mismatch" >&2
     exit 1
   fi
@@ -129,7 +138,8 @@ for label in upgrade rollback reupgrade; do
   done
 done
 
-if [[ "$($mlg --version)" != "mlg $current_version" ]]; then
+if [[ "$($mlg --version)" != "mlg $current_version" ]] || \
+  [[ "$($mlgc --version)" != "mlgc protocol 1" ]]; then
   echo "v1.x upgrade rehearsal did not finish on the current release" >&2
   exit 1
 fi

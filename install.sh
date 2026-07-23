@@ -194,11 +194,20 @@ if [ "$actual_checksum" != "$expected_checksum" ]; then
 fi
 
 actual_entries="$temporary/actual-entries"
-expected_entries="$temporary/expected-entries"
+expected_legacy_entries="$temporary/expected-legacy-entries"
+expected_dual_entries="$temporary/expected-dual-entries"
 tar -tvzf "$archive" | \
   awk 'NF { print substr($1, 1, 1) " " $NF }' | \
   LC_ALL=C sort >"$actual_entries"
-cat >"$expected_entries" <<EOF
+cat >"$expected_legacy_entries" <<EOF
+d $root_name/
+- $root_name/LICENSE-APACHE
+- $root_name/LICENSE-MIT
+- $root_name/README.md
+d $root_name/bin/
+- $root_name/bin/mlg
+EOF
+cat >"$expected_dual_entries" <<EOF
 d $root_name/
 - $root_name/LICENSE-APACHE
 - $root_name/LICENSE-MIT
@@ -207,8 +216,13 @@ d $root_name/bin/
 - $root_name/bin/mlg
 - $root_name/bin/mlgc
 EOF
-LC_ALL=C sort -o "$expected_entries" "$expected_entries"
-if ! cmp -s "$actual_entries" "$expected_entries"; then
+LC_ALL=C sort -o "$expected_legacy_entries" "$expected_legacy_entries"
+LC_ALL=C sort -o "$expected_dual_entries" "$expected_dual_entries"
+if cmp -s "$actual_entries" "$expected_dual_entries"; then
+  archive_kind="dual"
+elif cmp -s "$actual_entries" "$expected_legacy_entries"; then
+  archive_kind="legacy"
+else
   echo "archive entry set mismatch for $archive_name" >&2
   exit 1
 fi
@@ -216,7 +230,11 @@ fi
 extract_dir="$temporary/extract"
 mkdir -p "$extract_dir"
 tar -xzf "$archive" -C "$extract_dir"
-for relative in bin/mlg bin/mlgc LICENSE-MIT LICENSE-APACHE README.md; do
+archive_files="bin/mlg LICENSE-MIT LICENSE-APACHE README.md"
+if [ "$archive_kind" = "dual" ]; then
+  archive_files="bin/mlg bin/mlgc LICENSE-MIT LICENSE-APACHE README.md"
+fi
+for relative in $archive_files; do
   extracted="$extract_dir/$root_name/$relative"
   [ -f "$extracted" ] && [ ! -L "$extracted" ] || {
     echo "archive contains an invalid file: $relative" >&2
@@ -225,21 +243,25 @@ for relative in bin/mlg bin/mlgc LICENSE-MIT LICENSE-APACHE README.md; do
 done
 
 extracted_driver="$extract_dir/$root_name/bin/mlg"
-extracted_compiler="$extract_dir/$root_name/bin/mlgc"
-compiler_version="$($extracted_compiler --version)"
-if [ "$compiler_version" != "mlgc protocol 1" ]; then
-  echo "installed compiler protocol mismatch: expected mlgc protocol 1, got $compiler_version" >&2
-  exit 1
+if [ "$archive_kind" = "dual" ]; then
+  extracted_compiler="$extract_dir/$root_name/bin/mlgc"
+  compiler_version="$($extracted_compiler --version)"
+  if [ "$compiler_version" != "mlgc protocol 1" ]; then
+    echo "installed compiler protocol mismatch: expected mlgc protocol 1, got $compiler_version" >&2
+    exit 1
+  fi
 fi
 driver_version="$($extracted_driver --version)"
 if [ "$driver_version" != "mlg $version" ]; then
   echo "installed driver version mismatch: expected mlg $version, got $driver_version" >&2
   exit 1
 fi
-stage0_version="$($extracted_driver --compiler stage0 --version)"
-if [ "$stage0_version" != "mlg $version" ]; then
-  echo "installed Stage0 recovery version mismatch: expected mlg $version, got $stage0_version" >&2
-  exit 1
+if [ "$archive_kind" = "dual" ]; then
+  stage0_version="$($extracted_driver --compiler stage0 --version)"
+  if [ "$stage0_version" != "mlg $version" ]; then
+    echo "installed Stage0 recovery version mismatch: expected mlg $version, got $stage0_version" >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$bin_dir"
@@ -250,14 +272,23 @@ for binary_name in mlg mlgc; do
   fi
 done
 staged_driver="$bin_dir/.mlg.install.$$"
-staged_compiler="$bin_dir/.mlgc.install.$$"
 cp "$extracted_driver" "$staged_driver"
-cp "$extracted_compiler" "$staged_compiler"
-chmod 0755 "$staged_driver" "$staged_compiler"
+chmod 0755 "$staged_driver"
 
-mv -f "$staged_compiler" "$bin_dir/mlgc"
-staged_compiler=""
+if [ "$archive_kind" = "dual" ]; then
+  staged_compiler="$bin_dir/.mlgc.install.$$"
+  cp "$extracted_compiler" "$staged_compiler"
+  chmod 0755 "$staged_compiler"
+  mv -f "$staged_compiler" "$bin_dir/mlgc"
+  staged_compiler=""
+else
+  rm -f "$bin_dir/mlgc"
+fi
 mv -f "$staged_driver" "$bin_dir/mlg"
 staged_driver=""
 
-printf 'installed Mallang %s to %s (mlg + mlgc)\n' "$version" "$bin_dir"
+if [ "$archive_kind" = "dual" ]; then
+  printf 'installed Mallang %s to %s (mlg + mlgc)\n' "$version" "$bin_dir"
+else
+  printf 'installed mlg %s to %s/mlg\n' "$version" "$bin_dir"
+fi

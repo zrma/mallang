@@ -43,6 +43,9 @@ else
   scripts/check-v08-acceptance.sh
 fi
 scripts/check-release-artifacts.sh >/dev/null
-scripts/check-v1x-upgrade.sh --reuse-release-artifact
+if ! scripts/check-v1x-upgrade.sh --reuse-release-artifact; then
+  echo "post-stable upgrade and rollback rehearsal failed" >&2
+  exit 1
+fi
 
 echo "Mallang $crate_version post-stable compatibility, runtime, and release artifact acceptance passed"
