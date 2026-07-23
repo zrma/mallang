@@ -22,12 +22,18 @@ project="$work/project"
 rm -rf "$work"
 mkdir -p "$first" "$second" "$offline" "$project/src" "$project/tests"
 
-first_archive="$(
+if ! first_archive="$(
   scripts/build-release-artifact.sh --version "$crate_version" --output-dir "$first"
-)"
-second_archive="$(
+)"; then
+  echo "first release archive build failed" >&2
+  exit 1
+fi
+if ! second_archive="$(
   scripts/build-release-artifact.sh --version "$crate_version" --output-dir "$second"
-)"
+)"; then
+  echo "second release archive build failed" >&2
+  exit 1
+fi
 if ! cmp -s "$first_archive" "$second_archive"; then
   echo "repeated release archive builds are not byte-identical" >&2
   exit 1

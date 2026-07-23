@@ -68,42 +68,75 @@ if [[ ! -x "$stage0" ]]; then
 fi
 
 project="bootstrap/compiler"
-work="target/mallang/self-hosting/b5-bootstrap"
+work_parent="target/mallang/self-hosting"
+mkdir -p "$work_parent" "$(dirname "$output")"
+work="$(mktemp -d "$work_parent/b5-bootstrap.XXXXXX")"
 stage1="$work/mlgc.stage1"
 stage2="$work/mlgc.stage2"
 stage2_c="$work/mlgc.stage2.c"
 fixed_c="$work/mlgc.fixed.c"
 generated_c="$project/target/mallang/bootstrap_compiler.c"
 strict_flags=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
+temporary_output=""
 
-mkdir -p "$work" "$(dirname "$output")"
-"$stage0" --compiler stage0 fmt --check "$project"
-"$stage0" --compiler stage0 check "$project" >/dev/null
-"$stage0" --compiler stage0 build "$project" -o "$stage1" >/dev/null
-"$clang_bin" "${strict_flags[@]}" "$generated_c" -o "$stage1"
+cleanup() {
+  rm -rf "$work"
+  if [[ -n "$temporary_output" ]]; then
+    rm -f "$temporary_output"
+  fi
+}
+trap cleanup EXIT
+
+if ! "$stage0" --compiler stage0 fmt --check "$project"; then
+  echo "self-hosted compiler build failed: Stage0 format check failed" >&2
+  exit 1
+fi
+if ! "$stage0" --compiler stage0 check "$project" >/dev/null; then
+  echo "self-hosted compiler build failed: Stage0 semantic check failed" >&2
+  exit 1
+fi
+if ! "$stage0" --compiler stage0 build "$project" -o "$stage1" >/dev/null; then
+  echo "self-hosted compiler build failed: Stage0 C generation failed" >&2
+  exit 1
+fi
+if ! "$clang_bin" "${strict_flags[@]}" "$generated_c" -o "$stage1"; then
+  echo "self-hosted compiler build failed: Stage1 native link failed" >&2
+  exit 1
+fi
 
 compiler_sources=()
 while IFS= read -r source_path; do
   compiler_sources+=("$source_path")
 done < <(find "$project/src" -type f -name '*.mlg' -print | LC_ALL=C sort)
 
-"$stage1" c-project \
+if ! "$stage1" c-project \
   1 bootstrap_compiler "$project/src" 0 "${compiler_sources[@]}" \
-  >"$stage2_c" 2>"$work/stage1.stderr"
+  >"$stage2_c" 2>"$work/stage1.stderr"; then
+  echo "self-hosted compiler build failed: Stage1 C generation failed" >&2
+  cat "$work/stage1.stderr" >&2
+  exit 1
+fi
 if [[ -s "$work/stage1.stderr" ]]; then
   echo "self-hosted compiler Stage1 emitted stderr" >&2
   cat "$work/stage1.stderr" >&2
   exit 1
 fi
-"$clang_bin" "${strict_flags[@]}" "$stage2_c" -o "$stage2"
+if ! "$clang_bin" "${strict_flags[@]}" "$stage2_c" -o "$stage2"; then
+  echo "self-hosted compiler build failed: Stage2 native link failed" >&2
+  exit 1
+fi
 
 if [[ "$("$stage2" --version)" != "mlgc protocol 1" ]]; then
   echo "self-hosted compiler protocol handshake failed" >&2
   exit 1
 fi
-"$stage2" c-project \
+if ! "$stage2" c-project \
   1 bootstrap_compiler "$project/src" 0 "${compiler_sources[@]}" \
-  >"$fixed_c" 2>"$work/stage2.stderr"
+  >"$fixed_c" 2>"$work/stage2.stderr"; then
+  echo "self-hosted compiler build failed: Stage2 fixed-point generation failed" >&2
+  cat "$work/stage2.stderr" >&2
+  exit 1
+fi
 if [[ -s "$work/stage2.stderr" ]]; then
   echo "self-hosted compiler Stage2 emitted stderr" >&2
   cat "$work/stage2.stderr" >&2
@@ -115,10 +148,9 @@ if ! cmp -s "$stage2_c" "$fixed_c"; then
 fi
 
 temporary_output="${output}.tmp.$$"
-trap 'rm -f "$temporary_output"' EXIT
 cp "$stage2" "$temporary_output"
 chmod 0755 "$temporary_output"
 mv -f "$temporary_output" "$output"
-trap - EXIT
+temporary_output=""
 
 printf '%s\n' "$output"
