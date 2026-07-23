@@ -77,9 +77,9 @@ generated_c="$project/target/mallang/bootstrap_compiler.c"
 strict_flags=(-std=c11 -O2 -Wall -Wextra -Werror -pedantic)
 
 mkdir -p "$work" "$(dirname "$output")"
-"$stage0" fmt --check "$project"
-"$stage0" check "$project" >/dev/null
-"$stage0" build "$project" -o "$stage1" >/dev/null
+"$stage0" --compiler stage0 fmt --check "$project"
+"$stage0" --compiler stage0 check "$project" >/dev/null
+"$stage0" --compiler stage0 build "$project" -o "$stage1" >/dev/null
 "$clang_bin" "${strict_flags[@]}" "$generated_c" -o "$stage1"
 
 compiler_sources=()

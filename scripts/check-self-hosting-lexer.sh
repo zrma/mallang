@@ -162,10 +162,10 @@ report_phase() {
 
 if [[ "$PAIR_MODE" == false ]]; then
 "${CARGO[@]}" build --locked --quiet --lib --bin mlg
-"$STAGE0" fmt --check "$PROJECT"
-"$STAGE0" check "$PROJECT" >/dev/null
+"$STAGE0" --compiler stage0 fmt --check "$PROJECT"
+"$STAGE0" --compiler stage0 check "$PROJECT" >/dev/null
 if [[ "$MODE" == "full" || "$MODE" == "fast" ]]; then
-  "$STAGE0" test "$PROJECT" >/dev/null
+  "$STAGE0" --compiler stage0 test "$PROJECT" >/dev/null
 else
   case "$FOCUS" in
     lexer)
@@ -228,14 +228,14 @@ else
       ;;
   esac
   for test_id in "${focused_tests[@]}"; do
-    "$STAGE0" test "$PROJECT" --exact "$test_id" >/dev/null
+    "$STAGE0" --compiler stage0 test "$PROJECT" --exact "$test_id" >/dev/null
   done
 fi
 
-"$STAGE0" build "$PROJECT" -o "$STAGE1" >/dev/null
+"$STAGE0" --compiler stage0 build "$PROJECT" -o "$STAGE1" >/dev/null
 if [[ "$MODE" != "focused" ]]; then
   cp "$GENERATED_C" "$WORK/bootstrap-frontend-first.c"
-  "$STAGE0" build "$PROJECT" -o "$STAGE1" >/dev/null
+  "$STAGE0" --compiler stage0 build "$PROJECT" -o "$STAGE1" >/dev/null
   if ! cmp -s "$WORK/bootstrap-frontend-first.c" "$GENERATED_C"; then
     echo "self-hosting lexer check failed: Stage0 generated non-deterministic C" >&2
     diff -u "$WORK/bootstrap-frontend-first.c" "$GENERATED_C" >&2 || true
@@ -559,6 +559,12 @@ if [[ "$MODE" == "focused" ]]; then
         "$SEMANTIC_FIXTURES/closure-nested-mutable.mlg" \
         "$SEMANTIC_FIXTURES/match-nested-user-enums.mlg" \
         "$SEMANTIC_FIXTURES/method-receiver-computed-field-index.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-direct-struct.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-indirect-struct.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-wrapped-struct.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-enum-no-base.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-mixed-struct-subcycle.mlg" \
+        "$SEMANTIC_FIXTURES/recursive-type-enum-base.mlg" \
         "$SEMANTIC_FIXTURES/for-post-index.mlg" \
         "$SEMANTIC_FIXTURES/test-assertions.mlg"; do
         queue_fixture "$FIXTURE_TASKS" semantic "$fixture" \
@@ -993,7 +999,7 @@ for regression in "${cleanup_regressions[@]}"; do
     fixture="$IR_FIXTURES/$regression.mlg"
   fi
   binary="$WORK/$regression"
-  "$STAGE0" build "$fixture" -o "$binary" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$binary" >/dev/null
   generated_c="target/mallang/$regression.c"
   generated_c_abs="$(cd "$(dirname "$generated_c")" && pwd)/$(basename "$generated_c")"
   accounting_source="$WORK/$regression-accounting.c"

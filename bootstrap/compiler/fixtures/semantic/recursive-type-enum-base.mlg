@@ -1,0 +1,22 @@
+type Entry struct {
+    rest Chain
+}
+
+type Chain enum {
+    End
+    More(Entry)
+}
+
+type Left enum {
+    ToRight(Right)
+}
+
+type Right enum {
+    Done
+    ToLeft(Left)
+}
+
+func main() {
+    chain := Chain.End
+    right := Right.Done
+}

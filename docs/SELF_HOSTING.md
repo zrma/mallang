@@ -1,6 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B4 complete, B5 active
+Status: active long-term program; B0-B4 complete, B5 P179d acceptance active
 
 ## Objective
 
@@ -37,11 +37,11 @@ paths and platform metadata are outside Mallang's stable output contract.
 
 ## Host Boundary
 
-The first compiler core owns source processing, lexical analysis, parsing,
-semantic and ownership checking, typed IR, specialization and C generation. A
-small host driver may initially provide deterministic source discovery, invoke
-the compiler core and run `clang`. Project discovery, diagnostics, formatting,
-testing and process execution move behind the Mallang compiler before B5.
+The compiler core owns source processing, lexical analysis, parsing, semantic
+and ownership checking, typed IR, specialization and C generation. Project
+discovery, diagnostics, formatting, testing and compiler-owned native
+generation now run behind the Mallang core. The Rust driver remains the
+filesystem/process capability host and explicit Stage0 seed.
 
 No public language or standard-library feature is added merely because it would
 make a port shorter. A missing capability must first block representative
@@ -66,9 +66,9 @@ Mallang to specific 1.x versions.
 ## Current Layout
 
 - `bootstrap/probe/`: B0 Mallang capability probe compiled by Stage0.
-- `bootstrap/compiler/`: active Mallang compiler source, currently containing
-  the complete lexer/parser, semantic and ownership checker, specialization,
-  project package graph/linker, typed IR and the first scalar C backend slice.
+- `bootstrap/compiler/`: the Mallang compiler source containing the complete
+  lexer/parser, semantic and ownership checker, specialization, project package
+  graph/linker, typed IR and the self-hosted C backend/runtime surface.
 - `scripts/check-self-hosting-bootstrap.sh`: current bootstrap gate.
 - `scripts/check-self-hosting-lexer.sh`: deterministic Rust/Mallang lexer and
   parser differential plus incremental B2 semantic differential, ownership
@@ -372,6 +372,29 @@ runtime-rejection and zero boundary B3 paths; the default-transition gate; an
 fourteen backend fixtures, eight backend projects, twenty-one native pairs and
 sanitizer regeneration; and the release-archive smoke. P179d now owns the
 packaged default switch and recovery packaging.
+
+P179d changes the no-flag public path to the self-hosted core. `mlg` resolves a
+sibling `mlgc`, validates protocol responses and never falls back silently.
+`--compiler stage0` remains an explicit in-process recovery and differential
+path. Release archives and the installer carry and validate both executables;
+offline archive installation can therefore upgrade or roll back the same
+driver/core pair without network access.
+
+A clean checkout needs only the tracked Rust source, lockfile, Mallang compiler
+source and host toolchains:
+
+```sh
+cargo build --locked --bin mlg
+scripts/build-self-hosted-compiler.sh \
+  --stage0 target/debug/mlg \
+  --output target/debug/mlgc
+target/debug/mlg --version --verbose
+target/debug/mlg --compiler stage0 --version --verbose
+```
+
+The local transition, fixed-point, release-binary and deterministic dual-binary
+archive gates cover the packaged switch. P179d closes only after the same
+default and clean-install paths pass macOS arm64 and Linux x86_64 CI.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

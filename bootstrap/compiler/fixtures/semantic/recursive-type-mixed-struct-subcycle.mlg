@@ -1,0 +1,15 @@
+type Left struct {
+    right Right
+    marker Marker
+}
+
+type Right struct {
+    left Left
+}
+
+type Marker enum {
+    End
+    Link(Left)
+}
+
+func main() {}

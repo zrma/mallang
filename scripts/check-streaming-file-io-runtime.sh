@@ -111,10 +111,13 @@ cat >"$OUT_DIR/read-failure.c" <<EOF
 #include <errno.h>
 #include <stdio.h>
 static size_t mallang_test_fread(void *mlg_ptr, size_t mlg_size, size_t mlg_count, FILE *mlg_file);
+static int mallang_test_fgetc(FILE *mlg_file);
 #define fread mallang_test_fread
+#define fgetc mallang_test_fgetc
 #define main mallang_example_main
 #include "$GENERATED_C_ABS"
 #undef main
+#undef fgetc
 #undef fread
 
 static size_t mallang_test_fread(void *mlg_ptr, size_t mlg_size, size_t mlg_count, FILE *mlg_file) {
@@ -126,7 +129,15 @@ static size_t mallang_test_fread(void *mlg_ptr, size_t mlg_size, size_t mlg_coun
     return 0;
 }
 
+static int mallang_test_fgetc(FILE *mlg_file) {
+    (void)mlg_file;
+    errno = EIO;
+    return EOF;
+}
+
 int main(void) {
+    (void)mallang_test_fread;
+    (void)mallang_test_fgetc;
     char *mlg_argv[] = { "program", "$INPUT_ABS", "ERROR", NULL };
     return mallang_example_main(3, mlg_argv);
 }

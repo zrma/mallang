@@ -1,0 +1,27 @@
+type Profile struct {
+    label string
+    score int
+}
+
+type User struct {
+    name string
+    active bool
+    profile Profile
+}
+
+func maybe(flag bool) Option[int] {
+    return if flag { Some(7) } else { None }
+}
+
+func read(flag bool) Result[int, string] {
+    return if flag { Ok(1) } else { Err("bad") }
+}
+
+func main() {
+    user := User{name: "kim", active: true, profile: Profile{label: "primary", score: 9}}
+    print(user)
+    print(maybe(true))
+    print(maybe(false))
+    print(read(true))
+    print(read(false))
+}

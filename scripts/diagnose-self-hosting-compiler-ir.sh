@@ -71,7 +71,7 @@ case "$bootstrap_mode" in
       exit 2
     fi
     echo "self-hosting compiler IR diagnosis is rebuilding non-gating Stage1 artifacts"
-    "$STAGE0" build bootstrap/compiler -o "$STAGE1" >/dev/null
+    "$STAGE0" --compiler stage0 build bootstrap/compiler -o "$STAGE1" >/dev/null
     "${CLANG:-clang}" \
       -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
       "$GENERATED_C" -o "$STAGE1"

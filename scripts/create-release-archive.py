@@ -20,6 +20,7 @@ ROOT_NAME_RE = re.compile(
 )
 FILES = (
     (PurePosixPath("bin/mlg"), 0o755),
+    (PurePosixPath("bin/mlgc"), 0o755),
     (PurePosixPath("LICENSE-MIT"), 0o644),
     (PurePosixPath("LICENSE-APACHE"), 0o644),
     (PurePosixPath("README.md"), 0o644),

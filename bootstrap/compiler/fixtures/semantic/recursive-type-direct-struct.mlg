@@ -1,0 +1,5 @@
+type Node struct {
+    next Node
+}
+
+func main() {}

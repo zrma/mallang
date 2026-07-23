@@ -30,6 +30,7 @@ ir_fixtures="bootstrap/compiler/fixtures/ir"
 semantic_rejection="bootstrap/compiler/fixtures/semantic/body-unknown-variable.mlg"
 parser_rejection="bootstrap/compiler/fixtures/parser/recovery-statements.mlg"
 project_fixture="examples/projects/local-deps/app"
+library_project_fixture="examples/projects/local-deps/model"
 project_artifact="pathapp"
 project_rejection="tests/fixtures/diagnostics/dependency-project/app"
 test_fixture="examples/projects/hello"
@@ -70,16 +71,35 @@ printf '%s\n' 'package main' >"$dependency_cycle/deps/text/src/text.mlg"
 "${cargo_command[@]}" build --locked --quiet --lib --bin mlg
 scripts/build-self-hosted-compiler.sh --stage0 "$driver" --output "$self_compiler" >/dev/null
 
+scripts/check-formatter.sh "$driver" >/dev/null
 scripts/check-formatter.sh "$driver" --compiler stage0 >/dev/null
 scripts/check-formatter.sh \
   "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+scripts/check-test-workflow.sh "$driver" >/dev/null
 scripts/check-test-workflow.sh "$driver" --compiler stage0 >/dev/null
 scripts/check-test-workflow.sh \
   "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+"$driver" build examples/process-io.mlg -o "$work/process-io-default" >/dev/null
 "$driver" --compiler self --self-compiler "$self_compiler" \
   build examples/process-io.mlg -o "$work/process-io" >/dev/null
+scripts/check-process-io-runtime.sh "$driver" >/dev/null
 scripts/check-process-io-runtime.sh \
   "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+
+printf 'B5-file-한\0text' >"$work/file-input"
+"$driver" --compiler stage0 run examples/file-io.mlg -- \
+  "$work/file-input" "$work/file-stage0-output" \
+  >"$work/file-stage0.stdout" 2>"$work/file-stage0.stderr"
+"$driver" run examples/file-io.mlg -- \
+  "$work/file-input" "$work/file-default-output" \
+  >"$work/file-default.stdout" 2>"$work/file-default.stderr"
+if ! cmp -s "$work/file-input" "$work/file-stage0-output" || \
+   ! cmp -s "$work/file-stage0-output" "$work/file-default-output" || \
+   [[ -s "$work/file-stage0.stdout" || -s "$work/file-stage0.stderr" ]] || \
+   [[ -s "$work/file-default.stdout" || -s "$work/file-default.stderr" ]]; then
+  echo "public Stage0/default first-class file I/O parity failed" >&2
+  exit 1
+fi
 
 formatter_corpus="$work/formatter-corpus"
 rm -rf "$formatter_corpus"
@@ -119,10 +139,17 @@ if [[ "$("$driver" --version)" != "mlg $crate_version" ]] || \
   exit 1
 fi
 
+default_provenance="$work/default.provenance"
 stage0_provenance="$work/stage0.provenance"
 self_provenance="$work/self.provenance"
+"$driver" --version --verbose >"$default_provenance"
 "$driver" --compiler stage0 --version --verbose >"$stage0_provenance"
 "$driver" --compiler self --version --verbose >"$self_provenance"
+if [[ "$(cat "$default_provenance")" != $'mlg '"$crate_version"$'\ndriver: rust\ncompiler: self\ncore: mlgc protocol 1' ]]; then
+  echo "default compiler provenance mismatch" >&2
+  cat "$default_provenance" >&2
+  exit 1
+fi
 if [[ "$(cat "$stage0_provenance")" != $'mlg '"$crate_version"$'\ndriver: rust\ncompiler: stage0\ncore: rust-stage0' ]]; then
   echo "Stage0 compiler provenance mismatch" >&2
   cat "$stage0_provenance" >&2
@@ -133,6 +160,57 @@ if [[ "$(cat "$self_provenance")" != $'mlg '"$crate_version"$'\ndriver: rust\nco
   cat "$self_provenance" >&2
   exit 1
 fi
+
+for frontend_command in lex parse; do
+  "$driver" "$frontend_command" "$fixture" \
+    >"$work/$frontend_command.default.stdout" \
+    2>"$work/$frontend_command.default.stderr"
+  "$driver" --compiler self "$frontend_command" "$fixture" \
+    >"$work/$frontend_command.self.stdout" \
+    2>"$work/$frontend_command.self.stderr"
+  if ! cmp -s "$work/$frontend_command.default.stdout" \
+      "$work/$frontend_command.self.stdout" || \
+     ! cmp -s "$work/$frontend_command.default.stderr" \
+      "$work/$frontend_command.self.stderr"; then
+    echo "public default/self $frontend_command success parity failed" >&2
+    exit 1
+  fi
+done
+
+lexer_rejection="bootstrap/compiler/fixtures/lexer/unexpected-ascii.mlg"
+for diagnostic_format in human json; do
+  for frontend_case in "lex:$lexer_rejection" "parse:$parser_rejection"; do
+    frontend_command="${frontend_case%%:*}"
+    frontend_fixture="${frontend_case#*:}"
+    name="$frontend_command-rejection.$diagnostic_format"
+    set +e
+    if [[ "$diagnostic_format" == "json" ]]; then
+      "$driver" --diagnostic-format json --compiler stage0 \
+        "$frontend_command" "$frontend_fixture" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" --diagnostic-format json \
+        "$frontend_command" "$frontend_fixture" \
+        >"$work/$name.default.stdout" 2>"$work/$name.default.stderr"
+      default_status=$?
+    else
+      "$driver" --compiler stage0 "$frontend_command" "$frontend_fixture" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" "$frontend_command" "$frontend_fixture" \
+        >"$work/$name.default.stdout" 2>"$work/$name.default.stderr"
+      default_status=$?
+    fi
+    set -e
+    if [[ "$stage0_status" -eq 0 || "$default_status" -eq 0 ]] || \
+       [[ "$stage0_status" -ne "$default_status" ]] || \
+       ! cmp -s "$work/$name.stage0.stdout" "$work/$name.default.stdout" || \
+       ! cmp -s "$work/$name.stage0.stderr" "$work/$name.default.stderr"; then
+      echo "public Stage0/default $diagnostic_format $frontend_command rejection parity failed" >&2
+      exit 1
+    fi
+  done
+done
 
 stage0_binary="$work/scalars.stage0"
 self_binary="$work/scalars.self"
@@ -173,6 +251,18 @@ fi
 if ! cmp -s "$work/project-check.stage0.stdout" "$work/project-check.self.stdout" || \
    ! cmp -s "$work/project-check.stage0.stderr" "$work/project-check.self.stderr"; then
   echo "public Stage0/self project check parity failed" >&2
+  exit 1
+fi
+
+"$driver" --compiler stage0 check "$library_project_fixture" \
+  >"$work/library-check.stage0.stdout" 2>"$work/library-check.stage0.stderr"
+"$driver" check "$library_project_fixture" \
+  >"$work/library-check.default.stdout" 2>"$work/library-check.default.stderr"
+if ! cmp -s "$work/library-check.stage0.stdout" \
+    "$work/library-check.default.stdout" || \
+   ! cmp -s "$work/library-check.stage0.stderr" \
+    "$work/library-check.default.stderr"; then
+  echo "public Stage0/default library project check parity failed" >&2
   exit 1
 fi
 
@@ -400,6 +490,46 @@ if [[ -s "$work/malformed-format.stdout" ]] || \
      "$work/malformed-format.stderr" || \
    ! cmp -s "$work/malformed-format.mlg" "$work/malformed-format.before.mlg"; then
   echo "malformed formatter response handling mismatch" >&2
+  exit 1
+fi
+
+malformed_lex="$work/mlgc-malformed-lex"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "T|Ident|2|1|98\n"' \
+  >"$malformed_lex"
+chmod +x "$malformed_lex"
+if "$driver" --compiler self --self-compiler "$malformed_lex" \
+  lex "$fixture" \
+  >"$work/malformed-lex.stdout" 2>"$work/malformed-lex.stderr"; then
+  echo "malformed lexer response unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "$work/malformed-lex.stdout" ]] || \
+   ! grep -Fq 'invalid lexer token source span 2..1' \
+     "$work/malformed-lex.stderr"; then
+  echo "malformed lexer response handling mismatch" >&2
+  exit 1
+fi
+
+malformed_parse="$work/mlgc-malformed-parse"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "N|0|Program|0|0|1||1\n"' \
+  >"$malformed_parse"
+chmod +x "$malformed_parse"
+if "$driver" --compiler self --self-compiler "$malformed_parse" \
+  parse "$fixture" \
+  >"$work/malformed-parse.stdout" 2>"$work/malformed-parse.stderr"; then
+  echo "malformed parser response unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "$work/malformed-parse.stdout" ]] || \
+   ! grep -Fq 'parser response is missing an AST node' \
+     "$work/malformed-parse.stderr"; then
+  echo "malformed parser response handling mismatch" >&2
   exit 1
 fi
 
@@ -632,4 +762,26 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,fmt,ir,build,run,test diagnostics=human,json fallback=explicit-only"
+isolated_bin="$work/isolated-bin"
+mkdir -p "$isolated_bin"
+cp "$driver" "$isolated_bin/mlg"
+if "$isolated_bin/mlg" check "$fixture" \
+  >"$work/missing-default.stdout" 2>"$work/missing-default.stderr"; then
+  echo "default compiler unexpectedly fell back to Stage0 without sibling mlgc" >&2
+  exit 1
+fi
+if [[ -s "$work/missing-default.stdout" ]] || \
+   ! grep -Fq 'self-hosted compiler not found at ' "$work/missing-default.stderr" || \
+   ! grep -Fq '/isolated-bin/mlgc;' "$work/missing-default.stderr"; then
+  echo "missing default self-hosted compiler diagnostic mismatch" >&2
+  exit 1
+fi
+"$isolated_bin/mlg" --compiler stage0 check "$fixture" \
+  >"$work/isolated-stage0.stdout" 2>"$work/isolated-stage0.stderr"
+if [[ "$(cat "$work/isolated-stage0.stdout")" != "$fixture: ok" ]] || \
+   [[ -s "$work/isolated-stage0.stderr" ]]; then
+  echo "offline Stage0 rollback path failed" >&2
+  exit 1
+fi
+
+echo "B5 default compiler transition gate passed: default=self core=mlgc protocol=1 inputs=standalone,project commands=lex,parse,check,fmt,ir,build,run,test diagnostics=human,json fallback=none rollback=stage0"

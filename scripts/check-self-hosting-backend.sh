@@ -49,7 +49,7 @@ WORK="target/mallang/self-hosting/b3-backend"
 STAGE0="target/debug/mlg"
 STAGE1="target/mallang/self-hosting/b1-lexer/bootstrap-frontend"
 PROJECT="bootstrap/compiler"
-FIXTURES=(scalars owned-control composite-values adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values closure-capture)
+FIXTURES=(scalars owned-control composite-values composite-print adt-match control-flow-loops owned-overwrite slice-append borrowed-callables function-values closure-capture)
 PROJECT_FIXTURES=(dynamic-owned-string string-intrinsics platform-intrinsics)
 RUNTIME_REJECTION_FIXTURES=(composite-bounds integer-division-zero)
 PROJECT_RUNTIME_REJECTION_FIXTURES=(platform-exit-range)
@@ -72,9 +72,9 @@ started=$SECONDS
 
 if [[ "$ASSUME_BOOTSTRAP" == false ]]; then
   "${CARGO[@]}" build --locked --quiet --lib --bin mlg
-  "$STAGE0" fmt --check "$PROJECT"
-  "$STAGE0" check "$PROJECT" >/dev/null
-  "$STAGE0" build "$PROJECT" -o "$WORK/bootstrap-compiler" >/dev/null
+  "$STAGE0" --compiler stage0 fmt --check "$PROJECT"
+  "$STAGE0" --compiler stage0 check "$PROJECT" >/dev/null
+  "$STAGE0" --compiler stage0 build "$PROJECT" -o "$WORK/bootstrap-compiler" >/dev/null
   "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" \
     "$PROJECT/target/mallang/bootstrap_compiler.c" -o "$STAGE1"
 elif [[ ! -x "$STAGE1" ]]; then
@@ -88,7 +88,7 @@ for name in "${FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0" >/dev/null
   "$STAGE1" c "$fixture" >"$stage1_c"
   "$STAGE1" c "$fixture" >"$stage1_c_second"
 
@@ -164,6 +164,9 @@ EOF
     composite-values)
       expected=$'5\n3\n2\nbundle\n7\n1'
       ;;
+    composite-print)
+      expected=$'User{name: kim, active: true, profile: Profile{label: primary, score: 9}}\nSome(7)\nNone\nOk(1)\nErr(bad)'
+      ;;
     adt-match)
       expected=$'4\n0\n7\n0\n1\n9\npair\n8\n1\n1'
       ;;
@@ -214,7 +217,7 @@ for name in "${PROJECT_FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0" >/dev/null
   cp target/mallang/main.c "$oracle_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"
@@ -344,7 +347,7 @@ for name in "${RUNTIME_REJECTION_FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0" >/dev/null
   "$STAGE1" c "$fixture" >"$stage1_c"
   "$STAGE1" c "$fixture" >"$stage1_c_second"
   cmp -s "$oracle_c" "$stage1_c" || {
@@ -402,7 +405,7 @@ for name in "${PROJECT_RUNTIME_REJECTION_FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0" >/dev/null
   cp target/mallang/main.c "$oracle_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"
@@ -457,7 +460,7 @@ for name in "${ALLOCATION_REJECTION_FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
   "$STAGE1" c "$fixture" >"$stage1_c"
   "$STAGE1" c "$fixture" >"$stage1_c_second"
   cmp -s "$oracle_c" "$stage1_c" || {
@@ -520,7 +523,7 @@ for name in "${PROJECT_ALLOCATION_REJECTION_FIXTURES[@]}"; do
   stage1_c="$WORK/$name.stage1.c"
   stage1_c_second="$WORK/$name.stage1.second.c"
 
-  "$STAGE0" build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
+  "$STAGE0" --compiler stage0 build "$fixture" -o "$WORK/$name.stage0-default" >/dev/null
   cp target/mallang/main.c "$oracle_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c"
   "$STAGE1" c-project 1 "$unit_name" "$fixture_root" 0 "$fixture" >"$stage1_c_second"

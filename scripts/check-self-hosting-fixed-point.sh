@@ -96,9 +96,9 @@ started=$SECONDS
 
 if [[ "$ASSUME_BOOTSTRAP" == false ]]; then
   "${CARGO[@]}" build --locked --quiet --lib --bin mlg
-  "$STAGE0" fmt --check "$PROJECT"
-  "$STAGE0" check "$PROJECT" >/dev/null
-  "$STAGE0" build "$PROJECT" -o "$WORK/bootstrap-compiler.stage1" >/dev/null
+  "$STAGE0" --compiler stage0 fmt --check "$PROJECT"
+  "$STAGE0" --compiler stage0 check "$PROJECT" >/dev/null
+  "$STAGE0" --compiler stage0 build "$PROJECT" -o "$WORK/bootstrap-compiler.stage1" >/dev/null
   "$CLANG_BIN" "${OPTIMIZED_FLAGS[@]}" "$STAGE0_C" -o "$STAGE1"
 elif [[ ! -x "$STAGE1" ]]; then
   echo "self-hosting fixed-point check failed: assumed Stage1 compiler is missing" >&2

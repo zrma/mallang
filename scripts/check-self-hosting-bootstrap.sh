@@ -25,13 +25,13 @@ PROBE_C="$PROBE_PROJECT/target/mallang/bootstrap_probe.c"
 mkdir -p "$WORK"
 
 "${CARGO[@]}" build --locked --quiet --bin mlg
-"$STAGE0" fmt --check "$PROBE_PROJECT"
-"$STAGE0" check "$PROBE_PROJECT" >/dev/null
-"$STAGE0" test "$PROBE_PROJECT" >/dev/null
+"$STAGE0" --compiler stage0 fmt --check "$PROBE_PROJECT"
+"$STAGE0" --compiler stage0 check "$PROBE_PROJECT" >/dev/null
+"$STAGE0" --compiler stage0 test "$PROBE_PROJECT" >/dev/null
 
-"$STAGE0" build "$PROBE_PROJECT" -o "$WORK/probe-first" >/dev/null
+"$STAGE0" --compiler stage0 build "$PROBE_PROJECT" -o "$WORK/probe-first" >/dev/null
 cp "$PROBE_C" "$WORK/probe-first.c"
-"$STAGE0" build "$PROBE_PROJECT" -o "$WORK/probe-second" >/dev/null
+"$STAGE0" --compiler stage0 build "$PROBE_PROJECT" -o "$WORK/probe-second" >/dev/null
 cmp "$WORK/probe-first.c" "$PROBE_C"
 
 expected=$'bootstrap-host-ready\nsource_bytes=15\nhas_main=true'

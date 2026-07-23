@@ -136,9 +136,11 @@ fi
 archive_name="mallang-v${version}-${target}.tar.gz"
 root_name="mallang-v${version}-${target}"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/mallang-install.XXXXXX")"
-staged_binary=""
+staged_driver=""
+staged_compiler=""
 cleanup() {
-  [ -z "$staged_binary" ] || rm -f "$staged_binary"
+  [ -z "$staged_driver" ] || rm -f "$staged_driver"
+  [ -z "$staged_compiler" ] || rm -f "$staged_compiler"
   rm -rf "$temporary"
 }
 trap cleanup EXIT HUP INT TERM
@@ -203,6 +205,7 @@ d $root_name/
 - $root_name/README.md
 d $root_name/bin/
 - $root_name/bin/mlg
+- $root_name/bin/mlgc
 EOF
 LC_ALL=C sort -o "$expected_entries" "$expected_entries"
 if ! cmp -s "$actual_entries" "$expected_entries"; then
@@ -213,7 +216,7 @@ fi
 extract_dir="$temporary/extract"
 mkdir -p "$extract_dir"
 tar -xzf "$archive" -C "$extract_dir"
-for relative in bin/mlg LICENSE-MIT LICENSE-APACHE README.md; do
+for relative in bin/mlg bin/mlgc LICENSE-MIT LICENSE-APACHE README.md; do
   extracted="$extract_dir/$root_name/$relative"
   [ -f "$extracted" ] && [ ! -L "$extracted" ] || {
     echo "archive contains an invalid file: $relative" >&2
@@ -221,20 +224,40 @@ for relative in bin/mlg LICENSE-MIT LICENSE-APACHE README.md; do
   }
 done
 
-mkdir -p "$bin_dir"
-if [ -d "$bin_dir/mlg" ]; then
-  echo "install destination is a directory: $bin_dir/mlg" >&2
+extracted_driver="$extract_dir/$root_name/bin/mlg"
+extracted_compiler="$extract_dir/$root_name/bin/mlgc"
+compiler_version="$($extracted_compiler --version)"
+if [ "$compiler_version" != "mlgc protocol 1" ]; then
+  echo "installed compiler protocol mismatch: expected mlgc protocol 1, got $compiler_version" >&2
   exit 1
 fi
-staged_binary="$bin_dir/.mlg.install.$$"
-cp "$extract_dir/$root_name/bin/mlg" "$staged_binary"
-chmod 0755 "$staged_binary"
-staged_version="$($staged_binary --version)"
-if [ "$staged_version" != "mlg $version" ]; then
-  echo "installed binary version mismatch: expected mlg $version, got $staged_version" >&2
+driver_version="$($extracted_driver --version)"
+if [ "$driver_version" != "mlg $version" ]; then
+  echo "installed driver version mismatch: expected mlg $version, got $driver_version" >&2
   exit 1
 fi
-mv -f "$staged_binary" "$bin_dir/mlg"
-staged_binary=""
+stage0_version="$($extracted_driver --compiler stage0 --version)"
+if [ "$stage0_version" != "mlg $version" ]; then
+  echo "installed Stage0 recovery version mismatch: expected mlg $version, got $stage0_version" >&2
+  exit 1
+fi
 
-printf 'installed mlg %s to %s\n' "$version" "$bin_dir/mlg"
+mkdir -p "$bin_dir"
+for binary_name in mlg mlgc; do
+  if [ -d "$bin_dir/$binary_name" ]; then
+    echo "install destination is a directory: $bin_dir/$binary_name" >&2
+    exit 1
+  fi
+done
+staged_driver="$bin_dir/.mlg.install.$$"
+staged_compiler="$bin_dir/.mlgc.install.$$"
+cp "$extracted_driver" "$staged_driver"
+cp "$extracted_compiler" "$staged_compiler"
+chmod 0755 "$staged_driver" "$staged_compiler"
+
+mv -f "$staged_compiler" "$bin_dir/mlgc"
+staged_compiler=""
+mv -f "$staged_driver" "$bin_dir/mlg"
+staged_driver=""
+
+printf 'installed Mallang %s to %s (mlg + mlgc)\n' "$version" "$bin_dir"

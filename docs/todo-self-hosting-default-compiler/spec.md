@@ -1,6 +1,7 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179c complete; P179d active
+Status: active; P179a-P179c complete; P179d implementation complete and
+supported-platform acceptance active
 
 ## Objective
 
@@ -41,14 +42,14 @@ supported-platform contracts.
 
 P179a is complete. `scripts/build-self-hosted-compiler.sh` builds tracked Rust
 Stage0, strict-C11 Stage1 and fixed Stage2, then installs the Stage2 engine as
-`mlgc`. The public driver defaults to Stage0 for now, accepts explicit
-`--compiler stage0|self`, reports driver/compiler/core provenance through
-`--version --verbose` and never silently falls back. The self path currently
-owns standalone `check`, `build` and `run`; commands reserved for later
-P179b-P179c slices fail with an explicit transition diagnostic. The isolated
-`scripts/check-self-hosting-default-compiler.sh` gate compares generated C,
-native output, status, stderr and human/JSON rejection diagnostics through the
-public driver and runs in the macOS arm64/Linux x86_64 CI matrix.
+`mlgc`. At the P179a boundary the public driver still defaulted to Stage0 while
+accepting explicit `--compiler stage0|self`, reporting driver/compiler/core
+provenance through `--version --verbose` and never silently falling back.
+P179b-P179c subsequently moved the complete public compiler surface behind
+`mlgc`. The isolated `scripts/check-self-hosting-default-compiler.sh` gate
+compares generated C, native output, status, stderr and human/JSON rejection
+diagnostics through the public driver and runs in the macOS arm64/Linux x86_64
+CI matrix.
 
 ### P179b: Public Project And Diagnostic Surface
 
@@ -191,6 +192,26 @@ smoke. P179d now owns the packaged default switch.
 - validate macOS arm64 and Linux x86_64 archives, checksums and installed UX
 - keep explicit rollback available without network access
 
+The P179d implementation is complete locally. The public driver now selects
+self by default and resolves its sibling `mlgc`; `--compiler stage0` is the
+explicit in-process recovery/oracle path. Release archives contain both `mlg`
+and fixed-point `mlgc`, and the installer validates protocol/version provenance,
+the exact archive entry set and checksum before replacing the pair. Local
+archive acceptance covers repeated deterministic builds, clean installation,
+missing-core failure, explicit Stage0 recovery and offline rollback.
+
+The tracked clean-checkout recovery path is:
+
+```sh
+cargo build --locked --bin mlg
+scripts/build-self-hosted-compiler.sh \
+  --stage0 target/debug/mlg \
+  --output target/debug/mlgc
+```
+
+P179d remains active until the default-transition and release-artifact jobs pass
+on macOS arm64 and Linux x86_64 from the published change.
+
 ### P179e: B5 Closure
 
 - run complete Stage0/default differential, fixed-point and release gates
@@ -208,8 +229,8 @@ smoke. P179d now owns the packaged default switch.
 - [x] self-hosted format and project-wide atomic write/check workflow
 - [x] self-hosted test selection and runner generation
 - [x] self-hosted run and native process workflow
-- [ ] complete Stage0/default command and conformance parity
-- [ ] default release artifacts use the Mallang compiler core
+- [x] local complete Stage0/default command and conformance parity
+- [x] default release artifacts use the Mallang compiler core
 - [ ] macOS arm64 and Linux x86_64 packaging and clean-install acceptance
 - [ ] B5 publication, signed tag and GitHub Release acceptance
 

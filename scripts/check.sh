@@ -141,6 +141,11 @@ expect_all_warning_clean_generated_c() {
 "${CARGO[@]}" fmt --all --check
 "${CARGO[@]}" test --workspace
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
+"${CARGO[@]}" build --locked --bin mlg
+scripts/build-self-hosted-compiler.sh \
+  --stage0 target/debug/mlg \
+  --output target/debug/mlgc \
+  >/dev/null
 crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
 version_output="$("${CARGO[@]}" run --quiet --bin mlg -- --version)"
 if [[ "$version_output" != "mlg $crate_version" ]]; then

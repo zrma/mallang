@@ -141,6 +141,23 @@ type AdtPatternPayload struct {
     name string
 }
 
+type RecursiveTypeEdge struct {
+    target string
+    span source.Span
+}
+
+type RecursiveTypeVariant struct {
+    dependencies []string
+}
+
+type RecursiveTypeNode struct {
+    name string
+    kind string
+    span source.Span
+    edges []RecursiveTypeEdge
+    variants []RecursiveTypeVariant
+}
+
 pub type CheckedProgram struct {
     typeShapes []TypeShape
     structs []StructSig
@@ -166,6 +183,14 @@ pub type SemanticError struct {
 }
 
 pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
+    return checkProgram(con program, true)
+}
+
+pub func CheckProject(con program ast.Program) Result[CheckedProgram, SemanticError] {
+    return checkProgram(con program, false)
+}
+
+func checkProgram(con program ast.Program, requireMain bool) Result[CheckedProgram, SemanticError] {
     mut checked := CheckedProgram{typeShapes: []TypeShape{}, structs: []StructSig{}, enums: []EnumSig{}, functions: []FunctionSig{}, functionTypes: []FunctionSig{}, methods: []MethodSig{}, typedNodes: []TypedNode{}, functionReferences: []FunctionReference{}, closures: []CheckedClosure{}, captureUses: []CaptureUse{}, closureMutable: false, closureNode: -1, recursiveBindings: []string{}, locals: []Local{}, scopeDepth: 0, loopDepth: 0,}
 
     match checked.collectEnumNames(con program) {
@@ -192,13 +217,19 @@ pub func Check(con program ast.Program) Result[CheckedProgram, SemanticError] {
             return Err(error)
         }
     }
+    match checked.validateRecursiveTypes(con program) {
+        case Ok(_) {}
+        case Err(error) {
+            return Err(error)
+        }
+    }
     match checked.collectFunctionSignatures(con program) {
         case Ok(_) {}
         case Err(error) {
             return Err(error)
         }
     }
-    if !checked.hasFunction(con "main") {
+    if requireMain && !checked.hasFunction(con "main") {
         root := ast.Root(con program)
         return Err(newError("program must declare `func main()`", ast.Span(con program, root)))
     }
@@ -926,6 +957,207 @@ func (mut self CheckedProgram) collectEnumVariants(con program ast.Program) Resu
                 return Err(newError(message, ast.Span(con program, declaration)))
             }
             enumIndex = enumIndex + 1
+        }
+    }
+    return Ok(true)
+}
+
+func recursiveTypeNodeIndex(con nodes []RecursiveTypeNode, con name string) int {
+    for mut index := 0; index < len(nodes); index = index + 1 {
+        if nodes[index].name == name {
+            return index
+        }
+    }
+    return - 1
+}
+
+func (con self CheckedProgram) recursiveTypeDependencies(con ty ResolvedType) []string {
+    mut output := []string{}
+    mut pending := []ResolvedType{copyType(con ty)}
+    for mut currentIndex := 0; currentIndex < len(pending); currentIndex = currentIndex + 1 {
+        current := copyType(con pending[currentIndex])
+        if current.kind == "struct" || current.kind == "enum" {
+            if(self.structIndex(con current.text) >= 0 || self.enumIndex(con current.text) >= 0) && !containsText(con output, con current.text) {
+                output = append(output, token.CopyText(con current.text))
+            }
+        } else {
+            shape := self.typeShapeIndex(con current)
+            if shape >= 0 {
+                for mut argument := 0; argument < len(self.typeShapes[shape].arguments); argument = argument + 1 {
+                    pending = append(pending, copyType(con self.typeShapes[shape].arguments[argument]))
+                }
+            }
+        }
+    }
+    return output
+}
+
+func (con self CheckedProgram) recursiveTypeGraph(con program ast.Program) []RecursiveTypeNode {
+    mut nodes := []RecursiveTypeNode{}
+    root := ast.Root(con program)
+    for mut structure := 0; structure < len(self.structs); structure = structure + 1 {
+        mut declaration := root
+        for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+            candidate := ast.Child(con program, root, child)
+            if isStructKind(con ast.Kind(con program, candidate)) && ast.Value(con program, candidate) == self.structs[structure].name {
+                declaration = candidate
+            }
+        }
+        nodes = append(nodes, RecursiveTypeNode{name: token.CopyText(con self.structs[structure].name), kind: "struct", span: ast.Span(con program, declaration), edges: []RecursiveTypeEdge{}, variants: []RecursiveTypeVariant{},})
+    }
+    for mut enumeration := 0; enumeration < len(self.enums); enumeration = enumeration + 1 {
+        mut declaration := root
+        for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+            candidate := ast.Child(con program, root, child)
+            if isEnumKind(con ast.Kind(con program, candidate)) && ast.Value(con program, candidate) == self.enums[enumeration].name {
+                declaration = candidate
+            }
+        }
+        nodes = append(nodes, RecursiveTypeNode{name: token.CopyText(con self.enums[enumeration].name), kind: "enum", span: ast.Span(con program, declaration), edges: []RecursiveTypeEdge{}, variants: []RecursiveTypeVariant{},})
+    }
+
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        declaration := ast.Child(con program, root, child)
+        declarationKind := ast.Kind(con program, declaration)
+        declarationName := ast.Value(con program, declaration)
+        node := recursiveTypeNodeIndex(con nodes, con declarationName)
+        if node < 0 {
+            continue
+        }
+        if isStructKind(con declarationKind) {
+            structure := self.structIndex(con declarationName)
+            mut field := 0
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                fieldNode := ast.Child(con program, declaration, item)
+                if ast.Kind(con program, fieldNode) == "FieldDecl" {
+                    typeNode := ast.Child(con program, fieldNode, 0)
+                    dependencies := self.recursiveTypeDependencies(con self.structs[structure].fields[field].ty)
+                    for mut dependency := 0; dependency < len(dependencies); dependency = dependency + 1 {
+                        nodes[node].edges = append(nodes[node].edges, RecursiveTypeEdge{target: token.CopyText(con dependencies[dependency]), span: ast.Span(con program, typeNode),})
+                    }
+                    field = field + 1
+                }
+            }
+        } else if isEnumKind(con declarationKind) {
+            enumeration := self.enumIndex(con declarationName)
+            mut variant := 0
+            for mut item := 0; item < ast.ChildCount(con program, declaration); item = item + 1 {
+                variantNode := ast.Child(con program, declaration, item)
+                if ast.Kind(con program, variantNode) == "EnumVariant" {
+                    mut variantDependencies := []string{}
+                    for mut payload := 0; payload < ast.ChildCount(con program, variantNode); payload = payload + 1 {
+                        typeNode := ast.Child(con program, variantNode, payload)
+                        dependencies := self.recursiveTypeDependencies(con self.enums[enumeration].variants[variant].payloads[payload])
+                        for mut dependency := 0; dependency < len(dependencies); dependency = dependency + 1 {
+                            if !containsText(con variantDependencies, con dependencies[dependency]) {
+                                variantDependencies = append(variantDependencies, token.CopyText(con dependencies[dependency]))
+                            }
+                            nodes[node].edges = append(nodes[node].edges, RecursiveTypeEdge{target: token.CopyText(con dependencies[dependency]), span: ast.Span(con program, typeNode),})
+                        }
+                    }
+                    nodes[node].variants = append(nodes[node].variants, RecursiveTypeVariant{dependencies: variantDependencies,})
+                    variant = variant + 1
+                }
+            }
+        }
+    }
+    return nodes
+}
+
+func recursivePathFrom(con nodes []RecursiveTypeNode, current int, con target string, structOnly bool, con allowed []string, con visiting []string) bool {
+    if current < 0 || current >= len(nodes) {
+        return false
+    }
+    for mut edge := 0; edge < len(nodes[current].edges); edge = edge + 1 {
+        next := recursiveTypeNodeIndex(con nodes, con nodes[current].edges[edge].target)
+        if next < 0 ||(structOnly && nodes[next].kind != "struct") ||(len(allowed) > 0 && !containsText(con allowed, con nodes[next].name)) {
+            continue
+        }
+        if nodes[next].name == target {
+            return true
+        }
+        if !containsText(con visiting, con nodes[next].name) {
+            mut nested := copyTexts(con visiting)
+            nested = append(nested, token.CopyText(con nodes[next].name))
+            if recursivePathFrom(con nodes, next, con target, structOnly, con allowed, con nested) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func recursivePathExists(con nodes []RecursiveTypeNode, start int, con target string, structOnly bool, con allowed []string) bool {
+    if start < 0 || start >= len(nodes) ||(structOnly && nodes[start].kind != "struct") {
+        return false
+    }
+    visiting := []string{token.CopyText(con nodes[start].name),}
+    return recursivePathFrom(con nodes, start, con target, structOnly, con allowed, con visiting)
+}
+
+func (con self CheckedProgram) validateRecursiveTypes(con program ast.Program) Result[bool, SemanticError] {
+    nodes := self.recursiveTypeGraph(con program)
+    mut processed := []string{}
+    for mut start := 0; start < len(nodes); start = start + 1 {
+        if containsText(con processed, con nodes[start].name) {
+            continue
+        }
+        mut component := []string{token.CopyText(con nodes[start].name),}
+        for mut candidate := 0; candidate < len(nodes); candidate = candidate + 1 {
+            if candidate != start && recursivePathExists(con nodes, start, con nodes[candidate].name, false, con []string {}
+            ) && recursivePathExists(con nodes, candidate, con nodes[start].name, false, con []string{}){component = append(component, token.CopyText(con nodes[candidate].name))
+            }
+        }
+        for mut member := 0; member < len(component); member = member + 1 {
+            processed = append(processed, token.CopyText(con component[member]))
+        }
+        if len(component) == 1 && !recursivePathExists(con nodes, start, con nodes[start].name, false, con component) {
+            continue
+        }
+
+        for mut member := 0; member < len(component); member = member + 1 {
+            node := recursiveTypeNodeIndex(con nodes, con component[member])
+            if nodes[node].kind == "struct" && recursivePathExists(con nodes, node, con nodes[node].name, true, con component) {
+                mut span := source.Copy(con nodes[node].span)
+                for mut edge := 0; edge < len(nodes[node].edges); edge = edge + 1 {
+                    next := recursiveTypeNodeIndex(con nodes, con nodes[node].edges[edge].target)
+                    if next >= 0 && nodes[next].kind == "struct" && containsText(con component, con nodes[next].name) &&(nodes[next].name == nodes[node].name || recursivePathExists(con nodes, next, con nodes[node].name, true, con component)) {
+                        span = source.Copy(con nodes[node].edges[edge].span)
+                    }
+                }
+                message := strings.join(con []string{"recursive type definition involving `", token.CopyText(con nodes[node].name), "` has no user enum indirection boundary",}, con "")
+                return Err(newError(message, span))
+            }
+        }
+
+        mut firstEnum := -1
+        mut hasBaseVariant := false
+        for mut member := 0; member < len(component); member = member + 1 {
+            node := recursiveTypeNodeIndex(con nodes, con component[member])
+            if nodes[node].kind == "enum" {
+                if firstEnum < 0 {
+                    firstEnum = node
+                }
+                for mut variant := 0; variant < len(nodes[node].variants); variant = variant + 1 {
+                    mut base := true
+                    for mut dependency := 0; dependency < len(nodes[node].variants[variant].dependencies); dependency = dependency + 1 {
+                        if containsText(con component, con nodes[node].variants[variant].dependencies[dependency]) {
+                            base = false
+                        }
+                    }
+                    if base {
+                        hasBaseVariant = true
+                    }
+                }
+            }
+        }
+        if firstEnum < 0 {
+            message := strings.join(con []string{"recursive type definition involving `", token.CopyText(con nodes[start].name), "` has no user enum indirection boundary",}, con "")
+            return Err(newError(message, source.Copy(con nodes[start].span)))
+        }
+        if !hasBaseVariant {
+            message := strings.join(con []string{"recursive enum component involving `", token.CopyText(con nodes[firstEnum].name), "` has no non-recursive base variant",}, con "")
+            return Err(newError(message, source.Copy(con nodes[firstEnum].span)))
         }
     }
     return Ok(true)

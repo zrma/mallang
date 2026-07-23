@@ -100,8 +100,8 @@ check_accounting "example" "$EXAMPLE_C" "$EXAMPLE_OUTPUT"
 check_accounting "growth" "$GROWTH_C" "$GROWTH_OUTPUT"
 
 new_map_thunk_count="$({
-  grep -Eo 'mallang_callable_thunk_[A-Za-z0-9_]+' "$GROWTH_C" || true
-} | sort -u | grep -c 'newMap')"
+  grep -Eo 'mallang_(intrinsic_)?callable_thunk_[A-Za-z0-9_]+' "$GROWTH_C" || true
+} | sort -u | awk '/newMap|CollectionsNewMap/ { count = count + 1 } END { print count + 0 }')"
 if [[ "$new_map_thunk_count" -ne 3 ]]; then
   echo "collections Map specialization thunk count mismatch" >&2
   exit 1

@@ -1,7 +1,13 @@
 # Mallang Binary Archive
 
-This archive contains the `mlg` compiler for the target named in the archive
-filename. Run `bin/mlg --version` and `bin/mlg --help` to inspect it.
+This archive contains the public `mlg` driver and its sibling self-hosted
+compiler core, `mlgc`, for the target named in the archive filename. Keep both
+binaries in the same directory. Run `bin/mlg --version --verbose` and
+`bin/mlg --help` to inspect the installed compiler.
+
+`mlg` uses the Mallang-built `mlgc` core by default. The Rust Stage0 seed remains
+embedded in the driver as an explicit offline recovery path:
+`bin/mlg --compiler stage0 <subcommand> ...`.
 
 Mallang lowers programs to C. `mlg build`, `mlg run`, and `mlg test` require
 `clang` to be available on `PATH`; install the platform C compiler tools before

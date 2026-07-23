@@ -53,7 +53,7 @@ struct CompilerSelection {
 impl Default for CompilerSelection {
     fn default() -> Self {
         Self {
-            implementation: CompilerImplementation::Stage0,
+            implementation: CompilerImplementation::SelfHosted,
             self_compiler: None,
         }
     }
@@ -164,12 +164,10 @@ fn main() {
 
     let result =
         match command.to_str() {
-            Some("lex") => require_stage0(&options.compiler, "lex")
-                .and_then(|()| utf8_cli_args(command_args))
-                .and_then(|args| run_lex(&program, &args)),
-            Some("parse") => require_stage0(&options.compiler, "parse")
-                .and_then(|()| utf8_cli_args(command_args))
-                .and_then(|args| run_parse(&program, &args)),
+            Some("lex") => utf8_cli_args(command_args)
+                .and_then(|args| run_lex(&program, &args, &options.compiler)),
+            Some("parse") => utf8_cli_args(command_args)
+                .and_then(|args| run_parse(&program, &args, &options.compiler)),
             Some("check") => utf8_cli_args(command_args)
                 .and_then(|args| run_check(&program, &args, &options.compiler)),
             Some("fmt") => utf8_cli_args(command_args)
@@ -270,7 +268,9 @@ fn parse_global_options(args: &[OsString]) -> CliResult<GlobalOptions> {
         break;
     }
 
-    if self_compiler_seen && compiler.implementation != CompilerImplementation::SelfHosted {
+    if self_compiler_seen
+        && (!compiler_seen || compiler.implementation != CompilerImplementation::SelfHosted)
+    {
         return Err(CliError::cli(
             "--self-compiler requires explicit `--compiler self`",
         ));
@@ -301,15 +301,6 @@ fn parse_compiler_implementation(value: &str) -> CliResult<CompilerImplementatio
             "unknown compiler `{value}`; expected `stage0` or `self`"
         ))),
     }
-}
-
-fn require_stage0(selection: &CompilerSelection, command: &str) -> CliResult<()> {
-    if selection.implementation == CompilerImplementation::Stage0 {
-        return Ok(());
-    }
-    Err(CliError::cli(format!(
-        "self-hosted compiler does not yet support public `{command}`; use explicit `--compiler stage0`"
-    )))
 }
 
 fn emit_diagnostics(error: CliError, format: DiagnosticFormat) {
@@ -397,9 +388,15 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} --version [--verbose]")
 }
 
-fn run_lex(program: &str, args: &[String]) -> CliResult<()> {
+fn run_lex(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_source_arg(program, "lex", args)?;
     let (sources, source_id) = load_source(path)?;
+    if compiler.implementation == CompilerImplementation::SelfHosted {
+        let stdout = invoke_self_hosted_compiler_args(&[OsString::from(path)], path, compiler)?;
+        finish_self_hosted_lex(path, &stdout, &sources, source_id)?;
+        print!("{stdout}");
+        return Ok(());
+    }
     let source = source_text(&sources, source_id);
 
     match lex_with_source(source, source_id) {
@@ -423,11 +420,173 @@ fn run_lex(program: &str, args: &[String]) -> CliResult<()> {
     }
 }
 
-fn run_parse(program: &str, args: &[String]) -> CliResult<()> {
+fn run_parse(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
     let path = single_source_arg(program, "parse", args)?;
     let (sources, source_id) = load_source(path)?;
+    if compiler.implementation == CompilerImplementation::SelfHosted {
+        let stdout = invoke_self_hosted_compiler("parse", path, compiler)?;
+        finish_self_hosted_parse(path, &stdout, &sources)?;
+        print!("{stdout}");
+        return Ok(());
+    }
     let program = parse_loaded_source(&sources, source_id)?;
     println!("{program:#?}");
+    Ok(())
+}
+
+fn finish_self_hosted_lex(
+    input_path: &str,
+    output: &str,
+    sources: &SourceMap,
+    source_id: SourceId,
+) -> CliResult<()> {
+    let Some(first_line) = output.lines().next() else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "lexer response is empty",
+        ));
+    };
+    if first_line.starts_with("E|") {
+        if output.lines().count() != 1 {
+            return Err(self_hosted_protocol_error(
+                input_path,
+                "lexer rejection contains trailing records",
+            ));
+        }
+        let diagnostic = parse_self_hosted_lex_diagnostic(first_line, sources, source_id)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?;
+        return Err(CliError::one(diagnostic));
+    }
+    validate_self_hosted_lex(output, sources, source_id)
+        .map_err(|detail| self_hosted_protocol_error(input_path, detail))
+}
+
+fn parse_self_hosted_lex_diagnostic(
+    line: &str,
+    sources: &SourceMap,
+    source_id: SourceId,
+) -> Result<Diagnostic, String> {
+    let fields = line.split('|').collect::<Vec<_>>();
+    if fields.len() != 4 || fields[0] != "E" {
+        return Err("invalid lexer diagnostic record".to_string());
+    }
+    let start = parse_self_hosted_usize(fields[1], "lexer span start")?;
+    let end = parse_self_hosted_usize(fields[2], "lexer span end")?;
+    validate_self_hosted_source_span(sources, source_id, start, end, "lexer")?;
+    let message = decode_self_hosted_bytes(fields[3])?;
+    Ok(source_diagnostic(
+        DiagnosticStage::Frontend,
+        message,
+        sources,
+        mallang::Span::new(source_id, start, end),
+        None,
+    ))
+}
+
+fn validate_self_hosted_lex(
+    output: &str,
+    sources: &SourceMap,
+    source_id: SourceId,
+) -> Result<(), String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return Err("lexer response is empty".to_string());
+    }
+    let mut previous_start = 0;
+    for line in lines {
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 5 || fields[0] != "T" || fields[1].is_empty() {
+            return Err("invalid lexer token record".to_string());
+        }
+        let start = parse_self_hosted_usize(fields[2], "lexer token start")?;
+        let end = parse_self_hosted_usize(fields[3], "lexer token end")?;
+        if start < previous_start {
+            return Err("lexer token spans are not ordered".to_string());
+        }
+        validate_self_hosted_source_span(sources, source_id, start, end, "lexer token")?;
+        decode_self_hosted_bytes(fields[4])?;
+        previous_start = start;
+    }
+    Ok(())
+}
+
+fn finish_self_hosted_parse(input_path: &str, output: &str, sources: &SourceMap) -> CliResult<()> {
+    let Some(first_line) = output.lines().next() else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "parser response is empty",
+        ));
+    };
+    if first_line.starts_with("PERR|") {
+        let diagnostics = parse_self_hosted_diagnostics(output, sources, None)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?;
+        return Err(CliError::many(diagnostics));
+    }
+    validate_self_hosted_ast(output, sources)
+        .map_err(|detail| self_hosted_protocol_error(input_path, detail))
+}
+
+fn validate_self_hosted_ast(output: &str, sources: &SourceMap) -> Result<(), String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return Err("parser response is empty".to_string());
+    }
+    let mut cursor = 0;
+    let mut remaining = vec![1usize];
+    while let Some(count) = remaining.last_mut() {
+        if *count == 0 {
+            remaining.pop();
+            continue;
+        }
+        *count -= 1;
+        let expected_depth = remaining.len() - 1;
+        let line = lines
+            .get(cursor)
+            .ok_or_else(|| "parser response is missing an AST node".to_string())?;
+        cursor += 1;
+        let fields = line.split('|').collect::<Vec<_>>();
+        if fields.len() != 8 || fields[0] != "N" || fields[2].is_empty() {
+            return Err("invalid AST node record".to_string());
+        }
+        let depth = parse_self_hosted_usize(fields[1], "AST node depth")?;
+        if depth != expected_depth {
+            return Err(format!(
+                "AST node depth {depth} does not match expected depth {expected_depth}"
+            ));
+        }
+        let source_index = parse_self_hosted_usize(fields[3], "AST source ID")?;
+        let start = parse_self_hosted_usize(fields[4], "AST span start")?;
+        let end = parse_self_hosted_usize(fields[5], "AST span end")?;
+        validate_self_hosted_source_span(sources, SourceId::new(source_index), start, end, "AST")?;
+        decode_self_hosted_bytes(fields[6])?;
+        let child_count = parse_self_hosted_usize(fields[7], "AST child count")?;
+        if child_count > 0 {
+            remaining.push(child_count);
+        }
+    }
+    if cursor != lines.len() {
+        return Err("parser response contains trailing records".to_string());
+    }
+    Ok(())
+}
+
+fn validate_self_hosted_source_span(
+    sources: &SourceMap,
+    source_id: SourceId,
+    start: usize,
+    end: usize,
+    label: &str,
+) -> Result<(), String> {
+    let source = sources
+        .file(source_id)
+        .ok_or_else(|| format!("unknown {label} source ID {}", source_id.index()))?;
+    if start > end
+        || end > source.text().len()
+        || !source.text().is_char_boundary(start)
+        || !source.text().is_char_boundary(end)
+    {
+        return Err(format!("invalid {label} source span {start}..{end}"));
+    }
     Ok(())
 }
 
@@ -436,7 +595,7 @@ fn run_check(program: &str, args: &[String], compiler: &CompilerSelection) -> Cl
     if compiler.implementation == CompilerImplementation::SelfHosted {
         match load_compilation_input(path, compiler)? {
             CompilationInput::Standalone { sources, .. } => {
-                let stdout = invoke_self_hosted_compiler("check", path, compiler)?;
+                let stdout = invoke_self_hosted_compiler("check-standalone", path, compiler)?;
                 finish_self_hosted_check(path, stdout, &sources, None)?;
             }
             CompilationInput::Project {
@@ -826,7 +985,7 @@ fn run_ir(program: &str, args: &[String], compiler: &CompilerSelection) -> CliRe
     let output = match load_compilation_input(path, compiler)? {
         CompilationInput::Standalone { sources, source_id } => {
             if compiler.implementation == CompilerImplementation::SelfHosted {
-                let stdout = invoke_self_hosted_compiler("ir", path, compiler)?;
+                let stdout = invoke_self_hosted_compiler("ir-standalone", path, compiler)?;
                 finish_self_hosted_ir(path, stdout, &sources, None)?
             } else {
                 let ir = lower_sources_with_diagnostics(&sources, &[source_id])
@@ -2307,10 +2466,11 @@ mod tests {
 
     use super::{
         child_signal_diagnostic, finish_self_hosted_format, parse_assertion_marker,
-        parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
-        parse_self_hosted_native_response, parse_self_hosted_project_plan_response,
-        parse_self_hosted_test_response, validate_self_hosted_ir, CompilerImplementation,
-        DiagnosticFormat, OutputKind, SelfHostedReply,
+        parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_lex_diagnostic,
+        parse_self_hosted_manifest_response, parse_self_hosted_native_response,
+        parse_self_hosted_project_plan_response, parse_self_hosted_test_response,
+        validate_self_hosted_ast, validate_self_hosted_ir, validate_self_hosted_lex,
+        CompilerImplementation, DiagnosticFormat, OutputKind, SelfHostedReply,
     };
     use mallang::SourceMap;
 
@@ -2354,16 +2514,83 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_stage0_without_silent_self_selection() {
+    fn defaults_to_self_hosted_compiler() {
         let parsed = parse_global_options(&args(&["mlg", "check", "example.mlg"])).unwrap();
 
         assert_eq!(parsed.diagnostic_format, DiagnosticFormat::Human);
         assert_eq!(
             parsed.compiler.implementation,
-            CompilerImplementation::Stage0
+            CompilerImplementation::SelfHosted
         );
         assert_eq!(parsed.compiler.self_compiler, None);
         assert_eq!(parsed.command_index, 1);
+    }
+
+    #[test]
+    fn custom_self_compiler_still_requires_explicit_self_selection() {
+        assert!(parse_global_options(&args(&[
+            "mlg",
+            "--self-compiler",
+            "target/debug/mlgc",
+            "check",
+            "example.mlg",
+        ]))
+        .is_err());
+    }
+
+    #[test]
+    fn validates_strict_self_hosted_frontend_responses() {
+        let mut sources = SourceMap::new();
+        let source_id = sources.add_file("fixture.mlg", "func main() {}\n");
+
+        validate_self_hosted_lex(
+            "T|KeywordFunc|0|4|102,117,110,99\nT|Eof|15|15|\n",
+            &sources,
+            source_id,
+        )
+        .unwrap();
+        validate_self_hosted_ast(
+            "N|0|Program|0|0|15||1\nN|1|Function|0|0|14|109,97,105,110|0\n",
+            &sources,
+        )
+        .unwrap();
+        let diagnostic =
+            parse_self_hosted_lex_diagnostic("E|0|4|98,97,100", &sources, source_id).unwrap();
+        assert_eq!(diagnostic.render_human(), "fixture.mlg:1:1: bad");
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_frontend_responses() {
+        let mut sources = SourceMap::new();
+        let source_id = sources.add_file("fixture.mlg", "func main() {}\n");
+
+        for response in [
+            "",
+            "E|0|1|98",
+            "T||0|1|102",
+            "T|Ident|2|1|102",
+            "T|Ident|0|1|256",
+            "T|Ident|2|3|102\nT|Ident|1|2|117\n",
+        ] {
+            assert!(
+                validate_self_hosted_lex(response, &sources, source_id).is_err(),
+                "lexer response should be rejected: {response}"
+            );
+        }
+        for response in [
+            "",
+            "PERR|0|0|1|98",
+            "N|0||0|0|1||0",
+            "N|1|Program|0|0|1||0",
+            "N|0|Program|1|0|1||0",
+            "N|0|Program|0|0|1||1",
+            "N|0|Program|0|0|1||0\nN|0|Program|0|0|1||0\n",
+        ] {
+            assert!(
+                validate_self_hosted_ast(response, &sources).is_err(),
+                "parser response should be rejected: {response}"
+            );
+        }
     }
 
     #[test]

@@ -18,8 +18,8 @@ and normative v1 contract.
 - Version command shape: `mlg --version`
 - Help command shape: `mlg --help`
 - Internal self-hosted compiler engine: `mlgc`
-- Transition selector: `mlg --compiler <stage0|self> ...`; Stage0 remains the
-  default until the B5 release switch
+- Compiler selector: `mlg --compiler <stage0|self> ...`; the self-hosted
+  `mlgc` core is the default and Stage0 is the explicit recovery/oracle path
 
 ## Current Scope
 
@@ -101,9 +101,10 @@ and normative v1 contract.
   `mlg build`, and `mlg run` accept either a standalone `.mlg` file or a project
   directory or manifest. `mlg ir` emits the deterministic normalized
   self-hosting IR view rather than implementation-specific Rust debug output.
-  During B5, explicit `--compiler self` owns `fmt`, `check`, `ir`, `build`,
-  `run`, and project `test`; the no-flag release default remains Stage0 until
-  the packaged switch.
+  The no-flag path uses the self-hosted `mlgc` core for `fmt`, `check`, `ir`,
+  `build`, `run`, and project `test`. `--compiler stage0` explicitly selects
+  the Rust seed for recovery or differential diagnosis; failures never trigger
+  a silent fallback.
 - Optional `[dependencies]` entries map an exact project name to a
   manifest-relative local directory path. Dependencies load in deterministic
   dependency-first order and expose only ordinary `pub` package APIs. Project
@@ -182,8 +183,8 @@ cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
 scripts/build-self-hosted-compiler.sh
 target/debug/mlg --version --verbose
-target/debug/mlg --compiler self --version --verbose
-target/debug/mlg --compiler self build examples/first.mlg -o target/mallang/first-self
+target/debug/mlg build examples/first.mlg -o target/mallang/first-self
+target/debug/mlg --compiler stage0 check examples/first.mlg
 cargo run --bin mlg -- parse examples/first.mlg
 cargo run --bin mlg -- fmt --check examples/first.mlg
 cargo run --bin mlg -- check examples/first.mlg
@@ -446,11 +447,12 @@ chmod +x install.sh
 ./install.sh --version 1.1.0
 ```
 
-The default destination is `$HOME/.local/bin/mlg`; use `--bin-dir <directory>`
-for another prefix. The installer requires `clang`, downloads only the detected
-host archive over HTTPS, verifies its entry in `SHA256SUMS`, and atomically
-replaces the destination binary. Re-running it with another explicit version is
-the explicit update workflow.
+The default destination is `$HOME/.local/bin`, where the installer places the
+`mlg` driver and sibling `mlgc` core; use `--bin-dir <directory>` for another
+prefix. The installer requires `clang`, downloads only the detected host archive
+over HTTPS, verifies its entry in `SHA256SUMS`, and replaces the verified binary
+pair. Re-running it with another explicit version is the explicit update or
+offline rollback workflow.
 
 Build and inspect the current native development artifact with:
 

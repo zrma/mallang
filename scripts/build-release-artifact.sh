@@ -82,14 +82,20 @@ case "$(uname -s):$(uname -m)" in
 esac
 
 CARGO_TARGET_DIR="$ROOT/target" "$cargo_bin" build --release --locked --bin mlg
-binary="$ROOT/target/release/mlg"
-if [[ ! -x "$binary" ]]; then
-  echo "release binary was not produced at $binary" >&2
+driver="$ROOT/target/release/mlg"
+compiler="$ROOT/target/release/mlgc"
+if [[ ! -x "$driver" ]]; then
+  echo "release driver was not produced at $driver" >&2
   exit 1
 fi
-version_output="$("$binary" --version)"
+scripts/build-self-hosted-compiler.sh --stage0 "$driver" --output "$compiler" >/dev/null
+if [[ "$("$compiler" --version)" != "mlgc protocol 1" ]]; then
+  echo "release compiler protocol handshake failed" >&2
+  exit 1
+fi
+version_output="$("$driver" --version)"
 if [[ "$version_output" != "mlg $version" ]]; then
-  echo "release binary version mismatch: expected mlg $version, got $version_output" >&2
+  echo "release driver version mismatch: expected mlg $version, got $version_output" >&2
   exit 1
 fi
 
@@ -97,8 +103,9 @@ mkdir -p target/mallang "$output_dir"
 staging="$(mktemp -d "target/mallang/release-staging.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/bin"
-cp "$binary" "$staging/bin/mlg"
-chmod 0755 "$staging/bin/mlg"
+cp "$driver" "$staging/bin/mlg"
+cp "$compiler" "$staging/bin/mlgc"
+chmod 0755 "$staging/bin/mlg" "$staging/bin/mlgc"
 cp LICENSE-MIT LICENSE-APACHE "$staging/"
 cp packaging/README.md "$staging/README.md"
 chmod 0644 "$staging/LICENSE-MIT" "$staging/LICENSE-APACHE" "$staging/README.md"

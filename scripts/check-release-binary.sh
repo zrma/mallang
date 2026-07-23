@@ -10,6 +10,7 @@ if [[ -n "${CARGO_BIN:-}" ]]; then
 fi
 
 RELEASE_BIN="target/release/mlg"
+RELEASE_COMPILER="target/release/mlgc"
 SMOKE_BIN="target/mallang/release-binary-first"
 NEGATIVE_DIR="target/mallang/release-binary-negative"
 
@@ -50,12 +51,30 @@ expect_release_check_failure() {
   expect_release_command_failure "$label" "$expected_stderr" "$RELEASE_BIN" check "$source"
 }
 
-"${CARGO[@]}" build --release --bin mlg
+"${CARGO[@]}" build --release --locked --bin mlg
+scripts/build-self-hosted-compiler.sh \
+  --stage0 "$RELEASE_BIN" \
+  --output "$RELEASE_COMPILER" \
+  >/dev/null
 
 crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
 version_output="$("$RELEASE_BIN" --version)"
 if [[ "$version_output" != "mlg $crate_version" ]]; then
   echo "release binary version smoke failed: expected mlg $crate_version, got '$version_output'" >&2
+  exit 1
+fi
+if [[ "$("$RELEASE_COMPILER" --version)" != "mlgc protocol 1" ]]; then
+  echo "release compiler protocol smoke failed" >&2
+  exit 1
+fi
+expected_provenance=$'mlg '"$crate_version"$'\ndriver: rust\ncompiler: self\ncore: mlgc protocol 1'
+if [[ "$("$RELEASE_BIN" --version --verbose)" != "$expected_provenance" ]]; then
+  echo "release default compiler provenance smoke failed" >&2
+  exit 1
+fi
+if [[ "$("$RELEASE_BIN" --compiler stage0 --version --verbose)" != \
+  $'mlg '"$crate_version"$'\ndriver: rust\ncompiler: stage0\ncore: rust-stage0' ]]; then
+  echo "release Stage0 rollback provenance smoke failed" >&2
   exit 1
 fi
 
@@ -91,14 +110,16 @@ scripts/check-parser-recovery.sh "$RELEASE_BIN"
 scripts/check-hardening-corpus.sh "$RELEASE_BIN"
 
 lex_output="$("$RELEASE_BIN" lex examples/first.mlg)"
-if [[ "$lex_output" != *"Keyword(Func) @ 0..4"* || "$lex_output" != *'Ident("add")'* ]]; then
+if [[ "$lex_output" != T\|Keyword.Func\|0\|4\|$'\n'* || \
+  "$lex_output" != *$'\n'T\|Ident\|67\|70\|97,100,100$'\n'* ]]; then
   echo "release binary lex smoke failed" >&2
   echo "$lex_output" >&2
   exit 1
 fi
 
 parse_output="$("$RELEASE_BIN" parse examples/first.mlg)"
-if [[ "$parse_output" != *"Program {"* || "$parse_output" != *'name: "main"'* || "$parse_output" != *"Function {"* ]]; then
+if [[ "$parse_output" != N\|0\|Program\|0\|0\|110\|\|3$'\n'* || \
+  "$parse_output" != *$'\n'N\|1\|FunctionDecl.Package\|0\|0\|60\|109,97,105,110\|1$'\n'* ]]; then
   echo "release binary parse smoke failed" >&2
   echo "$parse_output" >&2
   exit 1

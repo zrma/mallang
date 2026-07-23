@@ -199,9 +199,15 @@ install_args=(
 HOME="$home" ./install.sh "${install_args[@]}" >"$work/install-default.stdout"
 HOME="$home" ./install.sh "${install_args[@]}" >"$work/reinstall-default.stdout"
 installed="$home/.local/bin/mlg"
-if [[ "$(cat "$work/install-default.stdout")" != "installed mlg $crate_version to $installed" ]] || \
-   [[ "$(cat "$work/reinstall-default.stdout")" != "installed mlg $crate_version to $installed" ]]; then
+installed_compiler="$home/.local/bin/mlgc"
+expected_install_output="installed Mallang $crate_version to $home/.local/bin (mlg + mlgc)"
+if [[ "$(cat "$work/install-default.stdout")" != "$expected_install_output" ]] || \
+   [[ "$(cat "$work/reinstall-default.stdout")" != "$expected_install_output" ]]; then
   echo "default install/reinstall output mismatch" >&2
+  exit 1
+fi
+if [[ ! -x "$installed" || ! -x "$installed_compiler" ]]; then
+  echo "default install did not produce the mlg/mlgc compiler pair" >&2
   exit 1
 fi
 
@@ -211,13 +217,22 @@ fi
   --archive "$offline/$archive_name" \
   --checksums "$offline/SHA256SUMS" \
   >"$work/install-explicit.stdout"
-if [[ ! -x "$explicit_prefix/bin/mlg" ]]; then
-  echo "explicit-prefix install did not produce mlg" >&2
+if [[ ! -x "$explicit_prefix/bin/mlg" || ! -x "$explicit_prefix/bin/mlgc" ]]; then
+  echo "explicit-prefix install did not produce the mlg/mlgc compiler pair" >&2
   exit 1
 fi
 
 if [[ "$($installed --version)" != "mlg $crate_version" ]]; then
   echo "installed release binary version mismatch" >&2
+  exit 1
+fi
+if [[ "$($installed_compiler --version)" != "mlgc protocol 1" ]]; then
+  echo "installed self-hosted compiler protocol mismatch" >&2
+  exit 1
+fi
+expected_provenance=$'mlg '"$crate_version"$'\ndriver: rust\ncompiler: self\ncore: mlgc protocol 1'
+if [[ "$($installed --version --verbose)" != "$expected_provenance" ]]; then
+  echo "installed default compiler provenance mismatch" >&2
   exit 1
 fi
 help_output="$($installed --help)"
@@ -267,6 +282,27 @@ expected_test_output=$'test hello/greet::ReadsPrivateProductionState ... ok\ntes
 if [[ "$test_output" != "$expected_test_output" ]]; then
   echo "installed release binary project test output mismatch" >&2
   printf '%s\n' "$test_output" >&2
+  exit 1
+fi
+
+rollback_bin="$work/offline-rollback/bin"
+mkdir -p "$rollback_bin"
+cp "$installed" "$rollback_bin/mlg"
+if "$rollback_bin/mlg" check examples/first.mlg \
+  >"$work/rollback-default.stdout" 2>"$work/rollback-default.stderr"; then
+  echo "isolated installed driver unexpectedly hid the missing default compiler" >&2
+  exit 1
+fi
+if [[ -s "$work/rollback-default.stdout" ]] || \
+   ! grep -Fq 'self-hosted compiler not found' "$work/rollback-default.stderr"; then
+  echo "isolated installed driver missing-core diagnostic mismatch" >&2
+  exit 1
+fi
+"$rollback_bin/mlg" --compiler stage0 check examples/first.mlg \
+  >"$work/rollback-stage0.stdout" 2>"$work/rollback-stage0.stderr"
+if [[ "$(cat "$work/rollback-stage0.stdout")" != "examples/first.mlg: ok" ]] || \
+   [[ -s "$work/rollback-stage0.stderr" ]]; then
+  echo "installed offline Stage0 rollback failed" >&2
   exit 1
 fi
 
