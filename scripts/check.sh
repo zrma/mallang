@@ -152,6 +152,7 @@ help_stderr="target/mallang/help.stderr"
 help_output="$("${CARGO[@]}" run --quiet --bin mlg -- --help 2>"$help_stderr")"
 if [[ "$help_output" != *"usage:"* || \
   "$help_output" != *"target/debug/mlg check <input>"* || \
+  "$help_output" != *"target/debug/mlg ir <input>"* || \
   "$help_output" != *"target/debug/mlg fmt [--check] <input>"* || \
   "$help_output" != *"target/debug/mlg test <input> [--exact <test-id>]"* || \
   "$help_output" != *"target/debug/mlg --version"* ]]; then
@@ -207,10 +208,18 @@ fi
 standard_fixture="tests/fixtures/v06-standard-registry/standard-intrinsics.mlg"
 "${CARGO[@]}" run --quiet --bin mlg -- check "$standard_fixture" >/dev/null
 standard_ir="$("${CARGO[@]}" run --quiet --bin mlg -- ir "$standard_fixture")"
-if [[ "$standard_ir" != *"StringsByteLen"* || "$standard_ir" != *"CollectionsNewMap"* || "$standard_ir" != *"CollectionsCount"* ]]; then
-  echo "standard registry IR smoke failed: typed intrinsic identity is missing" >&2
-  exit 1
-fi
+for expected_intrinsic in StringsByteLen CollectionsNewMap CollectionsCount; do
+  encoded_intrinsic="$(
+    python3 -c \
+      'import sys; print(",".join(str(byte) for byte in sys.argv[1].encode("utf-8")))' \
+      "$expected_intrinsic"
+  )"
+  if ! grep -F "|E|Expr.IntrinsicCall|" <<<"$standard_ir" |
+    grep -Fq "|$encoded_intrinsic|"; then
+    echo "standard registry IR smoke failed: typed intrinsic identity is missing: $expected_intrinsic" >&2
+    exit 1
+  fi
+done
 standard_build_stdout="target/mallang/v06-standard-registry.stdout"
 standard_build_stderr="target/mallang/v06-standard-registry.stderr"
 "${CARGO[@]}" run --quiet --bin mlg -- build "$standard_fixture" -o target/mallang/v06-standard-registry >"$standard_build_stdout" 2>"$standard_build_stderr"

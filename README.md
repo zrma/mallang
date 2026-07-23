@@ -97,9 +97,10 @@ and normative v1 contract.
 - Integer arithmetic guards overflow before native execution can reach C signed
   overflow undefined behavior.
 - Multi-file projects use `mallang.toml`, an `src/` tree, directory packages,
-  explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg build`, and
-  `mlg run` accept either a standalone `.mlg` file or a project directory or
-  manifest.
+  explicit imports, and `pub` visibility. `mlg fmt`, `mlg check`, `mlg ir`,
+  `mlg build`, and `mlg run` accept either a standalone `.mlg` file or a project
+  directory or manifest. `mlg ir` emits the deterministic normalized
+  self-hosting IR view rather than implementation-specific Rust debug output.
 - Optional `[dependencies]` entries map an exact project name to a
   manifest-relative local directory path. Dependencies load in deterministic
   dependency-first order and expose only ordinary `pub` package APIs. Project

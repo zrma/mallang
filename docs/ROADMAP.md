@@ -1855,7 +1855,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 
 ## P179: B5 Default Self-Hosted Compiler
 
-상태: active; P179a/P179b1/P179b2a/P179b2b1/P179b2b2a/P179b2b2b complete, P179b2b active (2026-07-23)
+상태: active; P179a-P179b complete through P179b2b3, P179c active (2026-07-23)
 
 - [x] public `mlg`, internal `mlgc`와 `--compiler stage0|self` contract
 - [x] clean-checkout Stage0 -> Stage1 -> Stage2 build graph와 provenance
@@ -1865,7 +1865,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 - [x] Mallang manifest parser와 tracked manifest differential protocol
 - [x] Mallang dependency graph validation/postorder planner와 Rust differential
 - [x] self-hosted project discovery, diagnostics, `check`/`build`/`run`
-- [ ] self-hosted public IR output
+- [x] self-hosted public IR output
 - [ ] self-hosted format, test, run과 native workflow
 - [ ] complete Stage0/default command와 conformance parity
 - [ ] default release artifact와 supported-platform clean-install acceptance

@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a, P179b1, P179b2a, P179b2b1, P179b2b2a and P179b2b2b complete; P179b2b active
+Status: active; P179a-P179b complete through P179b2b3; P179c active
 
 ## Objective
 
@@ -101,7 +101,16 @@ cross-checks the returned plan before materializing `Project`; malformed
 protocol output remains a backend failure without fallback. The transition
 gate proves `manifest`/`project-plan` routing and Stage0 parity for transitive
 project `check`/`build`/`run`, invalid dependency paths and dependency cycles in
-human and JSON formats. Public IR output remains the next P179b2b slice.
+human and JSON formats.
+
+P179b2b3 completes P179b by routing standalone and project `mlg ir` through the
+self-hosted core. Stage0 and `mlgc` emit the same deterministic normalized
+`IR|...` view instead of the former implementation-specific Rust debug output.
+The host strictly validates record counts, source IDs, UTF-8 spans, encoded
+payloads, node depths and child counts before publishing self-hosted output.
+The transition gate compares all 48 typed-IR fixtures and a transitive project,
+preserves human/JSON rejection parity and rejects malformed protocol output
+without fallback.
 
 ### P179c: Tooling And Native Workflow
 
@@ -131,7 +140,7 @@ human and JSON formats. Public IR output remains the next P179b2b slice.
 - [x] public `mlg` and internal compiler/seed naming contract
 - [x] deterministic clean-checkout Stage0 -> Stage1 -> Stage2 build graph
 - [x] explicit non-silent Stage0 diagnostic and rollback selector
-- [ ] self-hosted public project discovery, diagnostics, check, IR and build
+- [x] self-hosted public project discovery, diagnostics, check, IR and build
 - [ ] self-hosted format, test, run and native process workflow
 - [ ] complete Stage0/default command and conformance parity
 - [ ] default release artifacts use the Mallang compiler core

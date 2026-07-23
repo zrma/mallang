@@ -12,7 +12,8 @@ use mallang::{
     check_project_sources_with_diagnostics, check_sources_with_diagnostics, discover_project,
     format_source, generate_c_project_sources_with_diagnostics,
     generate_c_sources_with_diagnostics, lex_with_source, load_source_files,
-    lower_sources_with_diagnostics, materialize_project_plan, parse_sources_with_diagnostics,
+    lower_project_sources_with_diagnostics, lower_sources_with_diagnostics,
+    materialize_project_plan, normalize_ir, parse_sources_with_diagnostics,
     prepare_project_tests_with_diagnostics, resolve_project_dependency, resolve_project_manifest,
     CompilerError, Diagnostic, DiagnosticStage, FormatError, FrontendError, PackageTest,
     PathDependency, Project, ProjectManifest, ProjectMaterializationError, ProjectMetadata,
@@ -173,9 +174,9 @@ fn main() {
         Some("fmt") => require_stage0(&options.compiler, "fmt")
             .and_then(|()| utf8_cli_args(command_args))
             .and_then(|args| run_fmt(&program, &args)),
-        Some("ir") => require_stage0(&options.compiler, "ir")
-            .and_then(|()| utf8_cli_args(command_args))
-            .and_then(|args| run_ir(&program, &args)),
+        Some("ir") => {
+            utf8_cli_args(command_args).and_then(|args| run_ir(&program, &args, &options.compiler))
+        }
         Some("build") => utf8_cli_args(command_args)
             .and_then(|args| run_build(&program, &args, &options.compiler)),
         Some("run") => run_run(&program, command_args, &options.compiler),
@@ -391,7 +392,7 @@ fn write_usage(output: &mut impl Write, program: &str) -> io::Result<()> {
     writeln!(output, "  {program} parse <source-file>")?;
     writeln!(output, "  {program} check <input>")?;
     writeln!(output, "  {program} fmt [--check] <input>")?;
-    writeln!(output, "  {program} ir <source-file>")?;
+    writeln!(output, "  {program} ir <input>")?;
     writeln!(output, "  {program} build <input> [-o <output>]")?;
     writeln!(output, "  {program} run <input> [-- <program-args>...]")?;
     writeln!(output, "  {program} test <input> [--exact <test-id>]")?;
@@ -599,12 +600,44 @@ fn format_format_error(display_path: &Path, source: &str, error: FormatError) ->
     )
 }
 
-fn run_ir(program: &str, args: &[String]) -> CliResult<()> {
-    let path = single_source_arg(program, "ir", args)?;
-    let (sources, source_id) = load_source(path)?;
-    let ir = lower_sources_with_diagnostics(&sources, &[source_id])
-        .map_err(|errors| compiler_diagnostics(&sources, None, path, errors))?;
-    println!("{ir:#?}");
+fn run_ir(program: &str, args: &[String], compiler: &CompilerSelection) -> CliResult<()> {
+    let path = single_input_arg(program, "ir", args)?;
+    let output = match load_compilation_input(path, compiler)? {
+        CompilationInput::Standalone { sources, source_id } => {
+            if compiler.implementation == CompilerImplementation::SelfHosted {
+                let stdout = invoke_self_hosted_compiler("ir", path, compiler)?;
+                finish_self_hosted_ir(path, stdout, &sources, None)?
+            } else {
+                let ir = lower_sources_with_diagnostics(&sources, &[source_id])
+                    .map_err(|errors| compiler_diagnostics(&sources, None, path, errors))?;
+                normalize_ir(&ir)
+            }
+        }
+        CompilationInput::Project {
+            project,
+            sources,
+            source_ids,
+        } => {
+            if compiler.implementation == CompilerImplementation::SelfHosted {
+                let stdout = invoke_self_hosted_project_compiler(
+                    "ir-project",
+                    &project,
+                    &sources,
+                    &source_ids,
+                    path,
+                    compiler,
+                )?;
+                finish_self_hosted_ir(path, stdout, &sources, Some(&project))?
+            } else {
+                let ir = lower_project_sources_with_diagnostics(&project, &sources, &source_ids)
+                    .map_err(|errors| {
+                        compiler_diagnostics(&sources, Some(&project), path, errors)
+                    })?;
+                normalize_ir(&ir)
+            }
+        }
+    };
+    println!("{}", output.strip_suffix('\n').unwrap_or(&output));
     Ok(())
 }
 
@@ -1156,6 +1189,182 @@ fn finish_self_hosted_check(
         parse_self_hosted_diagnostics(&stdout, sources, project)
             .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
     ))
+}
+
+fn finish_self_hosted_ir(
+    input_path: &str,
+    stdout: String,
+    sources: &SourceMap,
+    project: Option<&Project>,
+) -> CliResult<String> {
+    let Some(first_line) = stdout.lines().next() else {
+        return Err(self_hosted_protocol_error(
+            input_path,
+            "IR response is empty",
+        ));
+    };
+    if first_line.starts_with("IR|") {
+        validate_self_hosted_ir(&stdout, sources)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?;
+        return Ok(stdout);
+    }
+    Err(CliError::many(
+        parse_self_hosted_diagnostics(&stdout, sources, project)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+    ))
+}
+
+fn validate_self_hosted_ir(output: &str, sources: &SourceMap) -> Result<(), String> {
+    let lines = output.lines().collect::<Vec<_>>();
+    let header = lines
+        .first()
+        .ok_or_else(|| "IR response is empty".to_string())?
+        .split('|')
+        .collect::<Vec<_>>();
+    if header.len() != 2 || header[0] != "IR" {
+        return Err("invalid IR header".to_string());
+    }
+    let function_count = parse_self_hosted_count(header[1], "IR function count")?;
+    let mut cursor = 1;
+    for _ in 0..function_count {
+        let fields = next_self_hosted_ir_record(&lines, &mut cursor, "FUNCTION")?;
+        if fields.len() != 5 {
+            return Err("invalid FUNCTION record".to_string());
+        }
+        let function = fields[1];
+        if function.is_empty() || fields[2].is_empty() {
+            return Err("FUNCTION name and return type cannot be empty".to_string());
+        }
+        let parameter_count = parse_self_hosted_count(fields[3], "IR function parameter count")?;
+        let body_count = parse_self_hosted_count(fields[4], "IR function body count")?;
+        for _ in 0..parameter_count {
+            let parameter = next_self_hosted_ir_record(&lines, &mut cursor, "IPARAM")?;
+            if parameter.len() != 5
+                || parameter[1] != function
+                || !matches!(parameter[2], "owned" | "con" | "mut")
+                || parameter[3].is_empty()
+                || parameter[4].is_empty()
+            {
+                return Err("invalid IPARAM record".to_string());
+            }
+        }
+        validate_self_hosted_ir_nodes(&lines, &mut cursor, body_count, sources)?;
+    }
+
+    let closure_header = next_self_hosted_ir_record(&lines, &mut cursor, "CLOSURES")?;
+    if closure_header.len() != 2 {
+        return Err("invalid CLOSURES record".to_string());
+    }
+    let closure_count = parse_self_hosted_count(closure_header[1], "IR closure count")?;
+    for _ in 0..closure_count {
+        let fields = next_self_hosted_ir_record(&lines, &mut cursor, "CLOSURE")?;
+        if fields.len() != 7
+            || fields[1].is_empty()
+            || !matches!(fields[2], "true" | "false")
+            || fields[3].is_empty()
+        {
+            return Err("invalid CLOSURE record".to_string());
+        }
+        let closure = fields[1];
+        let parameter_count = parse_self_hosted_count(fields[4], "IR closure parameter count")?;
+        let capture_count = parse_self_hosted_count(fields[5], "IR closure capture count")?;
+        let body_count = parse_self_hosted_count(fields[6], "IR closure body count")?;
+        for _ in 0..capture_count {
+            let capture = next_self_hosted_ir_record(&lines, &mut cursor, "CCAPTURE")?;
+            if capture.len() != 5
+                || capture[1] != closure
+                || !matches!(capture[2], "true" | "false")
+                || capture[3].is_empty()
+                || capture[4].is_empty()
+            {
+                return Err("invalid CCAPTURE record".to_string());
+            }
+        }
+        for _ in 0..parameter_count {
+            let parameter = next_self_hosted_ir_record(&lines, &mut cursor, "CPARAM")?;
+            if parameter.len() != 5
+                || parameter[1] != closure
+                || !matches!(parameter[2], "owned" | "con" | "mut")
+                || parameter[3].is_empty()
+                || parameter[4].is_empty()
+            {
+                return Err("invalid CPARAM record".to_string());
+            }
+        }
+        validate_self_hosted_ir_nodes(&lines, &mut cursor, body_count, sources)?;
+    }
+    if cursor != lines.len() {
+        return Err("IR response contains trailing records".to_string());
+    }
+    Ok(())
+}
+
+fn next_self_hosted_ir_record<'a>(
+    lines: &[&'a str],
+    cursor: &mut usize,
+    expected: &str,
+) -> Result<Vec<&'a str>, String> {
+    let line = lines
+        .get(*cursor)
+        .ok_or_else(|| format!("IR response is missing {expected} record"))?;
+    *cursor += 1;
+    let fields = line.split('|').collect::<Vec<_>>();
+    if fields.first() != Some(&expected) {
+        return Err(format!("expected {expected} record"));
+    }
+    Ok(fields)
+}
+
+fn validate_self_hosted_ir_nodes(
+    lines: &[&str],
+    cursor: &mut usize,
+    root_count: usize,
+    sources: &SourceMap,
+) -> Result<(), String> {
+    let mut remaining = vec![root_count];
+    while let Some(count) = remaining.last_mut() {
+        if *count == 0 {
+            remaining.pop();
+            continue;
+        }
+        *count -= 1;
+        let expected_depth = remaining.len() - 1;
+        let fields = next_self_hosted_ir_record(lines, cursor, "I")?;
+        if fields.len() != 10 {
+            return Err("invalid IR node record".to_string());
+        }
+        let depth = parse_self_hosted_count(fields[1], "IR node depth")?;
+        if depth != expected_depth {
+            return Err(format!(
+                "IR node depth {depth} does not match expected depth {expected_depth}"
+            ));
+        }
+        if !matches!(fields[2], "S" | "E" | "B" | "F" | "M" | "P" | "C" | "A")
+            || fields[3].is_empty()
+            || fields[8].is_empty()
+        {
+            return Err("invalid IR node category, kind, or type".to_string());
+        }
+        let source_index = parse_self_hosted_count(fields[4], "IR node source ID")?;
+        let start = parse_self_hosted_count(fields[5], "IR node span start")?;
+        let end = parse_self_hosted_count(fields[6], "IR node span end")?;
+        let source = sources
+            .file(SourceId::new(source_index))
+            .ok_or_else(|| format!("unknown IR source ID {source_index}"))?;
+        if start > end
+            || end > source.text().len()
+            || !source.text().is_char_boundary(start)
+            || !source.text().is_char_boundary(end)
+        {
+            return Err(format!("invalid IR source span {start}..{end}"));
+        }
+        decode_self_hosted_bytes(fields[7])?;
+        let child_count = parse_self_hosted_count(fields[9], "IR node child count")?;
+        if child_count > 0 {
+            remaining.push(child_count);
+        }
+    }
+    Ok(())
 }
 
 fn validate_self_hosted_check_header(line: &str) -> Result<(), String> {
@@ -1779,8 +1988,8 @@ mod tests {
     use super::{
         child_signal_diagnostic, parse_assertion_marker, parse_global_options,
         parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
-        parse_self_hosted_project_plan_response, CompilerImplementation, DiagnosticFormat,
-        SelfHostedReply,
+        parse_self_hosted_project_plan_response, validate_self_hosted_ir, CompilerImplementation,
+        DiagnosticFormat, SelfHostedReply,
     };
     use mallang::SourceMap;
 
@@ -1967,6 +2176,44 @@ mod tests {
         ] {
             assert!(
                 parse_self_hosted_project_plan_response(response).is_err(),
+                "response should be rejected: {response}"
+            );
+        }
+    }
+
+    #[test]
+    fn validates_strict_self_hosted_ir_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("fixture.mlg", "1\n");
+        let response = concat!(
+            "IR|1\n",
+            "FUNCTION|main|unit|0|1\n",
+            "I|0|S|Stmt.Expr|0|0|1||unit|1\n",
+            "I|1|E|Expr.Int|0|0|1|49|int|0\n",
+            "CLOSURES|0\n"
+        );
+
+        validate_self_hosted_ir(response, &sources).unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_ir_responses() {
+        let mut sources = SourceMap::new();
+        sources.add_file("fixture.mlg", "1\n");
+
+        for response in [
+            "",
+            "IR|1\nCLOSURES|0\n",
+            "IR|0\nCLOSURES|1\n",
+            "IR|1\nFUNCTION|main|unit|0|1\nI|1|E|Expr.Int|0|0|1|49|int|0\nCLOSURES|0\n",
+            "IR|1\nFUNCTION|main|unit|0|1\nI|0|E|Expr.Int|1|0|1|49|int|0\nCLOSURES|0\n",
+            "IR|1\nFUNCTION|main|unit|0|1\nI|0|E|Expr.Int|0|0|3|49|int|0\nCLOSURES|0\n",
+            "IR|1\nFUNCTION|main|unit|0|1\nI|0|E|Expr.Int|0|0|1|256|int|0\nCLOSURES|0\n",
+            "IR|1\nFUNCTION|main|unit|0|1\nI|0|E|Expr.Int|0|0|1|49|int|1\nCLOSURES|0\n",
+            "IR|0\nCLOSURES|0\nTRAILING\n",
+        ] {
+            assert!(
+                validate_self_hosted_ir(response, &sources).is_err(),
                 "response should be rejected: {response}"
             );
         }

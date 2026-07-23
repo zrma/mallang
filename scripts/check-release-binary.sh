@@ -73,6 +73,7 @@ expect_release_command_failure \
 help_output="$("$RELEASE_BIN" --help)"
 if [[ "$help_output" != *"usage:"* || \
   "$help_output" != *"$RELEASE_BIN check <input>"* || \
+  "$help_output" != *"$RELEASE_BIN ir <input>"* || \
   "$help_output" != *"$RELEASE_BIN fmt [--check] <input>"* || \
   "$help_output" != *"$RELEASE_BIN run <input> [-- <program-args>...]"* || \
   "$help_output" != *"$RELEASE_BIN test <input> [--exact <test-id>]"* || \
@@ -148,7 +149,9 @@ MLG
 expect_release_check_failure "overlap-borrow" 'borrow of `user` overlaps with an active borrow in this call'
 
 ir_output="$("$RELEASE_BIN" ir examples/first.mlg)"
-if [[ "$ir_output" != *"IrProgram {"* || "$ir_output" != *"IrFunction {"* || "$ir_output" != *"return_type: Unit"* ]]; then
+if [[ "$ir_output" != IR\|2$'\n'FUNCTION\|main\|unit\|0\|3$'\n'* ]] || \
+   [[ "$ir_output" != *$'\n'FUNCTION\|add\|int\|2\|1$'\n'* ]] || \
+   [[ "$ir_output" != *$'\n'CLOSURES\|0 ]]; then
   echo "release binary ir smoke failed" >&2
   echo "$ir_output" >&2
   exit 1

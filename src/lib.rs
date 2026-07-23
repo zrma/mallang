@@ -5,6 +5,7 @@ pub mod diagnostic;
 pub mod formatter;
 pub mod frontend;
 pub mod ir;
+pub mod ir_protocol;
 pub mod lexer;
 pub mod linker;
 pub mod package;
@@ -33,6 +34,7 @@ pub use diagnostic::{
 pub use formatter::{format_source, FormatError};
 pub use frontend::{parse_sources, parse_sources_with_diagnostics, FrontendError};
 pub use ir::{lower, lower_test, IrError, IrProgram};
+pub use ir_protocol::normalize_ir;
 pub use lexer::{lex, lex_with_source, LexError, Lexer};
 pub use linker::{display_linked_message, link_project, link_standalone, LinkError};
 pub use package::{

@@ -26,6 +26,7 @@ work="target/mallang/self-hosting/b5-default"
 driver="target/debug/mlg"
 self_compiler="target/debug/mlgc"
 fixture="bootstrap/compiler/fixtures/backend/scalars.mlg"
+ir_fixtures="bootstrap/compiler/fixtures/ir"
 semantic_rejection="bootstrap/compiler/fixtures/semantic/body-unknown-variable.mlg"
 parser_rejection="bootstrap/compiler/fixtures/parser/recovery-statements.mlg"
 project_fixture="examples/projects/local-deps/app"
@@ -136,6 +137,35 @@ if ! cmp -s "$work/project-check.stage0.stdout" "$work/project-check.self.stdout
   exit 1
 fi
 
+ir_fixture_count=0
+for ir_fixture in "$ir_fixtures"/*.mlg; do
+  ir_name="$(basename "$ir_fixture" .mlg)"
+  "$driver" --compiler stage0 ir "$ir_fixture" \
+    >"$work/ir-$ir_name.stage0.stdout" 2>"$work/ir-$ir_name.stage0.stderr"
+  "$driver" --compiler self ir "$ir_fixture" \
+    >"$work/ir-$ir_name.self.stdout" 2>"$work/ir-$ir_name.self.stderr"
+  if ! cmp -s "$work/ir-$ir_name.stage0.stdout" "$work/ir-$ir_name.self.stdout" || \
+     ! cmp -s "$work/ir-$ir_name.stage0.stderr" "$work/ir-$ir_name.self.stderr"; then
+    echo "public Stage0/self IR corpus parity failed: $ir_fixture" >&2
+    exit 1
+  fi
+  ir_fixture_count=$((ir_fixture_count + 1))
+done
+if [[ "$ir_fixture_count" -lt 48 ]]; then
+  echo "public IR corpus unexpectedly small: $ir_fixture_count" >&2
+  exit 1
+fi
+
+"$driver" --compiler stage0 ir "$project_fixture" \
+  >"$work/project-ir.stage0.stdout" 2>"$work/project-ir.stage0.stderr"
+"$driver" --compiler self ir "$project_fixture" \
+  >"$work/project-ir.self.stdout" 2>"$work/project-ir.self.stderr"
+if ! cmp -s "$work/project-ir.stage0.stdout" "$work/project-ir.self.stdout" || \
+   ! cmp -s "$work/project-ir.stage0.stderr" "$work/project-ir.self.stderr"; then
+  echo "public Stage0/self project IR parity failed" >&2
+  exit 1
+fi
+
 spy_compiler="$work/mlgc-spy"
 spy_log="$work/mlgc-spy.log"
 printf '%s\n' \
@@ -155,6 +185,20 @@ if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
    [[ "$(grep -c '^check-project$' "$spy_log")" -ne 1 ]] || \
    [[ -s "$work/project-spy.stderr" ]]; then
   echo "public self-hosted project protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" ir "$project_fixture" \
+  >"$work/project-ir-spy.stdout" 2>"$work/project-ir-spy.stderr"
+if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
+   [[ "$(grep -c '^project-plan$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^ir-project$' "$spy_log")" -ne 1 ]] || \
+   [[ -s "$work/project-ir-spy.stderr" ]]; then
+  echo "public self-hosted project IR protocol routing mismatch" >&2
   cat "$spy_log" >&2
   exit 1
 fi
@@ -257,6 +301,36 @@ for diagnostic_format in human json; do
   fi
 done
 
+for diagnostic_format in human json; do
+  for ir_rejection in "$semantic_rejection" "$project_rejection"; do
+    name="ir-$(basename "$ir_rejection" .mlg).$diagnostic_format"
+    set +e
+    if [[ "$diagnostic_format" == "json" ]]; then
+      "$driver" --diagnostic-format json --compiler stage0 ir "$ir_rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" --diagnostic-format json --compiler self ir "$ir_rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+      self_status=$?
+    else
+      "$driver" --compiler stage0 ir "$ir_rejection" \
+        >"$work/$name.stage0.stdout" 2>"$work/$name.stage0.stderr"
+      stage0_status=$?
+      "$driver" --compiler self ir "$ir_rejection" \
+        >"$work/$name.self.stdout" 2>"$work/$name.self.stderr"
+      self_status=$?
+    fi
+    set -e
+    if [[ "$stage0_status" -eq 0 || "$self_status" -eq 0 ]] || \
+       [[ "$stage0_status" -ne "$self_status" ]] || \
+       ! cmp -s "$work/$name.stage0.stdout" "$work/$name.self.stdout" || \
+       ! cmp -s "$work/$name.stage0.stderr" "$work/$name.self.stderr"; then
+      echo "public Stage0/self $diagnostic_format IR rejection parity failed: $ir_rejection" >&2
+      exit 1
+    fi
+  done
+done
+
 for graph_rejection in "$invalid_dependency" "$dependency_cycle"; do
   rejection_name="$(basename "$graph_rejection")"
   for diagnostic_format in human json; do
@@ -300,4 +374,4 @@ if [[ -s "$work/missing.stdout" ]] || \
   exit 1
 fi
 
-echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,build,run diagnostics=human,json fallback=explicit-only"
+echo "B5 default compiler transition gate passed: core=mlgc protocol=1 inputs=standalone,project commands=check,ir,build,run diagnostics=human,json fallback=explicit-only"

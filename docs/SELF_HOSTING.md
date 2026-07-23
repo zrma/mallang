@@ -317,8 +317,15 @@ graph and chooses dependency postorder. The host rejects malformed, duplicate
 or snapshot-inconsistent protocol records before materializing `Project`. The
 transition gate records actual `manifest`/`project-plan` invocations and proves
 Stage0 parity for transitive success, generated C, native output, invalid paths,
-cycles and dependency diagnostics. Public IR output remains active P179b2b
-work.
+cycles and dependency diagnostics.
+
+P179b2b3 completes P179b. Public standalone and project `ir` now use `mlgc`,
+while both Stage0 and self emit the deterministic normalized `IR|...` view used
+by the self-hosting differential instead of Rust-specific pretty debug output.
+The host validates the complete bounded record structure before publication.
+The transition gate compares all 48 typed-IR fixtures, a transitive project,
+human/JSON semantic rejection and malformed protocol handling without fallback.
+P179c now owns the remaining formatter, test and native workflow transition.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,
