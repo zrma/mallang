@@ -1855,7 +1855,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 
 ## P179: B5 Default Self-Hosted Compiler
 
-상태: active; P179a-P179b and P179c1-P179c2 complete, P179c3 active (2026-07-23)
+상태: active; P179a-P179c complete, P179d active (2026-07-23)
 
 - [x] public `mlg`, internal `mlgc`와 `--compiler stage0|self` contract
 - [x] clean-checkout Stage0 -> Stage1 -> Stage2 build graph와 provenance
@@ -1868,7 +1868,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 - [x] self-hosted public IR output
 - [x] self-hosted format과 atomic project write/check workflow
 - [x] self-hosted test selection과 runner generation
-- [ ] self-hosted run과 native process workflow
+- [x] self-hosted run과 native process workflow
 - [ ] complete Stage0/default command와 conformance parity
 - [ ] default release artifact와 supported-platform clean-install acceptance
 - [ ] compatible 1.x signed tag와 GitHub Release acceptance

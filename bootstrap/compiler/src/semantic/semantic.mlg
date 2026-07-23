@@ -3405,7 +3405,7 @@ func (mut self CheckedProgram) checkPrintCall(con program ast.Program, expressio
             return Err(error)
         }
     }
-    if valueType.kind != "int" && valueType.kind != "bool" && valueType.kind != "string" {
+    if !self.isPrintableType(con valueType) {
         message := strings.join(con []string{"cannot print value of type `", token.CopyText(con valueType.text), "` in v0",}, con "")
         return Err(newError(message, ast.Span(con program, argument)))
     }
@@ -3413,6 +3413,68 @@ func (mut self CheckedProgram) checkPrintCall(con program ast.Program, expressio
     ty := unitType()
     self.recordType(expression, con ty)
     return Ok(ty)
+}
+
+func (con self CheckedProgram) isPrintableType(con ty ResolvedType) bool {
+    if ty.kind == "int" || ty.kind == "bool" || ty.kind == "string" {
+        return true
+    }
+    if ty.kind == "option" {
+        match self.typeArgument(con ty, 0) {
+            case Ok(payload) {
+                return self.isPrintableType(con payload)
+            }
+            case Err(_) {
+                return false
+            }
+        }
+    }
+    if ty.kind == "result" {
+        mut okPrintable := false
+        mut errorPrintable := false
+        match self.typeArgument(con ty, 0) {
+            case Ok(payload) {
+                okPrintable = self.isPrintableType(con payload)
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        match self.typeArgument(con ty, 1) {
+            case Ok(payload) {
+                errorPrintable = self.isPrintableType(con payload)
+            }
+            case Err(_) {
+                return false
+            }
+        }
+        return okPrintable && errorPrintable
+    }
+    if ty.kind == "struct" {
+        structure := self.structIndex(con ty.text)
+        if structure < 0 || self.structs[structure].intrinsic == "Map" {
+            return false
+        }
+        for mut field := 0; field < len(self.structs[structure].fields); field = field + 1 {
+            if !self.isPrintableType(con self.structs[structure].fields[field].ty) {
+                return false
+            }
+        }
+        return true
+    }
+    if ty.kind == "enum" {
+        enumeration := self.enumIndex(con ty.text)
+        if enumeration < 0 || self.enums[enumeration].intrinsic != "ErrorKind" {
+            return false
+        }
+        for mut variant := 0; variant < len(self.enums[enumeration].variants); variant = variant + 1 {
+            if len(self.enums[enumeration].variants[variant].payloads) != 0 {
+                return false
+            }
+        }
+        return true
+    }
+    return false
 }
 
 func (mut self CheckedProgram) checkLenCall(con program ast.Program, expression int) Result[ResolvedType, SemanticError] {

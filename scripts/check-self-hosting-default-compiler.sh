@@ -76,6 +76,10 @@ scripts/check-formatter.sh \
 scripts/check-test-workflow.sh "$driver" --compiler stage0 >/dev/null
 scripts/check-test-workflow.sh \
   "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
+"$driver" --compiler self --self-compiler "$self_compiler" \
+  build examples/process-io.mlg -o "$work/process-io" >/dev/null
+scripts/check-process-io-runtime.sh \
+  "$driver" --compiler self --self-compiler "$self_compiler" >/dev/null
 
 formatter_corpus="$work/formatter-corpus"
 rm -rf "$formatter_corpus"
@@ -268,6 +272,66 @@ if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 1 ]] || \
   exit 1
 fi
 
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  build "$fixture" -o "$work/native-spy-build" \
+  >"$work/native-build-spy.stdout" 2>"$work/native-build-spy.stderr"
+if [[ "$(grep -c '^native-build$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 1 ]] || \
+   [[ -s "$work/native-build-spy.stderr" ]]; then
+  echo "public self-hosted native build protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  run "$fixture" \
+  >"$work/native-run-spy.stdout" 2>"$work/native-run-spy.stderr"
+if [[ "$(grep -c '^native-run$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 1 ]] || \
+   [[ -s "$work/native-run-spy.stderr" ]]; then
+  echo "public self-hosted native run protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  build "$project_fixture" -o "$work/native-project-spy-build" \
+  >"$work/native-project-build-spy.stdout" 2>"$work/native-project-build-spy.stderr"
+if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
+   [[ "$(grep -c '^project-plan$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^native-build-project$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 5 ]] || \
+   [[ -s "$work/native-project-build-spy.stderr" ]]; then
+  echo "public self-hosted native project build protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
+: >"$spy_log"
+MLG_SPY_LOG="$spy_log" \
+  MLG_SPY_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$spy_compiler" \
+  run "$project_fixture" \
+  >"$work/native-project-run-spy.stdout" 2>"$work/native-project-run-spy.stderr"
+if [[ "$(grep -c '^manifest$' "$spy_log")" -ne 3 ]] || \
+   [[ "$(grep -c '^project-plan$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(grep -c '^native-run-project$' "$spy_log")" -ne 1 ]] || \
+   [[ "$(wc -l <"$spy_log")" -ne 5 ]] || \
+   [[ -s "$work/native-project-run-spy.stderr" ]]; then
+  echo "public self-hosted native project run protocol routing mismatch" >&2
+  cat "$spy_log" >&2
+  exit 1
+fi
+
 formatter_json="$work/formatter-json.mlg"
 printf '%s\n' 'func main(){print(1)}' >"$formatter_json"
 set +e
@@ -364,6 +428,36 @@ if [[ -s "$work/malformed-test.stdout" ]] || \
    ! cmp -s "$test_fixture/target/mallang/tests/runner.c" \
      "$work/malformed-test.before.c"; then
   echo "malformed test response handling mismatch" >&2
+  exit 1
+fi
+
+malformed_native="$work/mlgc-malformed-native"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'if [[ "${1:-}" == "native-build" ]]; then' \
+  '  printf "NATIVE|1|build|2\n\n"' \
+  '  exit 0' \
+  'fi' \
+  'exec "$MLG_MALFORMED_TARGET" "$@"' \
+  >"$malformed_native"
+chmod +x "$malformed_native"
+malformed_native_output="$work/malformed-native-output"
+printf '%s\n' 'preserved-native-output' >"$malformed_native_output"
+cp target/mallang/scalars.c "$work/malformed-native.before.c"
+if MLG_MALFORMED_TARGET="$ROOT/$self_compiler" \
+  "$driver" --compiler self --self-compiler "$malformed_native" \
+  build "$fixture" -o "$malformed_native_output" \
+  >"$work/malformed-native.stdout" 2>"$work/malformed-native.stderr"; then
+  echo "malformed native response unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "$work/malformed-native.stdout" ]] || \
+   ! grep -Fq 'native C payload byte length does not match its header' \
+     "$work/malformed-native.stderr" || \
+   [[ "$(cat "$malformed_native_output")" != "preserved-native-output" ]] || \
+   ! cmp -s target/mallang/scalars.c "$work/malformed-native.before.c"; then
+  echo "malformed native response handling mismatch" >&2
   exit 1
 fi
 

@@ -93,6 +93,74 @@ pub func Build(con program ast.Program, con projectName string, con sourceRoot s
     return BuildProject(con program, con NewProject(con []ProjectUnit{unit}), con paths)
 }
 
+pub func BuildStandalone(con program ast.Program) Result[Layout, LayoutError] {
+    mut sourcePackages := []SourcePackage{}
+    mut packageItems := []Package{Package{path: "__standalone__", name: "main", sources: []int{}, imports: []PackageImport{}, declarations: []Declaration{}, methods: []MethodGroup{},},}
+    mut pendingImports := []PendingImport{}
+    root := ast.Root(con program)
+    for mut child := 0; child < ast.ChildCount(con program, root); child = child + 1 {
+        sourceUnit := ast.Child(con program, root, child)
+        if ast.Kind(con program, sourceUnit) != "SourceUnit" {
+            continue
+        }
+        unitSpan := ast.Span(con program, sourceUnit)
+        sourceId := source.Source(con unitSpan)
+        if sourcePackagePath(con sourcePackages, sourceId) != "" {
+            message := strings.join(con []string{"source ID ", strings.fromInt(sourceId), " appears more than once",}, con "")
+            return Err(newError(message, source.Copy(con unitSpan)))
+        }
+        sourcePackages = append(sourcePackages, SourcePackage{source: sourceId, path: "__standalone__", name: "main", test: false})
+        packageItems[0].sources = append(packageItems[0].sources, sourceId)
+        match collectFileImports(con program, sourceUnit, con "__standalone__") {
+            case Ok(imports) {
+                for mut index := 0; index < len(imports); index = index + 1 {
+                    pendingImports = append(pendingImports, copyPendingImport(con imports[index]))
+                }
+            }
+            case Err(error) {
+                return Err(error)
+            }
+        }
+    }
+    if len(sourcePackages) == 0 {
+        return Err(newError("cannot build a standalone package layout without source files", source.NewSpan(0, 0, 0)))
+    }
+    match connectStandardPackages(con packageItems, con pendingImports) {
+        case Ok(connected) {
+            packageItems = connected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    packageItems = sortPackages(con packageItems)
+    standaloneProject := NewProject(con []ProjectUnit{})
+    match connectImports(con packageItems, con pendingImports, con standaloneProject) {
+        case Ok(connected) {
+            packageItems = connected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match collectDeclarations(con packageItems, con sourcePackages, con program) {
+        case Ok(collected) {
+            packageItems = collected
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+    match topologicalOrder(con packageItems) {
+        case Ok(order) {
+            return Ok(Layout{sources: sourcePackages, packages: packageItems, buildOrder: order})
+        }
+        case Err(error) {
+            return Err(error)
+        }
+    }
+}
+
 pub func NewProjectUnit(con name string, con sourceRoot string, con directDependencies []string) ProjectUnit {
     return ProjectUnit{name: token.CopyText(con name), sourceRoot: token.CopyText(con sourceRoot), directDependencies: copyTexts(con directDependencies),}
 }

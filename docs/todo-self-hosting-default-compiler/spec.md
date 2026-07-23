@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179b and P179c1-P179c2 complete; P179c3 active
+Status: active; P179a-P179c complete; P179d active
 
 ## Objective
 
@@ -159,8 +159,29 @@ and four hardening tests; thirteen positive, nine runtime-rejection and zero
 boundary B3 paths; the default-transition gate; an 11,186,276-byte fixed point
 with 478 compiler-pair tasks, 173 parser sources, fourteen backend fixtures,
 eight backend projects, twenty-one native pairs and sanitizer regeneration;
-and the release-archive smoke. P179c3 now owns the remaining native process
-workflow before P179d changes the packaged default.
+and the release-archive smoke.
+
+P179c3 moves standalone and project `build`/`run` C generation through
+`mlgc native-build*`/`native-run*`. Successful responses use the strict
+length-framed `NATIVE|1|<mode>|<bytes>` protocol; the Rust host validates the
+mode, byte length and complete C payload before writing or invoking `clang`.
+Backend failures exit through the capability boundary instead of masquerading
+as source diagnostics, and malformed responses never fall back or mutate an
+existing artifact.
+
+Standalone sources without imports retain the direct semantic/IR path so
+diagnostic ordering remains identical to Stage0. Imported standalone sources
+use a synthetic package layout and the shared package/linker/standard path.
+The self-hosted backend covers direct and function-value process arguments,
+environment lookup, stdin reads and standard `Error`/`ErrorKind` printing.
+The public self path passes arguments, environment, stdin/stdout/stderr, exit,
+allocation-failure and sanitizer acceptance. Local closure evidence includes
+the canonical 591 library, 20 driver and four hardening tests; thirteen
+positive, nine runtime-rejection and zero boundary B3 paths; the
+default-transition gate; an 11,434,135-byte fixed point with 478 compiler-pair
+tasks, 173 parser sources, fourteen backend fixtures, eight backend projects,
+twenty-one native pairs and sanitizer regeneration; and the release-archive
+smoke. P179d now owns the packaged default switch.
 
 ### P179d: Default Switch And Packaging
 
@@ -186,7 +207,7 @@ workflow before P179d changes the packaged default.
 - [x] self-hosted public project discovery, diagnostics, check, IR and build
 - [x] self-hosted format and project-wide atomic write/check workflow
 - [x] self-hosted test selection and runner generation
-- [ ] self-hosted run and native process workflow
+- [x] self-hosted run and native process workflow
 - [ ] complete Stage0/default command and conformance parity
 - [ ] default release artifacts use the Mallang compiler core
 - [ ] macOS arm64 and Linux x86_64 packaging and clean-install acceptance

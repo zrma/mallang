@@ -655,6 +655,51 @@ fn finish_self_hosted_format(
     ))
 }
 
+fn finish_self_hosted_native(
+    input_path: &str,
+    stdout: String,
+    sources: &SourceMap,
+    project: Option<&Project>,
+    expected_kind: OutputKind,
+) -> CliResult<String> {
+    if stdout.starts_with("NATIVE|") {
+        return parse_self_hosted_native_response(&stdout, expected_kind)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail));
+    }
+    Err(CliError::many(
+        parse_self_hosted_diagnostics(&stdout, sources, project)
+            .map_err(|detail| self_hosted_protocol_error(input_path, detail))?,
+    ))
+}
+
+fn parse_self_hosted_native_response(
+    output: &str,
+    expected_kind: OutputKind,
+) -> Result<String, String> {
+    let (header, c_source) = output
+        .split_once("\n\n")
+        .ok_or_else(|| "native response is missing its payload separator".to_string())?;
+    let fields = header.split('|').collect::<Vec<_>>();
+    if fields.len() != 4 || fields[0] != "NATIVE" || fields[1] != "1" {
+        return Err("invalid NATIVE header".to_string());
+    }
+    if fields[2] != expected_kind.protocol_label() {
+        return Err(format!(
+            "native response mode `{}` does not match requested `{}` mode",
+            fields[2],
+            expected_kind.protocol_label()
+        ));
+    }
+    let c_length = parse_self_hosted_count(fields[3], "native C payload byte length")?;
+    if c_source.len() != c_length {
+        return Err("native C payload byte length does not match its header".to_string());
+    }
+    if !c_source.starts_with("#include <") || !c_source.ends_with('\n') {
+        return Err("native C payload is not a complete generated C source".to_string());
+    }
+    Ok(c_source.to_string())
+}
+
 fn finish_self_hosted_test(
     input_path: &str,
     stdout: String,
@@ -1150,10 +1195,28 @@ fn child_signal_diagnostic(
     })
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputKind {
     Build,
     Run,
+}
+
+impl OutputKind {
+    fn protocol_label(self) -> &'static str {
+        match self {
+            Self::Build => "build",
+            Self::Run => "run",
+        }
+    }
+
+    fn self_hosted_command(self, project: bool) -> &'static str {
+        match (self, project) {
+            (Self::Build, false) => "native-build",
+            (Self::Run, false) => "native-run",
+            (Self::Build, true) => "native-build-project",
+            (Self::Run, true) => "native-run-project",
+        }
+    }
 }
 
 fn compile_input(
@@ -1167,7 +1230,7 @@ fn compile_input(
     {
         match load_compilation_input(input_path, compiler)? {
             CompilationInput::Standalone { sources, .. } => (
-                generate_self_hosted_c(input_path, &sources, compiler)?,
+                generate_self_hosted_native_c(input_path, &sources, kind, compiler)?,
                 source_stem(input_path).to_string(),
                 PathBuf::from("target/mallang"),
             ),
@@ -1179,11 +1242,12 @@ fn compile_input(
                 project
                     .require_entrypoint()
                     .map_err(|error| CliError::input(error.to_string()))?;
-                let c_source = generate_self_hosted_project_c(
+                let c_source = generate_self_hosted_native_project_c(
                     &project,
                     &sources,
                     &source_ids,
                     input_path,
+                    kind,
                     compiler,
                 )?;
                 let artifact_name = project.name().to_string();
@@ -1259,43 +1323,34 @@ fn compile_input(
     Ok(output_path)
 }
 
-fn generate_self_hosted_c(
+fn generate_self_hosted_native_c(
     input_path: &str,
     sources: &SourceMap,
+    kind: OutputKind,
     compiler: &CompilerSelection,
 ) -> CliResult<String> {
-    let stdout = invoke_self_hosted_compiler("c", input_path, compiler)?;
-    if stdout.starts_with("#include <") {
-        return Ok(stdout);
-    }
-    match parse_self_hosted_diagnostics(&stdout, sources, None) {
-        Ok(diagnostics) => Err(CliError::many(diagnostics)),
-        Err(detail) => Err(self_hosted_protocol_error(input_path, detail)),
-    }
+    let stdout =
+        invoke_self_hosted_compiler(kind.self_hosted_command(false), input_path, compiler)?;
+    finish_self_hosted_native(input_path, stdout, sources, None, kind)
 }
 
-fn generate_self_hosted_project_c(
+fn generate_self_hosted_native_project_c(
     project: &Project,
     sources: &SourceMap,
     source_ids: &[SourceId],
     input_path: &str,
+    kind: OutputKind,
     compiler: &CompilerSelection,
 ) -> CliResult<String> {
     let stdout = invoke_self_hosted_project_compiler(
-        "c-project",
+        kind.self_hosted_command(true),
         project,
         sources,
         source_ids,
         input_path,
         compiler,
     )?;
-    if stdout.starts_with("#include <") {
-        return Ok(stdout);
-    }
-    match parse_self_hosted_diagnostics(&stdout, sources, Some(project)) {
-        Ok(diagnostics) => Err(CliError::many(diagnostics)),
-        Err(detail) => Err(self_hosted_protocol_error(input_path, detail)),
-    }
+    finish_self_hosted_native(input_path, stdout, sources, Some(project), kind)
 }
 
 fn invoke_self_hosted_compiler(
@@ -2253,8 +2308,9 @@ mod tests {
     use super::{
         child_signal_diagnostic, finish_self_hosted_format, parse_assertion_marker,
         parse_global_options, parse_self_hosted_diagnostics, parse_self_hosted_manifest_response,
-        parse_self_hosted_project_plan_response, parse_self_hosted_test_response,
-        validate_self_hosted_ir, CompilerImplementation, DiagnosticFormat, SelfHostedReply,
+        parse_self_hosted_native_response, parse_self_hosted_project_plan_response,
+        parse_self_hosted_test_response, validate_self_hosted_ir, CompilerImplementation,
+        DiagnosticFormat, OutputKind, SelfHostedReply,
     };
     use mallang::SourceMap;
 
@@ -2514,6 +2570,39 @@ mod tests {
         ] {
             assert!(
                 finish_self_hosted_format("fixture.mlg", response.to_string(), &sources).is_err(),
+                "response should be rejected: {response:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn decodes_strict_self_hosted_native_responses() {
+        let payload = "#include <stdint.h>\n";
+        let response = format!("NATIVE|1|build|{}\n\n{payload}", payload.len());
+
+        assert_eq!(
+            parse_self_hosted_native_response(&response, OutputKind::Build).unwrap(),
+            payload
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_self_hosted_native_responses() {
+        let payload = "#include <stdint.h>\n";
+        for response in [
+            String::new(),
+            format!("NATIVE|2|build|{}\n\n{payload}", payload.len()),
+            format!("NATIVE|1|run|{}\n\n{payload}", payload.len()),
+            "NATIVE|1|build|1\n\n".to_string(),
+            format!(
+                "NATIVE|1|build|{}\n\n#include <stdint.h>",
+                payload.len() - 1
+            ),
+            format!("NATIVE|1|build|{}\n\ntrailing\n", "trailing\n".len()),
+            format!("NATIVE|1|build|{}\n{payload}", payload.len()),
+        ] {
+            assert!(
+                parse_self_hosted_native_response(&response, OutputKind::Build).is_err(),
                 "response should be rejected: {response:?}"
             );
         }

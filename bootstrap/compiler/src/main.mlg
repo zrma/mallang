@@ -55,6 +55,46 @@ func prepareProgram(con program ast.Program) Result[specialize.SpecializedProgra
     }
 }
 
+func nodeHasImport(con program ast.Program, node int) bool {
+    if ast.Kind(con program, node) == "ImportDecl" {
+        return true
+    }
+    for mut child := 0; child < ast.ChildCount(con program, node); child = child + 1 {
+        if nodeHasImport(con program, ast.Child(con program, node, child)) {
+            return true
+        }
+    }
+    return false
+}
+
+func linkStandalone(program ast.Program) Result[ast.Program, string] {
+    if nodeHasImport(con program, ast.Root(con program)) {
+        match packages.BuildStandalone(con program) {
+            case Ok(layout) {
+                match packages.CollectProjectTests(con layout, con program) {
+                    case Ok(_) {
+                        match linker.LinkStandalone(con layout, con program) {
+                            case Ok(linkedProgram) {
+                                return Ok(standard.Augment(con layout, con linkedProgram))
+                            }
+                            case Err(error) {
+                                return Err(linker.NormalizeError(con error))
+                            }
+                        }
+                    }
+                    case Err(error) {
+                        return Err(packages.NormalizeError(con error))
+                    }
+                }
+            }
+            case Err(error) {
+                return Err(packages.NormalizeError(con error))
+            }
+        }
+    }
+    return Ok(program)
+}
+
 func runLex(source string) {
     match lexer.Lex(source) {
         case Ok(tokens) {
@@ -329,6 +369,19 @@ func runProjectPackage(con args []string, operation string) {
                                                                                     print(message)
                                                                                 }
                                                                             }
+                                                                        } else if operation == "native-build" || operation == "native-run" {
+                                                                            match backend.Generate(con lowered) {
+                                                                                case Ok(output) {
+                                                                                    if operation == "native-build" {
+                                                                                        writeNativeResponse(con "build", con output)
+                                                                                    } else {
+                                                                                        writeNativeResponse(con "run", con output)
+                                                                                    }
+                                                                                }
+                                                                                case Err(message) {
+                                                                                    print(message)
+                                                                                }
+                                                                            }
                                                                         } else {
                                                                             print(ir.Normalize(con lowered))
                                                                         }
@@ -531,16 +584,23 @@ func runCheck(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match prepareProgram(con program) {
-                        case Ok(specialized) {
-                            concrete := specialize.Program(con specialized)
-                            match semantic.Check(con concrete) {
-                                case Ok(checked) {
-                                    print(semantic.Normalize(con checked))
+                    match linkStandalone(program) {
+                        case Ok(linkedProgram) {
+                            match prepareProgram(con linkedProgram) {
+                                case Ok(specialized) {
+                                    concrete := specialize.Program(con specialized)
+                                    match semantic.Check(con concrete) {
+                                        case Ok(checked) {
+                                            print(semantic.Normalize(con checked))
+                                        }
+                                        case Err(error) {
+                                            message := semantic.ErrorMessage(con error)
+                                            print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                                        }
+                                    }
                                 }
-                                case Err(error) {
-                                    message := semantic.ErrorMessage(con error)
-                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                                case Err(message) {
+                                    print(message)
                                 }
                             }
                         }
@@ -569,23 +629,30 @@ func runIr(text string) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match prepareProgram(con program) {
-                        case Ok(specialized) {
-                            concrete := specialize.Program(con specialized)
-                            match semantic.Check(con concrete) {
-                                case Ok(checked) {
-                                    match ir.Lower(con concrete, con checked) {
-                                        case Ok(lowered) {
-                                            print(ir.Normalize(con lowered))
+                    match linkStandalone(program) {
+                        case Ok(linkedProgram) {
+                            match prepareProgram(con linkedProgram) {
+                                case Ok(specialized) {
+                                    concrete := specialize.Program(con specialized)
+                                    match semantic.Check(con concrete) {
+                                        case Ok(checked) {
+                                            match ir.Lower(con concrete, con checked) {
+                                                case Ok(lowered) {
+                                                    print(ir.Normalize(con lowered))
+                                                }
+                                                case Err(error) {
+                                                    print(ir.NormalizeError(con error))
+                                                }
+                                            }
                                         }
                                         case Err(error) {
-                                            print(ir.NormalizeError(con error))
+                                            message := semantic.ErrorMessage(con error)
+                                            print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
                                         }
                                     }
                                 }
-                                case Err(error) {
-                                    message := semantic.ErrorMessage(con error)
-                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                                case Err(message) {
+                                    print(message)
                                 }
                             }
                         }
@@ -618,37 +685,61 @@ func writeStdout(con text string) {
     }
 }
 
-func runC(text string) {
+func writeNativeResponse(con mode string, con cSource string) {
+    header := strings.join(con []string{"NATIVE|1|", token.CopyText(con mode), "|", strings.fromInt(strings.byteLen(con cSource)), "\n\n",}, con "")
+    writeStdout(con strings.join(con []string{header, token.CopyText(con cSource),}, con ""))
+}
+
+func emitC(con program ast.Program, con nativeMode string) {
+    match prepareProgram(con program) {
+        case Ok(specialized) {
+            concrete := specialize.Program(con specialized)
+            match semantic.Check(con concrete) {
+                case Ok(checked) {
+                    match ir.Lower(con concrete, con checked) {
+                        case Ok(lowered) {
+                            match backend.Generate(con lowered) {
+                                case Ok(output) {
+                                    if nativeMode == "" {
+                                        writeStdout(con output)
+                                    } else {
+                                        writeNativeResponse(con nativeMode, con output)
+                                    }
+                                }
+                                case Err(message) {
+                                    if nativeMode == "" {
+                                        print(message)
+                                    } else {
+                                        fail(con strings.join(con []string{token.CopyText(con message), "\n",}, con ""))
+                                    }
+                                }
+                            }
+                        }
+                        case Err(error) {
+                            print(ir.NormalizeError(con error))
+                        }
+                    }
+                }
+                case Err(error) {
+                    message := semantic.ErrorMessage(con error)
+                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
+                }
+            }
+        }
+        case Err(message) {
+            print(message)
+        }
+    }
+}
+
+func runC(text string, nativeMode string) {
     match lexer.Lex(text) {
         case Ok(tokens) {
             match parser.Parse(tokens) {
                 case Ok(program) {
-                    match prepareProgram(con program) {
-                        case Ok(specialized) {
-                            concrete := specialize.Program(con specialized)
-                            match semantic.Check(con concrete) {
-                                case Ok(checked) {
-                                    match ir.Lower(con concrete, con checked) {
-                                        case Ok(lowered) {
-                                            match backend.Generate(con lowered) {
-                                                case Ok(output) {
-                                                    writeStdout(con output)
-                                                }
-                                                case Err(message) {
-                                                    print(message)
-                                                }
-                                            }
-                                        }
-                                        case Err(error) {
-                                            print(ir.NormalizeError(con error))
-                                        }
-                                    }
-                                }
-                                case Err(error) {
-                                    message := semantic.ErrorMessage(con error)
-                                    print(specialize.NormalizeMappedError(con specialized, con message, semantic.ErrorSpan(con error)))
-                                }
-                            }
+                    match linkStandalone(program) {
+                        case Ok(linkedProgram) {
+                            emitC(con linkedProgram, con nativeMode)
                         }
                         case Err(message) {
                             print(message)
@@ -717,7 +808,7 @@ func runIrTest(text string) {
 
 func runMode(con mode string, text string) {
     if mode == "c" {
-        runC(text)
+        runC(text, "")
     } else if mode == "ir-test" {
         runIrTest(text)
     } else if mode == "ir" {
@@ -740,6 +831,14 @@ func main() {
             }
             if len(args) >= 2 && args[1]== "c-project" {
                 runProjectPackage(con args, "c")
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "native-build-project" {
+                runProjectPackage(con args, "native-build")
+                os.exit(0)
+            }
+            if len(args) >= 2 && args[1]== "native-run-project" {
+                runProjectPackage(con args, "native-run")
                 os.exit(0)
             }
             if len(args) >= 2 && args[1]== "manifest" {
@@ -799,6 +898,21 @@ func main() {
                     }
                     case Err(_) {
                         fail(con "bootstrap formatter could not read source\n")
+                    }
+                }
+                os.exit(0)
+            }
+            if len(args) == 3 &&(args[1]== "native-build" || args[1]== "native-run") {
+                match fs.readText(con args[2]) {
+                    case Ok(source) {
+                        if args[1]== "native-build" {
+                            runC(source, "build")
+                        } else {
+                            runC(source, "run")
+                        }
+                    }
+                    case Err(_) {
+                        fail(con "bootstrap frontend could not read source\n")
                     }
                 }
                 os.exit(0)

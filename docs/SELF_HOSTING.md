@@ -352,7 +352,26 @@ hardening tests; thirteen positive, nine runtime-rejection and zero boundary
 B3 paths; the default-transition gate; an 11,186,276-byte fixed point with 478
 compiler-pair tasks, 173 parser sources, fourteen backend fixtures, eight
 backend projects, twenty-one native pairs and sanitizer regeneration; and the
-release-archive smoke. P179c3 now owns the remaining native process workflow.
+release-archive smoke.
+
+P179c3 moves standalone and project `build`/`run` C generation through
+`mlgc native-build*`/`native-run*` using the strict length-framed
+`NATIVE|1|<mode>|<bytes>` protocol. The Rust driver remains a capability host
+for filesystem access, process execution and `clang`; it validates the complete
+C payload before creating or replacing artifacts and does not silently fall
+back. Standalone sources without imports retain the direct semantic/IR path,
+while imported sources use the same package/linker/standard augmentation as
+projects. The self-hosted C backend now covers standard process arguments as
+direct calls or function values, environment lookup, stdin reads and
+`Error`/`ErrorKind` printing. Process arguments, environment, stdin,
+stdout/stderr, exit status, allocation failure and sanitizer behavior agree
+through the public self path. Local acceptance covers the canonical 591
+library, 20 driver and four hardening tests; thirteen positive, nine
+runtime-rejection and zero boundary B3 paths; the default-transition gate; an
+11,434,135-byte fixed point with 478 compiler-pair tasks, 173 parser sources,
+fourteen backend fixtures, eight backend projects, twenty-one native pairs and
+sanitizer regeneration; and the release-archive smoke. P179d now owns the
+packaged default switch and recovery packaging.
 
 B1 is complete. The Mallang frontend covers the frozen v1 lexer, parser and
 bounded recovery, and the repository corpus matches Rust Stage0 through normal,

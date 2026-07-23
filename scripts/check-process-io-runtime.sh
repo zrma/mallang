@@ -4,15 +4,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MLG_BIN="${MLG_BIN:-target/debug/mlg}"
+if [[ $# -gt 0 ]]; then
+  MLG_COMMAND=("$@")
+else
+  MLG_COMMAND=("${MLG_BIN:-target/debug/mlg}")
+fi
 CLANG_BIN="${CLANG:-clang}"
 OUT_DIR="target/mallang/process-io-runtime"
 FIXTURE_DIR="tests/fixtures/v06-process-io"
 PROCESS_C="target/mallang/process-io.c"
 COMMON_FLAGS=(-std=c11 -Wall -Wextra -Werror -pedantic)
 
-if [[ ! -x "$MLG_BIN" ]]; then
-  echo "missing mlg binary: $MLG_BIN" >&2
+if [[ ! -x "${MLG_COMMAND[0]}" ]]; then
+  echo "missing mlg binary: ${MLG_COMMAND[0]}" >&2
   exit 1
 fi
 if [[ ! -f "$PROCESS_C" ]]; then
@@ -25,8 +29,8 @@ unset MALLANG_P149_MISSING
 
 build_fixture() {
   local name="$1"
-  "$MLG_BIN" check "$FIXTURE_DIR/$name.mlg" >/dev/null
-  "$MLG_BIN" build "$FIXTURE_DIR/$name.mlg" -o "$OUT_DIR/$name" >/dev/null
+  "${MLG_COMMAND[@]}" check "$FIXTURE_DIR/$name.mlg" >/dev/null
+  "${MLG_COMMAND[@]}" build "$FIXTURE_DIR/$name.mlg" -o "$OUT_DIR/$name" >/dev/null
 }
 
 for fixture in \
@@ -81,7 +85,7 @@ if ! cmp -s "$OUT_DIR/args.expected" "$OUT_DIR/args.stdout" || \
   exit 1
 fi
 
-"$MLG_BIN" run "$FIXTURE_DIR/args.mlg" -- alpha 한 \
+"${MLG_COMMAND[@]}" run "$FIXTURE_DIR/args.mlg" -- alpha 한 \
   >"$OUT_DIR/args-run.stdout" 2>"$OUT_DIR/args-run.stderr"
 if ! cmp -s "$OUT_DIR/args.expected" "$OUT_DIR/args-run.stdout" || \
   [[ -s "$OUT_DIR/args-run.stderr" ]]; then
@@ -92,7 +96,7 @@ fi
 printf 'Error{kind: InvalidData, message: process argument is not valid UTF-8}\n' \
   >"$OUT_DIR/args-run-invalid-utf8.expected"
 invalid_argument=$'\300\257'
-"$MLG_BIN" run "$FIXTURE_DIR/args.mlg" -- "$invalid_argument" \
+"${MLG_COMMAND[@]}" run "$FIXTURE_DIR/args.mlg" -- "$invalid_argument" \
   >"$OUT_DIR/args-run-invalid-utf8.stdout" \
   2>"$OUT_DIR/args-run-invalid-utf8.stderr"
 if ! cmp -s \
@@ -103,7 +107,7 @@ if ! cmp -s \
   exit 1
 fi
 
-if "$MLG_BIN" run "$FIXTURE_DIR/args.mlg" alpha \
+if "${MLG_COMMAND[@]}" run "$FIXTURE_DIR/args.mlg" alpha \
   >"$OUT_DIR/run-without-separator.stdout" 2>"$OUT_DIR/run-without-separator.stderr"; then
   echo "mlg run accepted program arguments without --" >&2
   exit 1
@@ -174,7 +178,7 @@ if [[ "$exit_status" -ne 7 ]] || [[ -s "$OUT_DIR/exit.stdout" ]] || \
   exit 1
 fi
 
-if "$MLG_BIN" run "$FIXTURE_DIR/exit.mlg" \
+if "${MLG_COMMAND[@]}" run "$FIXTURE_DIR/exit.mlg" \
   >"$OUT_DIR/exit-run.stdout" 2>"$OUT_DIR/exit-run.stderr"; then
   echo "mlg run did not propagate os.exit(7)" >&2
   exit 1

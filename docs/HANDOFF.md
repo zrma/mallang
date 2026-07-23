@@ -869,7 +869,22 @@ allocation accounting, sanitizer, protocol spy, malformed no-fallback/no-mutatio
 B3 13 positive/9 runtime rejection/0 boundary, default-transition, 11,186,276-byte
 fixed point의 478 compiler-pair fixture task/173 parser corpus/14 backend fixture/
 8 backend project/21 native pair와 sanitizer, release-archive smoke를 통과했다.
-P179c3이 남은 native process workflow를 소유한다.
+
+P179c3은 standalone/project public `build`/`run` C 생성을
+`mlgc native-build*`/`native-run*`의 strict
+`NATIVE|1|<mode>|<bytes>` protocol로 옮겼다. Rust driver는 filesystem,
+process, `clang` capability host로만 남고 전체 C payload 검증 전에는 기존 C와
+binary를 변경하지 않으며 fallback하지 않는다. Import 없는 standalone은 기존
+semantic/IR diagnostic 순서를 유지하고, import가 있는 source만 package/linker/standard
+경로를 사용한다. Self C backend는 direct/function-value `os.args`, `os.env`,
+`io.readStdin`과 standard `Error`/`ErrorKind` 출력을 지원한다. Public self 경로의
+arguments, environment, stdin/stdout/stderr, exit, allocation failure와 sanitizer가
+통과했다. Local acceptance는 canonical 591 library/20 driver/4 hardening test,
+B3 13 positive/9 runtime rejection/0 boundary, default-transition,
+11,434,135-byte fixed point의 478 compiler-pair fixture task/173 parser corpus/
+14 backend fixture/8 backend project/21 native pair와 sanitizer, release-archive
+smoke를 통과했다. P179d가 packaged default switch와 offline Stage0 recovery
+artifact를 소유한다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

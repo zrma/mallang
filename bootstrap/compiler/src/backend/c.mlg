@@ -1291,7 +1291,8 @@ func programUsesIntrinsic(con program ir.Program, con intrinsic string) bool {
 }
 
 func intrinsicNodeInNode(con program ir.Program, node int, con intrinsic string) int {
-    if ir.NodeKind(con program, node) == "Expr.IntrinsicCall" && ir.NodeValue(con program, node) == intrinsic {
+    kind := ir.NodeKind(con program, node)
+    if(kind == "Expr.IntrinsicCall" || kind == "Expr.IntrinsicFunctionValue") && ir.NodeValue(con program, node) == intrinsic {
         return node
     }
     for mut child := 0; child < ir.NodeChildCount(con program, node); child = child + 1 {
@@ -1493,12 +1494,29 @@ func intrinsicResultType(con program ir.Program, con intrinsic string) string {
     if node < 0 {
         return ""
     }
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicFunctionValue" {
+        callable := callableTypeIndex(con program, con ir.NodeType(con program, node))
+        if callable < 0 {
+            return ""
+        }
+        return ir.CallableTypeReturn(con program, callable)
+    }
     return ir.NodeType(con program, node)
 }
 
 func intrinsicArgumentType(con program ir.Program, con intrinsic string, argument int) string {
     node := programIntrinsicNode(con program, con intrinsic)
-    if node < 0 || argument < 0 || argument >= ir.NodeChildCount(con program, node) {
+    if node < 0 || argument < 0 {
+        return ""
+    }
+    if ir.NodeKind(con program, node) == "Expr.IntrinsicFunctionValue" {
+        callable := callableTypeIndex(con program, con ir.NodeType(con program, node))
+        if callable < 0 || argument >= ir.CallableTypeParamCount(con program, callable) {
+            return ""
+        }
+        return ir.CallableTypeParam(con program, callable, argument)
+    }
+    if argument >= ir.NodeChildCount(con program, node) {
         return ""
     }
     return ir.NodeType(con program, ir.NodeChild(con program, node, argument))
@@ -1682,12 +1700,40 @@ func osArgsRuntime(con program ir.Program) Result[[]string, string] {
     return Ok([]string{"static int mallang_process_argc = 0;", "static char **mallang_process_argv = NULL;", "", "static void MLG_UNUSED mallang_process_init(int mlg_argc, char **mlg_argv) {", "    if (mlg_argc < 0 || (mlg_argc > 0 && mlg_argv == NULL)) {", "        mallang_runtime_error(\"invalid process argument storage\");", "    }", "    mallang_process_argc = mlg_argc;", "    mallang_process_argv = mlg_argv;", "}", "", "static void MLG_UNUSED mallang_std_drop_partial_strings(", "    mlg_String *mlg_values,", "    size_t mlg_initialized", ") {", "    for (size_t mlg_index = 0; mlg_index < mlg_initialized; mlg_index = mlg_index + 1) {", "        mallang_validate_string(mlg_values[mlg_index]);", "        mallang_dealloc((void *)mlg_values[mlg_index].mlg_data);", "    }", "    mallang_dealloc(mlg_values);", "}", "", strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_os_args(void) {"}, con ""), "    size_t mlg_count = (size_t)mallang_process_argc;", "    if (mlg_count > SIZE_MAX / sizeof(mlg_String)) {", "        mallang_runtime_error(\"process argument allocation size overflow\");", "    }", "    mlg_String *mlg_values = NULL;", "    if (mlg_count > 0) {", "        mlg_values = mallang_alloc(", "            mlg_count * sizeof(mlg_String),", "            \"process argument allocation failed\"", "        );", "    }", "", "    for (size_t mlg_index = 0; mlg_index < mlg_count; mlg_index = mlg_index + 1) {", "        const char *mlg_argument = mallang_process_argv[mlg_index];", "        if (mlg_argument == NULL) {", "            mallang_std_drop_partial_strings(mlg_values, mlg_index);", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                        ", strings.fromInt(invalidData), ","}, con ""), "                        \"invalid process argument\"", "                    )", "                }", "            };", "        }", "        size_t mlg_len = strlen(mlg_argument);", "        if (mlg_len > INT64_MAX ||", "            !mallang_utf8_scalar_count_bytes(mlg_argument, mlg_len, NULL)) {", "            mallang_std_drop_partial_strings(mlg_values, mlg_index);", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                        ", strings.fromInt(invalidData), ","}, con ""), "                        \"process argument is not valid UTF-8\"", "                    )", "                }", "            };", "        }", "        mlg_values[mlg_index] = mallang_string_owned_from_bytes(mlg_argument, mlg_len);", "    }", "", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"            .", cField(con "Ok"), " = (", token.CopyText(con sliceType), "){",}, con ""), strings.join(con []string{"                .", cField(con "data"), " = mlg_values,"}, con ""), strings.join(con []string{"                .", cField(con "len"), " = (int64_t)mlg_count,"}, con ""), strings.join(con []string{"                .", cField(con "cap"), " = (int64_t)mlg_count"}, con ""), "            }", "        }", "    };", "}", "",})
 }
 
+func osEnvRuntime(con program ir.Program) Result[[]string, string] {
+    result := intrinsicResultType(con program, con "OsEnv")
+    option := typeArgument(con program, con result, 0)
+    resultType := cTypeFor(con program, con result)
+    optionType := cTypeFor(con program, con option)
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    invalidInput := enumVariantIndex(con program, enumeration, con "InvalidInput")
+    invalidData := enumVariantIndex(con program, enumeration, con "InvalidData")
+    if typeKind(con program, con result) != "result" || typeKind(con program, con option) != "option" || typeArgument(con program, con option, 0) != "string" || resultType == "" || optionType == "" || invalidInput < 0 || invalidData < 0 {
+        return Err("B3 C backend received malformed OsEnv IR metadata")
+    }
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_os_env("}, con ""), "    const mlg_String *mlg_name", ") {", "    mallang_validate_string(*mlg_name);", "    if (memchr(mlg_name->mlg_data, '\\0', mlg_name->mlg_len) != NULL) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                    ", strings.fromInt(invalidInput), ","}, con ""), "                    \"environment name contains NUL\"", "                )", "            }", "        };", "    }", "    if (mlg_name->mlg_len == SIZE_MAX) {", "        mallang_runtime_error(\"environment name allocation size overflow\");", "    }", "    char *mlg_name_data = mallang_alloc(", "        mlg_name->mlg_len + 1,", "        \"environment name allocation failed\"", "    );", "    if (mlg_name->mlg_len > 0) {", "        memcpy(mlg_name_data, mlg_name->mlg_data, mlg_name->mlg_len);", "    }", "    mlg_name_data[mlg_name->mlg_len] = '\\0';", "    const char *mlg_value = getenv(mlg_name_data);", "    mallang_dealloc(mlg_name_data);", "", "    if (mlg_value == NULL) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 0,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Ok"), " = (", token.CopyText(con optionType), "){ .tag = 0 }"}, con ""), "            }", "        };", "    }", "", "    size_t mlg_len = strlen(mlg_value);", "    if (mlg_len > INT64_MAX ||", "        !mallang_utf8_scalar_count_bytes(mlg_value, mlg_len, NULL)) {", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                    ", strings.fromInt(invalidData), ","}, con ""), "                    \"environment value is not valid UTF-8\"", "                )", "            }", "        };", "    }", "", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"            .", cField(con "Ok"), " = (", token.CopyText(con optionType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Some"), " = mallang_string_owned_from_bytes(mlg_value, mlg_len)"}, con ""), "                }", "            }", "        }", "    };", "}", "",})
+}
+
+func ioReadRuntime(con program ir.Program) Result[[]string, string] {
+    result := intrinsicResultType(con program, con "IoReadStdin")
+    resultType := cTypeFor(con program, con result)
+    enumeration := intrinsicEnumIndex(con program, con "ErrorKind")
+    invalidData := enumVariantIndex(con program, enumeration, con "InvalidData")
+    other := enumVariantIndex(con program, enumeration, con "Other")
+    if typeKind(con program, con result) != "result" || typeArgument(con program, con result, 0) != "string" || resultType == "" || invalidData < 0 || other < 0 {
+        return Err("B3 C backend received malformed IoReadStdin IR metadata")
+    }
+    return Ok([]string{strings.join(con []string{"static ", token.CopyText(con resultType), " MLG_UNUSED mallang_std_io_read_stdin(void) {"}, con ""), "    size_t mlg_len = 0;", "    size_t mlg_cap = 4096;", "    char *mlg_data = mallang_alloc(mlg_cap, \"standard input allocation failed\");", "", "    while (true) {", "        if (mlg_len == mlg_cap) {", "            if (mlg_cap > SIZE_MAX / 2) {", "                mallang_runtime_error(\"standard input allocation size overflow\");", "            }", "            mlg_cap = mlg_cap * 2;", "            mlg_data = mallang_realloc(", "                mlg_data,", "                mlg_cap,", "                \"standard input allocation failed\"", "            );", "        }", "", "        errno = 0;", "        size_t mlg_read = fread(mlg_data + mlg_len, 1, mlg_cap - mlg_len, stdin);", "        mlg_len = mlg_len + mlg_read;", "        if (mlg_len > INT64_MAX) {", "            mallang_dealloc(mlg_data);", "            mallang_runtime_error(\"standard input exceeds string size limit\");", "        }", "        if (mlg_read > 0) {", "            continue;", "        }", "        if (ferror(stdin)) {", "            int mlg_error_number = errno;", "            mallang_dealloc(mlg_data);", strings.join(con []string{"            return (", token.CopyText(con resultType), "){",}, con ""), "                .tag = 1,", strings.join(con []string{"                .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                    .", cField(con "Err"), " = mallang_std_errno_error("}, con ""), "                        mlg_error_number,", "                        \"standard input read failed\"", "                    )", "                }", "            };", "        }", "        if (feof(stdin)) {", "            break;", "        }", "        mallang_dealloc(mlg_data);", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                    ", strings.fromInt(other), ","}, con ""), "                    \"standard input read made no progress\"", "                )", "            }", "        };", "    }", "", "    if (!mallang_utf8_scalar_count_bytes(mlg_data, mlg_len, NULL)) {", "        mallang_dealloc(mlg_data);", strings.join(con []string{"        return (", token.CopyText(con resultType), "){",}, con ""), "            .tag = 1,", strings.join(con []string{"            .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"                .", cField(con "Err"), " = mallang_std_error("}, con ""), strings.join(con []string{"                    ", strings.fromInt(invalidData), ","}, con ""), "                    \"standard input is not valid UTF-8\"", "                )", "            }", "        };", "    }", "    mlg_data[mlg_len] = '\\0';", strings.join(con []string{"    return (", token.CopyText(con resultType), "){",}, con ""), "        .tag = 0,", strings.join(con []string{"        .", cField(con "payload"), " = {",}, con ""), strings.join(con []string{"            .", cField(con "Ok"), " = (mlg_String){"}, con ""), "                .mlg_data = mlg_data,", "                .mlg_len = mlg_len,", "                .mlg_storage = MLG_STRING_OWNED", "            }", "        }", "    };", "}", "",})
+}
+
 func platformRuntime(con program ir.Program) Result[[]string, string] {
     usesIoWrite := programUsesIntrinsic(con program, con "IoWriteStdout") || programUsesIntrinsic(con program, con "IoWriteStderr")
+    usesIoRead := programUsesIntrinsic(con program, con "IoReadStdin")
     usesOsExit := programUsesIntrinsic(con program, con "OsExit")
+    usesOsEnv := programUsesIntrinsic(con program, con "OsEnv")
     usesFsRead := programUsesIntrinsic(con program, con "FsReadText")
     usesOsArgs := programUsesIntrinsic(con program, con "OsArgs")
-    if !usesIoWrite && !usesOsExit && !usesFsRead && !usesOsArgs {
+    if !usesIoWrite && !usesIoRead && !usesOsExit && !usesOsEnv && !usesFsRead && !usesOsArgs {
         return Ok([]string{})
     }
     match platformErrorRuntime(con program) {
@@ -1714,11 +1760,31 @@ func platformRuntime(con program ir.Program) Result[[]string, string] {
                     }
                 }
             }
+            if usesOsEnv {
+                match osEnvRuntime(con program) {
+                    case Ok(osLines) {
+                        lines = copyLines(lines, con osLines)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
             if usesOsExit {
                 lines = copyLines(lines, con []string{"static _Noreturn void MLG_UNUSED mallang_std_os_exit(", "    int64_t mlg_code", ") {", "    if (mlg_code < 0 || mlg_code > 255) {", "        mallang_runtime_error(\"process exit code out of range\");", "    }", "    exit((int)mlg_code);", "}", "",})
             }
             if usesIoWrite {
                 match ioWriteRuntime(con program) {
+                    case Ok(ioLines) {
+                        lines = copyLines(lines, con ioLines)
+                    }
+                    case Err(message) {
+                        return Err(message)
+                    }
+                }
+            }
+            if usesIoRead {
+                match ioReadRuntime(con program) {
                     case Ok(ioLines) {
                         lines = copyLines(lines, con ioLines)
                     }
@@ -2293,6 +2359,9 @@ func intrinsicHelperName(con intrinsic string) string {
     if intrinsic == "IoWriteStderr" {
         return "mallang_std_io_write_stderr"
     }
+    if intrinsic == "IoReadStdin" {
+        return "mallang_std_io_read_stdin"
+    }
     if intrinsic == "OsExit" {
         return "mallang_std_os_exit"
     }
@@ -2301,6 +2370,9 @@ func intrinsicHelperName(con intrinsic string) string {
     }
     if intrinsic == "OsArgs" {
         return "mallang_std_os_args"
+    }
+    if intrinsic == "OsEnv" {
+        return "mallang_std_os_env"
     }
     return ""
 }
@@ -3215,7 +3287,44 @@ func emitPrint(con program ir.Program, call int, con indent string, con env Emit
                 lines = copyLines(lines, con emitted.postLines)
                 return Ok(lines)
             } else {
-                return Err(unsupported(con strings.join(con []string{"print ", ty,}, con "")))
+                enumeration := enumIndex(con program, con ty)
+                if enumeration >= 0 && ir.EnumIntrinsic(con program, enumeration) == "ErrorKind" {
+                    mut enumLines := copyLines([]string{}, con lines)
+                    enumLines = append(enumLines, strings.join(con []string{token.CopyText(con indent), "switch ((", token.CopyText(con emitted.value), ").tag) {",}, con ""))
+                    nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
+                    for mut variant := 0; variant < ir.EnumVariantCount(con program, enumeration); variant = variant + 1 {
+                        enumLines = append(enumLines, strings.join(con []string{token.CopyText(con nestedIndent), "case ", strings.fromInt(variant), ": printf(\"", token.CopyText(con ir.EnumVariantName(con program, enumeration, variant)), "\\n\"); break;",}, con ""))
+                    }
+                    enumLines = append(enumLines, strings.join(con []string{token.CopyText(con nestedIndent), "default: mallang_runtime_error(\"invalid enum tag\");",}, con ""))
+                    enumLines = append(enumLines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                    enumLines = copyLines(enumLines, con emitted.postLines)
+                    return Ok(enumLines)
+                }
+                structure := structIndex(con program, con ty)
+                if structure < 0 || ir.StructIntrinsic(con program, structure) != "Error" {
+                    return Err(unsupported(con strings.join(con []string{"print ", token.CopyText(con ty),}, con "")))
+                }
+                kindField := structFieldIndex(con program, structure, con "kind")
+                messageField := structFieldIndex(con program, structure, con "message")
+                errorKindEnum := intrinsicEnumIndex(con program, con "ErrorKind")
+                if kindField < 0 || messageField < 0 || errorKindEnum < 0 {
+                    return Err("B3 C backend received malformed standard Error print metadata")
+                }
+                temp := strings.join(con []string{"mallang_print_error_tmp_", strings.fromInt(source.Source(con ir.NodeSpan(con program, call))), "_", strings.fromInt(source.Start(con ir.NodeSpan(con program, call))),}, con "")
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), cTypeFor(con program, con ty), " ", token.CopyText(con temp), " = ", token.CopyText(con emitted.value), ";",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"Error{kind: \");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "switch ((", token.CopyText(con temp), ".", cField(con ir.StructFieldName(con program, structure, kindField)), ").tag) {",}, con ""))
+                nestedIndent := strings.join(con []string{token.CopyText(con indent), "    ",}, con "")
+                for mut variant := 0; variant < ir.EnumVariantCount(con program, errorKindEnum); variant = variant + 1 {
+                    lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "case ", strings.fromInt(variant), ": printf(\"", token.CopyText(con ir.EnumVariantName(con program, errorKindEnum, variant)), "\"); break;",}, con ""))
+                }
+                lines = append(lines, strings.join(con []string{token.CopyText(con nestedIndent), "default: mallang_runtime_error(\"invalid enum tag\");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "}",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\", message: \");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "mallang_print_string(", token.CopyText(con temp), ".", cField(con ir.StructFieldName(con program, structure, messageField)), ");",}, con ""))
+                lines = append(lines, strings.join(con []string{token.CopyText(con indent), "printf(\"}\\n\");",}, con ""))
+                lines = copyLines(lines, con emitted.postLines)
+                return Ok(lines)
             }
         }
         case Err(message) {
