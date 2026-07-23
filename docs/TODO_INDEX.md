@@ -19,6 +19,9 @@ Status: canonical
 
 - [Naming conventions](todo-naming-conventions/spec.md): 1.x `mlg lint`는
   완료됐고 reference-aware rename과 hard-error는 2.0 경계로 보류한다.
+- [Explicit error-flow ergonomics](todo-explicit-error-flow-ergonomics/spec.md):
+  `?` 없이 expression `match`의 명시적 returning arm으로 중첩을 줄이는
+  compatible 1.x 설계를 기록했다.
 
 ## Completed Programs
 

@@ -944,3 +944,10 @@ P181은 visibility와 identifier role을 분리했다. `pub`만 package exposure
 `--allow <rule-id>` suppression과 CI용 `--deny-warnings`를 제공한다.
 `mlg fmt`는 identifier를 변경하지 않으며 reference-aware rename과 hard-error
 전환은 2.0 migration boundary로 남는다.
+
+후속 error-flow ergonomics는 `?`를 도입하지 않는다. 권장 1.x additive
+surface는 expression `match`의 value arm과 explicit `return` arm을 함께
+허용하고 returning arm을 compiler-internal diverging result로 다루는 것이다.
+공개 `Never`, exception, implicit conversion은 열지 않으며 구현 전
+`docs/todo-explicit-error-flow-ergonomics/`의 cleanup과 rule-index acceptance를
+먼저 닫는다.
