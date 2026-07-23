@@ -272,8 +272,9 @@
 - `v1.1.0` added bounded-memory `std/fs.forEachLine[C,S]`, completed v1.0.0
   upgrade/rollback/re-upgrade compatibility and supported-platform artifact
   acceptance, and was published on 2026-07-17.
-- `v1.2.0` is the compatible default self-hosted compiler release candidate.
-  B0-B4 and P179a-P179d are complete; P179e signed publication and public
-  installed-artifact verification remain.
+- `v1.2.0` completed B0-B5, switched the default compiler to the fixed-point
+  Mallang core, preserved Rust Stage0 as the explicit seed/oracle, and was
+  released on 2026-07-23 after supported-platform and public installation
+  acceptance.
 - First-class references, interfaces/dynamic dispatch, C interop, and an
   LLVM/Cranelift backend remain decision-gated rather than implied v1 features.

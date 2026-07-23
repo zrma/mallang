@@ -1,7 +1,6 @@
 # Mallang Self-Hosting
 
-Status: active long-term program; B0-B4 and B5 P179a-P179d complete,
-P179e v1.2.0 release acceptance active
+Status: complete; B0-B5 released as Mallang v1.2.0
 
 ## Objective
 
@@ -398,6 +397,12 @@ archive gates cover the packaged switch. P179d is complete: the same default,
 fixed-point, archive, clean-install and rollback/current re-upgrade paths pass
 macOS arm64 and Linux x86_64 CI, and both archives are assembled into one
 checksum bundle.
+
+P179e closes B5 with the compatible v1.2.0 release. The final tagged commit
+passes the canonical, complete Stage0/default differential, fixed-point,
+sanitizer and supported-platform release gates. The signed tag, GitHub archive
+and checksum assets, clean public installation, self-hosted provenance and
+explicit Stage0 rollback/re-upgrade path are the release boundary.
 
 ## Long-Term Stage0 Seed Audit
 

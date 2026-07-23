@@ -1,6 +1,6 @@
 # Spec: B5 Default Self-Hosted Compiler
 
-Status: active; P179a-P179d complete; P179e v1.2.0 release acceptance active
+Status: complete; released as Mallang v1.2.0 on 2026-07-23
 
 ## Objective
 
@@ -223,6 +223,14 @@ verification.
 - verify signed tag, GitHub Release assets, checksums and clean install
 - document the long-term seed refresh and bootstrap audit policy
 
+P179e is complete. The final v1.2.0 commit passes the canonical, complete
+Stage0/default differential, fixed-point, sanitizer and supported-platform
+release gates. The signed tag and GitHub Release carry both platform archives,
+the combined checksums and installer. A clean public install verifies the
+self-hosted default and provenance, while the explicit Stage0 selector,
+published v1.0.0 rollback and v1.2.0 re-upgrade preserve the recovery contract.
+The long-term seed audit policy remains in `docs/SELF_HOSTING.md`.
+
 ## Acceptance
 
 - [x] public `mlg` and internal compiler/seed naming contract
@@ -235,7 +243,7 @@ verification.
 - [x] local complete Stage0/default command and conformance parity
 - [x] default release artifacts use the Mallang compiler core
 - [x] macOS arm64 and Linux x86_64 packaging and clean-install acceptance
-- [ ] B5 publication, signed tag and GitHub Release acceptance
+- [x] B5 publication, signed tag and GitHub Release acceptance
 
 ## Excluded
 

@@ -1855,8 +1855,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 
 ## P179: B5 Default Self-Hosted Compiler
 
-상태: active; P179a-P179d complete, P179e v1.2.0 release acceptance active
-(2026-07-23)
+상태: complete; released as v1.2.0 (2026-07-23)
 
 - [x] public `mlg`, internal `mlgc`와 `--compiler stage0|self` contract
 - [x] clean-checkout Stage0 -> Stage1 -> Stage2 build graph와 provenance
@@ -1874,7 +1873,7 @@ slow every edit loop. Default compiler transition remains B5 work.
 - [x] dual-binary `mlg`/`mlgc` release archive와 offline rollback workflow
 - [x] complete Stage0/default command와 conformance parity on supported platforms
 - [x] supported-platform clean-install acceptance
-- [ ] compatible 1.x signed tag와 GitHub Release acceptance
+- [x] compatible 1.x signed tag와 GitHub Release acceptance
 
 Exact scope and default-transition safety rules are owned by
 `docs/todo-self-hosting-default-compiler/`. B5 keeps `mlg` as the public command
@@ -1885,10 +1884,12 @@ and the tracked Rust Cargo workspace as the reproducible seed and oracle.
 - [x] keep visibility controlled only by explicit `pub`
 - [x] define role-based PascalCase, lowerCamelCase and lower_snake_case targets
 - [x] keep `mlg fmt` syntax-preserving and non-renaming
-- [ ] inventory current and ecosystem naming violations
-- [ ] add compatible `mlg lint` warnings and machine-readable rule IDs
-- [ ] add explicit resolver-backed `mlg fix --names`
-- [ ] publish migration evidence before 2.0 compiler errors
+Decision-gated future work:
+
+- inventory current and ecosystem naming violations
+- add compatible `mlg lint` warnings and machine-readable rule IDs
+- add explicit resolver-backed `mlg fix --names`
+- publish migration evidence before 2.0 compiler errors
 
 The approved design and compatibility boundary are owned by
 `docs/todo-naming-conventions/`. This debt does not change the frozen v1 source

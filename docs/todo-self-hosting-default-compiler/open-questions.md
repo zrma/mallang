@@ -1,6 +1,6 @@
 # Open Questions: B5 Default Self-Hosted Compiler
 
-Status: resolved for B5; P179e release verification active
+Status: resolved for B5
 
 ## Does The Public Command Change?
 

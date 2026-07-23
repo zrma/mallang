@@ -39,6 +39,23 @@ line rather than total input size. The exact contract and release acceptance are
 owned by `docs/todo-v11-streaming-text-io/`. Mallang 1.1.0 is the compatible
 minor release for this addition.
 
+## Published v1.2 Default Self-Hosted Compiler
+
+Mallang 1.2.0 changes the default compiler implementation, not the v1 source
+language. The public `mlg` driver selects the fixed-point Mallang `mlgc` core,
+which owns the lexer, parser, package graph, semantic and ownership checks,
+typed IR, formatter, test runner and C backend. The tracked Rust workspace
+remains the reproducible Stage0 seed, differential oracle and explicit
+`--compiler stage0` recovery path; a self-hosted failure never silently falls
+back.
+
+The dual-binary distribution and installer preserve the stable public CLI and
+support rollback to the published v1.0.0 legacy archive before re-upgrading.
+Complete Stage0/default differential, fixed-point, sanitizer, macOS arm64 and
+Linux x86_64 archive, checksum and clean-install acceptance close the B0-B5
+self-hosting program. No syntax, ownership rule or standard-library API changes
+in this compatible minor release.
+
 ## Published v1.0.0-rc.1 Release Candidate
 
 The first v1 release candidate adds no source-language feature after the v0.9

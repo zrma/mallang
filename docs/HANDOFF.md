@@ -5,7 +5,7 @@
 - 언어 이름: Mallang
 - 소스 확장자: `.mlg`
 - CLI: `mlg`
-- 공개 릴리스: `v0.1.0`부터 stable `v1.1.0`까지; macOS arm64/Linux x86_64 binary 포함
+- 공개 릴리스: `v0.1.0`부터 stable `v1.2.0`까지; macOS arm64/Linux x86_64 binary 포함
 - 현재 구현: token model, hand-written lexer, AST, parser, semantic checker, entrypoint `func main()` signature checks, ownership-lite move/borrow checks, borrowed non-copy parameter escape rejection, same-call nested-field-aware borrow conflict checks, built-in value name collision checks, top-level type/function declaration name conflict checks, nested-block and arm-local shadowing with same-block redeclaration rejection, string equality without moves, guarded integer division/remainder, checked integer arithmetic, semantic printability checks, statement-only `print` semantic checks, `bool` operators with native short-circuit smoke, `|>` pipeline call sugar, statement/expression `if`, condition-only `for` loops, conditionless `for` loops, `for init; condition; post` loops, array/slice `for i, value := range values { ... }`, blank identifiers and one-variable forms in range loops, explicitly deferred mutable/by-reference range value syntax, legacy borrow alias rejection regressions, fixed-size array `values[i]` indexing for `Copy` elements with compile-time literal and native runtime bounds checks, borrowed indexing expressions for read-only non-Copy element inspection, fixed-size array `values[i] = expr` assignment for mutable `Copy` and non-copy element arrays including `for` clause post targets, fixed-size array `len(values)`, source-level owned slice type syntax `[]T`, slice literals `[]T{...}` with allocation-size/runtime allocation failure guards, `len(slice)`, Copy-only `slice[i]` value access, consuming built-in `append(slice, item) -> []T` with native realloc growth, same-field append reassignment for direct and stable indexed owned slice field paths, indexed field append-take source lowering, field-take append sources and general owned value position takes for owned slice fields, slice range with Copy value iteration and index-only non-Copy iteration, local-rooted slice field/index len/index/range/borrow reads, slice element borrow arguments for local-rooted owned slices, slice element assignment for local-rooted mutable owned slices, indexed field assignment for array/slice elements, struct cleanup for owned slice fields, internal owned slice `Type::Slice` / C `{data,len,cap}` shell and cleanup classification, internal cleanup type `mlg_drop_*` helper emission shell, explicit internal `IrStmtKind::Drop` backend lowering, straight-line cleanup param/local drop insertion before tail/return/reassignment, branch-local cleanup drop insertion for `if`/`match` statement bodies, outer cleanup root branch move normalization for `if`/`match` statements, expression-form `if`/`match` branch cleanup normalization, loop body-local cleanup drop insertion for `for`/`range` tail and `break`/`continue` paths, `for` init cleanup trailer lowering, `break`/`continue`, `else if` sugar, branch-aware return-completeness analysis, `type Name struct` declarations, named struct literals, recursive struct value-type rejection, nested field access, nested mutable field assignment, nested field-level borrow arguments, fixed-size array element borrow arguments, fixed-size array element method receivers, con/mut struct receiver methods, generic type refs, fixed-size array type refs and fixed-size array literals type-checked, fixed-size arrays as move-only values, fixed-size array typed IR/C struct-wrapper layout, `for`/`range` body C block lowering for shadowed locals, `Option`/`Result` constructor type checking, exhaustive expression/statement `match` checking, statement-form `match` block arms, non-local `match` scrutinee temp codegen, `if` expression branch prelude temp codegen, `match` expression arm prelude temp codegen, `for` clause condition/post prelude codegen with post-preserving `continue`, tagged ADT typed IR/backend layout, printable `Option`/`Result` native output, printable struct native output, typed IR, backend public API boundary with C implementation, name helper, type emitter, statement emitter, expression emitter, shared utility, unit test modules, centralized runtime error helper, native runtime failure stderr smoke coverage, and C backend IR invariant regression coverage, first native subset C backend, hidden-reference C ABI for `con`/`mut` parameters, caller-visible `mut` parameter mutation, `mlg check`, `mlg ir`, `mlg build`, `mlg run`, `mlg --version`, `mlg --help`, CLI error stream smoke, checked-in example smoke coverage guard, generated C sanitizer smoke for cleanup-heavy examples, full generated C warning-clean gate, deep generated C sanitizer sweep command, v0 release-candidate audit, `Option`/`Result` surface spec
 - v0.2 기반: `SourceId`를 token/AST/IR span에 전파하고 여러 파일을 구분하는
   `SourceMap`과 file/line/column CLI diagnostic을 추가했다. `parse_sources`는 여러
@@ -339,6 +339,11 @@
   rollback, re-upgrade하며 기존 `textstats` output identity와 새 streaming 동작을 함께
   검증했다. macOS arm64/Linux x86_64 artifact, combined checksum, signed tag와 public
   stable release를 제공한다.
+- v1.2.0 released: no-flag `mlg`가 fixed-point Mallang `mlgc` core를 default로
+  사용한다. Tracked Rust Stage0는 reproducible seed, differential oracle와 explicit
+  recovery path로 남는다. Complete Stage0/default differential, fixed-point, canonical,
+  sanitizer와 macOS arm64/Linux x86_64 dual archive, checksum, clean-install,
+  rollback/re-upgrade acceptance로 B0-B5를 닫았다.
 - 아직 없음: first-class borrowed references, statement-spanning borrow lifetimes, general partial moves from fields beyond slice field take, full C backend, method values/interfaces/dynamic dispatch. `con expr` / `mut expr` remain call argument mode prefixes only; statement-spanning borrow syntax is explicitly deferred. Non-slice field partial moves remain explicitly deferred; owned slice field take is the only v0 field-take exception.
 
 ## 빠른 시작
@@ -363,7 +368,7 @@ scripts/check-release-helpers.sh
 scripts/check-generated-c-sanitizers.sh --assume-generated
 scripts/verify-v0-rc.sh
 scripts/finalize-and-push.sh --verify-only
-VERSION=1.1.0
+VERSION=1.2.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 cargo run --bin mlg -- --version
 cargo run --bin mlg -- --help
@@ -504,16 +509,16 @@ target/mallang/match-statement
 - `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
 - `docs/todo-v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
 - `docs/todo-naming-conventions/`: approved role-based casing debt, lint/fix plan and 2.0 migration boundary
-- `docs/SELF_HOSTING.md`: active B0-B5 self-hosting and fixed-point contract
+- `docs/SELF_HOSTING.md`: completed B0-B5 self-hosting and fixed-point contract
 - `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
 - `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
 - `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
 - `docs/todo-self-hosting-backend/`: closed B3 Mallang C backend contract
 - `docs/todo-self-hosting-fixed-point/`: closed B4 fixed-point and conformance contract
-- `docs/todo-self-hosting-default-compiler/`: active B5 default-transition contract
+- `docs/todo-self-hosting-default-compiler/`: closed B5 default-transition contract
 - `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
-- `docs/releases/`: v0.1.0부터 v1.1.0까지의 release notes와 verification record
+- `docs/releases/`: v0.1.0부터 v1.2.0까지의 release notes와 verification record
 - `SECURITY.md`: stable supported version과 private vulnerability reporting policy
 - `ROADMAP.md`: compiler milestone
 - `docs/ROADMAP.md`: agent가 다음 작업을 고르는 운영용 roadmap
@@ -894,7 +899,12 @@ Stage0 selector를 검증한다. Published v1.0.0 single-driver artifact rollbac
 Linux x86_64 remote CI에서 default transition, fixed point, clean install,
 rollback/re-upgrade, release archive와 checksum bundle이 모두 통과해 P179d를 닫았다.
 P179e는 compatible v1.2.0 signed tag, GitHub Release와 published clean-install
-verification을 소유한다.
+verification으로 B5를 닫았다. Final tagged commit은 canonical, complete
+Stage0/default differential, fixed-point, sanitizer와 양 supported-platform release gate를
+통과한다. Public archive의 `mlg`는 sibling `mlgc`를 default로 선택하고 verbose provenance,
+대표 build/run, explicit Stage0 recovery, legacy rollback과 current re-upgrade가 공개
+asset 기준으로 검증된다. Rust Stage0는 장기 seed refresh/audit 정책 아래 tracked
+recovery input과 oracle로 남는다.
 
 B2 개발 루프는 generated Stage1과 strict accounting을 strict C11 `-O2`로,
 ASan/UBSan 경로를 `-O1`로 실행한다. 수정 중에는

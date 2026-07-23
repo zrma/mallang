@@ -140,10 +140,10 @@ and normative v1 contract.
   `std/fs.forEachLine[C,S]` without exposing a file handle or changing existing
   v1 source semantics. The release gate upgrades published v1.0.0, rolls back,
   and re-upgrades while preserving representative program output.
-- The v1.2.0 release candidate switches the no-flag `mlg` path to the
-  fixed-point Mallang `mlgc` core while retaining tracked Rust Stage0 as the
-  reproducible seed, differential oracle and explicit recovery path. It changes
-  no v1 source syntax or standard-library API.
+- v1.2.0 switches the no-flag `mlg` path to the fixed-point Mallang `mlgc` core
+  while retaining tracked Rust Stage0 as the reproducible seed, differential
+  oracle and explicit recovery path. It changes no v1 source syntax or
+  standard-library API.
 - v0.8 parser recovery reports up to 32 deterministic frontend diagnostics per
   source without entering later compiler stages. Deterministic lexer/parser/type/
   ownership properties, a checked-in crash corpus, typed IR preflight validation,
@@ -358,7 +358,7 @@ For a future approved source release, run the finalizer with the release
 message:
 
 ```sh
-VERSION=1.1.0
+VERSION=1.2.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}"
 ```
 
@@ -379,7 +379,7 @@ For a local dry run that also writes the final jj description and runs remote
 freshness checks but still does not move bookmarks or push:
 
 ```sh
-VERSION=1.1.0
+VERSION=1.2.0
 scripts/finalize-and-push.sh --message "chore: publish mallang ${VERSION}" --no-push
 ```
 
@@ -436,8 +436,7 @@ and stable re-upgrade gates. It is the cross-platform release acceptance used by
 
 ## v1 Binary Distribution
 
-The latest published v1.1.0 release uses the legacy single-`mlg` archive. The
-v1.2.0 release candidate adds the sibling self-hosted `mlgc` core and contains:
+The v1.2.0 GitHub release contains:
 
 - `mallang-v<version>-aarch64-apple-darwin.tar.gz`
 - `mallang-v<version>-x86_64-unknown-linux-gnu.tar.gz`
@@ -447,9 +446,9 @@ v1.2.0 release candidate adds the sibling self-hosted `mlgc` core and contains:
 Install or update the explicit version with:
 
 ```sh
-curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.1.0/install.sh
+curl -fsSLO https://github.com/zrma/mallang/releases/download/v1.2.0/install.sh
 chmod +x install.sh
-./install.sh --version 1.1.0
+./install.sh --version 1.2.0
 ```
 
 The default destination is `$HOME/.local/bin`; use `--bin-dir <directory>` for
@@ -488,13 +487,11 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
 - `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
 - `docs/todo-naming-conventions/`: approved role-based casing design debt and 2.0 migration boundary.
-- `docs/SELF_HOSTING.md`: active B0-B5 staged self-hosting and fixed-point contract.
+- `docs/SELF_HOSTING.md`: completed B0-B5 self-hosting and fixed-point contract.
 - `bootstrap/probe/`: Stage0-built B0 Mallang bootstrap capability probe.
-- `bootstrap/compiler/`: active Mallang compiler source, beginning with the B1
-  token model and lexer.
+- `bootstrap/compiler/`: default self-hosted Mallang compiler source.
 - `SECURITY.md`: supported-version and private vulnerability reporting policy.
-- `docs/releases/`: v0.1.0 through the v1.2.0 release candidate notes and
-  verification records.
+- `docs/releases/`: v0.1.0 through v1.2.0 release notes and verification records.
 - `ROADMAP.md`: implementation milestones.
 - `examples/hello.mlg`: first target source program.
 - `examples/function-values.mlg`: native smoke for named function values,
