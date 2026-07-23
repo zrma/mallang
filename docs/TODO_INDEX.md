@@ -22,6 +22,10 @@ Status: canonical
 - [Explicit error-flow ergonomics](todo-explicit-error-flow-ergonomics/spec.md):
   `?` 없이 expression `match`의 명시적 returning arm으로 중첩을 줄이는
   compatible 1.x 설계를 기록했다.
+- [Structural interface typing](todo-structural-interface-typing/spec.md):
+  named data는 nominal로 유지하고 method-set 만족 관계만 structural로
+  검토한다. 첫 후보는 static generic constraint로 제한하며 runtime interface와
+  dynamic dispatch는 별도 decision gate로 둔다.
 
 ## Completed Programs
 

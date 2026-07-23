@@ -358,7 +358,9 @@ contract를 검증하고 배포하는 마일스톤이다.
 - goroutine, async runtime, coroutine
 - raw pointer, address-of, user-visible unsafe block
 - first-class reference와 user-visible lifetime
-- interface/dynamic dispatch 전체 체계
+- static structural interface constraint는
+  `docs/todo-structural-interface-typing/`의 post-v1 decision gate에서 평가
+- first-class interface value와 dynamic dispatch 전체 체계
 - public C interop 또는 user-visible FFI
 - LLVM 또는 Cranelift backend 전환
 - self-hosting compiler
