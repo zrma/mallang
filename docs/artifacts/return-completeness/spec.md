@@ -16,7 +16,7 @@ Status: complete; historical milestone record
 - 거부: `if`에 `else`가 없어서 일부 path가 return하지 않는 경우.
 - 거부: `else` branch가 return하지 않는 경우.
 - 이 work unit에서는 제외: `else if` parser sugar.
-- 후속 `docs/todo-else-if-sugar/spec.md`에서 `else if` parser sugar를 지원한다.
+- 후속 `docs/artifacts/else-if-sugar/spec.md`에서 `else if` parser sugar를 지원한다.
 - 제외: statement-block `match` arm return analysis.
 
 ## C-체크리스트

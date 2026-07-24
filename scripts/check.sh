@@ -6,6 +6,7 @@ cd "$ROOT"
 
 scripts/check-agent-harness-interface.sh
 python3 scripts/check-todo-state.py
+scripts/check-work-packet-lifecycle.sh
 scripts/check-self-hosting-gate-interface.sh
 python3 scripts/check-v1-conformance.py
 scripts/check-self-hosting-bootstrap.sh

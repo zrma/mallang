@@ -87,15 +87,15 @@ Mallang to specific 1.x versions.
 - `scripts/check-self-hosting-fixed-point.sh`: isolated B4 Stage1/Stage2 C
   identity, strict compile, compiler-core differential and ASan/UBSan deep gate.
   It runs outside the ordinary canonical edit loop.
-- `docs/todo-self-hosting-bootstrap/`: closed B0 contract and decisions.
-- `docs/todo-self-hosting-frontend/`: closed B1 work breakdown and decisions.
-- `docs/todo-self-hosting-semantics/`: closed B2 work breakdown and decisions.
-- `docs/todo-self-hosting-backend/`: closed B3 work breakdown and decisions.
-- `docs/todo-self-hosting-fixed-point/`: closed B4 fixed-point work breakdown
+- `docs/artifacts/self-hosting-bootstrap/`: closed B0 contract and decisions.
+- `docs/artifacts/self-hosting-frontend/`: closed B1 work breakdown and decisions.
+- `docs/artifacts/self-hosting-semantics/`: closed B2 work breakdown and decisions.
+- `docs/artifacts/self-hosting-backend/`: closed B3 work breakdown and decisions.
+- `docs/artifacts/self-hosting-fixed-point/`: closed B4 fixed-point work breakdown
   and decisions.
-- `docs/todo-self-hosting-default-compiler/`: active B5 default-transition work
+- `docs/artifacts/self-hosting-default-compiler/`: closed B5 default-transition work
   breakdown and decisions.
-- `docs/todo-self-hosting-loop-performance/`: B2 full/fast gate and optimized C
+- `docs/artifacts/self-hosting-loop-performance/`: B2 full/fast gate and optimized C
   execution contract.
 - `tests/fixtures/self-hosting/`: focused capabilities required by compiler code.
 

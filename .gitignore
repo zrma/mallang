@@ -232,6 +232,8 @@ target/
 # Local run artifacts
 output/
 artifacts/
+!docs/artifacts/
+!docs/artifacts/**
 *.log
 
 # Local environment files

@@ -34,6 +34,13 @@ if [[ ! "$WORK_ID" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
 fi
 
 TODO_DIR="docs/todo-$WORK_ID"
+ARTIFACT_DIR="docs/artifacts/$WORK_ID"
+
+if [[ -e "$ARTIFACT_DIR" ]]; then
+  echo "work id is already completed: $ARTIFACT_DIR" >&2
+  exit 1
+fi
+
 mkdir -p "$TODO_DIR"
 
 if [[ ! -f "$TODO_DIR/spec.md" ]]; then

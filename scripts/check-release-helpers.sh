@@ -70,6 +70,8 @@ check_shell_syntax \
   scripts/check-v1x-upgrade.sh \
   scripts/check-streaming-file-io-runtime.sh \
   scripts/check.sh \
+  scripts/archive-work.sh \
+  scripts/check-work-packet-lifecycle.sh \
   scripts/finalize-and-push.sh \
   scripts/start-work.sh \
   scripts/verify-v0-rc.sh

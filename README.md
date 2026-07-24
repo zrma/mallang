@@ -484,13 +484,14 @@ Version 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
 - `docs/conformance/v1-rules.json`: exact v1 rule-to-evidence map.
 - `docs/STANDARD_LIBRARY.md`: stable v1 standard package API and compatible 1.x additions.
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지의 장기 milestone과 완료 조건.
-- `docs/todo-v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
-- `docs/todo-v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
-- `docs/todo-v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
-- `docs/todo-v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
-- `docs/todo-v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
-- `docs/todo-v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
+- `docs/artifacts/README.md`: completed work packet lifecycle and search entrypoint.
+- `docs/artifacts/v04-generic-data-model/`: approved and implemented v0.4 generic enum and specialization contract.
+- `docs/artifacts/v05-ownership-runtime/`: approved v0.5 minimal ownership model and transparent recursive ADT contract.
+- `docs/artifacts/v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence.
+- `docs/artifacts/v07-tooling-platforms/`: approved v0.7 tooling/platform contract and P155-P160 implementation evidence.
+- `docs/artifacts/v08-compiler-hardening/`: approved v0.8 compiler-hardening decision gate.
+- `docs/artifacts/v09-language-freeze/`: approved v0.9 language-freeze and compatibility contract.
+- `docs/artifacts/v11-streaming-text-io/`: compatible v1.1 streaming text I/O contract and acceptance.
 - `docs/todo-naming-conventions/`: implemented 1.x naming lint and deferred
   reference-aware rename/2.0 hard-error boundary.
 - `docs/SELF_HOSTING.md`: completed B0-B5 self-hosting and fixed-point contract.

@@ -36,7 +36,7 @@ The visitor receives valid UTF-8 line text without LF, a one-based line number,
 and cannot retain the borrowed line. Open, read and close failures remain
 recoverable `errors.Error` values. Peak runtime storage scales with the longest
 line rather than total input size. The exact contract and release acceptance are
-owned by `docs/todo-v11-streaming-text-io/`. Mallang 1.1.0 is the compatible
+owned by `docs/artifacts/v11-streaming-text-io/`. Mallang 1.1.0 is the compatible
 minor release for this addition.
 
 ## Published v1.2 Default Self-Hosted Compiler
@@ -237,7 +237,7 @@ does not change successful command stdout or exit status.
   outside P158.
 
 The exact schema, stream, path, and LSP deferral contract is specified in
-`docs/todo-v07-tooling-platforms/p158-machine-readable-diagnostics.md`.
+`docs/artifacts/v07-tooling-platforms/p158-machine-readable-diagnostics.md`.
 
 ## Published v0.7 Release Artifacts and Installation
 
@@ -269,7 +269,7 @@ P159 defines two native binary targets: macOS arm64
 
 The v0.8 GitHub Release publishes both supported native archives,
 `SHA256SUMS`, and `install.sh`. The exact contract is specified in
-`docs/todo-v07-tooling-platforms/p159-release-artifacts-installation.md`.
+`docs/artifacts/v07-tooling-platforms/p159-release-artifacts-installation.md`.
 
 ## Published v0.8 Canonical Project Acceptance
 
@@ -292,9 +292,9 @@ sanitizer sweep, and supported-platform matrix as one workflow.
   x86_64 release matrix before its archive enters the combined checksum bundle.
 
 The clean-project workflow is specified in
-`docs/todo-v07-tooling-platforms/p160-v07-acceptance.md`; the v0.8 hardening
+`docs/artifacts/v07-tooling-platforms/p160-v07-acceptance.md`; the v0.8 hardening
 composition and platform evidence are specified in
-`docs/todo-v08-compiler-hardening/p166-v08-acceptance.md`.
+`docs/artifacts/v08-compiler-hardening/p166-v08-acceptance.md`.
 
 ## Implemented v0.6 Standard Library
 

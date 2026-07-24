@@ -19,7 +19,7 @@ Status: complete; historical milestone record
 - 거부: immutable root binding의 mutable field borrow.
 - 이 work unit에서는 제외: nested field borrow argument (`con user.name.value`).
 - 이 work unit에서는 제외: nested field assignment.
-- 후속 `docs/todo-nested-field-places/spec.md`에서 nested field place 지원으로 확장한다.
+- 후속 `docs/artifacts/nested-field-places/spec.md`에서 nested field place 지원으로 확장한다.
 - 제외: caller-visible mutation을 위한 native by-reference ABI 변경.
 
 ## C-체크리스트

@@ -27,7 +27,8 @@ Go-like syntax, Rust-like safety, functional value style을 탐색하는 native 
 - 방향과 planned/implemented 경계: `SPEC.md`, `docs/V1_ROADMAP.md`,
   `docs/ROADMAP.md`.
 - 현재 작업 계약: `docs/TODO_INDEX.md`에 등록된 활성
-  `docs/todo-*/spec.md`와 `open-questions.md`.
+  `docs/todo-*/spec.md`와 `open-questions.md`; 완료 근거는
+  `docs/artifacts/<work-id>/`.
 
 ## Autonomy And Permissions
 

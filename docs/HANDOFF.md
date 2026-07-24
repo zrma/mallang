@@ -500,23 +500,24 @@ target/mallang/match-statement
 - `docs/agent-harness.md`: 이 저장소의 canonical 하네스 구조와 Mallang overlay
 - `SPEC.md`: published stable Mallang v1 language/tooling contract
 - `docs/V1_ROADMAP.md`: `v0.2.0`부터 `v1.0.0`까지 아홉 개 장기 milestone과 완료 조건
-- `docs/todo-v03-functions-closures/`: v0.3 function value와 owned closure decision gate
-- `docs/todo-v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
-- `docs/todo-v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
-- `docs/todo-v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
-- `docs/todo-v07-tooling-platforms/`: approved P154-P160 contract and P155-P160 implementation evidence
-- `docs/todo-v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
-- `docs/todo-v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
-- `docs/todo-v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
+- `docs/artifacts/README.md`: 완료된 work packet의 보존·검색 진입점
+- `docs/artifacts/v03-functions-closures/`: v0.3 function value와 owned closure decision gate
+- `docs/artifacts/v04-generic-data-model/`: v0.4 generic enum과 static specialization decision gate
+- `docs/artifacts/v05-ownership-runtime/`: v0.5 minimal ownership model과 transparent recursive ADT contract
+- `docs/artifacts/v06-standard-library/`: approved v0.6 contract and completed P147-P153 acceptance evidence
+- `docs/artifacts/v07-tooling-platforms/`: approved P154-P160 contract and P155-P160 implementation evidence
+- `docs/artifacts/v08-compiler-hardening/`: completed P161-P166 v0.8 hardening contract
+- `docs/artifacts/v09-language-freeze/`: approved P167-P172 v0.9 freeze contract
+- `docs/artifacts/v11-streaming-text-io/`: released v1.1 additive streaming text I/O and acceptance
 - `docs/todo-naming-conventions/`: approved role-based casing debt, lint/fix plan and 2.0 migration boundary
 - `docs/SELF_HOSTING.md`: completed B0-B5 self-hosting and fixed-point contract
-- `docs/todo-self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
-- `docs/todo-self-hosting-frontend/`: closed B1 frontend differential contract
-- `docs/todo-self-hosting-semantics/`: closed B2 semantics and typed-IR contract
-- `docs/todo-self-hosting-backend/`: closed B3 Mallang C backend contract
-- `docs/todo-self-hosting-fixed-point/`: closed B4 fixed-point and conformance contract
-- `docs/todo-self-hosting-default-compiler/`: closed B5 default-transition contract
-- `docs/todo-self-hosting-loop-performance/`: B2 inner-loop performance and
+- `docs/artifacts/self-hosting-bootstrap/`: closed B0 bootstrap feasibility and decisions
+- `docs/artifacts/self-hosting-frontend/`: closed B1 frontend differential contract
+- `docs/artifacts/self-hosting-semantics/`: closed B2 semantics and typed-IR contract
+- `docs/artifacts/self-hosting-backend/`: closed B3 Mallang C backend contract
+- `docs/artifacts/self-hosting-fixed-point/`: closed B4 fixed-point and conformance contract
+- `docs/artifacts/self-hosting-default-compiler/`: closed B5 default-transition contract
+- `docs/artifacts/self-hosting-loop-performance/`: B2 inner-loop performance and
   focused/fast/full gate performance and full-gate preservation contract
 - `docs/releases/`: v0.1.0부터 v1.2.0까지의 release notes와 verification record
 - `SECURITY.md`: stable supported version과 private vulnerability reporting policy
@@ -533,7 +534,7 @@ target/mallang/match-statement
 3. 다음 milestone은 구체적인 repo-owned gap과 acceptance evidence가 있을 때 별도
    `docs/todo-*` 문서로 시작한다.
 
-현재 post-v1 작업은 B0-B5 self-hosting program이다. B0에서 Rust Stage0이 tracked
+완료된 post-v1 B0-B5 self-hosting program에서 B0은 Rust Stage0이 tracked
 Mallang probe를 format/check/test/build/run하고 same-input generated C identity를
 검증했다. B1은 frozen v1 frontend와 bounded recovery를 완성하고 155개 repository
 source를 Rust Stage0, generated Stage1, strict accounting, sanitizer 네 경로에서

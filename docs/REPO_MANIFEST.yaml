@@ -13,8 +13,10 @@ primary_entrypoints:
   - docs/HANDOFF.md
   - docs/ROADMAP.md
 commands:
+  archive_work: scripts/archive-work.sh --work-id <id>
   check_agent_harness: scripts/check-agent-harness-interface.sh
   check_todo_state: python3 scripts/check-todo-state.py
+  check_work_packet_lifecycle: scripts/check-work-packet-lifecycle.sh
   check: scripts/check.sh
   check_test_workflow: scripts/check-test-workflow.sh target/debug/mlg
   check_streaming_file_io: scripts/check-streaming-file-io-runtime.sh
@@ -66,6 +68,7 @@ vcs:
   default_bookmark: main
 agent_workflow:
   todo_glob: docs/todo-*
+  artifact_glob: docs/artifacts/*
   required_todo_files:
     - spec.md
     - open-questions.md
